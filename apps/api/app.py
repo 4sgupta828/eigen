@@ -1199,6 +1199,18 @@ async def _gap_processor_loop(dsn: str, vertical: str) -> None:
     embedder = build_embedder(mode=resolve_mode())
     pg = PostgresRetrievalSource(dsn, dim=embedder.dim, table="rs_block")
     connectors = dict(load_active_vertical().connectors)
+    # Persist raw fetched artifacts to the SAME R2 bucket as other deployments, under a distinct
+    # folder (EIGEN_R2_PREFIX, default "eigen/raw") so eigen's objects never collide. Keys are
+    # <prefix>/<sha256> (content-addressed dedup). None → raw stays in-memory (index-only).
+    import os as _osenv
+    object_store = None
+    if _osenv.environ.get("R2_BUCKET"):
+        try:
+            from eigen_kernel.ingestion.s3_storage import S3ObjectStore
+            object_store = S3ObjectStore.from_env(
+                prefix=_osenv.environ.get("EIGEN_R2_PREFIX", "eigen/raw"))
+        except Exception:   # noqa: BLE001 — raw persistence is best-effort; index still lands
+            object_store = None
     # Evidence Pulse re-stamp hook: re-ingest overwrites block facets (erasing supersession/
     # retraction stamps) — after each completed job, re-derive stamps from the approved ledger.
     # THIS thread's own store/pool (the API loop's store must never be awaited from here).
@@ -1268,6 +1280,7 @@ async def _gap_processor_loop(dsn: str, vertical: str) -> None:
             n = await ingest_connector_to_postgres(
                 conn, pg, tenant_id=job["tenant_id"], embedder=embedder,
                 window={"query": job["query"], "limit": job["limit"]},
+                object_store=object_store,
                 facet_overrides=_ov or None)
             await q.complete(job["id"], n)
             if currency is not None:
@@ -2487,7 +2500,10 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                             "started_at": _dt.datetime.utcnow().isoformat() + "Z"})
 
         async def _run():
-            from noesis_vertical_medical.retractions import retraction_lineage
+            try:
+                from noesis_vertical_medical.retractions import retraction_lineage
+            except Exception:   # noqa: BLE001 — retraction lineage is a medical-vertical feature; absent for others
+                return
             try:
                 doc_ids = await cur.list_document_ids(prefix="europepmc:")
                 relations = await retraction_lineage(doc_ids)
