@@ -78,6 +78,16 @@ class PostgresRetrievalSource:
             import asyncpg
             from pgvector.asyncpg import register_vector
 
+            # Bootstrap the pgvector extension BEFORE the pool's per-connection init registers the
+            # vector type. On a FRESH database the `vector` type does not exist yet, so register_vector
+            # would fail ("unknown type: public.vector") and the whole pool creation would throw. One
+            # short-lived connection creates it idempotently (needs CREATE privilege — the DB owner has it).
+            _boot = await asyncpg.connect(self._dsn)
+            try:
+                await _boot.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            finally:
+                await _boot.close()
+
             async def _init(conn):
                 await register_vector(conn)
 
