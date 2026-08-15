@@ -1,0 +1,60 @@
+"""Deterministic evidence-kind classifier — facets → the `authority.py` tech pyramid.
+
+STRUCTURAL, not semantic (Rule 18): maps computable per-source metadata the connectors
+already emit (`source_kind`, `form_type`, `grant_status`, `is_peer_reviewed`) onto the
+tier vocabulary `TechAuthorityPolicy` ranks. It makes NO judgment about meaning — it reads
+structured tags a source published about itself. Unknown/ambiguous → "" (rank 0), so a
+missing tag never boosts NOR demotes below the retrieval-relevance baseline (fail-safe).
+
+Key discipline: a patent APPLICATION is not a granted patent (intent, not fact) → it does
+not get the primary tier; and social/news sentiment lands at the lowest tier so it can
+never be presented as an established fact.
+"""
+from __future__ import annotations
+
+
+def classify(source_key: str, facets: dict[str, str] | None, title: str = "", text: str = "") -> str:
+    """Return a `authority.py` evidence-kind key (or "" when unclassifiable)."""
+    f = facets or {}
+    sk = (source_key or "").lower()
+    src_kind = (f.get("source_kind") or "").lower()
+
+    # 1) PRIMARY — audited/legal record. SEC filings and GRANTED patents.
+    if src_kind == "filing" or sk in ("edgar", "sec"):
+        return "primary_filing"
+    if src_kind == "patent":
+        # a GRANTED patent is a legal record (primary); a pending APPLICATION is intent.
+        granted = str(f.get("grant_status") or f.get("is_granted") or "").lower()
+        return "primary_filing" if granted in ("granted", "true", "1", "yes") else "technical_signal"
+
+    # 2) VERIFIED STRUCTURED — peer-reviewed papers, funding records, benchmarks.
+    if src_kind == "funding" or src_kind == "benchmark":
+        return "verified_structured"
+    if src_kind == "paper":
+        reviewed = str(f.get("is_peer_reviewed") or "").lower()
+        return "verified_structured" if reviewed in ("true", "1", "yes") else "technical_signal"
+
+    # 3) TECHNICAL SIGNAL — preprints, open-source traction.
+    if src_kind in ("preprint",) or sk == "arxiv":
+        return "technical_signal"
+    if src_kind == "code" or sk == "github":
+        return "technical_signal"
+
+    # 4) ANALYSIS — reputable press / analyst notes.
+    if src_kind == "news" or sk in ("reuters", "bloomberg", "ft"):
+        return "analysis"
+
+    # 5) SENTIMENT SIGNAL — social / forum / tone. Lowest tier; never controlling.
+    if src_kind in ("social", "sentiment") or sk in ("hackernews", "gdelt"):
+        return "sentiment_signal"
+
+    return ""   # unknown → rank 0 (never boosts, never demotes)
+
+
+def recency_year(facets: dict[str, str] | None) -> int | None:
+    """Extract a 4-digit filing/publication year from facets (structural), or None."""
+    raw = (facets or {}).get("year")
+    if raw is None:
+        return None
+    s = str(raw).strip()[:4]
+    return int(s) if s.isdigit() and len(s) == 4 else None
