@@ -6,9 +6,10 @@ fixture-injectable so they run offline in tests; live use fetches over HttpStrat
 """
 from .arxiv import ArxivConnector
 from .edgar import EdgarConnector
+from .gdelt import GdeltConnector
 from .github import GithubConnector
 from .openalex import OpenAlexConnector
 from .patentsview import PatentsViewConnector
 
-__all__ = ["ArxivConnector", "EdgarConnector", "GithubConnector",
+__all__ = ["ArxivConnector", "EdgarConnector", "GdeltConnector", "GithubConnector",
            "OpenAlexConnector", "PatentsViewConnector"]

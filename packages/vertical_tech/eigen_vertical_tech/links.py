@@ -41,6 +41,6 @@ def source_url(document_id: str, quote: str | None = None) -> str | None:
         return f"https://github.com/{native}"
     if src == "hackernews":                           # native = item id
         return f"https://news.ycombinator.com/item?id={native}"
-    if src == "gdelt":                                # native has no clean stable page
-        return None
+    if src == "gdelt":                                # native IS the article url
+        return native + frag if native.startswith("http") else None
     return None
