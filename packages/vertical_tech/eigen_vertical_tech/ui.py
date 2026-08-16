@@ -25,8 +25,9 @@ class TechUI:
                 "planned": ["fintech", "biotech", "semiconductors", "climate"],
             },
             "sources": {
-                "live": ["arxiv", "openalex"],
-                "planned": ["edgar (rebuild)", "patentsview", "github", "crossref", "gdelt"],
+                "live": ["arxiv", "openalex", "edgar"],
+                "planned": ["edgar Form D", "patentsview", "github", "semantic_scholar",
+                            "crossref", "gdelt", "hackernews"],
             },
         }
 

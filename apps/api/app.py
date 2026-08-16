@@ -981,9 +981,14 @@ async def _gap_processor_loop(dsn: str, vertical: str) -> None:
             sc = job.get("source_country")
             if sc:
                 _ov["source_country"] = sc
+            # generic per-job connector params merged into the fetch window (e.g. {"forms":["D"]})
+            _window = {"query": job["query"], "limit": job["limit"]}
+            _params = job.get("params")
+            if isinstance(_params, dict):
+                _window.update(_params)
             n = await ingest_connector_to_postgres(
                 conn, pg, tenant_id=job["tenant_id"], embedder=embedder,
-                window={"query": job["query"], "limit": job["limit"]},
+                window=_window,
                 object_store=object_store,
                 facet_overrides=_ov or None,
                 min_chars=40)   # drop metadata one-liner noise (panel: no tiny blocks)
@@ -2019,9 +2024,11 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             query = (j.get("query") or "").strip()
             if c in allowed and query:
                 _jf = j.get("facets") if isinstance(j.get("facets"), dict) else {}
+                _jp = j.get("params") if isinstance(j.get("params"), dict) else {}
                 jobs.append({"connector": c, "query": query, "limit": cap(j.get("limit"), 200),
                              "kind": (j.get("kind") or "")[:80], "quality": (j.get("quality") or "")[:120],
-                             "facets": {str(k): str(v) for k, v in (_jf or {}).items() if v}})
+                             "facets": {str(k): str(v) for k, v in (_jf or {}).items() if v},
+                             "params": _jp})
         if not jobs:
             raise HTTPException(status_code=400, detail="no valid jobs (unknown connector or empty inputs)")
         # a batch-level source_country stamps every job's blocks (per-job override wins)

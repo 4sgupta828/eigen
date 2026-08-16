@@ -24,8 +24,38 @@ TICKERS = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik10}.json"
 COMPANYFACTS = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik10}.json"
 ARCHIVE = "https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/{doc}"
+FTS = "https://efts.sec.gov/LATEST/search-index"
 
 _DEFAULT_FORMS = ("10-K", "10-Q", "S-1")   # the meaty narrative forms (skip noisy 8-Ks); Form D addable
+
+
+def _formd_section(raw: bytes) -> str:
+    """Parse a Form D primary XML into a readable private-offering summary (namespace-agnostic)."""
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(raw)
+
+    def find(tag: str) -> str:
+        for el in root.iter():
+            if el.tag.rsplit("}", 1)[-1] == tag and (el.text or "").strip():
+                return el.text.strip()
+        return ""
+
+    def money(v: str) -> str:
+        return f"${int(v):,}" if v.isdigit() else v
+
+    fields = [
+        ("Issuer", find("entityName")),
+        ("Industry group", find("industryGroupType")),
+        ("Total offering amount", money(find("totalOfferingAmount"))),
+        ("Total amount sold", money(find("totalAmountSold"))),
+        ("Amount remaining", money(find("totalRemaining"))),
+        ("Minimum investment", money(find("minimumInvestmentAccepted"))),
+        ("Investors already invested", find("totalNumberAlreadyInvested")),
+        ("Non-accredited investors", find("hasNonAccreditedInvestors")),
+        ("Date of first sale", find("dateOfFirstSale")),
+    ]
+    lines = [f"- {label}: {val}" for label, val in fields if val]
+    return "This is a Form D notice of an exempt private securities offering.\n" + "\n".join(lines) if lines else ""
 
 
 class EdgarConnector:
@@ -68,17 +98,49 @@ class EdgarConnector:
                 return (e["cik"], t, e["title"])
         return None
 
+    async def _fts_formd(self, name: str, limit: int) -> list[EntityRef]:
+        """Find a PRIVATE issuer's Form D (private-raise) filings via EDGAR full-text search."""
+        import urllib.parse
+        url = f"{FTS}?q=%22{urllib.parse.quote(name)}%22&forms=D"
+        try:
+            data = json.loads(await self.fetch_strategy.fetch(url))
+        except Exception:   # noqa: BLE001 — FTS is best-effort
+            return []
+        refs: list[EntityRef] = []
+        for hit in (data.get("hits", {}).get("hits", []) or [])[:limit]:
+            src = hit.get("_source", {}) or {}
+            acc, _, pdoc = (hit.get("_id", "") or "").partition(":")
+            # The accession's first 10 digits ARE the filer's CIK (more reliable than _source.cik).
+            cik = acc.split("-")[0] if acc else ""
+            if not cik.isdigit():
+                cik = src.get("cik")
+                cik = (cik[0] if isinstance(cik, list) else cik) or ""
+            names = src.get("display_names") or [""]
+            meta = {
+                "cik": str(cik).zfill(10), "ticker": "", "company": names[0], "sic": "",
+                "form_type": "D", "accession": acc, "filed": src.get("file_date", ""),
+                "primary_doc": pdoc or "primary_doc.xml",
+            }
+            self._by_acc[acc] = meta
+            refs.append(EntityRef(source_key=self.key, native_id=acc,
+                                  title=filing_doc.title(meta), facets=filing_doc.facets(meta)))
+        return refs
+
     async def discover_entities(self, window: dict) -> list[EntityRef]:
         if not (window or {}).get("query") and self._by_acc:
             filings = list(self._by_acc.values())
             return [EntityRef(source_key=self.key, native_id=filing_doc.accession(f),
                               title=filing_doc.title(f), facets=filing_doc.facets(f)) for f in filings]
-        resolved = await self._resolve((window or {}).get("query", ""))
-        if not resolved:
-            return []
-        cik10, ticker, title = resolved
+        query = (window or {}).get("query", "")
         limit = int((window or {}).get("limit", self._page_size))
         wanted = tuple((window or {}).get("forms") or _DEFAULT_FORMS)
+        resolved = await self._resolve(query)
+        if not resolved:
+            # Private issuers (Form D filers) aren't in the public ticker map → full-text search by name.
+            if "D" in wanted:
+                return await self._fts_formd(query, limit)
+            return []
+        cik10, ticker, title = resolved
         sub = json.loads(await self.fetch_strategy.fetch(SUBMISSIONS.format(cik10=cik10)))
         company = sub.get("name", title)
         sic = sub.get("sicDescription", "")
@@ -127,6 +189,15 @@ class EdgarConnector:
         rec = dict(f)
         rec["sections"] = {}
         pd = f.get("primary_doc"); cik = str(f.get("cik", "")).lstrip("0"); acc = f.get("accession", "")
+        # Form D = a private-raise notice: the primary doc is XML with structured offering amounts.
+        if f.get("form_type") == "D" and cik and acc:
+            xml_url = ARCHIVE.format(cik=cik, acc_nodash=acc.replace("-", ""), doc=pd or "primary_doc.xml")
+            try:
+                rec["sections"]["Private Offering (Form D)"] = _formd_section(
+                    await self.fetch_strategy.fetch(xml_url))
+            except Exception:   # noqa: BLE001
+                rec["sections"] = {}
+            return filing_doc.to_markdown(rec).encode("utf-8")
         if pd and cik and acc:
             url = ARCHIVE.format(cik=cik, acc_nodash=acc.replace("-", ""), doc=pd)
             try:

@@ -31,12 +31,14 @@ CREATE TABLE IF NOT EXISTS eigen_corpus_gap_queue (
     source_country TEXT DEFAULT '',                     -- stamp every ingested block (country sources)
     modality      TEXT DEFAULT '',                      -- stamp every ingested block (e.g. 'alternative' for CAM)
     facets        JSONB NOT NULL DEFAULT '{}',          -- generic per-job facet overrides stamped on every block (e.g. {"sector":"ai"})
+    params        JSONB NOT NULL DEFAULT '{}',          -- generic per-job connector params merged into the fetch window (e.g. {"forms":["D"]})
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS source_country TEXT DEFAULT '';
 ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS modality TEXT DEFAULT '';
 ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS facets JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS params JSONB NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_gapq_status ON eigen_corpus_gap_queue (vertical, status, created_at);
 """
 
@@ -76,12 +78,12 @@ class GapQueue:
                 import json as _json
                 await conn.execute(
                     """INSERT INTO eigen_corpus_gap_queue
-                       (id, vertical, tenant_id, connector, query, lim, kind, rationale, quality, question, source_country, modality, facets)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)""",
+                       (id, vertical, tenant_id, connector, query, lim, kind, rationale, quality, question, source_country, modality, facets, params)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb)""",
                     jid, self._vertical, tenant_id, j["connector"], j["query"],
                     int(j.get("limit", 200)), j.get("kind", ""), j.get("rationale", ""),
                     j.get("quality", ""), question, j.get("source_country", ""), j.get("modality", ""),
-                    _json.dumps(j.get("facets") or {}))
+                    _json.dumps(j.get("facets") or {}), _json.dumps(j.get("params") or {}))
                 ids.append(jid)
         return ids
 
@@ -101,22 +103,25 @@ class GapQueue:
                              WHERE vertical=$1 AND status='pending'
                              ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) c
                        WHERE q.id=c.id
-                       RETURNING q.id, q.connector, q.query, q.lim, q.tenant_id, q.source_country, q.modality, q.facets""",
+                       RETURNING q.id, q.connector, q.query, q.lim, q.tenant_id, q.source_country, q.modality, q.facets, q.params""",
                     self._vertical)
         if row is None:
             return None
-        _facets = row["facets"]
-        if isinstance(_facets, str):
-            import json as _json
-            try:
-                _facets = _json.loads(_facets or "{}")
-            except Exception:   # noqa: BLE001
-                _facets = {}
+        import json as _json
+
+        def _loadj(v):
+            if isinstance(v, str):
+                try:
+                    return _json.loads(v or "{}")
+                except Exception:   # noqa: BLE001
+                    return {}
+            return v or {}
         return {"id": row["id"], "connector": row["connector"], "query": row["query"],
                 "limit": row["lim"], "tenant_id": row["tenant_id"],
                 "source_country": row["source_country"] or "",
                 "modality": row["modality"] or "",
-                "facets": _facets or {}}
+                "facets": _loadj(row["facets"]),
+                "params": _loadj(row["params"])}
 
     async def complete(self, job_id: str, blocks_added: int) -> None:
         await self._ensure()
