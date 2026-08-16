@@ -35,3 +35,30 @@ Additional discipline when synthesizing:
 - Treat a filing's forward-looking statements and a press release as INTENT, not realized results.
 - Attribute every competitive or market claim to the specific source that states it; do not aggregate \
 sentiment into an implied fact. Avoid vague momentum words ("promising", "explosive") unless quoted."""
+
+# Appended to the compose directive when the answer-visuals flag is ON: push toward comparison
+# tables / ranked options built STRICTLY from verified findings (never fabricated structure).
+TECH_VISUAL_GUIDANCE = """When the verified findings support it, use a COMPARISON TABLE or a RANKED \
+list to make a multi-entity comparison scannable (e.g. companies × revenue/growth/margin, or \
+approaches × benchmark/tradeoff). Build the table ONLY from figures/claims already cited in the \
+answer — every cell must trace to a verified quote; never invent a row, column, or value to fill the \
+grid. If the findings don't support a clean comparison, write prose instead — a fabricated table is worse \
+than none."""
+
+# Appended when the answer-charts flag is ON: let compose populate ONE grounded bar chart (validated
+# in code). Numbers must be verbatim from cited evidence.
+TECH_CHART_GUIDANCE = """If the answer contains a set of COMPARABLE NUMERIC figures already cited (e.g. \
+revenue by fiscal year, funding by round, a benchmark across models, headcount across companies), you may \
+emit ONE simple bar chart of those exact values. Every bar's value and label must come verbatim from a \
+cited finding — never chart a number the evidence didn't state, never estimate, never mix units."""
+
+# Appended when the reasoning-read flag is ON: a typed interpretation layer + a confidence read,
+# both validated in code (no new facts).
+TECH_REASONING_FORMAT = """After the answer, add a short INTERPRETATION layer that adds no new facts — \
+each item strictly grounded in what the answer already established:
+- Tensions / gaps: where the evidence conflicts or is thin (e.g. strong revenue growth but disclosed \
+customer concentration; benchmark claim not third-party-verified).
+- What would change the read: the single piece of evidence that would most move the diligence view.
+- Confidence: a brief, honest read of how far to trust this answer, decomposed by evidence tier — \
+higher when it rests on audited filings, lower when it leans on preprints or news signal. \
+Never introduce a fact the answer did not already state."""

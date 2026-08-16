@@ -10,7 +10,10 @@ from __future__ import annotations
 from eigen_kernel.contract.manifest import VerticalManifest
 
 from . import entities, evidence_kind
-from .answer_format import TECH_ANSWER_FORMAT, TECH_DILIGENCE_SYNTHESIS_FORMAT
+from .answer_format import (TECH_ANSWER_FORMAT, TECH_DILIGENCE_SYNTHESIS_FORMAT,
+                            TECH_VISUAL_GUIDANCE, TECH_CHART_GUIDANCE, TECH_REASONING_FORMAT)
+from .terms import TECH_TERMS_PROMPT
+from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
 from .connectors import (ArxivConnector, EdgarConnector, GdeltConnector, GithubConnector,
                          OpenAlexConnector, PatentsViewConnector)
@@ -52,6 +55,13 @@ def build_manifest() -> VerticalManifest:
         answer_format=TECH_ANSWER_FORMAT,
         # Enhanced A/B synthesis variant (reuses the kernel's enhanced-answer slot; same section set).
         clinical_answer_format=TECH_DILIGENCE_SYNTHESIS_FORMAT,
+        # Concept/term glossary + grounded conceptual VISUALS (diagrams) + inline visual/chart/reasoning
+        # guidance — the noesis answer-augmentation features, targeted for tech diligence (flag-gated).
+        terms_prompt=TECH_TERMS_PROMPT,
+        visuals_prompt=TECH_VISUALS_PROMPT,
+        visual_guidance=TECH_VISUAL_GUIDANCE,
+        chart_guidance=TECH_CHART_GUIDANCE,
+        reasoning_format=TECH_REASONING_FORMAT,
         gap_prompt=TECH_GAP_PROMPT,
         suggest_prompt=TECH_SUGGEST_PROMPT,
         web_domains=TRUSTED_WEB_DOMAINS,
