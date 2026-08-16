@@ -18,7 +18,9 @@ class ArxivConnector:
     key = "arxiv"
 
     def __init__(self, *, papers: list[dict] | None = None, page_size: int = 25):
-        self.fetch_strategy = HttpStrategy()
+        # arXiv rate-limits aggressively (429) and asks for ~3s between requests — use a patient
+        # backoff so a burst of ingest jobs retries rather than dying.
+        self.fetch_strategy = HttpStrategy(base_delay=3.0, max_retries=5)
         self._page_size = page_size
         self._by_id: dict[str, dict] = {}
         for p in (papers or []):

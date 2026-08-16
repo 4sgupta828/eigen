@@ -8,10 +8,11 @@ healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
-# 2 replicas for concurrent-request headroom (single worker/event-loop per replica; long research
-# requests no longer starve each other). Safe: the corpus gap-processor claims jobs atomically, so the
-# replicas SHARE the drain (no duplicate ingestion); sessions/corpus are DB-backed and shared.
-numReplicas = 2
+# 1 replica during the ingest-heavy phase: each replica runs its own gap-processor, and two
+# processors draining concurrently double the request rate against rate-limited sources (arXiv 429s).
+# Atomic job claims keep it correct, but a single downloader avoids the double-hammer. Scale back up
+# for serving headroom once bulk ingestion settles.
+numReplicas = 1
 # Deploy-safety for IN-FLIGHT runs: keep the new deploy overlapping briefly, then give the OLD
 # container a drain window long enough for an in-flight research run to FINISH AND PERSIST (the FE
 # recovers the answer via /sessions). History: these keys were once suspected of causing the edge's

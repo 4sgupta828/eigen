@@ -3671,6 +3671,16 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 for r in await conn.fetch(
                     "SELECT facets->>'source_country' country, count(*) blocks FROM rs_block GROUP BY 1"):
                     live["by_country"][r["country"] or "?"] = r["blocks"]
+                # by SECTOR facet (the tech subject-scope) — verifies the per-job facet override landed.
+                live["by_sector"] = {}
+                for r in await conn.fetch(
+                    "SELECT facets->>'sector' sector, count(*) blocks FROM rs_block GROUP BY 1"):
+                    live["by_sector"][r["sector"] or "(none)"] = r["blocks"]
+                # TEXT-LENGTH health (panel: verify substance, not just row counts): flag empty/near-empty blocks.
+                th = await conn.fetchrow(
+                    "SELECT min(length(text)) mn, avg(length(text))::int av, "
+                    "count(*) FILTER (WHERE length(text) < 40) tiny FROM rs_block")
+                live["text_health"] = {"min_chars": th["mn"], "avg_chars": th["av"], "tiny_blocks": th["tiny"]}
                 live["total_blocks"] = await conn.fetchval("SELECT count(*) FROM rs_block") or 0
                 live["total_docs"] = await conn.fetchval("SELECT count(DISTINCT document_id) FROM rs_block") or 0
                 if await conn.fetchval("SELECT to_regclass('rs_ingest_run')"):
