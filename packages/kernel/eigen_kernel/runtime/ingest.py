@@ -28,6 +28,7 @@ async def ingest_connector_to_postgres(
     object_store: ObjectStore | None = None,
     embed_batch_size: int = 256,
     facet_overrides: dict | None = None,   # stamped onto every block (e.g. {"source_country": "IN"})
+    min_chars: int = 1,                    # drop sub-min_chars blocks (metadata one-liner noise)
 ) -> int:
     """Ingest one connector into the pg corpus. Returns blocks materialized.
 
@@ -43,7 +44,7 @@ async def ingest_connector_to_postgres(
     # parse + block every doc (defer embedding), then embed the whole corpus in
     # ONE batched pass — O(blocks/batch) API calls instead of one per document.
     for doc in repo.iter_documents():
-        index_document(doc, store.get(doc.sha256), parsers=parsers, repo=repo)
+        index_document(doc, store.get(doc.sha256), parsers=parsers, repo=repo, min_chars=min_chars)
     embed_pending(repo, embedder, batch_size=embed_batch_size)
 
     await pg_source.ensure_schema()

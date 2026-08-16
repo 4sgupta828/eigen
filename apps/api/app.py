@@ -1285,7 +1285,8 @@ async def _gap_processor_loop(dsn: str, vertical: str) -> None:
                 conn, pg, tenant_id=job["tenant_id"], embedder=embedder,
                 window={"query": job["query"], "limit": job["limit"]},
                 object_store=object_store,
-                facet_overrides=_ov or None)
+                facet_overrides=_ov or None,
+                min_chars=40)   # drop metadata one-liner noise (panel: no tiny blocks)
             await q.complete(job["id"], n)
             if currency is not None:
                 try:
