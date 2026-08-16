@@ -1,70 +1,106 @@
-"""SEC EDGAR connector — public-company filings (free full-text API, no key).
+"""SEC EDGAR connector — public-company filings via the official data.sec.gov APIs (free, no key).
 
-discover_entities → query EDGAR full-text search (efts.sec.gov) or use injected fixture
-records; one EntityRef per filing. list_documents → one synthesized markdown filing-document
-per accession. fetch_artifact → the assembled markdown bytes. Tests inject `filings` so they
-run offline.
+REBUILT (was a thin FTS stub that yielded empty header blocks). Flow:
+  discover_entities({"query": ticker|CIK|company name, "limit": N, "forms": [...]}) →
+    resolve the company to a CIK (company_tickers.json) → GET /submissions/CIK…json →
+    pick the N most recent wanted-form filings → one EntityRef per filing.
+  fetch_artifact → fetch the filing's PRIMARY DOCUMENT html, parse it into real narrative sections
+    (Item 1 Business / 1A Risk Factors / 7 MD&A …), and append audited XBRL Financial Highlights
+    from /api/xbrl/companyfacts. → a substantive, span-verifiable markdown filing document.
 
-NOTE (P2): live section normalization is minimal here — the full-text hit's snippet is stored
-as a single "Filing Text" section. Rich section splitting (Business / Risk Factors / MD&A) from
-the primary document HTML + XBRL financial facts is the P2 hardening step. The FIXTURE path
-already carries fully-sectioned records, which is what the offline pipeline is tested against.
+SEC fair-access: ≤10 req/s + a real User-Agent (EIGEN_HTTP_CONTACT). Tests inject `filings`
+(pre-normalized records) so they run offline against the same filing_doc synthesizer.
 """
 from __future__ import annotations
 
+import json
+
 from eigen_kernel.contract.dto import DocumentRef, EntityRef
 
-from .. import filing_doc
+from .. import filing_doc, filing_html, sec_financials
 from ._http import HttpStrategy
 
-FTS = "https://efts.sec.gov/LATEST/search-index?q="   # full-text search endpoint
+TICKERS = "https://www.sec.gov/files/company_tickers.json"
+SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik10}.json"
+COMPANYFACTS = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik10}.json"
+ARCHIVE = "https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/{doc}"
+
+_DEFAULT_FORMS = ("10-K", "10-Q", "S-1")   # the meaty narrative forms (skip noisy 8-Ks); Form D addable
 
 
 class EdgarConnector:
     key = "edgar"
 
-    def __init__(self, *, filings: list[dict] | None = None, page_size: int = 20):
-        self.fetch_strategy = HttpStrategy()
+    def __init__(self, *, filings: list[dict] | None = None, page_size: int = 10):
+        self.fetch_strategy = HttpStrategy(base_delay=1.0, max_retries=4)   # SEC allows ~10 req/s
         self._page_size = page_size
-        self._by_acc: dict[str, dict] = {}
+        self._by_acc: dict[str, dict] = {}          # accession → normalized filing meta
+        self._ticker_map: dict | None = None        # {TICKER: {cik, title}}
+        self._facts_cache: dict[str, dict] = {}      # cik10 → companyfacts
         for f in (filings or []):
             self._by_acc[filing_doc.accession(f)] = f
 
-    async def _fts(self, query: str, limit: int) -> list[dict]:
-        """Best-effort live full-text search → minimal normalized records (P2: full sectioning)."""
-        import json
-        url = f"https://efts.sec.gov/LATEST/search-index?q=%22{query.replace(' ', '%20')}%22&hits={limit}"
-        try:
-            raw = await self.fetch_strategy.fetch(url)
-            data = json.loads(raw)
-        except Exception:   # noqa: BLE001 — live search is best-effort; offline path uses fixtures
-            return []
-        recs: list[dict] = []
-        for hit in (data.get("hits", {}).get("hits", []) or [])[:limit]:
-            src = hit.get("_source", {}) or {}
-            acc = (hit.get("_id", "") or "").split(":")[0]
-            recs.append({
-                "cik": (src.get("cik") or [""])[0] if isinstance(src.get("cik"), list) else src.get("cik", ""),
-                "company": (src.get("display_names") or [""])[0],
-                "form_type": src.get("file_type", src.get("root_form", "")),
-                "filed": src.get("file_date", ""),
-                "accession": acc,
-                "sections": {"Filing Text": " ".join((src.get("text") or "").split())[:8000]},
-            })
-        return recs
+    async def _tickers(self) -> dict:
+        if self._ticker_map is None:
+            raw = json.loads(await self.fetch_strategy.fetch(TICKERS))
+            m: dict[str, dict] = {}
+            for v in raw.values():
+                t = str(v.get("ticker", "")).upper()
+                if t:
+                    m[t] = {"cik": str(v.get("cik_str", "")).zfill(10), "title": v.get("title", "")}
+            self._ticker_map = m
+        return self._ticker_map
+
+    async def _resolve(self, query: str) -> tuple[str, str, str] | None:
+        """query → (cik10, ticker, title). Accepts a CIK (digits), a ticker, or a company-name substring."""
+        q = (query or "").strip()
+        if not q:
+            return None
+        if q.isdigit():
+            return (q.zfill(10), "", "")
+        tm = await self._tickers()
+        if q.upper() in tm:
+            e = tm[q.upper()]
+            return (e["cik"], q.upper(), e["title"])
+        ql = q.lower()
+        for t, e in tm.items():
+            if ql in (e["title"] or "").lower():
+                return (e["cik"], t, e["title"])
+        return None
 
     async def discover_entities(self, window: dict) -> list[EntityRef]:
         if not (window or {}).get("query") and self._by_acc:
             filings = list(self._by_acc.values())
-        else:
-            q = (window or {}).get("query", "").strip()
-            limit = int((window or {}).get("limit", self._page_size))
-            filings = await self._fts(q, limit) if q else []
-            for f in filings:
-                self._by_acc[filing_doc.accession(f)] = f
-        return [EntityRef(source_key=self.key, native_id=filing_doc.accession(f),
-                          title=filing_doc.title(f), facets=filing_doc.facets(f))
-                for f in filings if filing_doc.accession(f)]
+            return [EntityRef(source_key=self.key, native_id=filing_doc.accession(f),
+                              title=filing_doc.title(f), facets=filing_doc.facets(f)) for f in filings]
+        resolved = await self._resolve((window or {}).get("query", ""))
+        if not resolved:
+            return []
+        cik10, ticker, title = resolved
+        limit = int((window or {}).get("limit", self._page_size))
+        wanted = tuple((window or {}).get("forms") or _DEFAULT_FORMS)
+        sub = json.loads(await self.fetch_strategy.fetch(SUBMISSIONS.format(cik10=cik10)))
+        company = sub.get("name", title)
+        sic = sub.get("sicDescription", "")
+        rec = (sub.get("filings") or {}).get("recent") or {}
+        forms = rec.get("form", []); accs = rec.get("accessionNumber", [])
+        docs = rec.get("primaryDocument", []); dates = rec.get("filingDate", [])
+        refs: list[EntityRef] = []
+        for i, form in enumerate(forms):
+            if form not in wanted:
+                continue
+            acc = accs[i]
+            meta = {
+                "cik": cik10, "ticker": ticker, "company": company, "sic": sic,
+                "form_type": form, "accession": acc, "filed": dates[i] if i < len(dates) else "",
+                "primary_doc": docs[i] if i < len(docs) else "", "sector": (window or {}).get("_sector", ""),
+            }
+            self._by_acc[acc] = meta
+            refs.append(EntityRef(source_key=self.key, native_id=acc,
+                                  title=filing_doc.title(meta), facets=filing_doc.facets(meta)))
+            if len(refs) >= limit:
+                break
+        return refs
 
     async def list_documents(self, entity: EntityRef) -> list[DocumentRef]:
         f = self._by_acc.get(entity.native_id)
@@ -73,6 +109,34 @@ class EdgarConnector:
                             facets=filing_doc.facets(f) if f else dict(entity.facets),
                             entity_ids=(entity.native_id,))]
 
+    async def _companyfacts(self, cik10: str) -> dict:
+        if cik10 not in self._facts_cache:
+            try:
+                self._facts_cache[cik10] = json.loads(
+                    await self.fetch_strategy.fetch(COMPANYFACTS.format(cik10=cik10)))
+            except Exception:   # noqa: BLE001 — a company may have no XBRL facts
+                self._facts_cache[cik10] = {}
+        return self._facts_cache[cik10]
+
     async def fetch_artifact(self, doc: DocumentRef) -> bytes:
         f = self._by_acc.get(doc.native_id) or {"accession": doc.native_id}
-        return filing_doc.to_markdown(f).encode("utf-8")
+        # Offline fixtures already carry `sections` — synthesize directly.
+        if f.get("sections"):
+            return filing_doc.to_markdown(f).encode("utf-8")
+        # LIVE: fetch the primary document HTML → real sections.
+        rec = dict(f)
+        rec["sections"] = {}
+        pd = f.get("primary_doc"); cik = str(f.get("cik", "")).lstrip("0"); acc = f.get("accession", "")
+        if pd and cik and acc:
+            url = ARCHIVE.format(cik=cik, acc_nodash=acc.replace("-", ""), doc=pd)
+            try:
+                rec["sections"] = filing_html.sections_from_html(await self.fetch_strategy.fetch(url))
+            except Exception:   # noqa: BLE001 — a filing may be un-parseable; still emit financials + header
+                rec["sections"] = {}
+        # Append audited XBRL financial highlights (10-K/10-Q).
+        if f.get("cik") and f.get("form_type") in ("10-K", "10-Q"):
+            fin = sec_financials.highlights_markdown(await self._companyfacts(str(f["cik"]).zfill(10)))
+            if fin:
+                # a title→body dict; strip the leading "## " so filing_doc renders it as a section
+                rec["sections"]["Financial Highlights (XBRL)"] = fin.split("\n", 1)[1] if "\n" in fin else fin
+        return filing_doc.to_markdown(rec).encode("utf-8")

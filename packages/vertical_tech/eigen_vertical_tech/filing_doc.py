@@ -31,6 +31,8 @@ def facets(rec: dict) -> dict:
         "entity_type": "company",
         "form_type": form_type(rec).lower(),
         "cik": str(rec.get("cik", "")).strip(),
+        "ticker": str(rec.get("ticker", "")).upper(),
+        "sic": str(rec.get("sic", "")).lower(),
         "sector": str(rec.get("sector", "")).lower(),      # fixture stamps the sub-vertical
     }
     if filed[:4].isdigit():
