@@ -6,6 +6,8 @@ span-verifiable block. Narrowing facets (form_type, cik, year, sector) ride ever
 """
 from __future__ import annotations
 
+from . import sic_sector
+
 
 def accession(rec: dict) -> str:
     return str(rec.get("accession", "")).strip()
@@ -33,7 +35,9 @@ def facets(rec: dict) -> dict:
         "cik": str(rec.get("cik", "")).strip(),
         "ticker": str(rec.get("ticker", "")).upper(),
         "sic": str(rec.get("sic", "")).lower(),
-        "sector": str(rec.get("sector", "")).lower(),      # fixture stamps the sub-vertical
+        # sector-agnostic scope: an explicit override wins; else derive the company's real sector
+        # from its SIC (so a broad, all-sector corpus carries each filing's true sector).
+        "sector": str(rec.get("sector") or sic_sector.classify(rec.get("sic"))).lower(),
     }
     if filed[:4].isdigit():
         f["year"] = filed[:4]

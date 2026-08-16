@@ -12,7 +12,7 @@ restartPolicyMaxRetries = 3
 # processors draining concurrently double the request rate against rate-limited sources (arXiv 429s).
 # Atomic job claims keep it correct, but a single downloader avoids the double-hammer. Scale back up
 # for serving headroom once bulk ingestion settles.
-numReplicas = 1
+numReplicas = 3
 # Deploy-safety for IN-FLIGHT runs: keep the new deploy overlapping briefly, then give the OLD
 # container a drain window long enough for an in-flight research run to FINISH AND PERSIST (the FE
 # recovers the answer via /sessions). History: these keys were once suspected of causing the edge's

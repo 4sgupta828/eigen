@@ -143,7 +143,8 @@ class EdgarConnector:
         cik10, ticker, title = resolved
         sub = json.loads(await self.fetch_strategy.fetch(SUBMISSIONS.format(cik10=cik10)))
         company = sub.get("name", title)
-        sic = sub.get("sicDescription", "")
+        sic = str(sub.get("sic") or "")          # numeric SIC code (for sector classification + facet)
+        sic_desc = sub.get("sicDescription", "")
         rec = (sub.get("filings") or {}).get("recent") or {}
         forms = rec.get("form", []); accs = rec.get("accessionNumber", [])
         docs = rec.get("primaryDocument", []); dates = rec.get("filingDate", [])
@@ -153,7 +154,7 @@ class EdgarConnector:
                 continue
             acc = accs[i]
             meta = {
-                "cik": cik10, "ticker": ticker, "company": company, "sic": sic,
+                "cik": cik10, "ticker": ticker, "company": company, "sic": sic, "sic_desc": sic_desc,
                 "form_type": form, "accession": acc, "filed": dates[i] if i < len(dates) else "",
                 "primary_doc": docs[i] if i < len(docs) else "", "sector": (window or {}).get("_sector", ""),
             }
