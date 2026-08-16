@@ -6,5 +6,6 @@ fixture-injectable so they run offline in tests; live use fetches over HttpStrat
 """
 from .arxiv import ArxivConnector
 from .edgar import EdgarConnector
+from .openalex import OpenAlexConnector
 
-__all__ = ["ArxivConnector", "EdgarConnector"]
+__all__ = ["ArxivConnector", "EdgarConnector", "OpenAlexConnector"]

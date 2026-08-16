@@ -12,7 +12,7 @@ from eigen_kernel.contract.manifest import VerticalManifest
 from . import entities, evidence_kind
 from .answer_format import TECH_ANSWER_FORMAT, TECH_DILIGENCE_SYNTHESIS_FORMAT
 from .authority import TechAuthorityPolicy
-from .connectors import ArxivConnector, EdgarConnector
+from .connectors import ArxivConnector, EdgarConnector, OpenAlexConnector
 from .eval_gold import GOLD
 from .fixtures import sample_filings, sample_papers
 from .gaps import TECH_GAP_PROMPT
@@ -36,6 +36,7 @@ def build_manifest() -> VerticalManifest:
         connectors={
             "edgar": EdgarConnector(filings=sample_filings()),
             "arxiv": ArxivConnector(papers=sample_papers()),
+            "openalex": OpenAlexConnector(),
         },
         retrieval_sources={"corpus": TechRetrievalSource()},
         gating_policy=TechGatingPolicy(),

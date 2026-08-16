@@ -1269,10 +1269,14 @@ async def _gap_processor_loop(dsn: str, vertical: str) -> None:
         if conn is None:
             await q.fail(job["id"], f"unknown connector {job['connector']}"); continue
         try:
-            # a job may stamp a source_country and/or a modality on everything it ingests
+            # a job may stamp generic facet overrides (e.g. {"sector":"ai"}) on everything it ingests,
+            # plus the legacy source_country / modality stamps.
+            _ov = {}
+            _jf = job.get("facets") or {}
+            if isinstance(_jf, dict):
+                _ov.update({k: v for k, v in _jf.items() if v})
             sc = job.get("source_country")
             mod = job.get("modality")
-            _ov = {}
             if sc:
                 _ov["source_country"] = sc
             if mod:
@@ -2393,8 +2397,10 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             c = (j.get("connector") or "").strip()
             query = (j.get("query") or "").strip()
             if c in allowed and query:
+                _jf = j.get("facets") if isinstance(j.get("facets"), dict) else {}
                 jobs.append({"connector": c, "query": query, "limit": cap(j.get("limit"), 200),
-                             "kind": (j.get("kind") or "")[:80], "quality": (j.get("quality") or "")[:120]})
+                             "kind": (j.get("kind") or "")[:80], "quality": (j.get("quality") or "")[:120],
+                             "facets": {str(k): str(v) for k, v in (_jf or {}).items() if v}})
         if not jobs:
             raise HTTPException(status_code=400, detail="no valid jobs (unknown connector or empty inputs)")
         # a batch-level source_country / modality stamps every job's blocks (per-job override wins)

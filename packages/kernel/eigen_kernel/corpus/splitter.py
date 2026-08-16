@@ -10,7 +10,31 @@ from __future__ import annotations
 from eigen_kernel.corpus.models import Block
 from eigen_kernel.ingestion.storage import content_key
 
-SPLITTER_VERSION = "para.v1"
+SPLITTER_VERSION = "para.v2"
+
+# Hard cap on a single block's characters. A paragraph longer than this is sub-split at whitespace
+# boundaries so no block can exceed an embedder's input-token limit (OpenAI text-embedding-3 = 8192
+# tokens ≈ ~32k chars; we cap well under that, which also keeps blocks retrieval-sized). Deterministic.
+MAX_BLOCK_CHARS = 8000
+
+
+def _slice_long(s: str, max_chars: int) -> list[str]:
+    """Split an over-long paragraph into <=max_chars pieces at whitespace boundaries (deterministic)."""
+    if len(s) <= max_chars:
+        return [s]
+    out: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        if n - i <= max_chars:
+            out.append(s[i:]); break
+        cut = s.rfind(" ", i + 1, i + max_chars)
+        if cut <= i:
+            cut = i + max_chars            # no whitespace in range → hard cut
+        out.append(s[i:cut])
+        i = cut
+        while i < n and s[i] == " ":
+            i += 1
+    return [c for c in out if c.strip()]
 
 
 def _heading_level(line: str) -> int | None:
@@ -22,7 +46,8 @@ def _heading_level(line: str) -> int | None:
     return None
 
 
-def split(document_id: str, text: str, *, min_chars: int = 1) -> list[Block]:
+def split(document_id: str, text: str, *, min_chars: int = 1,
+          max_chars: int = MAX_BLOCK_CHARS) -> list[Block]:
     blocks: list[Block] = []
     section: list[str] = []          # current heading stack (titles)
     index = 0
@@ -66,16 +91,24 @@ def split(document_id: str, text: str, *, min_chars: int = 1) -> list[Block]:
             continue
 
         # locate the (post-heading) block text within the original document
-        char_start = text.find(stripped, start)
-        char_end = char_start + len(stripped)
-        blocks.append(Block(
-            document_id=document_id,
-            index=index,
-            content_key=content_key(stripped.encode("utf-8")),
-            text=stripped,
-            char_start=char_start,
-            char_end=char_end,
-            section_path=tuple(section),
-        ))
-        index += 1
+        base = text.find(stripped, start)
+        # An over-long paragraph is sub-split so no block exceeds the embedder's input limit.
+        offset = 0
+        for piece in _slice_long(stripped, max_chars):
+            piece = piece.strip()
+            if len(piece) < min_chars:
+                offset += len(piece)
+                continue
+            char_start = base + offset
+            blocks.append(Block(
+                document_id=document_id,
+                index=index,
+                content_key=content_key(piece.encode("utf-8")),
+                text=piece,
+                char_start=char_start,
+                char_end=char_start + len(piece),
+                section_path=tuple(section),
+            ))
+            index += 1
+            offset += len(piece)
     return blocks

@@ -30,11 +30,13 @@ CREATE TABLE IF NOT EXISTS noesis_corpus_gap_queue (
     error         TEXT DEFAULT '',
     source_country TEXT DEFAULT '',                     -- stamp every ingested block (country sources)
     modality      TEXT DEFAULT '',                      -- stamp every ingested block (e.g. 'alternative' for CAM)
+    facets        JSONB NOT NULL DEFAULT '{}',          -- generic per-job facet overrides stamped on every block (e.g. {"sector":"ai"})
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE noesis_corpus_gap_queue ADD COLUMN IF NOT EXISTS source_country TEXT DEFAULT '';
 ALTER TABLE noesis_corpus_gap_queue ADD COLUMN IF NOT EXISTS modality TEXT DEFAULT '';
+ALTER TABLE noesis_corpus_gap_queue ADD COLUMN IF NOT EXISTS facets JSONB NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_gapq_status ON noesis_corpus_gap_queue (vertical, status, created_at);
 """
 
@@ -71,13 +73,15 @@ class GapQueue:
         async with pool.acquire() as conn:
             for j in jobs:
                 jid = uuid.uuid4().hex
+                import json as _json
                 await conn.execute(
                     """INSERT INTO noesis_corpus_gap_queue
-                       (id, vertical, tenant_id, connector, query, lim, kind, rationale, quality, question, source_country, modality)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)""",
+                       (id, vertical, tenant_id, connector, query, lim, kind, rationale, quality, question, source_country, modality, facets)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)""",
                     jid, self._vertical, tenant_id, j["connector"], j["query"],
                     int(j.get("limit", 200)), j.get("kind", ""), j.get("rationale", ""),
-                    j.get("quality", ""), question, j.get("source_country", ""), j.get("modality", ""))
+                    j.get("quality", ""), question, j.get("source_country", ""), j.get("modality", ""),
+                    _json.dumps(j.get("facets") or {}))
                 ids.append(jid)
         return ids
 
@@ -97,14 +101,22 @@ class GapQueue:
                              WHERE vertical=$1 AND status='pending'
                              ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) c
                        WHERE q.id=c.id
-                       RETURNING q.id, q.connector, q.query, q.lim, q.tenant_id, q.source_country, q.modality""",
+                       RETURNING q.id, q.connector, q.query, q.lim, q.tenant_id, q.source_country, q.modality, q.facets""",
                     self._vertical)
         if row is None:
             return None
+        _facets = row["facets"]
+        if isinstance(_facets, str):
+            import json as _json
+            try:
+                _facets = _json.loads(_facets or "{}")
+            except Exception:   # noqa: BLE001
+                _facets = {}
         return {"id": row["id"], "connector": row["connector"], "query": row["query"],
                 "limit": row["lim"], "tenant_id": row["tenant_id"],
                 "source_country": row["source_country"] or "",
-                "modality": row["modality"] or ""}
+                "modality": row["modality"] or "",
+                "facets": _facets or {}}
 
     async def complete(self, job_id: str, blocks_added: int) -> None:
         await self._ensure()
