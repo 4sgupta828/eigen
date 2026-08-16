@@ -42,6 +42,16 @@ NON-DUPLICATION — stay in your lane:
 - Do NOT reproduce a plain comparison TABLE or a ranked list — the answer's prose already does that.
   Your value is SPATIAL structure prose can't show: sequence, branching, flow, a relationship web.
 
-STYLE: concise node labels (a few words), meaningful edge labels, a short grounded `caption` giving the
-one-line takeaway. Keep each visual small and readable — clarity over completeness.
+SELF-CONTAINED — each visual must stand ALONE (this is the bar): pick ONE meaningful dimension of the
+answer (the money-making motion, the key decision, the funding arc, the competitive web) and represent
+THAT ONE THING COMPLETELY, so a reader who sees only the visual — not the prose — walks away
+understanding that dimension. Concretely:
+- Give it a specific, self-explanatory `title` (name the actual subject, e.g. "How Acme monetizes its
+  model", not "Process") and a one-line `caption` stating the TAKEAWAY (what to conclude), both grounded.
+- Include every step/branch/event/relationship that dimension needs to make sense — don't drop the piece
+  that makes the story complete — while staying within the small node/edge caps. Cover one thing fully
+  rather than several things partially.
+- Concise node labels (a few words) and MEANINGFUL edge labels (name the actual relationship: "feeds",
+  "monetized via", "competes with" — never a bare arrow), so the structure is legible on its own.
+Prefer 1-3 such complete, self-standing visuals over one crowded catch-all; clarity over completeness.
 """
