@@ -28,12 +28,42 @@ _ITEM_TITLES = {
 # The narrative items worth ingesting for diligence (skip boilerplate/financial-statement dumps).
 _WANTED_ITEMS = {"1", "1A", "3", "7", "7A"}
 
-# S-1 / prospectus caption fallback headers.
-_CAPTION_HEADERS = ["PROSPECTUS SUMMARY", "RISK FACTORS",
-                    "MANAGEMENT'S DISCUSSION AND ANALYSIS", "BUSINESS", "USE OF PROCEEDS"]
+# Caption headers worth extracting across form types (S-1 prospectus, 10-K notes, DEF 14A proxy).
+# Diligence-relevant: prospectus narrative, SEGMENT + GEOGRAPHIC revenue disaggregation, and the
+# PEOPLE layer (executive officers / compensation / board) found in proxies.
+_CAPTION_HEADERS = [
+    # prospectus / narrative
+    "PROSPECTUS SUMMARY", "RISK FACTORS", "MANAGEMENT'S DISCUSSION AND ANALYSIS",
+    "BUSINESS", "USE OF PROCEEDS",
+    # segment + geographic revenue (customer/geo-segmented revenue the diligence needs)
+    "SEGMENT INFORMATION", "SEGMENT REPORTING", "REPORTABLE SEGMENTS",
+    "DISAGGREGATION OF REVENUE", "REVENUE BY GEOGRAPHIC", "GEOGRAPHIC INFORMATION",
+    "REVENUE BY GEOGRAPHY", "INFORMATION ABOUT GEOGRAPHIC AREAS", "CONCENTRATION OF",
+    # people (DEF 14A proxy)
+    "EXECUTIVE OFFICERS", "EXECUTIVE COMPENSATION", "COMPENSATION DISCUSSION AND ANALYSIS",
+    "BOARD OF DIRECTORS", "DIRECTORS AND EXECUTIVE OFFICERS", "SECURITY OWNERSHIP",
+    "NOMINEES FOR DIRECTOR", "INFORMATION ABOUT OUR EXECUTIVE OFFICERS",
+]
 
-_MAX_SECTION = 24000     # cap one section (splitter chunks further at 8k)
-_MAX_TOTAL = 60000       # cap total narrative per filing (embedding-cost guard)
+_MAX_SECTION = 14000     # cap one section (splitter chunks further at 8k) — smaller so more sections fit
+_MAX_TOTAL = 80000       # cap total narrative per filing (embedding-cost guard)
+
+# Diligence priority: keep these sections FIRST within the total cap (so MD&A + segment/geo revenue
+# aren't squeezed out by a huge Business/Risk section). Lower rank = kept earlier. Matched by substring.
+_SECTION_PRIORITY = [
+    "Management's Discussion", "Financial Highlights", "Reportable Segments", "Segment Information",
+    "Segment Reporting", "Disaggregation Of Revenue", "Revenue By Geographic", "Geographic Information",
+    "Revenue By Geography", "Information About Geographic", "Risk Factors", "Business", "Concentration Of",
+    "Executive Compensation", "Executive Officers", "Compensation Discussion", "Board Of Directors",
+    "Directors And Executive", "Security Ownership", "Nominees For Director", "Prospectus Summary",
+]
+
+
+def _priority_rank(title: str) -> int:
+    for i, key in enumerate(_SECTION_PRIORITY):
+        if key.lower() in title.lower():
+            return i
+    return len(_SECTION_PRIORITY)
 
 
 def html_to_text(raw: bytes) -> str:
@@ -61,33 +91,46 @@ def _item_sections(text: str) -> dict[str, str]:
 
 
 def _caption_sections(text: str) -> dict[str, str]:
-    """Fallback for S-1/prospectuses: split on all-caps caption headers."""
-    positions: list[tuple[str, int]] = []
+    """Extract caption-header sections (S-1 narrative, 10-K segment/geo notes, DEF 14A people).
+
+    Robust to tables-of-contents: for each header, use its LARGEST span (a ToC entry is a tiny span;
+    the real section is large). All occurrences of all headers are sorted and each span runs to the
+    next header occurrence."""
     up = text.upper()
+    occ: list[tuple[str, int]] = []
     for cap in _CAPTION_HEADERS:
-        idx = up.find(cap)
-        if idx != -1:
-            positions.append((cap.title(), idx))
-    positions.sort(key=lambda x: x[1])
+        start = 0
+        while True:
+            idx = up.find(cap, start)
+            if idx == -1:
+                break
+            occ.append((cap.title(), idx))
+            start = idx + len(cap)
+    occ.sort(key=lambda x: x[1])
     out: dict[str, str] = {}
-    for i, (title, pos) in enumerate(positions):
-        end = positions[i + 1][1] if i + 1 < len(positions) else min(len(text), pos + _MAX_SECTION)
+    for i, (title, pos) in enumerate(occ):
+        end = occ[i + 1][1] if i + 1 < len(occ) else min(len(text), pos + _MAX_SECTION)
         body = text[pos:end].strip()
-        if len(body) > 200:
+        if len(body) > 400 and len(body) > len(out.get(title, "")):   # keep the largest span per title
             out[title] = body[:_MAX_SECTION]
     return out
 
 
 def sections_from_html(raw: bytes) -> dict[str, str]:
-    """Return {section_title: text} for a filing's primary HTML, length-capped, best-effort."""
+    """Return {section_title: text} for a filing's primary HTML, length-capped, best-effort.
+
+    Merges numbered-Item sections (10-K/10-Q) with caption sections (segment/geo notes, proxy people),
+    so a 10-K yields Business/Risk/MD&A PLUS its segment & geographic-revenue disclosures, and a
+    DEF 14A yields the executive/board sections. Item titles win on a name collision."""
     text = html_to_text(raw)
-    secs = _item_sections(text) or _caption_sections(text)
+    secs = {**_caption_sections(text), **_item_sections(text)}
     if not secs:
         # last resort: the leading narrative (skip a short cover page), capped.
         secs = {"Filing Text": text[:_MAX_TOTAL]}
-    # enforce a total cap across sections (largest-first)
+    # enforce a total cap, keeping DILIGENCE-PRIORITY sections first (MD&A, segment/geo before a
+    # giant Business/Risk block), then by size.
     total, kept = 0, {}
-    for title, body in sorted(secs.items(), key=lambda kv: -len(kv[1])):
+    for title, body in sorted(secs.items(), key=lambda kv: (_priority_rank(kv[0]), -len(kv[1]))):
         if total >= _MAX_TOTAL:
             break
         room = _MAX_TOTAL - total

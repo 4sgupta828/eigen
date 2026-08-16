@@ -26,7 +26,7 @@ COMPANYFACTS = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik10}.json"
 ARCHIVE = "https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/{doc}"
 FTS = "https://efts.sec.gov/LATEST/search-index"
 
-_DEFAULT_FORMS = ("10-K", "10-Q", "S-1")   # the meaty narrative forms (skip noisy 8-Ks); Form D addable
+_DEFAULT_FORMS = ("10-K", "10-Q", "S-1", "DEF 14A")   # narrative + the proxy (people layer); Form D via param
 
 
 def _formd_section(raw: bytes) -> str:
