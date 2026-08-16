@@ -188,6 +188,11 @@ class VerticalManifest:
     # single vertical answer across sub-domains (the app resolves the active sector per request and threads
     # the strings). The kernel never parses it. Empty → no sector scoping. Names NO domain concept here.
     sector_profiles: dict = field(default_factory=dict)
+    # Optional ANSWER MODES (kernel-neutral): {mode_name: compose_directive_str} — an analytical LENS
+    # the caller selects per request (e.g. investor vs acquirer), threaded as an extra compose addendum.
+    # Opaque prose; the kernel never parses it. Empty → only the default answer directive. Names no
+    # domain concept here.
+    answer_modes: dict = field(default_factory=dict)
     # Optional extraction LENSES (domain vocabulary) for the claims-first pipeline: the aspects the
     # extractor should cover per atom (e.g. interventions, outcomes, safety). Passed as a checklist
     # in ONE extraction call (not fanned out). Empty → generic "extract every fact". Kernel-neutral.

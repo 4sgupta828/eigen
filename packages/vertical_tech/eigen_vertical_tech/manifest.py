@@ -20,6 +20,7 @@ from .connectors import (ArxivConnector, EdgarConnector, GdeltConnector, GithubC
 from .eval_gold import GOLD
 from .fixtures import sample_filings, sample_papers
 from .gaps import TECH_GAP_PROMPT
+from .ma import MA_DIRECTIVE
 from .gating import TechGatingPolicy
 from .lenses import EXTRACTION_LENSES
 from .persona import TechPersona
@@ -52,6 +53,7 @@ def build_manifest() -> VerticalManifest:
         authority_policy=TechAuthorityPolicy(),
         evidence_classifier=evidence_kind.classify,   # structural facets → evidence tier (Rule 18)
         discovery_entity_of=discovery.entity_of,       # "who is working on X" scouting (M&A/corp-dev)
+        answer_modes={"acquirer": MA_DIRECTIVE},        # M&A/corp-dev lens (reframe diligence for an acquirer)
         ui=TechUI(),
         answer_format=TECH_ANSWER_FORMAT,
         # Enhanced A/B synthesis variant (reuses the kernel's enhanced-answer slot; same section set).

@@ -595,6 +595,7 @@ class ResearchIn(BaseModel):
     intake_transcript: list[dict] | None = None  # Guided-intake conversation [{role,text}] → saved for admin audit
     effort: float = Field(default=1.0, ge=1.0, le=2.5)   # effort multiplier; ignored unless flag on
     audience: str = "clinician"           # "clinician" (default) | "patient"; ignored unless flag on
+    mode: str = ""                        # analytical lens, e.g. "acquirer" (M&A); "" = default investor lens
 
 
 class PanelIn(BaseModel):
@@ -1555,6 +1556,14 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             hint = getattr(svc_, "integrative_query_hint", None)
             if hint:
                 _q = body.question + "\n\n[" + hint + "]"
+        # Analytical MODE (e.g. acquirer / M&A): swap in the vertical-supplied mode directive as a
+        # compose addendum, so the same grounded evidence is re-lensed for that audience.
+        _mode = (body.mode or "").strip().lower()
+        if _mode:
+            _modes = getattr(load_active_vertical(), "answer_modes", {}) or {}
+            _mode_dir = _modes.get(_mode)
+            if _mode_dir:
+                _extra = (_extra + "\n\n" + _mode_dir) if _extra else _mode_dir
         res = await _ask(
             question=_q, tenant_id=body.tenant_id,
             workspace_id=body.workspace_id, source_keys=body.sources,
