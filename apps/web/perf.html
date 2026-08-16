@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Noesis · Performance</title>
-<script>try{var t=localStorage.getItem("noesis-theme"); if(t==="dark"||t==="light") document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<title>Eigen · Performance</title>
+<script>try{var t=localStorage.getItem("eigen-theme"); if(t==="dark"||t==="light") document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
 <style>
   :root{
     --bg:#F7FAFC; --panel:#fff; --panel2:#EEF3F9; --ink:#122032; --muted:#5B6B80;
@@ -73,7 +73,7 @@
 
 <script>
 const $ = s => document.querySelector(s);
-let PW = sessionStorage.getItem("noesis-admin-pw") || "";
+let PW = sessionStorage.getItem("eigen-admin-pw") || "";
 let HOURS = 168;
 
 async function fetchPerf(){
@@ -155,12 +155,12 @@ async function load(){
     $("#gate").hidden = true; $("#app").hidden = false;
     render(d);
   }catch(e){
-    if(String(e.message)==="401"){ PW=""; sessionStorage.removeItem("noesis-admin-pw");
+    if(String(e.message)==="401"){ PW=""; sessionStorage.removeItem("eigen-admin-pw");
       $("#app").hidden = true; $("#gate").hidden = false; $("#pwerr").hidden = false; }
     else { $("#body").innerHTML = `<div class="empty">Couldn't load metrics: ${esc(e.message)}</div>`; }
   }
 }
-$("#pwgo").addEventListener("click", ()=>{ PW = $("#pw").value.trim(); sessionStorage.setItem("noesis-admin-pw", PW); $("#pwerr").hidden=true; load(); });
+$("#pwgo").addEventListener("click", ()=>{ PW = $("#pw").value.trim(); sessionStorage.setItem("eigen-admin-pw", PW); $("#pwerr").hidden=true; load(); });
 $("#pw").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#pwgo").click(); });
 $("#win").querySelectorAll("button").forEach(b=>b.addEventListener("click", ()=>{
   HOURS = +b.dataset.h; $("#win").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b)); load();

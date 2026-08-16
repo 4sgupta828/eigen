@@ -1,10 +1,10 @@
 """Accounts + feedback persistence (adoption P0) — app-level, kernel-free, same Postgres as sessions.
 
 Two tables, one store:
-  - noesis_user: registered users (verified-clinician free tier). Registration is upsert-on-email and
+  - eigen_user: registered users (verified-clinician free tier). Registration is upsert-on-email and
     issues a bearer token (sha256 stored, raw returned ONCE). NPI verification (US) is a structural
     lookup against the public CMS registry — a computable fact, not a semantic judgment (Rule 18).
-  - noesis_feedback: per-answer user feedback keyed to the SAME W1–W9 warrant taxonomy the eval and
+  - eigen_feedback: per-answer user feedback keyed to the SAME W1–W9 warrant taxonomy the eval and
     auditor use (docs/specs/answer-warrant-contract.md) — one contract, three uses. This is the
     accumulating ground-truth signal that eventually adjudicates the eval judges.
 
@@ -26,7 +26,7 @@ import uuid
 from typing import Any
 
 _DDL = """
-CREATE TABLE IF NOT EXISTS noesis_user (
+CREATE TABLE IF NOT EXISTS eigen_user (
     id            TEXT PRIMARY KEY,
     vertical      TEXT NOT NULL,
     email         TEXT NOT NULL,
@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS noesis_user (
     last_seen     TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (vertical, email)
 );
-CREATE INDEX IF NOT EXISTS idx_nu_token ON noesis_user (token_hash);
-CREATE TABLE IF NOT EXISTS noesis_feedback (
+CREATE INDEX IF NOT EXISTS idx_nu_token ON eigen_user (token_hash);
+CREATE TABLE IF NOT EXISTS eigen_feedback (
     id          TEXT PRIMARY KEY,
     vertical    TEXT NOT NULL,
     user_id     TEXT,
@@ -56,18 +56,18 @@ CREATE TABLE IF NOT EXISTS noesis_feedback (
     question    TEXT NOT NULL DEFAULT '',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_nfb_vertical_created ON noesis_feedback (vertical, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_nfb_vertical_created ON eigen_feedback (vertical, created_at DESC);
 -- PER-DEVICE TOKENS: multiple active tokens per user, so signing in on a second browser/device no
 -- longer orphans the first (the old single token_hash column rotated on every register). The legacy
 -- column keeps being written and checked as a FALLBACK so pre-existing sessions stay valid.
-CREATE TABLE IF NOT EXISTS noesis_user_token (
+CREATE TABLE IF NOT EXISTS eigen_user_token (
     token_hash  TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_nut_user ON noesis_user_token (user_id, created_at DESC);
-CREATE TABLE IF NOT EXISTS noesis_user_pref (
+CREATE INDEX IF NOT EXISTS idx_nut_user ON eigen_user_token (user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS eigen_user_pref (
     user_id     TEXT NOT NULL,
     key         TEXT NOT NULL,
     value       TEXT NOT NULL DEFAULT '',
@@ -141,15 +141,15 @@ class AccountStore:
         uid = uuid.uuid4().hex
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                """INSERT INTO noesis_user (id, vertical, email, name, profession, country, npi,
+                """INSERT INTO eigen_user (id, vertical, email, name, profession, country, npi,
                                             npi_verified, token_hash, disclaimer_ack_at)
                    VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9, CASE WHEN $10 THEN now() END)
                    ON CONFLICT (vertical, email) DO UPDATE SET
                      name=EXCLUDED.name, profession=EXCLUDED.profession, country=EXCLUDED.country,
-                     npi=COALESCE(EXCLUDED.npi, noesis_user.npi),
-                     npi_verified=(noesis_user.npi_verified OR EXCLUDED.npi_verified),
+                     npi=COALESCE(EXCLUDED.npi, eigen_user.npi),
+                     npi_verified=(eigen_user.npi_verified OR EXCLUDED.npi_verified),
                      token_hash=EXCLUDED.token_hash,
-                     disclaimer_ack_at=COALESCE(noesis_user.disclaimer_ack_at, EXCLUDED.disclaimer_ack_at),
+                     disclaimer_ack_at=COALESCE(eigen_user.disclaimer_ack_at, EXCLUDED.disclaimer_ack_at),
                      last_seen=now()
                    RETURNING id, email, name, profession, country, npi_verified, created_at""",
                 uid, self._vertical, email.lower().strip(), name.strip(), profession.strip(),
@@ -159,11 +159,11 @@ class AccountStore:
         # previous device's token, if it's in the table, keeps working).
         async with pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO noesis_user_token (token_hash, user_id) VALUES ($1,$2) "
+                "INSERT INTO eigen_user_token (token_hash, user_id) VALUES ($1,$2) "
                 "ON CONFLICT DO NOTHING", _hash(token), row["id"])
             await conn.execute(
-                """DELETE FROM noesis_user_token WHERE user_id=$1 AND token_hash NOT IN (
-                     SELECT token_hash FROM noesis_user_token WHERE user_id=$1
+                """DELETE FROM eigen_user_token WHERE user_id=$1 AND token_hash NOT IN (
+                     SELECT token_hash FROM eigen_user_token WHERE user_id=$1
                      ORDER BY created_at DESC LIMIT $2)""", row["id"], _MAX_TOKENS_PER_USER)
         user = {"id": row["id"], "email": row["email"], "name": row["name"],
                 "profession": row["profession"], "country": row["country"],
@@ -180,15 +180,15 @@ class AccountStore:
             # per-device table first; legacy single-column hash as fallback (pre-existing sessions)
             row = await conn.fetchrow(
                 """SELECT u.id, u.email, u.name, u.profession, u.country, u.npi_verified
-                   FROM noesis_user_token t JOIN noesis_user u ON u.id = t.user_id
+                   FROM eigen_user_token t JOIN eigen_user u ON u.id = t.user_id
                    WHERE t.token_hash=$2 AND u.vertical=$1""", self._vertical, h)
             if row:
                 await conn.execute(
-                    "UPDATE noesis_user_token SET last_seen=now() WHERE token_hash=$1", h)
-                await conn.execute("UPDATE noesis_user SET last_seen=now() WHERE id=$1", row["id"])
+                    "UPDATE eigen_user_token SET last_seen=now() WHERE token_hash=$1", h)
+                await conn.execute("UPDATE eigen_user SET last_seen=now() WHERE id=$1", row["id"])
             else:
                 row = await conn.fetchrow(
-                    """UPDATE noesis_user SET last_seen=now()
+                    """UPDATE eigen_user SET last_seen=now()
                        WHERE vertical=$1 AND token_hash=$2
                        RETURNING id, email, name, profession, country, npi_verified""",
                     self._vertical, h)
@@ -206,7 +206,7 @@ class AccountStore:
         fid = uuid.uuid4().hex
         async with pool.acquire() as conn:
             await conn.execute(
-                """INSERT INTO noesis_feedback (id, vertical, user_id, user_email, session_id,
+                """INSERT INTO eigen_feedback (id, vertical, user_id, user_email, session_id,
                                                 turn_index, verdict, modes, claim_index, note, question)
                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)""",
                 fid, self._vertical, (user or {}).get("id"), (user or {}).get("email"),
@@ -221,21 +221,21 @@ class AccountStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             total = await conn.fetchval(
-                "SELECT count(*) FROM noesis_feedback WHERE vertical=$1", self._vertical)
+                "SELECT count(*) FROM eigen_feedback WHERE vertical=$1", self._vertical)
             by_verdict = {r["verdict"]: r["n"] for r in await conn.fetch(
-                "SELECT verdict, count(*) n FROM noesis_feedback WHERE vertical=$1 GROUP BY 1",
+                "SELECT verdict, count(*) n FROM eigen_feedback WHERE vertical=$1 GROUP BY 1",
                 self._vertical)}
             by_mode = {r["mode"]: r["n"] for r in await conn.fetch(
                 """SELECT jsonb_array_elements_text(modes) AS mode, count(*) n
-                   FROM noesis_feedback WHERE vertical=$1 GROUP BY 1 ORDER BY 2 DESC""",
+                   FROM eigen_feedback WHERE vertical=$1 GROUP BY 1 ORDER BY 2 DESC""",
                 self._vertical)}
             by_day = [{"day": r["day"].isoformat(), "n": r["n"]} for r in await conn.fetch(
-                """SELECT created_at::date AS day, count(*) n FROM noesis_feedback
+                """SELECT created_at::date AS day, count(*) n FROM eigen_feedback
                    WHERE vertical=$1 GROUP BY 1 ORDER BY 1 DESC LIMIT 30""", self._vertical)]
             recent = [dict(r) for r in await conn.fetch(
                 """SELECT id, user_email, session_id, turn_index, verdict, modes::text AS modes,
                           claim_index, note, question, created_at
-                   FROM noesis_feedback WHERE vertical=$1
+                   FROM eigen_feedback WHERE vertical=$1
                    ORDER BY created_at DESC LIMIT $2""", self._vertical, limit)]
         for r in recent:
             r["modes"] = json.loads(r["modes"] or "[]")
@@ -243,9 +243,9 @@ class AccountStore:
         n_users = None
         async with (await self._get_pool()).acquire() as conn:
             n_users = await conn.fetchval(
-                "SELECT count(*) FROM noesis_user WHERE vertical=$1", self._vertical)
+                "SELECT count(*) FROM eigen_user WHERE vertical=$1", self._vertical)
             n_verified = await conn.fetchval(
-                "SELECT count(*) FROM noesis_user WHERE vertical=$1 AND npi_verified", self._vertical)
+                "SELECT count(*) FROM eigen_user WHERE vertical=$1 AND npi_verified", self._vertical)
         return {"total": total, "by_verdict": by_verdict, "by_mode": by_mode,
                 "by_day": by_day, "recent": recent,
                 "users": {"registered": n_users, "npi_verified": n_verified}}
@@ -258,7 +258,7 @@ class AccountStore:
             rows = await conn.fetch(
                 """SELECT name, email, profession, country, npi_verified,
                           created_at, last_seen
-                   FROM noesis_user WHERE vertical=$1 ORDER BY created_at DESC LIMIT $2""",
+                   FROM eigen_user WHERE vertical=$1 ORDER BY created_at DESC LIMIT $2""",
                 self._vertical, int(limit))
         out = []
         for r in rows:
@@ -269,19 +269,19 @@ class AccountStore:
             out.append(d)
         return out
 
-    # ---- per-user preferences (Noesis IN D-7: the server-authoritative profile substrate) ----
+    # ---- per-user preferences (Eigen IN D-7: the server-authoritative profile substrate) ----
 
     async def get_pref(self, user_id: str, key: str) -> str:
         await self._ensure()
         async with (await self._get_pool()).acquire() as conn:
             v = await conn.fetchval(
-                "SELECT value FROM noesis_user_pref WHERE user_id=$1 AND key=$2", user_id, key)
+                "SELECT value FROM eigen_user_pref WHERE user_id=$1 AND key=$2", user_id, key)
         return v or ""
 
     async def set_pref(self, user_id: str, key: str, value: str) -> None:
         await self._ensure()
         async with (await self._get_pool()).acquire() as conn:
             await conn.execute(
-                """INSERT INTO noesis_user_pref (user_id, key, value) VALUES ($1,$2,$3)
+                """INSERT INTO eigen_user_pref (user_id, key, value) VALUES ($1,$2,$3)
                    ON CONFLICT (user_id, key) DO UPDATE SET value=EXCLUDED.value,
                    updated_at=now()""", user_id, key[:64], (value or "")[:200])

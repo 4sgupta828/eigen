@@ -19,10 +19,10 @@ import json
 
 # (table, order_col or None) — dumped fully; keep in DEPENDENCY-FRIENDLY restore order.
 CRITICAL_TABLES = (
-    "noesis_user", "noesis_user_token", "noesis_user_pref", "noesis_feedback",
-    "noesis_change_event", "noesis_topic", "noesis_topic_edge", "noesis_edge_evidence",
-    "noesis_watch", "noesis_watch_seen", "noesis_pulse_state",
-    "noesis_research_session", "noesis_corpus_gap_queue",
+    "eigen_user", "eigen_user_token", "eigen_user_pref", "eigen_feedback",
+    "eigen_change_event", "eigen_topic", "eigen_topic_edge", "eigen_edge_evidence",
+    "eigen_watch", "eigen_watch_seen", "eigen_pulse_state",
+    "eigen_research_session", "eigen_corpus_gap_queue",
 )
 _BLOCK_COLS = ("tenant_id", "workspace_id", "document_id", "block_id", "text", "facets",
                "document_title", "content_type", "source_key", "created_at")

@@ -14,7 +14,7 @@ import time
 from typing import Any
 
 _DDL = """
-CREATE TABLE IF NOT EXISTS noesis_setting (
+CREATE TABLE IF NOT EXISTS eigen_setting (
     vertical   TEXT NOT NULL,
     key        TEXT NOT NULL,
     value      TEXT NOT NULL DEFAULT '',
@@ -58,7 +58,7 @@ class SettingStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT key, value FROM noesis_setting WHERE vertical=$1", self._vertical)
+                "SELECT key, value FROM eigen_setting WHERE vertical=$1", self._vertical)
         self._cache = {r["key"]: r["value"] for r in rows}
         self._cache_at = now
         return dict(self._cache)
@@ -72,10 +72,10 @@ class SettingStore:
         async with pool.acquire() as conn:
             if value == "":
                 await conn.execute(
-                    "DELETE FROM noesis_setting WHERE vertical=$1 AND key=$2", self._vertical, key)
+                    "DELETE FROM eigen_setting WHERE vertical=$1 AND key=$2", self._vertical, key)
             else:
                 await conn.execute(
-                    """INSERT INTO noesis_setting (vertical, key, value) VALUES ($1,$2,$3)
+                    """INSERT INTO eigen_setting (vertical, key, value) VALUES ($1,$2,$3)
                        ON CONFLICT (vertical, key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()""",
                     self._vertical, key, value)
         self._cache_at = 0.0   # bust the cache so the change is visible immediately in this process

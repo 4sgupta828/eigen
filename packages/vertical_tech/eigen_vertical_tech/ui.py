@@ -16,6 +16,20 @@ class TechUI:
     def source_url(self, document_id, quote=None):
         return _links.source_url(document_id, quote)
 
+    def coverage_plan(self):
+        """Declared coverage roadmap for the tech vertical — what sectors/sources are live
+        today versus planned. Surfaced read-only by the /admin/coverage handler."""
+        return {
+            "sectors": {
+                "covered": ["ai"],
+                "planned": ["fintech", "biotech", "semiconductors", "climate"],
+            },
+            "sources": {
+                "live": ["arxiv", "openalex"],
+                "planned": ["edgar (rebuild)", "patentsview", "github", "crossref", "gdelt"],
+            },
+        }
+
     def console(self):
         return {
             "heading": "What does the evidence say?",

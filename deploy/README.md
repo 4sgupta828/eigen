@@ -1,4 +1,4 @@
-# Deploying Noesis
+# Deploying Eigen
 
 One vertical per deployment. The image serves the API + research console.
 
@@ -40,16 +40,16 @@ EIGEN_ACTIVE_VERTICAL=medical EIGEN_PROVIDER_MODE=replay \
 
 ## Medical vertical — data infra (added)
 
-- **Dedicated DB:** a fresh pgvector Postgres (container `noesis-db`, port 5434) —
-  separate from any other project. `EIGEN_CORPUS_DSN=postgresql://noesis:noesis@localhost:5434/noesis`.
+- **Dedicated DB:** a fresh pgvector Postgres (container `eigen-db`, port 5434) —
+  separate from any other project. `EIGEN_CORPUS_DSN=postgresql://eigen:eigen@localhost:5434/eigen`.
 - **Object store (R2):** raw fetched artifacts (assembled trial/label markdown) are
   content-addressed into Cloudflare R2 via `S3ObjectStore`. Env: `R2_BUCKET`,
   `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (see gitignored `.env.medical`).
 - **Embeddings:** OpenAI `text-embedding-3-small` (1536-d) — `OPENAI_API_KEY`.
-- **Download real data:**
+- **Download real data (prod-direct):** ingest happens in prod via the admin endpoint, not local.
   ```bash
-  set -a; . ./.env.medical; set +a
-  PYTHONPATH=packages/kernel:packages/vertical_medical:apps \
-    .venv/bin/python scripts/ingest_medical.py --condition diabetes --trials 100 --drugs 100 --drug-query "openfda.route:ORAL"
+  curl -X POST "$BASE/admin/corpus/ingest" -H "X-Admin-Token: $EIGEN_ADMIN_TOKEN" \
+    -d '{"jobs":[{"connector":"arxiv","query":"large language model inference","limit":40,"facets":{"sector":"ai"}},
+                 {"connector":"openalex","query":"retrieval augmented generation","limit":40,"facets":{"sector":"ai"}}]}'
   ```
-  Sources: ClinicalTrials.gov v2 (trials) + openFDA drug labels. Raw → R2, index → pgvector.
+  Sources: arXiv (preprints) + OpenAlex (peer-reviewed). Raw → R2, index → pgvector. Watch `GET /corpus/queue`.

@@ -152,14 +152,6 @@ def graph_expand_mode() -> str:
     return "on" if v in ("1", "true", "yes", "on") else ""
 
 
-def in_mode_enabled() -> bool:
-    """Flag (default OFF, Rule 20): Noesis IN — the India practice profile (spec D-7/D-9).
-    ON: a signed-in user with account country IN (or the per-user toggle / per-question
-    practice_context override) gets IN-boosted ranking, the structural brand-mapping planner
-    context, and the India conflict-protocol compose addendum. OFF → byte-identical."""
-    return os.environ.get("EIGEN_IN_MODE", "").lower() in ("1", "true", "yes")
-
-
 def graph_map_mode() -> str:
     """v3-P1 (default OFF): "llm" → when structural containment finds NO graph topic in the
     question, ONE small vocabulary-aware mapping call resolves synonyms/abbreviations
@@ -204,197 +196,6 @@ async def _map_question_topics(question: str, g) -> list[str]:
         return [t for t in comp.parsed.topics if t in allowed][:2]   # verbatim members only
     except Exception:   # noqa: BLE001
         return []
-
-
-async def _parse_people_intent(q: str, facets: dict, llm=None) -> tuple[dict, str]:
-    """People NL front door (Rule 18: the model owns 'kidney doctor'→nephrology; code owns
-    the search). ONE small LLM call maps the user's words onto the CLOSED facet vocabulary
-    read from the inventory itself; every field is then validated by vocabulary MEMBERSHIP,
-    so nothing the model invents can reach SQL. E-3 holds inside the parse: quality words
-    (best/top/expert) NEVER map to a sort metric. Fail-safe on LLM failure: structural
-    containment over the closed specialty labels only — no heuristic state/city/name guess."""
-    empty = {"specialty": "", "state": "", "city": "", "name": "", "sort_metric": "",
-             "unmatched_specialty": "", "note": ""}
-    specs = facets.get("specialties") or []
-    states = set(facets.get("states") or [])
-    metrics = {m["key"]: m.get("label") or m["key"] for m in (facets.get("metrics") or [])}
-    from pydantic import BaseModel
-
-    class _Intent(BaseModel):
-        specialty: str = ""
-        state: str = ""
-        city: str = ""
-        name: str = ""
-        sort_metric: str = ""
-        unmatched_specialty: str = ""
-        note: str = ""
-
-    system = (
-        "You parse a natural-language people-directory search into facets. The input may "
-        "be a single query or a CONVERSATION TRANSCRIPT — output the CURRENT constraint "
-        "state, honoring the newest statements (the user may relax or change earlier "
-        "constraints; a dropped constraint means that field is \"\"). Fields:\n"
-        '- specialty: exactly one label from SPECIALTY LIST, verbatim, or "". Map lay or '
-        "clinical phrasings to the closest listed label (e.g. a lay word for a specialist "
-        "maps to its listed specialty); prefer a listed sub-specialty when the query names "
-        "one.\n"
-        "- unmatched_specialty: when the user wants a KIND of specialist that maps to NO "
-        "label on SPECIALTY LIST (a different field of practice, not just different "
-        'wording), put their word for it here and leave specialty "". Never force a wrong '
-        "list label.\n"
-        '- state: the 2-letter US state code the query refers to, or "". A well-known city '
-        "may imply its state.\n"
-        '- city: the city named in the query, or "".\n'
-        "- name: a person's name (or fragment) ONLY when the user wants a specific person, "
-        'else "".\n'
-        "- sort_metric: one key from METRIC LIST, verbatim, ONLY when the user explicitly "
-        "asks to order by that measured volume/utilization. Quality words (best, top, "
-        'greatest, leading, expert) are NOT metrics — leave sort_metric "" and explain in '
-        "note that no quality ranking exists.\n"
-        '- note: one short sentence when part of the request could not be honored or was '
-        'ambiguous, else "".\n'
-        'Leave any field "" when unsure — never guess.\n\n'
-        "SPECIALTY LIST:\n" + "\n".join(f"- {s}" for s in specs) +
-        "\n\nMETRIC LIST:\n"
-        + ("\n".join(f"- {k} ({v})" for k, v in metrics.items()) or "- (none available)"))
-    try:
-        comp = await (llm or _graph_map_llm()).complete(
-            system=system, messages=[{"role": "user", "content": q[:2000]}],
-            response_format=_Intent, max_tokens=300)
-        p = comp.parsed
-        by_lower = {s.lower(): s for s in specs}
-        out = dict(empty)
-        out["specialty"] = by_lower.get((p.specialty or "").strip().lower(), "")
-        st = (p.state or "").strip().upper()
-        out["state"] = st if (len(st) == 2 and st.isalpha()
-                              and (not states or st in states)) else ""
-        out["city"] = (p.city or "").strip()[:80]
-        out["name"] = (p.name or "").strip()[:80]
-        out["sort_metric"] = p.sort_metric if p.sort_metric in metrics else ""
-        if not out["specialty"]:
-            out["unmatched_specialty"] = (p.unmatched_specialty or "").strip()[:60]
-        out["note"] = (p.note or "").strip()[:200]
-        if p.sort_metric and p.sort_metric not in metrics:
-            out["note"] = ((out["note"] + " ") if out["note"] else "") + \
-                "Requested ordering has no loaded metric yet."
-        return out, "llm"
-    except Exception:   # noqa: BLE001
-        ql = q.lower()
-        hit = next((s for s in specs if s.lower() in ql), "")
-        out = dict(empty)
-        out["specialty"] = hit
-        out["note"] = ("Intent model unavailable — matched listed specialty labels only."
-                       if hit else
-                       "Intent model unavailable — could not interpret; use the facet fields.")
-        return out, "fallback"
-
-
-async def _people_converse_turn(convo: str, intent: dict, breakdown: dict,
-                                candidates: list[dict], n_asked: int = 0,
-                                llm=None) -> dict:
-    """Phase B of the People concierge: given the conversation, the current facet state,
-    the live match breakdown, and (when few enough) the actual candidate rows, decide ONE
-    move — ask the single question that best splits the remaining set (broadening when 0
-    match), or present up to 5 candidates described ONLY by their recorded facts. E-3 in
-    the prompt AND in code: candidate ids are membership-validated against the fetched
-    rows, so the model can only choose among real matches, never invent or import one.
-    Fail-safe on LLM failure: a counts-based clarify built from the breakdown (structural,
-    no guessing)."""
-    from pydantic import BaseModel
-
-    class _Turn(BaseModel):
-        action: str = "clarify"          # clarify | present
-        message: str = ""
-        candidate_ids: list[str] = []
-
-    by_id = {c["entity_id"]: c for c in candidates}
-    bd_txt = f"total matches: {breakdown['total']}"
-    for k in ("by_specialty", "by_city", "by_state"):
-        vals = breakdown.get(k) or []
-        if vals:
-            bd_txt += f"\n{k}: " + ", ".join(f"{v['value']} ({v['count']})" for v in vals)
-    cand_txt = "\n".join(
-        f"- {c['entity_id']} | {c['name']} | {c['specialty']} | {c['city']}, {c['state']} | "
-        f"{c.get('credential') or 'credential n/a'}"
-        + (f" | metric: {c['sort_value']:,.0f}" if c.get("sort_value") is not None else "")
-        + ((" | affiliations: " + "; ".join(
-            (a.get("name") or a.get("affil_key", "")) for a in c["affiliations"][:3]))
-           if c.get("affiliations") else "")
-        for c in candidates) or "(none match)"
-    system = (
-        "You are the concierge of a professional-specialist directory. Converge on the "
-        "RIGHT specialist(s) for the user's situation in as FEW turns as possible — "
-        "narrowing OR broadening as the situation demands. You see the conversation, the "
-        "CURRENT FILTERS, the live MATCH BREAKDOWN, and (when fetched) CANDIDATES with "
-        "their recorded facts.\n\n"
-        "THE ONLY FILTERS THAT EXIST: specialty (the labels in the breakdown), state, "
-        "exact city, person name. There is NO distance/radius, insurance, availability, "
-        "hospital-affiliation, language, or outcomes filter. NEVER ask a question whose "
-        "answer you cannot filter by — e.g. never ask about travel radius, a 'center "
-        "point', insurance, or which health system. For geography offer exactly: a "
-        "specific city, or the whole state.\n\n"
-        "Choose ONE action:\n"
-        "- present: whenever CANDIDATES are listed and EITHER ≤8 match, OR the user asked "
-        "to see options, OR you have already asked 2 clarifying questions. Pick up to 5 "
-        "candidate_ids whose RECORDED facts fit the situation; introduce each in a few "
-        "words using ONLY those facts (sub-specialty, location, credential, listed "
-        "metrics). If the filters are still broad, say so in one clause and present "
-        "anyway.\n"
-        "- clarify: only when presenting is not yet possible or useful. Ask ONE question, "
-        "chosen to best split the remaining set using the breakdown. If 0 match, say "
-        "PLAINLY what the directory lacks (e.g. the requested specialty or city has no "
-        "listings) and offer the nearest real alternative from the breakdown — never "
-        "loop back to a question you already asked.\n\n"
-        "Hard rules:\n"
-        "- You get at most 2 clarifying questions per conversation. After that, present "
-        "from candidates or state the limitation — never a third question.\n"
-        "- Be terse. Clarify replies: under 40 words, no 'Thanks!', no restating the "
-        "user's words, no repeating counts already shown. Present replies: under 100 "
-        "words.\n"
-        "- NEVER use quality words: best, top, expert, leading, recommended, greatest, "
-        "renowned. The directory records public facts; it does not rank quality.\n"
-        "- NEVER state anything about a person that is not in their candidate row, and "
-        "never name organizations, practices, or health systems unless they appear in "
-        "the data given to you.\n"
-        "- candidate_ids must be ids from CANDIDATES; leave empty when clarifying.\n"
-        "- NEVER name a specific person in message without action=present and their id in "
-        "candidate_ids — profiles, contacts, and the referral network only open through "
-        "candidate_ids, so names in prose alone are dead ends for the user.\n"
-        "- message: plain conversational text, no markdown headers.")
-    user = (f"{convo}\n\nCURRENT FILTERS: "
-            + (", ".join(f"{k}={v}" for k, v in intent.items()
-                         if v and k not in ("note", "unmatched_specialty")) or "(none)")
-            + f"\n\nMATCH BREAKDOWN:\n{bd_txt}\n\nCANDIDATES:\n{cand_txt}"
-            + f"\n\nClarifying questions you have already asked: {n_asked}."
-            + (" LIMIT REACHED — you MUST present from candidates or state the "
-               "limitation; do NOT ask another question." if n_asked >= 2 else ""))
-    try:
-        comp = await (llm or _graph_map_llm()).complete(
-            system=system, messages=[{"role": "user", "content": user[:12000]}],
-            response_format=_Turn, max_tokens=700)
-        t = comp.parsed
-        ids = [i for i in (t.candidate_ids or []) if i in by_id][:5]
-        if not ids and candidates:
-            # The model reliably names people in prose while leaving candidate_ids empty
-            # (two prod runs). Names come from OUR closed candidate list, so recover them
-            # structurally — exact containment, not interpretation (Rule 18 structural
-            # carve-out) — and the ids-are-authoritative rule below flips this to present.
-            ml = (t.message or "").lower()
-            ids = [c["entity_id"] for c in candidates if c["name"].lower() in ml][:5]
-        # ids are authoritative: returning valid ids IS presenting (a model that names
-        # people but declares clarify would leave the user with unclickable prose)
-        action = "present" if ids else "clarify"
-        return {"action": action, "message": (t.message or "").strip()[:1500],
-                "candidates": [by_id[i] for i in ids]}
-    except Exception:   # noqa: BLE001
-        n = breakdown["total"]
-        top = ", ".join(v["value"] for v in (breakdown.get("by_city") or [])[:3])
-        msg = ("No one matches the current filters — try relaxing the city or "
-               "sub-specialty." if n == 0 else
-               f"{n} specialists match the current filters"
-               + (f" (most in {top})" if top else "")
-               + ". Add a city or describe the situation to narrow down.")
-        return {"action": "clarify", "message": msg, "candidates": []}
 
 
 def _graph_store():
@@ -475,59 +276,6 @@ def stream_enabled() -> bool:
     """Flag (default OFF, Rule 20): when ON, /research/stream serves live SSE progress events
     (searching/found/verifying/composing → final). OFF → the endpoint 404s; /research unchanged."""
     return os.environ.get("EIGEN_STREAM", "").lower() in ("1", "true", "yes")
-
-
-def country_scope_enabled() -> bool:
-    """Flag (default OFF, Rule 20): when ON, a request may scope retrieval to a source country via
-    `countries` (hard filter on the `source_country` facet). OFF → `countries` is ignored and NO facet
-    is applied (byte-identical to today). MUST NOT be flipped on in prod until every block is tagged
-    with source_country (else a scoped query returns empty — the legacy-null-excluded trap)."""
-    return os.environ.get("EIGEN_COUNTRY_SCOPE", "").lower() in ("1", "true", "yes")
-
-
-def country_boost_enabled() -> bool:
-    """Flag (default OFF, Rule 20): when ON, a request's `countries` BOOSTS that region's evidence in
-    ranking (region-specific findings surface) WITHOUT filtering out the global evidence base — the
-    'relevant yet not limiting' path. Boost-only; no null-exclusion trap. OFF → `countries` drives no
-    boost (byte-identical). Independent of EIGEN_COUNTRY_SCOPE (the hard filter)."""
-    return os.environ.get("EIGEN_COUNTRY_BOOST", "").lower() in ("1", "true", "yes")
-
-
-def _country_boost(countries: list[str] | None):
-    """Selected countries → a boost set (e.g. {"IN"}) when the boost flag is on, else None (no-op)."""
-    if not country_boost_enabled():
-        return None
-    codes = {c["code"] for c in AVAILABLE_COUNTRIES}   # list of dicts — set(...) of it raises
-    valid = {c for c in (countries or []) if c in codes}
-    return valid or None
-
-
-def modality_mode_enabled() -> bool:
-    """Flag (default OFF, Rule 20): when ON, a request may select a therapy MODALITY — 'allopathic'
-    (default = Modern Medicine) or 'alternative' (acupuncture / complementary & alternative medicine).
-    Allopathic EXCLUDES modality=alternative blocks so CAM never leaks into the modern-medicine view;
-    Alternative surfaces the CAM corpus WITH conventional context + mandatory evidence-strength/safety
-    labeling. OFF → `modality` is ignored, no modality facet is applied (byte-identical to today).
-    Safe to flip on WITHOUT a corpus backfill: the default uses an EXCLUSION facet (untagged blocks
-    pass), so only blocks explicitly tagged modality=alternative are ever filtered."""
-    return os.environ.get("EIGEN_MODALITY_MODE", "").lower() in ("1", "true", "yes")
-
-
-# Selectable therapy modalities, echoed to /config when the flag is on (UI renders the toggle from this).
-AVAILABLE_MODALITIES = [
-    {"code": "allopathic", "label": "Modern Medicine"},
-    {"code": "alternative", "label": "Alternative"},
-]
-
-
-def _modality_exclude(modality: str | None) -> dict:
-    """Default (Allopathic) EXCLUDES CAM so the modern-medicine view never surfaces alternative-therapy
-    evidence. Alternative applies NO exclusion (CAM surfaces alongside conventional context). Off-flag →
-    {} (byte-identical). EXCLUSION-based, so no whole-corpus modality backfill is required."""
-    if not modality_mode_enabled():
-        return {}
-    m = (modality or "allopathic").strip().lower()
-    return {} if m == "alternative" else {"modality": ("alternative",)}
 
 
 def effort_scale_enabled() -> bool:
@@ -812,26 +560,6 @@ def _resolve_audience(audience: str | None) -> str:
     return "clinician"
 
 
-# Available source countries, echoed to /config when the flag is on (UI renders the toggle from this).
-AVAILABLE_COUNTRIES = [{"code": "US", "label": "United States"}, {"code": "IN", "label": "India"}]
-
-
-def _country_facets(countries: list[str] | None) -> dict:
-    """Map a selected-country list → the hard retrieval facet, ALWAYS including 'global' so shared
-    literature/trials are searched alongside the country's own sources. Off-flag or empty → {} (no
-    filter, byte-identical). Only known country codes are honored (unknown → ignored).
-    MUTUAL EXCLUSION (IN-spec D-4): when the country BOOST is on, the hard scope FILTER is
-    disabled — boost-and-filter together silently blinds retrieval to the global evidence base
-    (the boost already surfaces region evidence without excluding anything)."""
-    if not country_scope_enabled() or country_boost_enabled():
-        return {}
-    valid = {c["code"] for c in AVAILABLE_COUNTRIES}
-    picked = tuple(c for c in (countries or []) if c in valid)
-    if not picked:
-        return {}
-    return {"source_country": picked + ("global",)}
-
-
 def conversation_enabled() -> bool:
     """Flag (default OFF, Rule 20): when ON, answers become a multi-turn thread — follow-up
     questions carry prior turns as context, the thread persists on one session, and suggested
@@ -857,10 +585,7 @@ class ResearchIn(BaseModel):
     integrative: bool = False             # per-question opt-in: complementary/integrative section (flag-gated)
     history: list[dict] | None = None     # prior turns [{question, answer}] → follow-up context
     session_id: str | None = None         # thread to append this turn to (conversation)
-    countries: list[str] | None = None    # source-country scope (e.g. ["IN"]); None/[]=all (see flag)
-    modality: str = "allopathic"          # "allopathic" (default, excludes CAM) | "alternative"; ignored unless flag on
     intake_transcript: list[dict] | None = None  # Guided-intake conversation [{role,text}] → saved for admin audit
-    practice_context: str = ""            # per-question profile override: "IN" | "global" | "" (account default)
     effort: float = Field(default=1.0, ge=1.0, le=2.5)   # effort multiplier; ignored unless flag on
     audience: str = "clinician"           # "clinician" (default) | "patient"; ignored unless flag on
 
@@ -967,13 +692,8 @@ class GapQueueIn(BaseModel):
 class CorpusIngestIn(BaseModel):
     """Bulk prod-direct ingest — the replacement for local download + push. Enqueues connector
     jobs into the corpus queue that the prod processor drains straight into the prod corpus."""
-    conditions: list[str] = []             # each → a clinicaltrials + a europepmc job
-    trials: int = 300                      # per-condition trial limit
-    papers: int = 150                      # per-condition literature limit
-    faers_drugs: list[str] = []            # each → a faers adverse-event job
-    jobs: list[dict] = []                  # explicit passthrough {connector, query, limit, ...}
-    source_country: str = ""               # stamp every block from this batch (e.g. "IN" for India sources)
-    modality: str = ""                     # stamp every block from this batch (e.g. "alternative" for CAM)
+    jobs: list[dict] = []                  # explicit passthrough {connector, query, limit, facets, ...}
+    source_country: str = ""               # optional per-batch facet stamp on every ingested block
 
 
 class PulseEventIn(BaseModel):
@@ -1035,7 +755,6 @@ class ResearchOut(BaseModel):
     resolved_question: str | None = None  # condensed follow-up question, if it differed (flag on only)
     clarification: str | None = None      # a clarifying question when the follow-up was ambiguous
     derived_from_prior: bool = False      # answer is a reshape of the previous answer (no new evidence)
-    profile: str = ""                     # resolved practice profile ("IN" | "") — server-authoritative echo
     charts: list = []                     # validated grounded bar charts (empty unless the flag is on)
     interpretation: list = []             # validated reasoning-read factors (empty unless the flag is on)
     confidence: dict | None = None        # 3-dimension confidence read (None unless the flag is on)
@@ -1224,23 +943,7 @@ async def _gap_processor_loop(dsn: str, vertical: str) -> None:
         except Exception:
             await asyncio.sleep(10); continue
         if job is None:
-            # WEEKLY retraction sweep, replica-safe via the DB clock (runs on the idle path so it
-            # never delays a queued ingest; free — Europe PMC API only).
             if currency is not None:
-                try:
-                    import datetime as _dt
-                    st = await currency.get_state("last_retraction_sweep") or {}
-                    last = st.get("at", "")
-                    due = (not last or (_dt.datetime.now(_dt.timezone.utc)
-                           - _dt.datetime.fromisoformat(last)).days >= 7)
-                    if due:
-                        await currency.set_state("last_retraction_sweep",
-                            {"at": _dt.datetime.now(_dt.timezone.utc).isoformat()})
-                        from noesis_vertical_medical.retractions import retraction_lineage
-                        doc_ids = await currency.list_document_ids(prefix="europepmc:")
-                        await currency.sweep_declared(await retraction_lineage(doc_ids))
-                except Exception:   # noqa: BLE001 — the admin scan remains the manual backstop
-                    pass
                 # DAILY recreatability backup → R2 (same replica-safe idle-path pattern):
                 # every irreplaceable table + corpus text, so a total DB loss restores
                 # from the bucket alone (scripts/restore_from_backup.py).
@@ -1270,17 +973,14 @@ async def _gap_processor_loop(dsn: str, vertical: str) -> None:
             await q.fail(job["id"], f"unknown connector {job['connector']}"); continue
         try:
             # a job may stamp generic facet overrides (e.g. {"sector":"ai"}) on everything it ingests,
-            # plus the legacy source_country / modality stamps.
+            # plus the legacy source_country stamp.
             _ov = {}
             _jf = job.get("facets") or {}
             if isinstance(_jf, dict):
                 _ov.update({k: v for k, v in _jf.items() if v})
             sc = job.get("source_country")
-            mod = job.get("modality")
             if sc:
                 _ov["source_country"] = sc
-            if mod:
-                _ov["modality"] = mod        # e.g. "alternative" → the CAM corpus, excluded from the default view
             n = await ingest_connector_to_postgres(
                 conn, pg, tenant_id=job["tenant_id"], embedder=embedder,
                 window={"query": job["query"], "limit": job["limit"]},
@@ -1298,7 +998,7 @@ async def _gap_processor_loop(dsn: str, vertical: str) -> None:
 
 
 def create_app(service: ResearchService | None = None) -> FastAPI:
-    app = FastAPI(title="Noesis Research", version="0")
+    app = FastAPI(title="Eigen Research", version="0")
     app.state.service = service   # lazily built on first request if None
 
     def _store():
@@ -1472,10 +1172,6 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "voice_tts_neural": (voice_intake_enabled() and live_triage
                                  and bool(os.environ.get("OPENAI_API_KEY"))),
             "stream_enabled": stream_enabled(),
-            "country_scope_enabled": country_scope_enabled(),
-            "countries": AVAILABLE_COUNTRIES if country_scope_enabled() else [],
-            "modality_mode_enabled": modality_mode_enabled() and bool(getattr(svc, "alt_directive", None)),
-            "modalities": AVAILABLE_MODALITIES if modality_mode_enabled() else [],
             "effort_scale_enabled": effort_scale_enabled(),
             "effort_stops": EFFORT_STOPS if effort_scale_enabled() else [],
             "patient_mode_enabled": patient_mode_enabled(),
@@ -1498,7 +1194,6 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "pulse_enabled": pulse_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "graph_enabled": graph_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "graph_expand": graph_expand_mode(),
-            "in_mode_enabled": in_mode_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "accounts_enabled": accounts_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "duel_enabled": live_duel and bool(getattr(svc, "reasoned_answer_format", None)),
             "integrative_enabled": (await _flag_live("integrative_enabled")) and bool(getattr(svc, "integrative_prompt", None)),
@@ -1555,7 +1250,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         from fastapi.responses import Response
         if fname not in _HTML_CACHE:
             page = _WEB_DIR / fname
-            raw = page.read_bytes() if page.exists() else b"<h1>Noesis</h1>"
+            raw = page.read_bytes() if page.exists() else b"<h1>Eigen</h1>"
             _HTML_CACHE[fname] = (raw, _gzip.compress(raw, 6))
         raw, gz = _HTML_CACHE[fname]
         if "gzip" in (accept_encoding or "").lower():
@@ -1580,38 +1275,11 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         return FileResponse(str(f), media_type="image/png",
                             headers={"Cache-Control": "public, max-age=604800"})
 
-    async def _resolve_profile(token: str, body: ResearchIn) -> str:
-        """Server-authoritative practice profile (IN-spec D-7). Precedence: per-question
-        override > per-user preference > account country. Fail-safe: flag off / no token /
-        store off / any error → "" (global). Never raises."""
-        if not in_mode_enabled():
-            return ""
-        pc = (body.practice_context or "").strip().lower()
-        if pc == "global":
-            return ""
-        if pc in ("in", "india"):
-            return "IN"
-        store = _accounts()
-        if store is None or not token:
-            return ""
-        try:
-            user = await store.user_by_token(token)
-            if not user:
-                return ""
-            pref = await store.get_pref(user["id"], "in_mode")
-            if pref == "on":
-                return "IN"
-            if pref == "off":
-                return ""
-            return "IN" if (user.get("country") or "").strip().upper() in ("IN", "INDIA") else ""
-        except Exception:   # noqa: BLE001
-            return ""
-
     @app.post("/research", response_model=ResearchOut)
     async def research(body: ResearchIn,
-                       x_noesis_token: str = Header(default="")) -> ResearchOut:
+                       x_eigen_token: str = Header(default="")) -> ResearchOut:
         try:
-            return await _do_research(body, token=x_noesis_token)
+            return await _do_research(body, token=x_eigen_token)
         except CassetteMiss as e:
             raise HTTPException(status_code=503, detail=(
                 "No model available in replay mode. Set EIGEN_PROVIDER_MODE=live "
@@ -1824,46 +1492,16 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             hint = getattr(svc_, "integrative_query_hint", None)
             if hint:
                 _q = body.question + "\n\n[" + hint + "]"
-        # per-question MODALITY (flag-gated). Allopathic (default) EXCLUDES CAM (via _exclude below);
-        # Alternative surfaces the CAM corpus WITH conventional context — steer retrieval (alt query
-        # hint) + mandate evidence-strength/safety labeling (alt directive). No persisted-question change.
-        _exclude = _modality_exclude(getattr(body, "modality", "allopathic"))
-        if modality_mode_enabled() and (getattr(body, "modality", "") or "").strip().lower() == "alternative":
-            svc_ = app.state.service
-            _alt_dir = getattr(svc_, "alt_directive", None)
-            _alt_hint = getattr(svc_, "alt_query_hint", None)
-            if _alt_hint:
-                _q = _q + "\n\n[" + _alt_hint + "]"
-            if _alt_dir:
-                _extra = (_extra + "\n\n" + _alt_dir) if _extra else _alt_dir
-        # Noesis IN (D-7/D-9, dark behind EIGEN_IN_MODE): resolved profile flips —
-        # IN ranking boost · structural brand-mapping planner context · conflict addendum.
-        profile = await _resolve_profile(token, body)
-        _countries, _qctx = body.countries, None
-        if profile == "IN":
-            _countries = sorted(set(body.countries or []) | {"IN"})
-            prof = (getattr(load_active_vertical(), "country_profiles", {}) or {}).get("IN") or {}
-            try:
-                _qctx = (prof.get("context_fn") or (lambda q: ""))(body.question) or None
-            except Exception:   # noqa: BLE001 — brand mapping is best-effort framing
-                _qctx = None
-            _dir = prof.get("directive")
-            if _dir:
-                _extra = (_extra + "\n\n" + _dir) if _extra else _dir
         res = await _ask(
             question=_q, tenant_id=body.tenant_id,
             workspace_id=body.workspace_id, source_keys=body.sources,
             images=images, documents=docs, pdf_docs=pdfs, history=history, on_event=on_event,
-            facets=({} if profile == "IN" else _country_facets(_countries)),   # D-4: never hard-filter in IN mode
-            country_boost=(({"IN"} | (_country_boost(_countries) or set()))
-                           if profile == "IN" else _country_boost(_countries)),
-            exclude_facets=_exclude,       # Allopathic default keeps CAM out; Alternative → {} (no exclusion)
-            effort=effort, audience=audience, question_context=_qctx,
+            effort=effort, audience=audience,
             answer_focus=focus, clarify=followup_clarify_enabled(), extra_directive=_extra)
         # Ambiguous follow-up → return the clarifying question; no research ran, nothing to persist.
         if getattr(res, "clarification", ""):
             return ResearchOut(grounded=False, answer="", claims=[], coverage_gaps=[], rejected=0,
-                               clarification=res.clarification, profile=profile)
+                               clarification=res.clarification)
         ui = getattr(app.state.service, "ui", None)
         def _url(c):
             fn = getattr(ui, "source_url", None)
@@ -1907,11 +1545,9 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 # on the session turn (JSONB thread — additive field, no migration). Only present
                 # when a contract was actually derived (EIGEN_QUESTION_CONTRACT shadow/steer).
                 turn["question_contract"] = res.question_contract
-            # Audit fields (additive JSONB): the evidence MODALITY this ran in, and — when the question
-            # came from Guided intake — the intake CONVERSATION transcript (shown only to a logged-in admin).
+            # Audit field (additive JSONB): when the question came from Guided intake, the intake
+            # CONVERSATION transcript (shown only to a logged-in admin).
             _extra = {}
-            if modality_mode_enabled() and (getattr(body, "modality", "") or "").strip().lower() == "alternative":
-                _extra["modality"] = "alternative"
             if getattr(body, "intake_transcript", None):
                 _extra["intake_transcript"] = [
                     {"role": (m.get("role") or "")[:12], "text": (m.get("text") or "")[:2000]}
@@ -1954,7 +1590,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                         _pdiag, kind="qa", grounded=res.grounded, claims=len(claims),
                         rejected=len(res.rejected_claims), stopped_reason=res.stopped_reason,
                         effort=(res.effort if effort_scale_enabled() else None),
-                        audience=audience, modality=(getattr(body, "modality", "") or "")))
+                        audience=audience))
                 except Exception:
                     pass
         return ResearchOut(
@@ -1974,11 +1610,10 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             reasoning_purpose=(getattr(res, "reasoning_purpose", "") if reasoning_read_enabled() else ""),
             reasoning_conclusion=(getattr(res, "reasoning_conclusion", "") if reasoning_read_enabled() else ""),
             diagnostics=(getattr(res, "diagnostics", None) if diag_trace_enabled() else None),
-            profile=profile,
         )
 
     @app.post("/research/stream")
-    async def research_stream(body: ResearchIn, x_noesis_token: str = Header(default="")):
+    async def research_stream(body: ResearchIn, x_eigen_token: str = Header(default="")):
         """Live SSE progress for a research request: emits step/search/found/verifying/composing
         events as the ReAct loop runs, then a `final` event carrying the full ResearchOut. Progress
         events are read-only (never unverified claims); persistence + the final payload happen once
@@ -1995,7 +1630,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             # Runs to completion regardless of client connections — the session PERSISTS server-side,
             # and every event lands in the run buffer for any number of (re)connecting readers.
             try:
-                out = await _do_research(body, on_event=on_event, token=x_noesis_token)
+                out = await _do_research(body, on_event=on_event, token=x_eigen_token)
                 _sse_push(run, {"type": "final", "result": out.model_dump()})
             except CassetteMiss:
                 _sse_push(run, {"type": "error", "detail": "No model available in replay mode."})
@@ -2102,9 +1737,9 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             resp = await app.state.tts_client.audio.speech.create(
                 model="gpt-4o-mini-tts", voice="ash", input=text, response_format="mp3",
                 instructions=(
-                    "Speak as a warm, unhurried, reassuring clinician talking with a worried "
-                    "patient: calm male register, gentle pace with natural pauses, kind and "
-                    "steady. Never rushed, never chirpy, never salesy."))
+                    "Speak as a warm, unhurried, reassuring analyst talking with someone "
+                    "seeking answers: calm male register, gentle pace with natural pauses, kind "
+                    "and steady. Never rushed, never chirpy, never salesy."))
             audio = getattr(resp, "content", None)
             if not isinstance(audio, (bytes, bytearray)):
                 audio = await resp.aread()
@@ -2362,10 +1997,10 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
 
     @app.post("/admin/corpus/ingest")
     async def admin_corpus_ingest(body: CorpusIngestIn, x_admin_token: str = Header(default="")) -> dict:
-        """Bulk prod-direct ingest — replaces 'download locally + push to prod'. Expands conditions
-        into clinicaltrials + europepmc jobs (and FAERS drugs into adverse-event jobs), validates
-        against the real connector set, and enqueues them for the prod processor. Guarded by
-        EIGEN_ADMIN_TOKEN when set (this endpoint spends credits + mutates the corpus)."""
+        """Bulk prod-direct ingest — replaces 'download locally + push to prod'. Validates the
+        supplied connector jobs against the real connector set and enqueues them for the prod
+        processor. Guarded by EIGEN_ADMIN_TOKEN when set (this endpoint spends credits + mutates
+        the corpus)."""
         if not gap_healing_enabled():
             raise HTTPException(status_code=404, detail="corpus ingestion not enabled")
         want = os.environ.get("EIGEN_ADMIN_TOKEN", "")
@@ -2379,21 +2014,6 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         allowed = set(app.state.service.connectors.keys())
         cap = lambda n, d: max(1, min(int(n or d), 400))
         jobs: list[dict] = []
-        for cond in body.conditions:
-            c = (cond or "").strip()
-            if not c:
-                continue
-            if "clinicaltrials" in allowed:
-                jobs.append({"connector": "clinicaltrials", "query": c, "limit": cap(body.trials, 300),
-                             "kind": "trials", "quality": "batch"})
-            if "europepmc" in allowed:
-                jobs.append({"connector": "europepmc", "query": c, "limit": cap(body.papers, 150),
-                             "kind": "literature", "quality": "batch"})
-        for drug in body.faers_drugs:
-            d = (drug or "").strip()
-            if d and "faers" in allowed:
-                jobs.append({"connector": "faers", "query": d, "limit": 200,
-                             "kind": "adverse events", "quality": "batch"})
         for j in body.jobs or []:
             c = (j.get("connector") or "").strip()
             query = (j.get("query") or "").strip()
@@ -2404,54 +2024,16 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                              "facets": {str(k): str(v) for k, v in (_jf or {}).items() if v}})
         if not jobs:
             raise HTTPException(status_code=400, detail="no valid jobs (unknown connector or empty inputs)")
-        # a batch-level source_country / modality stamps every job's blocks (per-job override wins)
+        # a batch-level source_country stamps every job's blocks (per-job override wins)
         sc = (body.source_country or "").strip()
         if sc:
             for jb in jobs:
                 jb.setdefault("source_country", sc)
-        mod = (body.modality or "").strip().lower()
-        if mod:
-            for jb in jobs:
-                jb.setdefault("modality", mod)
         try:
             ids = await q.enqueue(tenant_id="demo", question="admin bulk ingest", jobs=jobs)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"queue error: {e}") from e
         return {"queued": len(ids), "jobs": len(jobs)}
-
-    # Default CAM-journal name patterns (STRUCTURAL — classifies the SOURCE journal, not article
-    # content; Rule 18). Matched case-insensitively against the block's `journal` facet.
-    _CAM_JOURNAL_PATTERNS = [
-        "%complement%", "%acupunct%", "%altern% med%", "%integr% med%", "%ethnopharmacol%",
-        "%homeopath%", "%ayurved%", "%chin% med%", "%tradit% med%", "%moxibust%", "%naturopath%",
-        "%phytother%", "%herbal%", "%holist% nurs%", "%meridian%",
-    ]
-
-    @app.post("/admin/corpus/tag-modality")
-    async def admin_tag_modality(body: dict, x_admin_token: str = Header(default="")) -> dict:
-        """Retro-tag pre-existing CAM-journal blocks so the default (Allopathic) view stops surfacing
-        them (they move to Alternative). STRUCTURAL: matches the block's `journal` facet against
-        CAM-journal NAME patterns — it classifies the source journal, never the article's meaning
-        (Rule 18). DRY RUN by default (`apply` omitted/false) — returns the matching journals + counts
-        so the sources can be reviewed BEFORE any mutation. Never overwrites an existing modality."""
-        want = os.environ.get("EIGEN_ADMIN_TOKEN", "")
-        if want and x_admin_token != want:
-            raise HTTPException(status_code=401, detail="admin token required")
-        if not modality_mode_enabled():
-            raise HTTPException(status_code=404, detail="modality mode not enabled")
-        if app.state.service is None:
-            app.state.service = build_default_service()
-        svc = app.state.service
-        corpus = svc.sources.get(getattr(svc, "corpus_source_key", "")) if svc.sources else None
-        if corpus is None or not hasattr(corpus, "tag_modality_by_journal"):
-            raise HTTPException(status_code=404, detail="no taggable corpus source")
-        patterns = body.get("patterns") or _CAM_JOURNAL_PATTERNS
-        modality = (body.get("modality") or "alternative").strip().lower()
-        apply = bool(body.get("apply"))
-        try:
-            return await corpus.tag_modality_by_journal(patterns=patterns, modality=modality, apply=apply)
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"tag error: {e}") from e
 
     @app.post("/admin/glossary/sanitize")
     async def admin_glossary_sanitize(x_admin_token: str = Header(default="")) -> dict:
@@ -2489,54 +2071,6 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             return await cur.sweep_declared(list(getattr(manifest, "lineage", ()) or ()))
         except Exception as e:   # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"pulse scan failed: {e}") from e
-
-    @app.post("/admin/pulse/retraction-scan")
-    async def admin_pulse_retraction_scan(x_admin_token: str = Header(default="")) -> dict:
-        """Start a BACKGROUND sweep of the corpus's Europe PMC holdings against publisher-declared
-        retractions (P1's first real detector — structural, zero-LLM). Backgrounded because ~25
-        batched API calls outlive the edge's request window (a synchronous scan gets its response
-        cut). Poll GET /admin/pulse/retraction-scan for the result; retracted papers get
-        auto-approved `retracted` events (publisher fact = high confidence, A4) and their blocks
-        are excluded from grounding."""
-        cur = _pulse_admin_gate(x_admin_token)
-        state = await cur.get_state("retraction_scan")
-        if state and state.get("status") == "running":
-            return {"status": "already_running", "started_at": state.get("started_at")}
-        import datetime as _dt
-        await cur.set_state("retraction_scan", {"status": "running",
-                            "started_at": _dt.datetime.utcnow().isoformat() + "Z"})
-
-        async def _run():
-            try:
-                from noesis_vertical_medical.retractions import retraction_lineage
-            except Exception:   # noqa: BLE001 — retraction lineage is a medical-vertical feature; absent for others
-                return
-            try:
-                doc_ids = await cur.list_document_ids(prefix="europepmc:")
-                relations = await retraction_lineage(doc_ids)
-                result = await cur.sweep_declared(relations)
-                # A5: a newly retracted document may be the evidence under graph edges —
-                # demote them in the same sweep (best-effort; never fails the scan).
-                if relations and _graph() is not None:
-                    try:
-                        result = {**result, **(await _graph_invalidate(_graph()))}
-                    except Exception:   # noqa: BLE001
-                        pass
-                await cur.set_state("retraction_scan", {"status": "done",
-                                    "checked": len(doc_ids),
-                                    "retracted_found": len(relations), **result,
-                                    "finished_at": _dt.datetime.utcnow().isoformat() + "Z"})
-            except Exception as e:   # noqa: BLE001
-                await cur.set_state("retraction_scan", {"status": "failed", "error": str(e)[:300]})
-
-        app.state.pulse_scan_task = asyncio.create_task(_run())   # ref kept → not GC'd
-        return {"status": "started"}
-
-    @app.get("/admin/pulse/retraction-scan")
-    async def admin_pulse_retraction_status(x_admin_token: str = Header(default="")) -> dict:
-        """Status/result of the latest retraction sweep — DB-backed (replica-safe)."""
-        cur = _pulse_admin_gate(x_admin_token)
-        return (await cur.get_state("retraction_scan")) or {"status": "never_run"}
 
     @app.post("/admin/pulse/detect")
     async def admin_pulse_detect(x_admin_token: str = Header(default="")) -> dict:
@@ -2753,254 +2287,6 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         cur = _currency()
         return (await cur.get_state("last_backup")) if cur else {"note": "no state store"}
 
-    def _people():
-        """PeopleStore (Frontier People / 'People' in UI). None unless DSN + flag."""
-        if getattr(app.state, "people", "unset") == "unset":
-            dsn = os.environ.get("EIGEN_CORPUS_DSN")
-            if dsn and os.environ.get("EIGEN_PEOPLE", "").lower() in ("1", "true", "yes"):
-                from eigen_kernel.people import PeopleStore
-                app.state.people = PeopleStore(dsn)
-            else:
-                app.state.people = None
-        return app.state.people
-
-    @app.post("/admin/people/load-nppes")
-    async def admin_people_load_nppes(x_admin_token: str = Header(default="")) -> dict:
-        """SERVER-SIDE NPPES fetch+load (admin token): CMS's edge denies non-US clients, so
-        the US-region container downloads the monthly zip and stream-loads the pilot
-        specialties. Background; poll GET (state in noesis_pulse_state 'nppes_load')."""
-        want = os.environ.get("EIGEN_ADMIN_TOKEN", "")
-        if want and x_admin_token != want:
-            raise HTTPException(status_code=401, detail="admin token required")
-        dsn = os.environ.get("EIGEN_CORPUS_DSN")
-        if not dsn or _people() is None:
-            raise HTTPException(status_code=503, detail="needs EIGEN_CORPUS_DSN + EIGEN_PEOPLE")
-        from api import people_load
-        cur = _currency()
-
-        async def _prog(msg: str) -> None:
-            if cur:
-                await cur.set_state("nppes_load", {"status": "running", "note": msg})
-
-        async def _run() -> None:
-            import datetime as _dt
-            try:
-                url = await people_load.find_zip_url()
-                await _prog(f"downloading {url.rsplit('/', 1)[-1]}")
-                await people_load.download_zip(url, "/tmp/nppes.zip", progress=_prog)
-                await _prog("download done — streaming load")
-                res = await people_load.load_from_zip(
-                    "/tmp/nppes.zip", dsn,
-                    _dt.date.today().replace(day=1).isoformat(), progress=_prog)
-                ps = _people()
-                if ps:
-                    ps.invalidate_facets()   # new labels must reach the NL parser's vocab
-                if cur:
-                    await cur.set_state("nppes_load", {"status": "done", **res})
-            except Exception as e:   # noqa: BLE001
-                if cur:
-                    await cur.set_state("nppes_load", {"status": "failed",
-                                                       "error": str(e)[:300]})
-        app.state.nppes_task = asyncio.create_task(_run())
-        return {"status": "started"}
-
-    @app.get("/admin/people/load-nppes")
-    async def admin_people_load_status(x_admin_token: str = Header(default="")) -> dict:
-        want = os.environ.get("EIGEN_ADMIN_TOKEN", "")
-        if want and x_admin_token != want:
-            raise HTTPException(status_code=401, detail="admin token required")
-        cur = _currency()
-        return (await cur.get_state("nppes_load")) if cur else {"note": "no state store"}
-
-    @app.post("/admin/people/load-cms")
-    async def admin_people_load_cms(body: dict,
-                                    x_admin_token: str = Header(default="")) -> dict:
-        """SERVER-SIDE CMS load (admin token; CMS geo-blocks non-US clients like NPPES).
-        body {"part": "dac"|"facility"|"utilization"} — group-practice affiliations +
-        telehealth, hospital affiliations by CCN with Care Compare names, and Medicare
-        by-provider volume metrics. Background; poll GET ?part=... (pulse-state
-        'cms_load_<part>')."""
-        want = os.environ.get("EIGEN_ADMIN_TOKEN", "")
-        if want and x_admin_token != want:
-            raise HTTPException(status_code=401, detail="admin token required")
-        dsn = os.environ.get("EIGEN_CORPUS_DSN")
-        if not dsn or _people() is None:
-            raise HTTPException(status_code=503, detail="needs EIGEN_CORPUS_DSN + EIGEN_PEOPLE")
-        from api import people_cms
-        part = str(body.get("part") or "")
-        if part not in people_cms.LOADERS:
-            raise HTTPException(status_code=400,
-                                detail=f"part must be one of {sorted(people_cms.LOADERS)}")
-        cur = _currency()
-        key = f"cms_load_{part}"
-
-        async def _prog(msg: str) -> None:
-            if cur:
-                await cur.set_state(key, {"status": "running", "note": msg})
-
-        async def _run() -> None:
-            try:
-                res = await people_cms.LOADERS[part](dsn, progress=_prog)
-                ps = _people()
-                if ps:
-                    ps.invalidate_facets()   # metric keys must reach the NL parser's vocab
-                if cur:
-                    await cur.set_state(key, {"status": "done", **res})
-            except Exception as e:   # noqa: BLE001
-                if cur:
-                    await cur.set_state(key, {"status": "failed", "error": str(e)[:300]})
-        app.state.cms_task = asyncio.create_task(_run())
-        return {"status": "started", "part": part}
-
-    @app.get("/admin/people/load-cms")
-    async def admin_people_load_cms_status(part: str = "dac",
-                                           x_admin_token: str = Header(default="")) -> dict:
-        want = os.environ.get("EIGEN_ADMIN_TOKEN", "")
-        if want and x_admin_token != want:
-            raise HTTPException(status_code=401, detail="admin token required")
-        cur = _currency()
-        return (await cur.get_state(f"cms_load_{part}")) if cur else {"note": "no state store"}
-
-    @app.get("/admin/people/search")
-    async def admin_people_search(specialty: str = "", state: str = "", city: str = "",
-                                  name: str = "", sort_metric: str = "",
-                                  metric_period: str = "", limit: int = 50,
-                                  x_admin_password: str = Header(default="")) -> dict:
-        """People search (ADMIN-ONLY per E-1 until discipline data lands). E-3: results are
-        name-ordered unless the CALLER explicitly picks sort_metric — the UI forces that
-        choice; no default ranking, no composite scores, banned-vocabulary-free."""
-        if x_admin_password != _admin_ui_pw():
-            raise HTTPException(status_code=401, detail="bad admin password")
-        ps = _people()
-        if ps is None:
-            raise HTTPException(status_code=404, detail="people not enabled (EIGEN_PEOPLE)")
-        try:
-            rows = await ps.search(specialty=specialty, state=state, city=city, name=name,
-                                   sort_metric=sort_metric, metric_period=metric_period,
-                                   limit=limit)
-            return {"results": rows, "stats": await ps.stats(),
-                    "sorted_by": sort_metric or "name (neutral — no ranking)"}
-        except Exception as e:   # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"people search failed: {e}") from e
-
-    @app.post("/admin/people/ask")
-    async def admin_people_ask(body: dict, x_admin_password: str = Header(default="")) -> dict:
-        """NL front door for People: one small LLM call parses the user's words into the
-        closed facet vocabulary (_parse_people_intent), then the SAME indexed facet search
-        runs. The interpretation is echoed back so the UI shows exactly how the question was
-        read (editable chips). E-3 holds: sort only when the user explicitly named a loaded
-        volume metric; 'best/top' never ranks. Fallback parses with NO usable facet return
-        an empty result set rather than an arbitrary unfaceted page."""
-        if x_admin_password != _admin_ui_pw():
-            raise HTTPException(status_code=401, detail="bad admin password")
-        ps = _people()
-        if ps is None:
-            raise HTTPException(status_code=404, detail="people not enabled (EIGEN_PEOPLE)")
-        q = (str(body.get("q") or "")).strip()[:400]
-        if not q:
-            raise HTTPException(status_code=400, detail="missing q")
-        try:
-            intent, parser = await _parse_people_intent(q, await ps.facet_values())
-            faceted = any(intent[k] for k in ("specialty", "state", "city", "name"))
-            rows = [] if (parser == "fallback" and not faceted) else await ps.search(
-                specialty=intent["specialty"], state=intent["state"], city=intent["city"],
-                name=intent["name"], sort_metric=intent["sort_metric"],
-                limit=min(int(body.get("limit") or 50), 200))
-            return {"interpretation": {**intent, "parser": parser},
-                    "results": rows, "stats": await ps.stats(),
-                    "sorted_by": intent["sort_metric"] or "name (neutral — no ranking)"}
-        except Exception as e:   # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"people ask failed: {e}") from e
-
-    @app.post("/people/converse")
-    async def people_converse(body: dict) -> dict:
-        """PUBLIC People concierge (product owner opened the inventory to all users,
-        2026-08-12 — superseding E-1's admin-only default; the no-quality-ranking and
-        honest-provenance rules stand). Conversational narrowing: phase A re-parses the
-        WHOLE transcript into the current facet state (so 'actually anywhere in Texas'
-        broadens), the server computes the live match breakdown, and phase B either asks
-        the one question that best splits the set or presents ≤5 membership-validated
-        candidates described only by recorded facts."""
-        ps = _people()
-        if ps is None:
-            raise HTTPException(status_code=404, detail="people not enabled (EIGEN_PEOPLE)")
-        msgs = [m for m in (body.get("messages") or []) if isinstance(m, dict)
-                and str(m.get("content") or "").strip()][-12:]
-        if not msgs:
-            raise HTTPException(status_code=400, detail="missing messages")
-        convo = "\n".join(
-            f"{'Agent' if m.get('role') == 'assistant' else 'User'}: "
-            f"{str(m['content']).strip()[:400]}" for m in msgs)
-        try:
-            vocab = await ps.facet_values()
-            intent, parser = await _parse_people_intent(convo, vocab)
-            # Not-covered short-circuit: the user wants a KIND of specialist the directory
-            # simply doesn't have. Say so immediately and list what IS covered — the worst
-            # answer is a clarifying loop that never admits the gap (2026-08-12 dermatology
-            # transcript). Deterministic, no phase-B call.
-            if intent.get("unmatched_specialty") and not intent["specialty"]:
-                covered = ", ".join(vocab.get("specialties") or [])
-                return {"action": "clarify", "candidates": [],
-                        "message": (f"Our directory doesn't currently include "
-                                    f"{intent['unmatched_specialty']} specialists. It "
-                                    f"covers: {covered}. If one of these fits, tell me "
-                                    "which — and a city or state."),
-                        "facets": {**intent, "parser": parser}, "total": 0,
-                        "breakdown": {"total": 0, "by_specialty": [], "by_city": [],
-                                      "by_state": []},
-                        "sorted_by": "name (neutral — no ranking)"}
-            n_asked = sum(1 for m in msgs if m.get("role") == "assistant")
-            kw = dict(specialty=intent["specialty"], state=intent["state"],
-                      city=intent["city"], name=intent["name"])
-            bd = await ps.breakdown(**kw)
-            # ALWAYS fetch candidates when anything matches — phase B can only present
-            # from rows it was shown, and "show me options" must never be answerable with
-            # another question just because the set is large (with a sort metric the
-            # top-30 slice is the meaningful one; unsorted it's presented as still-broad)
-            cands = (await ps.search(**kw, sort_metric=intent["sort_metric"], limit=30)
-                     if bd["total"] > 0 else [])
-            if cands:
-                afmap = await ps.affiliations_for([c["entity_id"] for c in cands])
-                for c in cands:
-                    c["affiliations"] = afmap.get(c["entity_id"], [])
-            turn = await _people_converse_turn(convo, intent, bd, cands, n_asked=n_asked)
-            return {**turn, "facets": {**intent, "parser": parser},
-                    "total": bd["total"], "breakdown": bd,
-                    "sorted_by": intent["sort_metric"] or "name (neutral — no ranking)"}
-        except HTTPException:
-            raise
-        except Exception as e:   # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"people converse failed: {e}") from e
-
-    @app.get("/people/entity")
-    async def people_entity(id: str) -> dict:
-        """PUBLIC profile + referral network (same open-to-all decision as /people/converse):
-        recorded facts with per-field provenance, honest metric labels, evidence-keyed
-        connections. Suppressed entities stay invisible (store filters them)."""
-        ps = _people()
-        if ps is None:
-            raise HTTPException(status_code=404, detail="people not enabled")
-        e = await ps.entity(id)
-        if not e or e.get("status") != "active":
-            raise HTTPException(status_code=404, detail="unknown entity")
-        e["connections"] = await ps.connections(id)
-        return e
-
-    @app.get("/admin/people/entity")
-    async def admin_people_entity(id: str, x_admin_password: str = Header(default="")) -> dict:
-        """Full profile + the referral network: metrics (honest labels + provenance),
-        published contacts, and evidence-keyed connections (same group/facility)."""
-        if x_admin_password != _admin_ui_pw():
-            raise HTTPException(status_code=401, detail="bad admin password")
-        ps = _people()
-        if ps is None:
-            raise HTTPException(status_code=404, detail="people not enabled")
-        e = await ps.entity(id)
-        if not e:
-            raise HTTPException(status_code=404, detail="unknown entity")
-        e["connections"] = await ps.connections(id)
-        return e
-
     @app.get("/admin/ingest/sources")
     async def admin_ingest_sources(x_admin_password: str = Header(default="")) -> dict:
         """Ingestion console payload (panel-password gate, READ-ONLY): every connector, live
@@ -3111,7 +2397,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         return {"user": user, "token": token}
 
     @app.post("/feedback")
-    async def post_feedback(body: FeedbackIn, x_noesis_token: str = Header(default="")) -> dict:
+    async def post_feedback(body: FeedbackIn, x_eigen_token: str = Header(default="")) -> dict:
         """Per-answer user feedback keyed to the W1–W9 warrant taxonomy (the same codes the eval and
         auditor use — one contract, three uses). Requires a registered token so feedback is
         attributable; modes are whitelisted structurally. 404 when accounts are off."""
@@ -3120,7 +2406,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         store = _accounts()
         if store is None:
             raise HTTPException(status_code=503, detail="no account store configured")
-        user = await store.user_by_token(x_noesis_token)
+        user = await store.user_by_token(x_eigen_token)
         if user is None:
             raise HTTPException(status_code=401, detail="register to give feedback")
         if body.verdict not in ("up", "down", "flag"):
@@ -3156,24 +2442,24 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             for k, fn in _LIVE_FLAGS.items()}}
 
     # ---- Evidence Pulse P1 user surface: watches + inbox ---------------------------------------
-    async def _pulse_user(x_noesis_token: str):
+    async def _pulse_user(x_eigen_token: str):
         cur = _currency()
         if cur is None:
             raise HTTPException(status_code=404, detail="pulse not enabled")
         store = _accounts()
         if store is None:
             raise HTTPException(status_code=503, detail="no account store configured")
-        user = await store.user_by_token(x_noesis_token)
+        user = await store.user_by_token(x_eigen_token)
         if user is None:
             raise HTTPException(status_code=401, detail="sign in to use watches")
         return cur, user
 
     @app.post("/pulse/watch")
-    async def pulse_watch_add(body: WatchIn, x_noesis_token: str = Header(default="")) -> dict:
+    async def pulse_watch_add(body: WatchIn, x_eigen_token: str = Header(default="")) -> dict:
         """Watch a topic. FREE-TEXT topics are canonicalized against the stable registry first
         ("afib" → "atrial fibrillation") so watches actually match event subjects; topics chosen
         from the suggested chips are already canonical and skip the call. Fails open to raw text."""
-        cur, user = await _pulse_user(x_noesis_token)
+        cur, user = await _pulse_user(x_eigen_token)
         topic = (body.topic or "").strip()
         if body.source == "manual" and topic:
             canon_prompt = getattr(load_active_vertical(), "watch_canonize_prompt", None)
@@ -3203,8 +2489,8 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             raise HTTPException(status_code=502, detail=f"watch failed: {e}") from e
 
     @app.delete("/pulse/watch")
-    async def pulse_watch_remove(topic: str, x_noesis_token: str = Header(default="")) -> dict:
-        cur, user = await _pulse_user(x_noesis_token)
+    async def pulse_watch_remove(topic: str, x_eigen_token: str = Header(default="")) -> dict:
+        cur, user = await _pulse_user(x_eigen_token)
         try:
             await cur.remove_watch(user_id=user["id"], topic=topic)
             return {"watches": await cur.list_watches(user_id=user["id"])}
@@ -3212,10 +2498,10 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             raise HTTPException(status_code=502, detail=f"unwatch failed: {e}") from e
 
     @app.get("/pulse/inbox")
-    async def pulse_inbox(days: int = 30, x_noesis_token: str = Header(default="")) -> dict:
+    async def pulse_inbox(days: int = 30, x_eigen_token: str = Header(default="")) -> dict:
         """The Pulse hub payload: PER-TOPIC rollups answering (1) anything unseen? and (2) how much
         moved in the rolling window — plus the watch list. Detail loads via /pulse/topic-activity."""
-        cur, user = await _pulse_user(x_noesis_token)
+        cur, user = await _pulse_user(x_eigen_token)
         try:
             return {"watches": await cur.list_watches(user_id=user["id"]),
                     "days": min(max(days, 1), 365),
@@ -3271,12 +2557,12 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
 
     @app.get("/pulse/topic-activity")
     async def pulse_topic_activity(topic: str, days: int = 30,
-                                   x_noesis_token: str = Header(default="")) -> dict:
+                                   x_eigen_token: str = Header(default="")) -> dict:
         """One topic's movement in the rolling window — TOPIC-AS-QUERY composition (generic to any
         vertical): relational change events matching the topic (structural containment) + NEW
         corpus sources relevant to it (the existing retrieval engine finds relevance; the corpus
         time axis supplies first_seen). One query embedding; zero LLM calls."""
-        cur, user = await _pulse_user(x_noesis_token)
+        cur, user = await _pulse_user(x_eigen_token)
         days = min(max(days, 1), 365)
         if app.state.service is None:
             app.state.service = build_default_service()
@@ -3317,12 +2603,12 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 + "\n".join(f"- {t}" for t in topics[:400])) if topics else ""
 
     @app.post("/pulse/topics")
-    async def pulse_topics(body: TopicsIn, x_noesis_token: str = Header(default="")) -> dict:
+    async def pulse_topics(body: TopicsIn, x_eigen_token: str = Header(default="")) -> dict:
         """Suggest 2-5 WATCHABLE topics for a Q&A (LLM-owned judgment, Rule 18 — durable subjects,
         never patient specifics), converged onto the canonical registry: existing entries are
         reused verbatim; a genuinely novel subject is minted ONCE and becomes the stable form.
         User-initiated (the watch picker), token-gated, one small call."""
-        cur, user = await _pulse_user(x_noesis_token)
+        cur, user = await _pulse_user(x_eigen_token)
         if app.state.service is None:
             app.state.service = build_default_service()
         svc = app.state.service
@@ -3349,7 +2635,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
     async def _compute_coverage_activity():
         """COVERAGE PULSE sweep: rolling-window movement for EVERY covered condition (the
         vertical's roadmap, already the topic-registry seed). Heavy-ish (one embed + corpus
-        search per condition) → computed in the background, cached in noesis_pulse_state,
+        search per condition) → computed in the background, cached in eigen_pulse_state,
         self-refreshing daily. Buckets 7/30/90d in one pass."""
         cur = _currency()
         if cur is None:
@@ -3421,17 +2707,17 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
 
     @app.post("/admin/pulse/coverage-scan")
     async def admin_pulse_coverage_scan(x_admin_token: str = Header(default="")) -> dict:
-        """Force a coverage-pulse recompute now (background; status in noesis_pulse_state)."""
+        """Force a coverage-pulse recompute now (background; status in eigen_pulse_state)."""
         _pulse_admin_gate(x_admin_token)
         app.state.pulse_coverage_task = asyncio.create_task(_compute_coverage_activity())
         return {"status": "started"}
 
     @app.get("/pulse/watch-suggestions")
-    async def pulse_watch_suggestions(x_noesis_token: str = Header(default="")) -> dict:
+    async def pulse_watch_suggestions(x_eigen_token: str = Header(default="")) -> dict:
         """Cross-session watch suggestions: the recurring durable subjects in THIS user's question
         history (LLM judgment against the canonical registry; already-watched excluded). One small
         call, fired when the Pulse panel opens; degrades to an empty list on any failure."""
-        cur, user = await _pulse_user(x_noesis_token)
+        cur, user = await _pulse_user(x_eigen_token)
         prompt = getattr(load_active_vertical(), "watch_suggest_prompt", None)
         store = _store()
         if not prompt or store is None or not user.get("email"):
@@ -3464,41 +2750,9 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             __import__("logging").getLogger("api.pulse").warning("watch suggestions failed: %r", e)
             return {"suggestions": []}
 
-    @app.get("/me/settings")
-    async def me_settings_get(x_noesis_token: str = Header(default="")) -> dict:
-        """Per-user settings (Noesis IN D-7): the in_mode preference + the account country the
-        default derives from. Token-gated; 404 when accounts are off."""
-        store = _accounts()
-        if store is None:
-            raise HTTPException(status_code=404, detail="accounts not enabled")
-        user = await store.user_by_token(x_noesis_token)
-        if not user:
-            raise HTTPException(status_code=401, detail="sign in required")
-        pref = await store.get_pref(user["id"], "in_mode")
-        return {"country": user.get("country") or "", "in_mode": pref,
-                "in_mode_available": in_mode_enabled(),
-                "resolved_profile": ("IN" if in_mode_enabled() and (
-                    pref == "on" or (pref != "off" and
-                                     (user.get("country") or "").strip().upper() in ("IN", "INDIA")))
-                    else "")}
-
-    @app.post("/me/settings")
-    async def me_settings_set(body: dict, x_noesis_token: str = Header(default="")) -> dict:
-        store = _accounts()
-        if store is None:
-            raise HTTPException(status_code=404, detail="accounts not enabled")
-        user = await store.user_by_token(x_noesis_token)
-        if not user:
-            raise HTTPException(status_code=401, detail="sign in required")
-        val = str(body.get("in_mode", "")).lower()
-        if val not in ("on", "off", ""):
-            raise HTTPException(status_code=400, detail="in_mode must be 'on', 'off', or ''")
-        await store.set_pref(user["id"], "in_mode", val)
-        return await me_settings_get(x_noesis_token)   # echo the resolved state
-
     @app.post("/pulse/seen")
-    async def pulse_seen(body: SeenIn, x_noesis_token: str = Header(default="")) -> dict:
-        cur, user = await _pulse_user(x_noesis_token)
+    async def pulse_seen(body: SeenIn, x_eigen_token: str = Header(default="")) -> dict:
+        cur, user = await _pulse_user(x_eigen_token)
         try:
             await cur.mark_seen(user_id=user["id"], event_id=body.event_id)
         except Exception as e:   # noqa: BLE001

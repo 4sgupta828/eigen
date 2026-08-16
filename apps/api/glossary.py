@@ -18,7 +18,7 @@ import uuid
 from typing import Any
 
 _DDL = """
-CREATE TABLE IF NOT EXISTS noesis_glossary_term (
+CREATE TABLE IF NOT EXISTS eigen_glossary_term (
     id          TEXT PRIMARY KEY,
     vertical    TEXT NOT NULL,
     term_key    TEXT NOT NULL,
@@ -34,8 +34,8 @@ CREATE TABLE IF NOT EXISTS noesis_glossary_term (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (vertical, term_key)
 );
-CREATE INDEX IF NOT EXISTS idx_ngt_vertical_term ON noesis_glossary_term (vertical, term_key);
-CREATE INDEX IF NOT EXISTS idx_ngt_vertical_updated ON noesis_glossary_term (vertical, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ngt_vertical_term ON eigen_glossary_term (vertical, term_key);
+CREATE INDEX IF NOT EXISTS idx_ngt_vertical_updated ON eigen_glossary_term (vertical, updated_at DESC);
 """
 
 
@@ -79,15 +79,15 @@ class GlossaryStore:
                     continue
                 await conn.execute(
                     """
-                    INSERT INTO noesis_glossary_term
+                    INSERT INTO eigen_glossary_term
                         (id, vertical, term_key, term, category, plain, purpose, application,
                          related, first_session_id)
                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)
                     ON CONFLICT (vertical, term_key) DO UPDATE SET
-                        times_seen = noesis_glossary_term.times_seen + 1,
+                        times_seen = eigen_glossary_term.times_seen + 1,
                         related = (
                             SELECT COALESCE(jsonb_agg(DISTINCT v), '[]'::jsonb)
-                            FROM jsonb_array_elements_text(noesis_glossary_term.related || EXCLUDED.related) AS v
+                            FROM jsonb_array_elements_text(eigen_glossary_term.related || EXCLUDED.related) AS v
                         ),
                         updated_at = now()
                     """,
@@ -118,15 +118,15 @@ class GlossaryStore:
             rows = await conn.fetch(
                 f"""SELECT term_key, term, category, plain, purpose, application, related,
                            times_seen, updated_at
-                    FROM noesis_glossary_term WHERE {w}
+                    FROM eigen_glossary_term WHERE {w}
                     ORDER BY term_key LIMIT {int(limit)} OFFSET {int(offset)}""", *args)
             total = await conn.fetchval(
-                f"SELECT count(*) FROM noesis_glossary_term WHERE {w}", *args)
+                f"SELECT count(*) FROM eigen_glossary_term WHERE {w}", *args)
             letters = await conn.fetch(
-                "SELECT substr(term_key,1,1) AS l, count(*) AS n FROM noesis_glossary_term "
+                "SELECT substr(term_key,1,1) AS l, count(*) AS n FROM eigen_glossary_term "
                 "WHERE vertical = $1 GROUP BY 1 ORDER BY 1", self._vertical)
             known = {r["term_key"] for r in await conn.fetch(
-                "SELECT term_key FROM noesis_glossary_term WHERE vertical = $1", self._vertical)}
+                "SELECT term_key FROM eigen_glossary_term WHERE vertical = $1", self._vertical)}
         terms = []
         for r in rows:
             rel = r["related"]
@@ -149,12 +149,12 @@ class GlossaryStore:
         async with pool.acquire() as conn:
             r = await conn.fetchrow(
                 "SELECT term_key, term, category, plain, purpose, application, related, times_seen "
-                "FROM noesis_glossary_term WHERE vertical = $1 AND term_key = $2",
+                "FROM eigen_glossary_term WHERE vertical = $1 AND term_key = $2",
                 self._vertical, key)
             if not r:
                 return None
             known = {x["term_key"] for x in await conn.fetch(
-                "SELECT term_key FROM noesis_glossary_term WHERE vertical = $1", self._vertical)}
+                "SELECT term_key FROM eigen_glossary_term WHERE vertical = $1", self._vertical)}
         rel = r["related"]
         rel = json.loads(rel) if isinstance(rel, str) else (rel or [])
         return {"term_key": r["term_key"], "term": r["term"], "category": r["category"],
@@ -172,7 +172,7 @@ class GlossaryStore:
         scanned = changed = 0
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT id, term, related FROM noesis_glossary_term WHERE vertical = $1",
+                "SELECT id, term, related FROM eigen_glossary_term WHERE vertical = $1",
                 self._vertical)
             for r in rows:
                 scanned += 1
@@ -190,7 +190,7 @@ class GlossaryStore:
                 if new_term == r["term"] and new_rel == rel:
                     continue
                 await conn.execute(
-                    "UPDATE noesis_glossary_term SET term = $2, related = $3::jsonb, "
+                    "UPDATE eigen_glossary_term SET term = $2, related = $3::jsonb, "
                     "updated_at = now() WHERE id = $1",
                     r["id"], new_term, json.dumps(new_rel))
                 changed += 1
@@ -201,5 +201,5 @@ class GlossaryStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             return int(await conn.fetchval(
-                "SELECT count(*) FROM noesis_glossary_term WHERE vertical = $1",
+                "SELECT count(*) FROM eigen_glossary_term WHERE vertical = $1",
                 self._vertical) or 0)

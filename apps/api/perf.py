@@ -9,7 +9,7 @@ import uuid
 from typing import Any
 
 _DDL = """
-CREATE TABLE IF NOT EXISTS noesis_perf_event (
+CREATE TABLE IF NOT EXISTS eigen_perf_event (
     id            TEXT PRIMARY KEY,
     vertical      TEXT NOT NULL,
     kind          TEXT NOT NULL DEFAULT 'qa',
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS noesis_perf_event (
     audience      TEXT,
     modality      TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_perf_vertical_created ON noesis_perf_event (vertical, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_perf_vertical_created ON eigen_perf_event (vertical, created_at DESC);
 """
 
 
@@ -101,7 +101,7 @@ class PerfStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                """INSERT INTO noesis_perf_event
+                """INSERT INTO eigen_perf_event
                    (id, vertical, kind, total_ms, anthropic_ms, judge_ms, retrieval_ms, embed_ms,
                     compose_ms, extract_ms, anthropic_calls, tokens, claims, rejected, atoms,
                     grounded, compose_failed, stopped_reason, congruence_drops, failures,
@@ -152,16 +152,16 @@ class PerfStore:
                         sum(CASE WHEN grounded IS FALSE THEN 1 ELSE 0 END) AS ungrounded,
                         sum(CASE WHEN compose_failed THEN 1 ELSE 0 END) AS compose_fails,
                         sum(congruence_drops) AS congruence_drops
-                    FROM noesis_perf_event WHERE {w}""", *args)
+                    FROM eigen_perf_event WHERE {w}""", *args)
             failure_rows = await conn.fetch(
-                f"SELECT f AS stage, count(*) AS n FROM noesis_perf_event, "
+                f"SELECT f AS stage, count(*) AS n FROM eigen_perf_event, "
                 f"jsonb_array_elements_text(failures) AS f WHERE {w} GROUP BY 1 ORDER BY 2 DESC", *args)
             stop_rows = await conn.fetch(
                 f"SELECT COALESCE(NULLIF(stopped_reason,''),'(none)') AS reason, count(*) AS n "
-                f"FROM noesis_perf_event WHERE {w} GROUP BY 1 ORDER BY 2 DESC LIMIT 12", *args)
+                f"FROM eigen_perf_event WHERE {w} GROUP BY 1 ORDER BY 2 DESC LIMIT 12", *args)
             recent = await conn.fetch(
                 f"SELECT created_at, kind, total_ms, compose_ms, judge_ms, retrieval_ms, anthropic_calls, "
-                f"claims, grounded, stopped_reason FROM noesis_perf_event WHERE {w} "
+                f"claims, grounded, stopped_reason FROM eigen_perf_event WHERE {w} "
                 f"ORDER BY created_at DESC LIMIT 20", *args)
         d = dict(row) if row else {}
         d["window_hours"] = hours

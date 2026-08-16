@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Noesis — Research</title>
+<title>Eigen — Research</title>
 <style>
-  /* ---- Noesis identity: deep navy canvas, gold brand accent, green = verified ---- */
+  /* ---- Eigen identity: deep navy canvas, gold brand accent, green = verified ---- */
   /* DEFAULT = CLINICAL LIGHT — the look familiar from clinical/EHR apps: cool-white surfaces, a
      trustworthy medical-blue accent, dark-slate text. Dark is opt-in via the bottom-left toggle. */
   :root{
@@ -32,7 +32,7 @@
     --hl-f:87,184,145; --hl-r:211,179,124; --hl-k:110,160,224;
     --chart1:#BA852B; --chart2:#2E9268; --chart3:#B5622F;
   }
-  /* EDITORIAL theme — opt-in. Noesis's identity set on paper: warm parchment stock, umber ink,
+  /* EDITORIAL theme — opt-in. Eigen's identity set on paper: warm parchment stock, umber ink,
      the brand gold deepened to an ink-gold that holds on paper, evidence-green kept. Serif
      display for headings (the existing --serif stack), mono eyebrows unchanged. Inspired by
      an editorial-record aesthetic — restraint over decoration — not a copy of any one look. */
@@ -848,7 +848,7 @@
     padding:.8rem .95rem;margin-top:.35rem;}
   .xitem.expanded video{display:block;max-width:100%;border-radius:8px;margin:.55rem 0;}
   .xformrow>details.plain-d{flex-basis:100%;}
-  /* real-world patient case marker — the noesis circle in warm orange */
+  /* real-world patient case marker — the eigen circle in warm orange */
   .rpdot{color:#f28c2e;font-size:.9em;text-shadow:0 0 6px rgba(242,140,46,.45);}
   .sact.rp-on{color:#f28c2e;border-color:#f28c2e;}
   /* ◉ Pulse full page */
@@ -1291,10 +1291,10 @@
     function apply(t){
       if(t==="light") document.documentElement.removeAttribute("data-theme");
       else document.documentElement.setAttribute("data-theme", t);
-      try{ localStorage.setItem("noesis-theme", t); }catch(e){}
+      try{ localStorage.setItem("eigen-theme", t); }catch(e){}
     }
     try{
-      var saved=localStorage.getItem("noesis-theme");
+      var saved=localStorage.getItem("eigen-theme");
       if(saved==="dark"||saved==="editorial") document.documentElement.setAttribute("data-theme",saved);
       else if(saved!=="light") document.documentElement.setAttribute("data-theme","editorial");
       /* EDITORIAL is the default for new visitors; an explicit saved "light" is respected. */
@@ -1314,8 +1314,8 @@
 </script>
 </head>
 <body>
-<!-- Noesis mark as a themed SVG (adapts to light/dark via CSS vars) — reused in the header + welcome modal -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><symbol id="noesis-logo" viewBox="0 0 220 132">
+<!-- Eigen mark as a themed SVG (adapts to light/dark via CSS vars) — reused in the header + welcome modal -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><symbol id="eigen-logo" viewBox="0 0 220 132">
   <!-- open ring: gap upper-right for the breakout arrow, subtle gap left at the origin dot -->
   <path d="M120.1 15.0 A27 27 0 0 0 83.1 42.4" fill="none" stroke="var(--gold)" stroke-width="2.4" stroke-linecap="round"/>
   <path d="M85.1 50.6 A27 27 0 0 0 136.6 35.3" fill="none" stroke="var(--gold)" stroke-width="2.4" stroke-linecap="round"/>
@@ -1323,13 +1323,13 @@
   <path d="M84 46 C94 34 104 34 110 41 C116 48 122 34 132 20" fill="none" stroke="var(--gold)" stroke-width="2.4" stroke-linecap="round"/>
   <path d="M132 20 l-10 1 M132 20 l-1 10" fill="none" stroke="var(--gold)" stroke-width="2.4" stroke-linecap="round"/>
   <circle cx="84" cy="46" r="3.1" fill="var(--gold)"/>
-  <text x="110" y="92" text-anchor="middle" font-family="var(--serif)" font-size="27" letter-spacing="7" fill="var(--ink)">NOESIS</text>
+  <text x="110" y="92" text-anchor="middle" font-family="var(--serif)" font-size="27" letter-spacing="7" fill="var(--ink)">EIGEN</text>
   <text x="110" y="111" text-anchor="middle" font-family="var(--sans)" font-size="7.4" letter-spacing="3" fill="var(--gold)">DISCOVER · UNDERSTAND · ACT</text>
 </symbol></svg>
 <button type="button" class="themebtn" id="themebtn" aria-label="Switch color theme" title="Switch between dark and clinical light theme">☀ Light</button>
 <div class="wrap">
   <header>
-    <svg class="logo" viewBox="0 0 220 132" role="img" aria-label="Noesis"><use href="#noesis-logo"/></svg>
+    <svg class="logo" viewBox="0 0 220 132" role="img" aria-label="Eigen"><use href="#eigen-logo"/></svg>
     <button type="button" class="histbtn newbtn" id="newbtn" style="margin-left:auto;">＋ New chat</button>
     <a class="histbtn" href="/admin" style="margin-left:0;text-decoration:none;">Coverage</a>
     <button type="button" class="histbtn" id="vidbtn" style="margin-left:0;">Videos</button>
@@ -1340,7 +1340,7 @@
     <button type="button" class="histbtn" id="pplbtn" style="margin-left:0;"
             title="Find the right specialist for a situation" aria-label="People">⧉ People</button>
     <button type="button" class="histbtn" id="termsbtn" style="margin-left:0;" hidden
-            title="Every medical term Noesis has explained — searchable, each linking to its related terms" aria-label="All Terms">✦ Terms</button>
+            title="Every medical term Eigen has explained — searchable, each linking to its related terms" aria-label="All Terms">✦ Terms</button>
   </header>
 
   <h1 id="heading">What does the evidence show?</h1>
@@ -1514,8 +1514,8 @@
 <!-- identity gate: capture name + email at landing, stored against each session -->
 <div class="idmodal" id="idmodal" hidden>
   <div class="idcard">
-    <svg class="idlogo" viewBox="0 0 220 132" role="img" aria-label="Noesis"><use href="#noesis-logo"/></svg>
-    <h2>Welcome to Noesis</h2>
+    <svg class="idlogo" viewBox="0 0 220 132" role="img" aria-label="Eigen"><use href="#eigen-logo"/></svg>
+    <h2>Welcome to Eigen</h2>
     <p>Tell us who you are, so your questions are saved to your name.</p>
     <input id="idname" type="text" placeholder="Full name" autocomplete="name" />
     <input id="idemail" type="email" placeholder="Email" autocomplete="email" />
@@ -1570,7 +1570,7 @@
   @media (prefers-reduced-motion:reduce){#seltip{animation:none;}}
 </style>
 <div id="seltip" role="menu" aria-label="Learn more about the selection">
-  <button type="button" data-act="explain" id="seltip-explain" hidden title="Explain this in Noesis — grounded definition">✦ Explain</button>
+  <button type="button" data-act="explain" id="seltip-explain" hidden title="Explain this in Eigen — grounded definition">✦ Explain</button>
   <span class="stsep" id="seltip-sep" hidden></span>
   <button type="button" data-act="google" title="Deep-dive on Google (free, opens a new tab)">🔍 Learn more</button>
   <button type="button" data-act="perplexity" title="Ask Perplexity — free AI search (opens a new tab)">Perplexity ↗</button>
@@ -1702,10 +1702,10 @@ async function loadConfig(){
     // refresh the cache in the background for the NEXT load. Applying only once per page load keeps
     // all the addEventListener wiring below single-shot (re-applying would double-register handlers).
     let c = null;
-    try{ c = JSON.parse(localStorage.getItem("noesis_cfg") || "null"); }catch(e){}
+    try{ c = JSON.parse(localStorage.getItem("eigen_cfg") || "null"); }catch(e){}
     if(c){
       fetch("/config").then(r=>r.json())
-        .then(f=>{ try{ localStorage.setItem("noesis_cfg", JSON.stringify(f)); }catch(e){}
+        .then(f=>{ try{ localStorage.setItem("eigen_cfg", JSON.stringify(f)); }catch(e){}
           // HOT-APPLY flags that are read at CALL time (no listener/DOM wiring) so admin-panel toggles
           // land on THIS load, not two loads later. Flags that wire UI (panel/triage buttons, effort,
           // patient mode) still take effect on the next load.
@@ -1718,7 +1718,7 @@ async function loadConfig(){
         .catch(()=>{});
     } else {
       c = await (await fetch("/config")).json();
-      try{ localStorage.setItem("noesis_cfg", JSON.stringify(c)); }catch(e){}
+      try{ localStorage.setItem("eigen_cfg", JSON.stringify(c)); }catch(e){}
     }
     SOURCES = c.sources || [];
     VIDEO_ENABLED = !!c.video_enabled;
@@ -3049,13 +3049,13 @@ function wireFeedback(target, data){
   const sid = data.session_id || THREAD.session_id
     || (typeof PANEL_THREAD !== "undefined" && PANEL_THREAD && PANEL_THREAD.session_id) || "";
   const done = () => {
-    if(row) row.outerHTML = `<div class="fbdone">✓ Thank you — logged. This is exactly what trains Noesis.</div>`;
+    if(row) row.outerHTML = `<div class="fbdone">✓ Thank you — logged. This is exactly what trains Eigen.</div>`;
     tops.forEach(b => { b.disabled = true; b.style.opacity = ".45"; });
   };
   const send = async (verdict, modes, note) => {
     try{
       const r = await fetch("/feedback", {method:"POST",
-        headers:{"content-type":"application/json", "x-noesis-token": (USER && USER.token) || ""},
+        headers:{"content-type":"application/json", "x-eigen-token": (USER && USER.token) || ""},
         body: JSON.stringify({session_id: sid, verdict, modes, note,
                               question: data.question || CURRENT_Q || ""})});
       if(r.status === 401){ $("#idmodal").hidden = false; return; }   // register first, then re-click
@@ -3168,7 +3168,7 @@ function answerMarkdown(data){
     out.push("## In plain language", "", strip(data.layman_answer), "");
   }
 
-  out.push("_Generated by Noesis — every claim carries a verbatim quote from its cited source (quote-checked for provenance; not a judgment of source quality, currency, or clinical applicability)._");
+  out.push("_Generated by Eigen — every claim carries a verbatim quote from its cited source (quote-checked for provenance; not a judgment of source quality, currency, or clinical applicability)._");
   return out.join("\n");
 }
 async function copyAnswer(data, btn){
@@ -3484,7 +3484,7 @@ async function streamRun(url, payload, onEvent, signal, onAlive, idleMs){
     try{
       const resp = await fetch(url,{method:"POST",
         headers:{"content-type":"application/json",
-                 "x-noesis-token":(typeof USER!=="undefined"&&USER&&USER.token)||""},
+                 "x-eigen-token":(typeof USER!=="undefined"&&USER&&USER.token)||""},
         body:JSON.stringify(payload), signal: mkSignal()});
       if(!resp.ok || !resp.body) throw new Error("HTTP "+resp.status);
       await readSSE(resp, state, onEvent);
@@ -4523,7 +4523,7 @@ function wireDuelVote(root, arms, finals, question){
     try{   // best-effort persistence — a vote should never error at the user
       if(USER && USER.token){
         await fetch("/feedback", {method: "POST",
-          headers: {"content-type": "application/json", "x-noesis-token": USER.token},
+          headers: {"content-type": "application/json", "x-eigen-token": USER.token},
           body: JSON.stringify({verdict: "prefer", modes: [], note, question,
                                 session_id: w >= 0 ? ((finals[w]||{}).session_id||"") : ""})});
       }
@@ -4630,7 +4630,7 @@ async function askQuestion(question, opts){
       if(conv) finishTurn(data); else render(data);
       return;
     }
-    const resp = await fetch("/research",{method:"POST",headers:{"content-type":"application/json","x-noesis-token":(typeof USER!=="undefined"&&USER&&USER.token)||""},body,signal:ctrl.signal});
+    const resp = await fetch("/research",{method:"POST",headers:{"content-type":"application/json","x-eigen-token":(typeof USER!=="undefined"&&USER&&USER.token)||""},body,signal:ctrl.signal});
     clearTimeout(timer);
     if(resp.ok){ const data = await resp.json(); ATTACHMENTS=[]; renderAttachments();
       if(conv) finishTurn(data); else render(data); return; }
@@ -4746,7 +4746,7 @@ async function refreshPulseBell(){
   const b = $("#pulsebell"), badge = $("#pbadge");
   if(!b || !PULSE_ENABLED || !USER || !USER.token || !badge) return;
   try{
-    const r = await fetch("/pulse/inbox",{headers:{"x-noesis-token":USER.token}});
+    const r = await fetch("/pulse/inbox",{headers:{"x-eigen-token":USER.token}});
     if(!r.ok) return;
     const d = await r.json();
     const unseen = (d.summary||[]).reduce((n,t)=>n+(t.unseen||0), 0);
@@ -4755,7 +4755,7 @@ async function refreshPulseBell(){
 }
 async function addWatch(topic, source){
   const r = await fetch("/pulse/watch",{method:"POST",
-    headers:{"content-type":"application/json","x-noesis-token":USER.token},
+    headers:{"content-type":"application/json","x-eigen-token":USER.token},
     body:JSON.stringify({topic, source: source||"manual"})});
   if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || "HTTP "+r.status);
   refreshPulseBell();
@@ -4798,7 +4798,7 @@ async function watchTopic(turnOrQ, btn){
   try{
     const src = (typeof turnOrQ === "object" && turnOrQ) ? turnOrQ : (LAST || {});
     const r = await fetch("/pulse/topics",{method:"POST",
-      headers:{"content-type":"application/json","x-noesis-token":USER.token},
+      headers:{"content-type":"application/json","x-eigen-token":USER.token},
       body:JSON.stringify({question: src.question || CURRENT_Q || "",
                            answer: (src.answer || "").slice(0, 6000)})});
     const {topics} = r.ok ? await r.json() : {topics: []};
@@ -4837,13 +4837,13 @@ async function ppRender(){
   let inbox = null, feed = [];
   try{
     const [ri, rf] = await Promise.all([
-      fetch("/pulse/inbox?days="+PULSE_DAYS, {headers:{"x-noesis-token":USER.token}}),
+      fetch("/pulse/inbox?days="+PULSE_DAYS, {headers:{"x-eigen-token":USER.token}}),
       pulseEvents().then(e=>e).catch(()=>[]),
     ]);
     feed = Array.isArray(rf) ? rf : [];
     if(ri.status === 401){
       PULSE_REAUTH = true;
-      if(USER){ delete USER.token; localStorage.setItem("noesis_user", JSON.stringify(USER)); }
+      if(USER){ delete USER.token; localStorage.setItem("eigen_user", JSON.stringify(USER)); }
       main.innerHTML = `<div class="pitem-empty">Your sign-in needs a quick refresh — submit the form once and Pulse will reload.</div>`;
       const m = $("#idmodal"); if(m){ if(USER){ if(USER.name) $("#idname").value = USER.name;
         if(USER.email) $("#idemail").value = USER.email; } m.hidden = false; }
@@ -4884,7 +4884,7 @@ async function ppRender(){
     e.stopPropagation();
     const t = e.currentTarget.closest(".ppcard").dataset.t;
     try{ await fetch("/pulse/watch?topic="+encodeURIComponent(t),
-      {method:"DELETE", headers:{"x-noesis-token":USER.token}}); }catch(err){}
+      {method:"DELETE", headers:{"x-eigen-token":USER.token}}); }catch(err){}
     ppRender();
   }));
   main.querySelectorAll(".ppcard-h").forEach(h=>h.addEventListener("click", (e)=>{
@@ -4925,7 +4925,7 @@ async function ppRender(){
         body.innerHTML = `<div class="suggest-loading">Loading…</div>`;
         try{
           const ra = await fetch("/pulse/topic-activity?days="+PULSE_DAYS+"&topic="+encodeURIComponent(h.dataset.t),
-            {headers:{"x-noesis-token":USER.token}});
+            {headers:{"x-eigen-token":USER.token}});
           if(!ra.ok) throw new Error("HTTP "+ra.status);
           const act = await ra.json();
           renderActivityInto(body, act);
@@ -4962,7 +4962,7 @@ async function ppRender(){
   (async ()=>{
     try{
       if(_WATCH_SUGGESTIONS === null){
-        const r = await fetch("/pulse/watch-suggestions",{headers:{"x-noesis-token":USER.token}});
+        const r = await fetch("/pulse/watch-suggestions",{headers:{"x-eigen-token":USER.token}});
         _WATCH_SUGGESTIONS = r.ok ? ((await r.json()).suggestions || []) : [];
       }
       const watched = new Set(watches.map(w=>w.topic.toLowerCase()));
@@ -4993,7 +4993,7 @@ async function ppExpand(card){
     for(let attempt = 0; attempt < 2; attempt++){
       try{
         r = await fetch("/pulse/topic-activity?days="+PULSE_DAYS+"&topic="+encodeURIComponent(card.dataset.t),
-          {headers:{"x-noesis-token":USER.token}});
+          {headers:{"x-eigen-token":USER.token}});
         if(r.ok) break;
         err = "HTTP " + r.status + " " + ((await r.json().catch(()=>({}))).detail || "");
       }catch(e2){ err = e2.message || "network error"; r = null; }
@@ -5040,7 +5040,7 @@ function renderActivityInto(body, d, containerForClose){
     }));
     (d.events||[]).filter(i=>!i.seen).forEach(i=>{
       fetch("/pulse/seen",{method:"POST",headers:{"content-type":"application/json",
-        "x-noesis-token":USER.token},body:JSON.stringify({event_id:i.id})}).catch(()=>{});
+        "x-eigen-token":USER.token},body:JSON.stringify({event_id:i.id})}).catch(()=>{});
     });
 }
 
@@ -5306,7 +5306,7 @@ function showSessionDetail(row, rowEl){
       ` · <span class="audbadge" style="background:rgba(var(--gold-rgb),.14);color:var(--gold)">🌿 Alternative mode</span>`);
   }
   const _intake = firstTurn.intake_transcript || [];
-  if(_intake.length && sessionStorage.getItem("noesis_apw")){   // admin logged in → show intake conversation
+  if(_intake.length && sessionStorage.getItem("eigen_apw")){   // admin logged in → show intake conversation
     const it = document.createElement("details"); it.className = "plain plain-d";
     it.innerHTML = `<summary class="plain-h">◍ Guided intake transcript · admin · ${_intake.length} turns</summary>
       <div class="plain-b" style="display:flex;flex-direction:column;gap:.4rem;padding-top:.5rem">${
@@ -5504,7 +5504,7 @@ async function loadVideos(){
       const title = v.video_title || v.question || "Briefing video";
       return `<div class="vcard" data-file="${esc(v.video_filename)}" data-title="${esc(title)}" data-sid="${esc(v.id)}">
         <div class="vposter">
-          <svg class="vmark" viewBox="0 0 220 132" aria-hidden="true"><use href="#noesis-logo"/></svg>
+          <svg class="vmark" viewBox="0 0 220 132" aria-hidden="true"><use href="#eigen-logo"/></svg>
           <div class="vplay">▶</div>${dur?`<div class="vdur">${dur}</div>`:""}
         </div>
         <div class="vcinfo"><div class="vctitle">${esc(title)}</div>
@@ -5573,7 +5573,7 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !sessionsEl.hid
 
 // ---- identity gate (name + email captured at landing, stored per session) ----
 function initIdentity(){
-  try{ USER = JSON.parse(localStorage.getItem("noesis_user")||"null"); }catch(e){ USER = null; }
+  try{ USER = JSON.parse(localStorage.getItem("eigen_user")||"null"); }catch(e){ USER = null; }
   // Show the gate for new users AND for returning users who predate the disclaimer (never attested).
   if(!USER || !USER.email || !USER.disclaimer_ack){
     if(USER){ if(USER.name) $("#idname").value = USER.name; if(USER.email) $("#idemail").value = USER.email; }
@@ -5603,7 +5603,7 @@ $("#idgo").addEventListener("click", async ()=>{
     }catch(e){ /* offline/server issue — proceed local-only */ }
     btn.textContent = was; btn.disabled = false;
   }
-  localStorage.setItem("noesis_user", JSON.stringify(USER));
+  localStorage.setItem("eigen_user", JSON.stringify(USER));
   $("#idmodal").hidden = true;
   maybeShowPulseBell();          // token may have just landed — arm the Pulse bell
   if(PULSE_REAUTH && USER && USER.token){ PULSE_REAUTH = false; openPulsePage(); }
@@ -5620,21 +5620,21 @@ const SET_LABELS = {
 };
 function openSettings(){
   $("#setmodal").hidden = false;
-  const unlocked = sessionStorage.getItem("noesis_apw");
+  const unlocked = sessionStorage.getItem("eigen_apw");
   $("#setlock").hidden = !!unlocked;
   if(unlocked) loadSettingsUI(); else setTimeout(()=>$("#setpw").focus(), 60);
 }
 async function loadSettingsUI(){
-  const pw = sessionStorage.getItem("noesis_apw") || $("#setpw").value.trim();
+  const pw = sessionStorage.getItem("eigen_apw") || $("#setpw").value.trim();
   try{
     const r = await fetch("/admin/settings", {headers: {"x-admin-password": pw}});
     if(r.status === 401){
-      sessionStorage.removeItem("noesis_apw");
+      sessionStorage.removeItem("eigen_apw");
       $("#setlock").hidden = false; $("#setbody").hidden = true;
       $("#seterr").textContent = "Wrong password."; return;
     }
     if(!r.ok) throw new Error(r.status);
-    sessionStorage.setItem("noesis_apw", pw);
+    sessionStorage.setItem("eigen_apw", pw);
     $("#setlock").hidden = true; $("#seterr").textContent = "";
     renderSettingsUI(await r.json());
   }catch(e){ $("#seterr").textContent = "Settings unavailable — try again."; $("#setlock").hidden = false; }
@@ -5662,11 +5662,11 @@ function renderSettingsUI(d){
   if(ibtn) ibtn.addEventListener("click", () => { $("#setmodal").hidden = true; openIngest(); });
   const pbtn = body.querySelector("#setperf");
   if(pbtn) pbtn.addEventListener("click", () => {   // pass the unlocked admin pw so /admin/perf opens directly
-    try{ sessionStorage.setItem("noesis-admin-pw", sessionStorage.getItem("noesis_apw") || ""); }catch(e){}
+    try{ sessionStorage.setItem("eigen-admin-pw", sessionStorage.getItem("eigen_apw") || ""); }catch(e){}
     location.href = "/admin/perf"; });
   body.querySelectorAll("select[data-k]").forEach(sel => sel.addEventListener("change", async () => {
     const r = await fetch("/admin/settings", {method: "POST",
-      headers: {"content-type": "application/json", "x-admin-password": sessionStorage.getItem("noesis_apw") || ""},
+      headers: {"content-type": "application/json", "x-admin-password": sessionStorage.getItem("eigen_apw") || ""},
       body: JSON.stringify({key: sel.dataset.k, value: sel.value})});
     if(r.ok) renderSettingsUI(await r.json());
     else $("#seterr").textContent = "Save failed (" + r.status + ").";
@@ -5681,22 +5681,22 @@ $("#setmodal").addEventListener("click", e => { if(e.target === $("#setmodal")) 
 // ---- relationship-graph console (⬡, password-gated, read-only) ----
 function openGraphConsole(){
   $("#graphmodal").hidden = false;
-  const unlocked = sessionStorage.getItem("noesis_apw");
+  const unlocked = sessionStorage.getItem("eigen_apw");
   $("#grlock").hidden = !!unlocked;
   if(unlocked) loadGraphConsole(); else setTimeout(()=>$("#grpw").focus(), 60);
 }
 async function loadGraphConsole(){
-  const pw = sessionStorage.getItem("noesis_apw") || $("#grpw").value.trim();
+  const pw = sessionStorage.getItem("eigen_apw") || $("#grpw").value.trim();
   try{
     const r = await fetch("/admin/graph/view?days=30", {headers: {"x-admin-password": pw}});
     if(r.status === 401){
-      sessionStorage.removeItem("noesis_apw");
+      sessionStorage.removeItem("eigen_apw");
       $("#grlock").hidden = false; $("#grbody").hidden = true;
       $("#grerr").textContent = "Wrong password."; return;
     }
     if(r.status === 404){ $("#grerr").textContent = "Graph is not enabled on this deployment."; return; }
     if(!r.ok) throw new Error(r.status);
-    sessionStorage.setItem("noesis_apw", pw);
+    sessionStorage.setItem("eigen_apw", pw);
     $("#grlock").hidden = true; $("#grerr").textContent = "";
     renderGraphConsole(await r.json());
   }catch(e){ $("#grerr").textContent = "Graph console unavailable — try again."; $("#grlock").hidden = false; }
@@ -5750,7 +5750,7 @@ function renderGraphConsole(d){
   body.innerHTML = chips + verdict + impact +
     `<input id="grfilter" placeholder="Filter ${edges.length} edges… (topic or relation)" />` +
     `<div id="gredges">${rows || '<p style="color:var(--muted);font-size:.8rem;">No edges yet — run /admin/graph/sync.</p>'}</div>` + topq +
-    `<p style="font-size:.68rem;color:var(--muted);margin-top:.8rem;">Read-only console. Edges are stored in Postgres (noesis_topic_edge / noesis_edge_evidence); activate/demote via the admin API. The graph steers retrieval — it is never cited as evidence.</p>`;
+    `<p style="font-size:.68rem;color:var(--muted);margin-top:.8rem;">Read-only console. Edges are stored in Postgres (eigen_topic_edge / eigen_edge_evidence); activate/demote via the admin API. The graph steers retrieval — it is never cited as evidence.</p>`;
   $("#grfilter").addEventListener("input", () => {
     const t = $("#grfilter").value.trim().toLowerCase();
     document.querySelectorAll("#gredges .gredge").forEach(el => {
@@ -5761,19 +5761,19 @@ function renderGraphConsole(d){
 // ---- ingestion console (⇪): sources + footprint + push ----
 function openIngest(){
   $("#ingmodal").hidden = false;
-  const unlocked = sessionStorage.getItem("noesis_apw");
+  const unlocked = sessionStorage.getItem("eigen_apw");
   $("#inglock").hidden = !!unlocked;
   if(unlocked) loadIngest(); else setTimeout(()=>$("#ingpw").focus(), 60);
 }
 async function loadIngest(){
-  const pw = sessionStorage.getItem("noesis_apw") || $("#ingpw").value.trim();
+  const pw = sessionStorage.getItem("eigen_apw") || $("#ingpw").value.trim();
   try{
     const r = await fetch("/admin/ingest/sources", {headers: {"x-admin-password": pw}});
-    if(r.status === 401){ sessionStorage.removeItem("noesis_apw");
+    if(r.status === 401){ sessionStorage.removeItem("eigen_apw");
       $("#inglock").hidden = false; $("#ingbody").hidden = true;
       $("#ingerr").textContent = "Wrong password."; return; }
     if(!r.ok) throw new Error(r.status);
-    sessionStorage.setItem("noesis_apw", pw);
+    sessionStorage.setItem("eigen_apw", pw);
     $("#inglock").hidden = true; $("#ingerr").textContent = "";
     renderIngest(await r.json());
   }catch(e){ $("#ingerr").textContent = "Ingestion console unavailable — try again."; $("#inglock").hidden = false; }
@@ -5855,7 +5855,7 @@ function renderPeopleShell(){
       <aside id="pplprof" class="pplprof" hidden></aside>
     </div>
     <p style="font-size:.66rem;color:var(--muted);margin-top:.8rem;">Public-record facts with per-field
-    provenance. Noesis does not evaluate quality or suitability — suggestions reflect only recorded
+    provenance. Eigen does not evaluate quality or suitability — suggestions reflect only recorded
     facts (specialty, location, credentials, listed metrics), never a quality ranking.</p>`;
   $("#pplgobtn").addEventListener("click", pplSend);
   $("#pplq").addEventListener("keydown", e => { if(e.key === "Enter") pplSend(); });
@@ -5993,7 +5993,7 @@ window.addEventListener("hashchange", ()=>{
   if(APP_MODE !== "qa") setMode("qa");
 });
 
-// ---- selection → "Learn more" — grounded explain (Noesis) or a free AI deep-dive (Google / Perplexity)
+// ---- selection → "Learn more" — grounded explain (Eigen) or a free AI deep-dive (Google / Perplexity)
 // A floating popover on any highlighted text in the readable content. No backend, no cost: the external
 // options open a free web AI search in a new tab; ✦ Explain reuses our own grounded glossary lookup.
 (function(){

@@ -14,7 +14,7 @@ import uuid
 from typing import Any
 
 _DDL = """
-CREATE TABLE IF NOT EXISTS noesis_corpus_gap_queue (
+CREATE TABLE IF NOT EXISTS eigen_corpus_gap_queue (
     id            TEXT PRIMARY KEY,
     vertical      TEXT NOT NULL,
     tenant_id     TEXT NOT NULL DEFAULT 'demo',
@@ -34,10 +34,10 @@ CREATE TABLE IF NOT EXISTS noesis_corpus_gap_queue (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE noesis_corpus_gap_queue ADD COLUMN IF NOT EXISTS source_country TEXT DEFAULT '';
-ALTER TABLE noesis_corpus_gap_queue ADD COLUMN IF NOT EXISTS modality TEXT DEFAULT '';
-ALTER TABLE noesis_corpus_gap_queue ADD COLUMN IF NOT EXISTS facets JSONB NOT NULL DEFAULT '{}';
-CREATE INDEX IF NOT EXISTS idx_gapq_status ON noesis_corpus_gap_queue (vertical, status, created_at);
+ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS source_country TEXT DEFAULT '';
+ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS modality TEXT DEFAULT '';
+ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS facets JSONB NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS idx_gapq_status ON eigen_corpus_gap_queue (vertical, status, created_at);
 """
 
 # A 'running' job older than this (crash / redeploy mid-ingest) is reclaimed to 'pending'.
@@ -75,7 +75,7 @@ class GapQueue:
                 jid = uuid.uuid4().hex
                 import json as _json
                 await conn.execute(
-                    """INSERT INTO noesis_corpus_gap_queue
+                    """INSERT INTO eigen_corpus_gap_queue
                        (id, vertical, tenant_id, connector, query, lim, kind, rationale, quality, question, source_country, modality, facets)
                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)""",
                     jid, self._vertical, tenant_id, j["connector"], j["query"],
@@ -92,12 +92,12 @@ class GapQueue:
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
-                    "UPDATE noesis_corpus_gap_queue SET status='pending', updated_at=now() "
+                    "UPDATE eigen_corpus_gap_queue SET status='pending', updated_at=now() "
                     "WHERE vertical=$1 AND status='running' AND updated_at < now() - ($2 || ' minutes')::interval",
                     self._vertical, str(_STALE_MINUTES))
                 row = await conn.fetchrow(
-                    """UPDATE noesis_corpus_gap_queue q SET status='running', updated_at=now()
-                       FROM (SELECT id FROM noesis_corpus_gap_queue
+                    """UPDATE eigen_corpus_gap_queue q SET status='running', updated_at=now()
+                       FROM (SELECT id FROM eigen_corpus_gap_queue
                              WHERE vertical=$1 AND status='pending'
                              ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) c
                        WHERE q.id=c.id
@@ -123,7 +123,7 @@ class GapQueue:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                "UPDATE noesis_corpus_gap_queue SET status='done', blocks_added=$2, "
+                "UPDATE eigen_corpus_gap_queue SET status='done', blocks_added=$2, "
                 "error='', updated_at=now() WHERE id=$1", job_id, int(blocks_added))
 
     async def fail(self, job_id: str, error: str) -> None:
@@ -131,7 +131,7 @@ class GapQueue:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                "UPDATE noesis_corpus_gap_queue SET status='failed', error=$2, updated_at=now() "
+                "UPDATE eigen_corpus_gap_queue SET status='failed', error=$2, updated_at=now() "
                 "WHERE id=$1", job_id, (error or "")[:800])
 
     async def list(self, *, tenant_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
@@ -146,7 +146,7 @@ class GapQueue:
             rows = await conn.fetch(
                 f"""SELECT id, connector, query, lim, kind, rationale, quality, question,
                           status, blocks_added, error, created_at, updated_at
-                    FROM noesis_corpus_gap_queue WHERE {where}
+                    FROM eigen_corpus_gap_queue WHERE {where}
                     ORDER BY created_at DESC LIMIT ${len(params)}""", *params)
         return [{
             "id": r["id"], "connector": r["connector"], "query": r["query"], "limit": r["lim"],
@@ -162,7 +162,7 @@ class GapQueue:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT status, count(*) n, coalesce(sum(blocks_added),0) blocks "
-                "FROM noesis_corpus_gap_queue WHERE vertical=$1 GROUP BY status", self._vertical)
+                "FROM eigen_corpus_gap_queue WHERE vertical=$1 GROUP BY status", self._vertical)
         by = {r["status"]: {"n": r["n"], "blocks": r["blocks"]} for r in rows}
         return {"by_status": by,
                 "pending": by.get("pending", {}).get("n", 0),

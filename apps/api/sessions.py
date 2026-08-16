@@ -16,7 +16,7 @@ import uuid
 from typing import Any
 
 _DDL = """
-CREATE TABLE IF NOT EXISTS noesis_research_session (
+CREATE TABLE IF NOT EXISTS eigen_research_session (
     id             TEXT PRIMARY KEY,
     vertical       TEXT NOT NULL,
     tenant_id      TEXT NOT NULL,
@@ -42,18 +42,18 @@ CREATE TABLE IF NOT EXISTS noesis_research_session (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 -- additive columns for pre-existing tables (expand-only; safe to re-run)
-ALTER TABLE noesis_research_session ADD COLUMN IF NOT EXISTS user_name  TEXT;
-ALTER TABLE noesis_research_session ADD COLUMN IF NOT EXISTS user_email TEXT;
-ALTER TABLE noesis_research_session ADD COLUMN IF NOT EXISTS visual_observation TEXT;
-ALTER TABLE noesis_research_session ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
-ALTER TABLE noesis_research_session ADD COLUMN IF NOT EXISTS real_patient BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE noesis_research_session ADD COLUMN IF NOT EXISTS layman_answer TEXT;
-ALTER TABLE noesis_research_session ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE noesis_research_session ADD COLUMN IF NOT EXISTS thread JSONB NOT NULL DEFAULT '[]'::jsonb;
-ALTER TABLE noesis_research_session ADD COLUMN IF NOT EXISTS audience TEXT NOT NULL DEFAULT 'clinician';
-ALTER TABLE noesis_research_session ADD COLUMN IF NOT EXISTS terms JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE eigen_research_session ADD COLUMN IF NOT EXISTS user_name  TEXT;
+ALTER TABLE eigen_research_session ADD COLUMN IF NOT EXISTS user_email TEXT;
+ALTER TABLE eigen_research_session ADD COLUMN IF NOT EXISTS visual_observation TEXT;
+ALTER TABLE eigen_research_session ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE eigen_research_session ADD COLUMN IF NOT EXISTS real_patient BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE eigen_research_session ADD COLUMN IF NOT EXISTS layman_answer TEXT;
+ALTER TABLE eigen_research_session ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE eigen_research_session ADD COLUMN IF NOT EXISTS thread JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE eigen_research_session ADD COLUMN IF NOT EXISTS audience TEXT NOT NULL DEFAULT 'clinician';
+ALTER TABLE eigen_research_session ADD COLUMN IF NOT EXISTS terms JSONB NOT NULL DEFAULT '[]'::jsonb;
 CREATE INDEX IF NOT EXISTS idx_nrs_vertical_tenant_created
-    ON noesis_research_session (vertical, tenant_id, created_at DESC);
+    ON eigen_research_session (vertical, tenant_id, created_at DESC);
 """
 
 
@@ -132,7 +132,7 @@ class SessionStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                """INSERT INTO noesis_research_session
+                """INSERT INTO eigen_research_session
                    (id, vertical, tenant_id, workspace_id, question, answer, grounded, claims,
                     source_stats, coverage_gaps, rejected, sources, user_name, user_email,
                     visual_observation, attachments, thread, audience)
@@ -157,7 +157,7 @@ class SessionStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             res = await conn.execute(
-                "UPDATE noesis_research_session SET thread = thread || $3::jsonb "
+                "UPDATE eigen_research_session SET thread = thread || $3::jsonb "
                 "WHERE id=$1 AND vertical=$2 AND NOT deleted AND audience=$4",
                 session_id, self._vertical, json.dumps([turn]), (audience or "clinician"))
         return res.endswith("1")
@@ -167,7 +167,7 @@ class SessionStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             res = await conn.execute(
-                "UPDATE noesis_research_session SET layman_answer=$3 WHERE id=$1 AND vertical=$2",
+                "UPDATE eigen_research_session SET layman_answer=$3 WHERE id=$1 AND vertical=$2",
                 session_id, self._vertical, text)
         return res.endswith("1")
 
@@ -177,7 +177,7 @@ class SessionStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             res = await conn.execute(
-                "UPDATE noesis_research_session SET terms=$3::jsonb WHERE id=$1 AND vertical=$2",
+                "UPDATE eigen_research_session SET terms=$3::jsonb WHERE id=$1 AND vertical=$2",
                 session_id, self._vertical, json.dumps(terms))
         return res.endswith("1")
 
@@ -193,7 +193,7 @@ class SessionStore:
         idx = max(0, int(turn_index or 0))
         async with pool.acquire() as conn:
             res = await conn.execute(
-                f"UPDATE noesis_research_session "
+                f"UPDATE eigen_research_session "
                 f"SET thread = jsonb_set(thread, ARRAY[$3::text, '{key}'], $4::jsonb, true) "
                 "WHERE id=$1 AND vertical=$2 AND NOT deleted "
                 "AND jsonb_array_length(thread) > $5",
@@ -211,7 +211,7 @@ class SessionStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             res = await conn.execute(
-                "UPDATE noesis_research_session SET deleted=TRUE WHERE id=$1 AND vertical=$2",
+                "UPDATE eigen_research_session SET deleted=TRUE WHERE id=$1 AND vertical=$2",
                 session_id, self._vertical)
         return res.endswith("1")
 
@@ -221,7 +221,7 @@ class SessionStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             res = await conn.execute(
-                """UPDATE noesis_research_session
+                """UPDATE eigen_research_session
                    SET video_filename=$3, video_title=$4, video_duration=$5
                    WHERE id=$1 AND vertical=$2""",
                 session_id, self._vertical, filename, title, duration)
@@ -254,7 +254,7 @@ class SessionStore:
                 f"""SELECT id, question, grounded, video_filename, user_name, user_email,
                            jsonb_array_length(attachments) AS n_attach, audience, created_at,
                            real_patient, thread->0->>'kind' AS kind
-                    FROM noesis_research_session
+                    FROM eigen_research_session
                     WHERE {where} ORDER BY created_at DESC LIMIT ${len(params)}""",
                 *params)
         return [{
@@ -275,7 +275,7 @@ class SessionStore:
             rows = await conn.fetch(
                 """SELECT id, question, video_filename, video_title, video_duration,
                           user_name, user_email, created_at
-                   FROM noesis_research_session
+                   FROM eigen_research_session
                    WHERE vertical=$1 AND tenant_id=$2 AND NOT deleted AND video_filename IS NOT NULL
                    ORDER BY created_at DESC LIMIT $3""",
                 self._vertical, tenant_id, limit)
@@ -293,7 +293,7 @@ class SessionStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             res = await conn.execute(
-                "UPDATE noesis_research_session SET real_patient=$3 "
+                "UPDATE eigen_research_session SET real_patient=$3 "
                 "WHERE id=$1 AND vertical=$2 AND NOT deleted",
                 session_id, self._vertical, bool(value))
         return res.endswith("1")
@@ -308,7 +308,7 @@ class SessionStore:
             rows = await conn.fetch(
                 """SELECT grounded, jsonb_array_length(claims) AS n_claims,
                           thread->0->'diagnostics'->'graph_legs' AS gl
-                   FROM noesis_research_session
+                   FROM eigen_research_session
                    WHERE vertical=$1 AND NOT deleted
                      AND created_at >= now() - ($2 || ' days')::interval
                    ORDER BY created_at DESC LIMIT $3""",
@@ -359,7 +359,7 @@ class SessionStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             r = await conn.fetchrow(
-                "SELECT * FROM noesis_research_session WHERE id=$1 AND vertical=$2 AND NOT deleted",
+                "SELECT * FROM eigen_research_session WHERE id=$1 AND vertical=$2 AND NOT deleted",
                 session_id, self._vertical)
         if r is None:
             return None
