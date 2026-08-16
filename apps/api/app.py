@@ -338,6 +338,13 @@ def term_glossary_enabled() -> bool:
     return os.environ.get("EIGEN_TERM_GLOSSARY", "").lower() in ("1", "true", "yes")
 
 
+def discovery_enabled() -> bool:
+    """Flag (default OFF, Rule 20): when ON (with the vertical's discovery_entity_of), POST /discover
+    surfaces the companies/orgs most associated with a capability query — the scouting/sourcing surface
+    for corp-dev / M&A. OFF → the endpoint 404s (byte-identical to today)."""
+    return os.environ.get("EIGEN_DISCOVERY", "").lower() in ("1", "true", "yes")
+
+
 def refine_enabled() -> bool:
     """Flag (default OFF, Rule 20): when ON, a FRESH question (no history) is first sent to /refine,
     which proposes a few distinct sharper standalone questions to pick from (express refinement). The
@@ -694,6 +701,16 @@ class CorpusIngestIn(BaseModel):
     jobs into the corpus queue that the prod processor drains straight into the prod corpus."""
     jobs: list[dict] = []                  # explicit passthrough {connector, query, limit, facets, ...}
     source_country: str = ""               # optional per-batch facet stamp on every ingested block
+
+
+class DiscoverIn(BaseModel):
+    """Discovery / sourcing: 'which companies are working on X' over the corpus."""
+    query: str
+    tenant_id: str = "demo"
+    workspace_id: str | None = None
+    limit: int = 20                        # how many target companies to return
+    pool: int = 150                        # retrieval pool size before entity aggregation
+    sources: list[str] | None = None       # restrict to certain corpus sources (e.g. ["edgar","github"])
 
 
 class PulseEventIn(BaseModel):
@@ -1222,6 +1239,47 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "text": h.text[:600], "source": h.source_key or "corpus",
             "title": h.document_title, "score": round(h.score, 4),
         } for h in hits]}
+
+    @app.post("/discover")
+    async def discover(body: DiscoverIn) -> dict:
+        """Discovery / sourcing (corp-dev / M&A): the companies/orgs most associated with a capability
+        query, ranked, each with grounded verbatim evidence + source links. Retrieval-only (no answer
+        LLM) — fast and always available. Gated by EIGEN_DISCOVERY + the vertical's discovery_entity_of."""
+        if not discovery_enabled():
+            raise HTTPException(status_code=404, detail="discovery not enabled")
+        if app.state.service is None:
+            app.state.service = build_default_service()
+        svc = app.state.service
+        entity_of = getattr(load_active_vertical(), "discovery_entity_of", None)
+        if entity_of is None:
+            raise HTTPException(status_code=404, detail="discovery unavailable for this vertical")
+        try:
+            hits = await svc.search(question=body.query, tenant_id=body.tenant_id,
+                                    workspace_id=body.workspace_id, source_keys=body.sources,
+                                    k=max(20, min(400, body.pool)))
+        except Exception as e:   # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"retrieval error: {e}") from e
+        from eigen_kernel.research.discover import aggregate_entities
+        # tier bonus from the vertical's evidence classifier + authority ranks (so a company tied by an
+        # audited filing ranks above one tied by a preprint or a news headline).
+        classify = getattr(svc, "evidence_classifier", None) or getattr(load_active_vertical(), "evidence_classifier", None)
+        authority = getattr(load_active_vertical(), "authority_policy", None)
+        def _tier(h):
+            if not (classify and authority):
+                return 0.0
+            try:
+                return authority.rank(classify(h.source_key, h.facets)) / 6.0
+            except Exception:   # noqa: BLE001
+                return 0.0
+        companies = aggregate_entities(hits, entity_of, top=max(1, min(100, body.limit)),
+                                       tier_of=_tier)
+        # attach a clickable source url per evidence item (vertical link resolver)
+        ui = getattr(svc, "ui", None)
+        for c in companies:
+            for ev in c.get("evidence", []):
+                if ui and hasattr(ui, "source_url"):
+                    ev["url"] = ui.source_url(ev.get("document_id", ""), ev.get("quote"))
+        return {"query": body.query, "count": len(companies), "companies": companies}
 
     @app.post("/ingest")
     async def ingest(tenant_id: str = "demo") -> dict:

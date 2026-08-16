@@ -234,6 +234,12 @@ class VerticalManifest:
     # None → tiers unavailable (evidence_kind stays ""), a safe no-op.
     evidence_classifier: object | None = None
 
+    # Optional DISCOVERY entity resolver: callable(hit) -> (entity_name, entity_type) | None, telling
+    # the kernel's aggregate_entities how to read WHICH entity a retrieved block is about (a filing's
+    # issuer, a repo's org). Powers the "who is working on X" scouting surface. Names no domain concept
+    # (it's an opaque callable); None → discovery is unavailable for this vertical.
+    discovery_entity_of: object | None = None
+
     # Held-out eval gold + vocab
     eval_gold: dict[str, object] = field(default_factory=dict)
 

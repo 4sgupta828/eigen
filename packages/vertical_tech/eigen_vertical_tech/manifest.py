@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from eigen_kernel.contract.manifest import VerticalManifest
 
-from . import entities, evidence_kind
+from . import discovery, entities, evidence_kind
 from .answer_format import (TECH_ANSWER_FORMAT, TECH_DILIGENCE_SYNTHESIS_FORMAT,
                             TECH_VISUAL_GUIDANCE, TECH_CHART_GUIDANCE, TECH_REASONING_FORMAT)
 from .terms import TECH_TERMS_PROMPT
@@ -51,6 +51,7 @@ def build_manifest() -> VerticalManifest:
         persona=TechPersona(),
         authority_policy=TechAuthorityPolicy(),
         evidence_classifier=evidence_kind.classify,   # structural facets → evidence tier (Rule 18)
+        discovery_entity_of=discovery.entity_of,       # "who is working on X" scouting (M&A/corp-dev)
         ui=TechUI(),
         answer_format=TECH_ANSWER_FORMAT,
         # Enhanced A/B synthesis variant (reuses the kernel's enhanced-answer slot; same section set).
