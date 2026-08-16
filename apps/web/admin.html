@@ -112,28 +112,29 @@ async function load(){
   }catch(e){}
 
   // totals
+  const sectors = plan.sectors||{}, planSources = plan.sources||{};
   parts.push(`<div class="totals">
     <div class="stat"><div class="n">${fmt(live.total_blocks)}</div><div class="l">Blocks indexed</div></div>
     <div class="stat"><div class="n">${fmt(live.total_docs)}</div><div class="l">Documents</div></div>
-    <div class="stat"><div class="n">${(plan.covered||[]).length}</div><div class="l">Conditions covered</div></div>
-    <div class="stat"><div class="n">${(plan.remaining||[]).length}</div><div class="l">Conditions remaining</div></div>
+    <div class="stat"><div class="n">${(sectors.covered||[]).length}</div><div class="l">Sectors covered</div></div>
+    <div class="stat"><div class="n">${Object.keys(live.by_source||{}).length}</div><div class="l">Live sources</div></div>
   </div>`);
 
-  // sources: declared inventory + live counts
+  // sources: live ingested counts + declared roadmap. Tier map (matches the vertical authority pyramid).
   const bs = live.by_source||{};
-  parts.push(`<h2>Sources</h2><div class="tw"><table><thead><tr>
-    <th>Source</th><th>Kind</th><th>Tier</th><th>Status</th><th>Blocks</th><th>Docs</th></tr></thead><tbody>` +
-    (plan.sources||[]).map(s=>{
-      const c = bs[s.key]||{}; const live_ = c.blocks||0;
-      const st = s.status||"";
-      return `<tr>
-        <td>${esc(s.label)}${s.note?`<div class="note">${esc(s.note)}</div>`:""}</td>
-        <td class="muted">${esc(s.kind||"")}</td>
-        <td class="muted">${esc(s.tier||"")}</td>
-        <td><span class="badge b-${esc(st)}">${esc(st)}</span></td>
-        <td class="num ${live_?"":"zero"}">${live_?fmt(live_):"—"}</td>
-        <td class="num ${c.docs?"":"zero"}">${c.docs?fmt(c.docs):"—"}</td></tr>`;
-    }).join("") + `</tbody></table></div>`);
+  const TIER = {edgar:"primary_filing", openalex:"verified_structured", arxiv:"technical_signal",
+                github:"technical_signal", patentsview:"primary_filing", gdelt:"analysis",
+                hackernews:"sentiment_signal", semantic_scholar:"verified_structured", crossref:"verified_structured"};
+  const liveKeys = Object.keys(bs).sort((a,b)=>(bs[b].blocks||0)-(bs[a].blocks||0));
+  parts.push(`<h2>Sources (live)</h2><div class="tw"><table><thead><tr>
+    <th>Source</th><th>Tier</th><th>Blocks</th><th>Docs</th></tr></thead><tbody>` +
+    liveKeys.map(k=>{const c=bs[k]||{}; return `<tr>
+      <td>${esc(k)}</td><td class="muted">${esc(TIER[k]||"")}</td>
+      <td class="num">${fmt(c.blocks||0)}</td>
+      <td class="num ${c.docs?"":"zero"}">${c.docs?fmt(c.docs):"—"}</td></tr>`;}).join("")
+    + `</tbody></table></div>`);
+  const plannedSrc = (planSources.planned||[]);
+  if(plannedSrc.length) parts.push(`<div class="muted" style="margin:.4rem 0 1rem">Planned sources: ${plannedSrc.map(esc).join(" · ")}</div>`);
 
   // by content kind
   const bk = live.by_kind||{};
@@ -144,7 +145,7 @@ async function load(){
   }
 
   // by source country (evidence geography — drives country-scoped search)
-  const CLABEL = {US:"United States", IN:"India", global:"Global / shared", "?":"Untagged"};
+  const CLABEL = {US:"United States", global:"Global / shared", "?":"Untagged"};
   const bc = live.by_country||{};
   if(Object.keys(bc).length){
     parts.push(`<h2>By country</h2><div class="tw"><table><thead><tr><th>Country</th><th>Blocks</th></tr></thead><tbody>` +
@@ -152,16 +153,27 @@ async function load(){
       `</tbody></table></div>`);
   }
 
-  // covered conditions (grouped, with depth)
-  parts.push(`<h2>Conditions covered</h2>` + groupGrid(plan.covered||[], true));
-  // remaining
-  parts.push(`<h2>Remaining to cover</h2>` + groupGrid(plan.remaining||[], false));
+  // sectors (subject scope) — covered + planned
+  parts.push(`<h2>Sectors</h2><div class="muted" style="margin-bottom:1rem">Covered: ${(sectors.covered||[]).map(esc).join(", ")||"—"}
+    &nbsp;·&nbsp; Planned: ${(sectors.planned||[]).map(esc).join(", ")||"—"}</div>`);
+  // by sector facet (live)
+  const bsec = live.by_sector||{};
+  if(Object.keys(bsec).length){
+    parts.push(`<h2>By sector</h2><div class="tw"><table><thead><tr><th>Sector</th><th>Blocks</th></tr></thead><tbody>` +
+      Object.entries(bsec).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${fmt(v)}</td></tr>`).join("") +
+      `</tbody></table></div>`);
+  }
+  // corpus health (substance, not just counts)
+  const th = live.text_health||{};
+  if(th.avg_chars!=null){
+    parts.push(`<div class="muted" style="margin:.6rem 0">Corpus health — avg block ${fmt(th.avg_chars)} chars, min ${fmt(th.min_chars)}, ${fmt(th.tiny_blocks||0)} tiny (&lt;40 char) blocks.</div>`);
+  }
 
   // recent ingest runs (precise per-download record)
   const runs = live.runs||[];
   if(runs.length){
     parts.push(`<h2>Recent downloads</h2><div class="tw"><table><thead><tr>
-      <th>Condition</th><th>Per source</th><th>Blocks</th><th>When</th></tr></thead><tbody>` +
+      <th>Query</th><th>Per source</th><th>Blocks</th><th>When</th></tr></thead><tbody>` +
       runs.map(r=>`<tr>
         <td>${esc(r.condition||"")}</td>
         <td class="muted">${Object.entries(r.by_source||{}).map(([k,v])=>esc(k)+" "+fmt(v)).join(" · ")||"—"}</td>

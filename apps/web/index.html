@@ -6,8 +6,8 @@
 <title>Eigen — Research</title>
 <style>
   /* ---- Eigen identity: deep navy canvas, gold brand accent, green = verified ---- */
-  /* DEFAULT = CLINICAL LIGHT — the look familiar from clinical/EHR apps: cool-white surfaces, a
-     trustworthy medical-blue accent, dark-slate text. Dark is opt-in via the bottom-left toggle. */
+  /* DEFAULT = LIGHT — cool-white surfaces, a trustworthy blue accent, dark-slate text.
+     Dark is opt-in via the bottom-left toggle. */
   :root{
     color-scheme:light;
     --bg:#EEF3F8; --panel:#FFFFFF; --panel2:#F4F8FC; --ink:#132430; --muted:#5A6B7B;
@@ -45,7 +45,7 @@
     --hl-f:46,107,79; --hl-r:138,106,31; --hl-k:63,94,150;
     --chart1:#9A6E0E; --chart2:#1F7A52; --chart3:#A85C1E;
   }
-  /* Editorial legibility for CLINICAL notation: Charter-first serif (screen-designed, LINING
+  /* Editorial legibility for technical notation: Charter-first serif (screen-designed, LINING
      figures — Iowan/Palatino's old-style digits jar in doses and citation markers), lining +
      tabular numerals everywhere, and sub/superscripts (the [n] citation sups, chemical
      notation) set in the mono face so they stay crisp at small sizes. */
@@ -121,9 +121,9 @@
 
   /* effort dial — a labeled snap slider (Standard→Deeper→Deepest); scales how hard the agent
      works on a hard question. Distinct from the source pills so it's never read as a source key. */
-  /* centered so Effort + Integrative sit on the same vertical axis as the mode bar above the box */
+  /* centered so Effort sits on the same vertical axis as the mode bar above the box */
   .ctlbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:.45rem 1.15rem;margin-top:.55rem;}
-  .ctlbar .effort,.ctlbar .audsel{margin:0;}
+  .ctlbar .effort{margin:0;}
   .effort{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;margin:.55rem 0 0;}
   .effort .lbl{font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);}
   .effort .estep{display:inline-flex;align-items:center;gap:.55rem;}
@@ -179,17 +179,7 @@
   .dgt-f{color:var(--gap);font-size:.58rem;text-transform:uppercase;letter-spacing:.03em;}
   .dgfails{margin:0;padding:0 0 0 1rem;font-family:var(--mono);font-size:.66rem;color:var(--gap);line-height:1.5;flex:1 1 100%;}
 
-  /* audience switch — a two-segment control that reads as "who the answer is FOR", distinct from
-     the effort dial next to it (words, not a slider). */
-  .audsel{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:.55rem 0 0;}
-  .audsel .lbl{font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);}
-  .audsel .seg{display:inline-flex;border:1px solid var(--hair);border-radius:999px;overflow:hidden;}
-  .audsel .segbtn{font-family:var(--mono);font-size:.72rem;letter-spacing:.02em;cursor:pointer;border:0;
-    background:transparent;color:var(--muted);padding:.24rem .8rem;transition:.12s;}
-  .audsel .segbtn[aria-pressed="true"]{background:var(--gold);color:var(--on-accent);}
-  .audsel .segbtn:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
-  .audsel .ahint{flex-basis:100%;font-family:var(--mono);font-size:.63rem;color:var(--muted);opacity:.85;}
-  /* Mode switch — Quick Q&A ⇄ Specialist Panel (one segmented control, shared look in both views) */
+  /* Mode switch — Quick Q&A ⇄ Expert Panel (one segmented control, shared look in both views) */
   .modeswitch{display:none;justify-content:center;margin:.15rem 0 1.15rem;}
   .modeswitch.on{display:flex;}
   .modeseg{display:inline-flex;border:1px solid var(--hair);border-radius:999px;overflow:hidden;background:var(--panel2);}
@@ -198,19 +188,7 @@
   .modeseg .mbtn[aria-selected="true"]{background:var(--gold);color:var(--on-accent);}
   .modeseg .mbtn:hover:not([aria-selected="true"]){color:var(--ink);}
   .modeseg .mbtn:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
-  /* therapy-modality toggle (Modern Medicine | Alternative) */
-  .modsel{margin-left:.4rem;}
-  .modsel .modbtn{font-family:var(--mono);font-size:.7rem;letter-spacing:.03em;cursor:pointer;border:0;white-space:nowrap;
-    background:transparent;color:var(--muted);padding:.32rem .95rem;transition:.12s;display:inline-flex;align-items:center;gap:.32rem;}
-  .modsel .modbtn.on{background:var(--gold);color:var(--on-accent);}
-  .modsel .modbtn:hover:not(.on){color:var(--ink);}
-  .modsel .modbtn:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
-  body.altmode .modsel{border-color:rgba(var(--gold-rgb),.6);}
-  /* audience badge on a saved session (row + detail) */
-  .audbadge{display:inline-block;font-family:var(--mono);font-size:.62rem;letter-spacing:.03em;
-    border:1px solid var(--hair);border-radius:999px;padding:.05rem .5rem;vertical-align:middle;margin-left:.4rem;color:var(--muted);}
-  .audbadge.patient{color:var(--gold);border-color:var(--gold);}
-  /* audience tabs at the top of Past Sessions (Clinician | Patient) */
+  /* session-kind tabs at the top of Past Sessions (Quick Q&A | Expert Panel) */
   .sessions .stabs{display:flex;gap:.2rem;padding:0 .9rem;border-bottom:1px solid var(--hair);flex:none;}
   .sessions .stab{font-family:var(--mono);font-size:.7rem;letter-spacing:.02em;cursor:pointer;border:0;
     background:transparent;color:var(--muted);padding:.55rem .8rem;border-bottom:2px solid transparent;
@@ -346,7 +324,7 @@
   .cammodal .camshot{width:66px;height:66px;border-radius:50%;background:#fff;border:4px solid rgba(255,255,255,.4);cursor:pointer;flex:none;}
   .cammodal .camshot:active{transform:scale(.94);}
 
-  /* labeled visual observation (context, not a diagnosis) */
+  /* labeled visual observation (context only, not part of the evidence) */
   .vobs{border:1px solid var(--hair);border-left:3px solid var(--gold);border-radius:12px;
     background:var(--panel2);padding:.85rem 1.05rem;margin:.1rem 0 1.4rem;}
   .vobs .vobs-h{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;
@@ -411,7 +389,7 @@
   /* synthesized answer */
   .answer{font-size:.96rem;line-height:1.62;letter-spacing:-.005em;white-space:pre-wrap;margin:.2rem 0 1.4rem;}
   .answer .ref{color:var(--gold);font-weight:640;cursor:pointer;font-size:.72em;padding:0 .05em;}
-  /* structured answer — a clinical brief */
+  /* structured answer — a research brief */
   .answer.md{white-space:normal;font-size:.92rem;}
   .answer.md .mdh{font-family:var(--sans);font-size:.7rem;font-weight:680;text-transform:uppercase;
     letter-spacing:.14em;color:var(--gold);margin:1.9rem 0 .7rem;padding-top:1.4rem;
@@ -552,18 +530,17 @@
   .panelrun:disabled{opacity:.5;cursor:default;background:transparent;color:var(--muted);border-color:var(--hair);}
   .panelrun-n{font-weight:400;opacity:.85;margin-left:.3rem;}
   /* On the convene screen the Run button sits up top and sticks there, so it stays reachable while the
-     user scrolls the (long) specialist roster below — no scroll-to-bottom to start the analysis. */
+     user scrolls the (long) analyst roster below — no scroll-to-bottom to start the analysis. */
   .panelrun-bar{position:sticky;top:0;z-index:5;margin:.2rem 0 1.3rem;padding:.5rem 0;background:var(--bg);
     border-bottom:1px solid var(--hair);}
   .panelrun-bar .panelrun{margin-top:0;}
-  /* Specialist Panel — a MODE of the same shell as Q&A, not a separate overlay. body[data-mode] swaps the
+  /* Expert Panel — a MODE of the same shell as Q&A, not a separate overlay. body[data-mode] swaps the
      answer surface (#out ⇄ #panelbody); body[data-panel] tracks the phase (landing keeps the shared intake
      box visible; plan/conference hide it since they have their own run button / docked composer). */
   #panelbody{display:none;padding:.4rem 0 3rem;}
   body[data-mode="panel"] #panelbody{display:block;}
   body[data-mode="panel"] #out,
-  body[data-mode="panel"] #effort,
-  body[data-mode="panel"] #audsel{display:none !important;}
+  body[data-mode="panel"] #effort{display:none !important;}
   body[data-mode="panel"][data-panel="plan"] #ask,
   body[data-mode="panel"][data-panel="conference"] #ask{display:none;}
   /* Guided intake (triage) — a THIRD mode of the shell. The shared #ask box is the message input; the
@@ -571,8 +548,7 @@
   #triagebody{display:none;padding:.4rem 0 3rem;max-width:44rem;margin:0 auto;}
   body[data-mode="triage"] #triagebody{display:block;}
   body[data-mode="triage"] #out,
-  body[data-mode="triage"] #effort,
-  body[data-mode="triage"] #audsel{display:none !important;}
+  body[data-mode="triage"] #effort{display:none !important;}
   .tgt-thread{display:flex;flex-direction:column;gap:.7rem;margin-bottom:.4rem;}
   .tgt-msg{max-width:88%;padding:.6rem .85rem;border-radius:13px;font-size:.9rem;line-height:1.5;}
   .tgt-msg.user{align-self:flex-end;background:var(--gold);color:var(--on-accent);border-bottom-right-radius:4px;}
@@ -586,8 +562,6 @@
   .tgt-ready-h{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:.5rem;}
   .tgt-understood{font-size:.86rem;color:var(--muted);line-height:1.55;margin-bottom:.7rem;}
   .tgt-refined{font-family:var(--serif);font-size:1.12rem;line-height:1.4;color:var(--ink);margin-bottom:1rem;}
-  .tgt-modality{font-size:.82rem;line-height:1.5;color:var(--ink);background:rgba(var(--gold-rgb),.08);
-    border:1px solid rgba(var(--gold-rgb),.35);border-radius:10px;padding:.6rem .8rem;margin-bottom:1rem;}
   .tgt-routes{display:flex;flex-wrap:wrap;gap:.6rem;}
   .tgt-route{flex:1;min-width:200px;text-align:left;cursor:pointer;background:var(--panel);border:1px solid var(--hair);
     border-radius:11px;padding:.7rem .85rem;transition:border-color .15s,box-shadow .15s;color:var(--ink);font:inherit;}
@@ -627,7 +601,7 @@
   .panelstatus{max-width:760px;margin:2rem auto;text-align:center;color:var(--muted);font-size:.95rem;line-height:1.6;}
   .panelstatus .spin,.psynthstat .spin{display:inline-block;margin-right:.5rem;animation:spin 1.1s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
-  /* live per-specialist progress + trace during a streamed panel run */
+  /* live per-analyst progress + trace during a streamed panel run */
   .pphase{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;margin:.9rem 0 .1rem;
     font-family:var(--mono);font-size:.7rem;color:var(--muted);}
   .pphase .pph{padding:.2rem .6rem;border:1px solid var(--hair);border-radius:999px;
@@ -848,9 +822,6 @@
     padding:.8rem .95rem;margin-top:.35rem;}
   .xitem.expanded video{display:block;max-width:100%;border-radius:8px;margin:.55rem 0;}
   .xformrow>details.plain-d{flex-basis:100%;}
-  /* real-world patient case marker — the eigen circle in warm orange */
-  .rpdot{color:#f28c2e;font-size:.9em;text-shadow:0 0 6px rgba(242,140,46,.45);}
-  .sact.rp-on{color:#f28c2e;border-color:#f28c2e;}
   /* ◉ Pulse full page */
   .pulsepage{position:fixed;inset:0;z-index:50;background:var(--bg);overflow-y:auto;padding:1rem 1.4rem 3rem;}
   /* 🎙 voice intake — mic lives in the composer, guided mode only */
@@ -941,31 +912,10 @@
   .ppcov-more{margin-top:.5rem;}
   .ppcov-more>summary{font-family:var(--mono);font-size:.66rem;color:var(--muted);cursor:pointer;padding:.3rem 0;}
   @media (max-width: 880px){ .ppbody{grid-template-columns:1fr;} .pprail{order:2;} }
-  /* People full page (shares the pulsepage frame) */
+  /* full-page overlay back button (shared by the pulsepage frame) */
   .pulsepage .sback{font-family:var(--mono);font-size:.66rem;letter-spacing:.05em;text-transform:uppercase;
     cursor:pointer;background:transparent;border:1px solid var(--hair);border-radius:999px;color:var(--muted);padding:.3rem .8rem;}
   .pulsepage .sback:hover{border-color:var(--gold);color:var(--gold);}
-  .pplask{display:flex;gap:.5rem;margin:1rem 0 .55rem;max-width:56rem;}
-  .pplask input{flex:1;min-width:0;font-size:.92rem;padding:.6rem .85rem;border:1px solid var(--hair);
-    border-radius:12px;background:var(--panel2);color:var(--ink);}
-  .pplask input:focus{outline:none;border-color:var(--gold);}
-  .pplchips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.35rem 0 .2rem;min-height:1.1rem;}
-  .pplchip{display:inline-flex;align-items:center;gap:.35rem;font-size:.72rem;padding:.2rem .3rem .2rem .6rem;
-    border:1px solid var(--gold);border-radius:999px;color:var(--ink);}
-  .pplchip .k{font-family:var(--mono);font-size:.58rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
-  .pplchip button{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:.72rem;padding:0 .25rem;}
-  .pplchip button:hover{color:var(--gap);}
-  .pplthread{display:flex;flex-direction:column;gap:.6rem;margin:.9rem 0 .8rem;max-width:46rem;}
-  .pplmsg{max-width:90%;padding:.55rem .85rem;border-radius:12px;font-size:.88rem;line-height:1.45;}
-  .pplmsg.user{align-self:flex-end;background:var(--gold);color:var(--on-accent);border-bottom-right-radius:4px;}
-  .pplmsg.agent{align-self:flex-start;background:var(--panel2);border:1px solid var(--hair);color:var(--ink);border-bottom-left-radius:4px;}
-  .pplcands{display:flex;flex-direction:column;gap:.45rem;margin-top:.55rem;}
-  .pplcand{border:1px solid var(--hair);border-radius:10px;padding:.5rem .7rem;background:var(--bg);cursor:pointer;}
-  .pplcand:hover{border-color:var(--gold);}
-  .pplcand .why{display:block;font-size:.7rem;color:var(--muted);margin-top:.2rem;}
-  .pplcols{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,380px);gap:1.4rem;align-items:start;padding-top:.5rem;}
-  @media (max-width: 880px){ .pplcols{grid-template-columns:1fr;} }
-  .pplprof{border:1px solid var(--hair);border-radius:14px;background:var(--panel2);padding:1rem;position:sticky;top:.5rem;}
   .ppcard{border:1px solid var(--hair);border-radius:14px;background:var(--panel2);margin-bottom:.8rem;overflow:hidden;}
   .ppcard-h{display:flex;align-items:center;gap:.6rem;padding:.8rem 1rem;cursor:pointer;}
   .ppcard-h:hover{background:var(--panel);}
@@ -1286,7 +1236,7 @@
     /* Three themes, cycled from one button: light (base :root, default) → dark → editorial.
        The button label always names the CURRENT theme; clicking advances to the next. */
     var ORDER=["light","dark","editorial"];
-    var NAMES={light:"☀ Clinical", dark:"🌙 Dark", editorial:"❡ Editorial"};
+    var NAMES={light:"☀ Light", dark:"🌙 Dark", editorial:"❡ Editorial"};
     function current(){ return document.documentElement.getAttribute("data-theme") || "light"; }
     function apply(t){
       if(t==="light") document.documentElement.removeAttribute("data-theme");
@@ -1326,7 +1276,7 @@
   <text x="110" y="92" text-anchor="middle" font-family="var(--serif)" font-size="27" letter-spacing="7" fill="var(--ink)">EIGEN</text>
   <text x="110" y="111" text-anchor="middle" font-family="var(--sans)" font-size="7.4" letter-spacing="3" fill="var(--gold)">DISCOVER · UNDERSTAND · ACT</text>
 </symbol></svg>
-<button type="button" class="themebtn" id="themebtn" aria-label="Switch color theme" title="Switch between dark and clinical light theme">☀ Light</button>
+<button type="button" class="themebtn" id="themebtn" aria-label="Switch color theme" title="Switch between dark and light theme">☀ Light</button>
 <div class="wrap">
   <header>
     <svg class="logo" viewBox="0 0 220 132" role="img" aria-label="Eigen"><use href="#eigen-logo"/></svg>
@@ -1337,10 +1287,8 @@
     <button type="button" class="histbtn setbtn" id="setbtn" style="margin-left:0;" title="Product settings (admin)" aria-label="Product settings">⚙</button>
     <button type="button" class="histbtn pulsebtn" id="pulsebell" style="margin-left:0;" hidden
             title="Evidence changes on your watched topics" aria-label="Pulse inbox">◉ Pulse<span class="pbadge" id="pbadge" hidden></span></button>
-    <button type="button" class="histbtn" id="pplbtn" style="margin-left:0;"
-            title="Find the right specialist for a situation" aria-label="People">⧉ People</button>
     <button type="button" class="histbtn" id="termsbtn" style="margin-left:0;" hidden
-            title="Every medical term Eigen has explained — searchable, each linking to its related terms" aria-label="All Terms">✦ Terms</button>
+            title="Every term Eigen has explained — searchable, each linking to its related terms" aria-label="All Terms">✦ Terms</button>
   </header>
 
   <h1 id="heading">What does the evidence show?</h1>
@@ -1348,7 +1296,7 @@
     <div class="modeseg" role="tablist" aria-label="Answer mode">
       <button type="button" class="mbtn" data-mode="triage" role="tab" aria-selected="false" hidden>◍ Guided</button>
       <button type="button" class="mbtn" data-mode="qa" role="tab" aria-selected="true">Quick Q&amp;A</button>
-      <button type="button" class="mbtn" data-mode="panel" role="tab" aria-selected="false">◈ Specialist Panel</button>
+      <button type="button" class="mbtn" data-mode="panel" role="tab" aria-selected="false">◈ Expert Panel</button>
     </div>
   </div>
   <form id="ask">
@@ -1396,18 +1344,6 @@
           <button type="button" class="ebtn" id="effort-inc" aria-label="More effort">+</button>
         </span>
       </div>
-      <!-- audience toggle removed: composer answers are always the clinician brief (the plain-language
-           re-explain lives on the answer itself); setAudience remains for session restore -->
-      <!-- Integrative-options toggle removed: the Alternative therapy MODE (below) now owns
-           complementary/alternative evidence more comprehensively (its own corpus scope + labeling). -->
-      <!-- therapy MODALITY toggle (flag EIGEN_MODALITY_MODE): Modern Medicine (default, excludes CAM) |
-           Alternative (acupuncture/CAM evidence with conventional context + evidence/safety labels) -->
-      <div class="modeseg modsel" id="modsel" role="tablist" aria-label="Therapy modality" hidden>
-        <button type="button" class="modbtn on" data-mod="allopathic" role="tab" aria-selected="true"
-                title="Modern (allopathic) medicine — the default. Alternative-therapy evidence is excluded.">⚕ Modern Medicine</button>
-        <button type="button" class="modbtn" data-mod="alternative" role="tab" aria-selected="false"
-                title="Acupuncture &amp; complementary/alternative medicine evidence, shown with conventional context and evidence-strength + safety labels.">🌿 Alternative</button>
-      </div>
     </div>
   </form>
 
@@ -1423,7 +1359,7 @@
         <svg class="micon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="0.7" fill="currentColor"/></svg></div>
     </div>
   </section>
-  <!-- Specialist Panel body — lives in the SAME shell as Q&A (shared header + heading + mode switch +
+  <!-- Expert Panel body — lives in the SAME shell as Q&A (shared header + heading + mode switch +
        intake box). Mode is driven by body[data-mode]; the panel phase by body[data-panel]. -->
   
 <!-- ◉ Pulse: full-page hub — per-topic movement over a rolling window -->
@@ -1454,7 +1390,7 @@
   </div>
 </section>
 
-<!-- ✦ All Terms: full-page glossary — the accumulating, navigable web of explained medical terms -->
+<!-- ✦ All Terms: full-page glossary — the accumulating, navigable web of explained terms -->
 <section class="termspage" id="termspage" hidden aria-label="All Terms">
   <div class="tphead">
     <button type="button" class="sback" id="tpback">← Back</button>
@@ -1467,7 +1403,7 @@
   <div class="tplist" id="tplist"><div class="suggest-loading">Loading…</div></div>
 </section>
 
-<section class="panelbody" id="panelbody" hidden aria-label="Specialist panel"></section>
+<section class="panelbody" id="panelbody" hidden aria-label="Expert panel"></section>
   <section class="triagebody" id="triagebody" hidden aria-label="Guided intake"></section>
   <footer class="pagefoot" id="pagefoot" hidden></footer>
 </div>
@@ -1479,12 +1415,9 @@
     <span class="stitle">Past Sessions</span>
   </div>
   <div class="ssearchrow">
-    <input type="search" class="ssearch" id="ssearch" placeholder="Search questions or people…" aria-label="Search sessions" />
+    <input type="search" class="ssearch" id="ssearch" placeholder="Search questions…" aria-label="Search sessions" />
   </div>
-  <div class="stabs" id="stabs" role="tablist" hidden>
-    <button type="button" class="stab" data-aud="clinician" role="tab" aria-selected="true">Clinician Driven Q&amp;A</button>
-    <button type="button" class="stab" data-aud="patient" role="tab" aria-selected="false">Patient Driven Q&amp;A</button>
-  </div>
+  <div class="stabs" id="stabs" role="tablist" hidden></div>
   <div class="sbody" id="sbody">
     <div class="slist" id="slist"></div>
     <div class="sdrag" id="sdrag" role="separator" aria-label="Resize panels"></div>
@@ -1533,7 +1466,7 @@
         </select>
         <input id="idnpi" type="text" placeholder="NPI (US — optional)" inputmode="numeric" />
       </div>
-      <div class="idhint">Add your NPI for a ✓ verified-clinician badge — checked against the public NPI registry. Free for verified clinicians.</div>
+      <div class="idhint">Optional — helps tailor answers to your role.</div>
     </div>
     <div class="iderr" id="iderr"></div>
     <div class="iddisc" id="iddisc" hidden></div>
@@ -1606,16 +1539,6 @@
   </div>
 </div>
 
-<!-- People: FULL-PAGE conversational specialist concierge (open to all) -->
-<section class="pulsepage" id="pplpage" hidden aria-label="People">
-  <div class="pphead">
-    <button type="button" class="sback" id="pplback">← Back</button>
-    <span class="pptitle">⧉ People</span>
-    <span class="ppsub">find the right specialist for the situation — public-record facts, no quality ranking</span>
-  </div>
-  <div id="pplbody"></div>
-</section>
-
 <!-- camera capture (mobile + laptop webcam) -->
 <div class="cammodal" id="cammodal" hidden aria-label="Camera">
   <video id="camvideo" autoplay playsinline muted></video>
@@ -1647,39 +1570,23 @@ let SUGGEST_ENABLED = false;// suggested follow-up questions after each answer
 let STREAM_ENABLED = false; // live agent trace via SSE (/research/stream)
 let EFFORT_ENABLED = false; // effort multiplier available (scales turns/results/depth/budget)
 let EFFORT = 1;             // current effort multiplier (1 = Standard); only sent when >1
-let PATIENT_MODE_ENABLED = false; // audience switch available (clinician vs patient answer)
-let AUDIENCE = "clinician"; // current answer audience; only sent when "patient"
-let SESS_AUDIENCE = "clinician"; // active Past-Sessions audience tab (clinician | patient)
 let SESS_TAB = null;             // active Past-Sessions tab {key, aud, kind, label} (see buildSessionTabs)
 let REFINE_ENABLED = false;     // pre-answer question refinement (offer sharper versions to pick)
 let GUIDED_REFINED = false;     // one-shot: the Q&A box was filled from Guided → skip refine on next ask
 let REASONING_ENABLED = false;  // reasoning-read interpretation + confidence layer (server-validated)
-let ASK_PANEL_ENABLED = false;  // AI specialist panel (Alpha)
+let ASK_PANEL_ENABLED = false;  // AI expert panel (Alpha)
 let TRIAGE_ENABLED = false;     // guided-intake / triage mode (clarify → route)
-let ACCOUNTS_ENABLED = false;   // accounts + verified-clinician tier + per-answer feedback (W-taxonomy)
+let ACCOUNTS_ENABLED = false;   // accounts + per-answer feedback (W-taxonomy)
 let DUEL_ENABLED = false;       // A/B duel: fresh questions run standard + reasoned engines, user votes
-let INTEGRATIVE_ENABLED = false;
-let PULSE_ENABLED = false;      // Evidence Pulse: watches, inbox, answer-integrity banners // feature flag: the per-question integrative opt-in is offered
+let PULSE_ENABLED = false;      // Evidence Pulse: watches, inbox, answer-integrity banners
 let DYN_ENGINES = false;         // dynamic engine selection on (powers AUTOMATIC engine routing)
 // The manual "Same question, another lens" hop chips (🧠 Understand why / ⚡ What should I do / 📚 Just
 // the evidence) are RETIRED: automatic engine routing + the reasoning-read layer already give the
 // user the right engine/interpretation, and each hop was a full ~90s re-run. Flip to true to restore.
 const LENS_HOPS_ENABLED = false;
-let INTEGRATIVE_ON = false;      // the per-question opt-in state (off by default)
-let MODALITY_ENABLED = false;    // therapy-modality toggle available (Modern Medicine / Alternative)
-let MODALITY = "allopathic";     // active modality; "alternative" surfaces the CAM corpus
 let PENDING_INTAKE_TRANSCRIPT = null;  // Guided-intake conversation to attach to the next answer (once)
-// Set the active therapy modality + sync the toggle UI. Called by the manual toggle AND by Guided
-// intake (which picks the modality from the framed question). No-op when modality mode is off.
-function setModality(m){
-  MODALITY = (m === "alternative") ? "alternative" : "allopathic";
-  const ms = document.getElementById("modsel");
-  if(ms) ms.querySelectorAll(".modbtn").forEach(x=>{ const on = x.dataset.mod === MODALITY;
-    x.classList.toggle("on", on); x.setAttribute("aria-selected", on ? "true" : "false"); });
-  document.body.classList.toggle("altmode", MODALITY === "alternative");
-}
 let PANEL_SPECIALISTS = [];      // roster from /config [{id, specialty, default}]
-let PANEL_EXAMPLES = [];         // sample multi-specialty cases seeded into the panel intake
+let PANEL_EXAMPLES = [];         // sample multi-topic questions seeded into the panel intake
 let THREAD = {session_id:null, turns:[]};   // the active conversation
 let BASE_PLACEHOLDER = "";                   // vertical console placeholder (restored on New)
 let DISCLAIMER = {};                          // {gate, footer, answer} responsibility copy from config
@@ -1707,13 +1614,12 @@ async function loadConfig(){
       fetch("/config").then(r=>r.json())
         .then(f=>{ try{ localStorage.setItem("eigen_cfg", JSON.stringify(f)); }catch(e){}
           // HOT-APPLY flags that are read at CALL time (no listener/DOM wiring) so admin-panel toggles
-          // land on THIS load, not two loads later. Flags that wire UI (panel/triage buttons, effort,
-          // patient mode) still take effect on the next load.
+          // land on THIS load, not two loads later. Flags that wire UI (panel/triage buttons, effort)
+          // still take effect on the next load.
           DUEL_ENABLED = !!f.duel_enabled;
           ACCOUNTS_ENABLED = !!f.accounts_enabled;
           DYN_ENGINES = !!f.dynamic_engines_enabled;
           PULSE_ENABLED = !!f.pulse_enabled; maybeShowPulseBell();
-          // integrative reveals a control row → wired on the next full load (not hot-applied)
         })
         .catch(()=>{});
     } else {
@@ -1736,23 +1642,15 @@ async function loadConfig(){
     SUGGEST_ENABLED = !!c.suggest_enabled;
     STREAM_ENABLED = !!c.stream_enabled;
     EFFORT_ENABLED = !!c.effort_scale_enabled;
-    PATIENT_MODE_ENABLED = !!c.patient_mode_enabled;
     REFINE_ENABLED = !!c.refine_enabled;
     REASONING_ENABLED = !!c.reasoning_read_enabled;
     ASK_PANEL_ENABLED = !!c.ask_panel_enabled;
     TRIAGE_ENABLED = !!c.triage_enabled;
     ACCOUNTS_ENABLED = !!c.accounts_enabled;
     DUEL_ENABLED = !!c.duel_enabled;
-    INTEGRATIVE_ENABLED = false;   // integrative toggle removed from the UI (Alternative mode supersedes it)
     PULSE_ENABLED = !!c.pulse_enabled;
     maybeShowPulseBell();
     DYN_ENGINES = !!c.dynamic_engines_enabled;
-    MODALITY_ENABLED = !!c.modality_mode_enabled;
-    if(MODALITY_ENABLED){
-      const ms = $("#modsel"); if(ms){ ms.hidden = false;
-        ms.querySelectorAll(".modbtn").forEach(b=>b.addEventListener("click", ()=>setModality(b.dataset.mod)));
-      }
-    }
     if(ACCOUNTS_ENABLED){
       const ex = $("#idextra"); if(ex) ex.hidden = false;   // reveal profession/NPI/country in the gate
       // an existing local-only user predates accounts → ask them to register once (prefilled)
@@ -1765,7 +1663,7 @@ async function loadConfig(){
     PANEL_SPECIALISTS = c.panel_specialists || [];
     PANEL_EXAMPLES = c.panel_examples || [];
     if(ASK_PANEL_ENABLED || TRIAGE_ENABLED){
-      // One shell, up to three modes (Guided intake ⇄ Quick Q&A ⇄ Specialist Panel), switched in the same
+      // One shell, up to three modes (Guided intake ⇄ Quick Q&A ⇄ Expert Panel), switched in the same
       // place under the heading. Only the enabled modes' buttons show; the shared box carries across them.
       $("#modeswitch").classList.add("on");
       const pbtn = $("#modeswitch .mbtn[data-mode='panel']"); if(pbtn) pbtn.hidden = !ASK_PANEL_ENABLED;
@@ -1779,9 +1677,8 @@ async function loadConfig(){
       $("#effort-inc").addEventListener("click", () => setEffort(EFFORT + 0.25));
       setEffort(1);
     }
-    if(PATIENT_MODE_ENABLED) setAudience("clinician");   // composer is always the clinician brief
-    // Past-Sessions tabs — audience (Clinician | Patient) and/or session-kind (Q&A | Specialist Panel),
-    // built from whichever flags are on. Panels get their own tab so they don't clutter the Q&A list.
+    // Past-Sessions tabs — session-kind (Quick Q&A | Expert Panel), built from whichever flags are
+    // on. Panels get their own tab so they don't clutter the Q&A list.
     buildSessionTabs();
     if(VISION_ENABLED){
       $("#attach").hidden = false;
@@ -1824,15 +1721,6 @@ function setEffort(v){
     ? "Research effort — deeper digs harder but uses more credits and time"
     : `Searching ~${EFFORT}× as hard (more turns, evidence & citations) — more credits and time`;
 }
-// Audience switch: clinician (default, structured + cited) vs patient (plain-language, same evidence).
-function setAudience(a){
-  AUDIENCE = (a === "patient") ? "patient" : "clinician";
-  const sel = $("#audsel");
-  if(sel) sel.querySelectorAll(".segbtn").forEach(b =>
-    b.setAttribute("aria-pressed", b.dataset.aud === AUDIENCE ? "true" : "false"));
-}
-const audienceName = a => (a === "patient" ? "Patient" : "Clinician");
-
 // Render the responsibility disclaimers wherever their config copy exists (gate attestation + page footer).
 // The per-answer footnote is added inside render(). Absent copy → the element stays hidden (no-op).
 function applyDisclaimers(){
@@ -2207,7 +2095,7 @@ function render(data, target, opts){
     ? `<button type="button" class="copybtn fbtop" data-v="up" title="Helpful">👍</button>`
       + `<button type="button" class="copybtn fbtop" data-v="down" title="Not right — tell us why">👎</button>` : "";
   const topbtns = `${hasHl?`<button type="button" class="copybtn hltoggle" id="hltoggle" title="Show color highlights (load-bearing facts, reasoning, key context)">✦ Highlights</button>`:""}`
-    + `${(TERMS_ENABLED && data.grounded && (data.answer||"").trim())?`<button type="button" class="copybtn" id="termstop" title="Explain the key medical terms this answer used — and add them to your All Terms glossary">✦ Key terms</button>`:""}`
+    + `${(TERMS_ENABLED && data.grounded && (data.answer||"").trim())?`<button type="button" class="copybtn" id="termstop" title="Explain the key terms this answer used — and add them to your All Terms glossary">✦ Key terms</button>`:""}`
     + `${(VISUAL_ENABLED && data.grounded && (data.answer||"").trim())?`<button type="button" class="copybtn" id="visualstop" title="Add grounded visuals — mechanism flows, decision trees, timelines — built only from this answer">◫ Add visuals</button>`:""}`
     + `${showLink?`<button type="button" class="copybtn" id="linkbtn">🔗 Copy link</button>`:""}`
     + `${(data.answer||n)?`<button type="button" class="copybtn" id="copybtn">⧉ Copy</button>`:""}`
@@ -2221,20 +2109,20 @@ function render(data, target, opts){
     ? `<div class="gaps"><h4>Coverage gaps</h4><ul>` +
       data.coverage_gaps.map(g=>`<li>${esc(g)}</li>`).join("") + `</ul></div>` : "";
   if(gapsHtml && !n) parts.push(gapsHtml);
-  // labeled AI visual observation (context, NOT a diagnosis, NOT part of the evidence)
+  // labeled AI visual observation (context only, NOT part of the evidence)
   if(data.visual_observation){
     parts.push(`<div class="vobs">
-      <div class="vobs-h">◐ AI visual observation · not a diagnosis</div>
+      <div class="vobs-h">◐ AI visual observation · context only</div>
       <div class="vobs-b">${esc(data.visual_observation)}</div>
-      <div class="vobs-note">Automated image description used only to guide the evidence search — it is not a clinical finding and is not part of the verified evidence below.</div>
+      <div class="vobs-note">Automated image description used only to guide the evidence search — it is not part of the verified evidence below.</div>
     </div>`);
   }
   if(data.attachment_notes && data.attachment_notes.length){
     parts.push(`<div class="vobs-note" style="margin:-.9rem 0 1.2rem">${data.attachment_notes.map(esc).join(" · ")}</div>`);
   }
   // what the user uploaded with this question (shown when reopening a saved session).
-  // PRIVACY: image PIXELS are never displayed in session views — uploads can be real patient
-  // photos; a labeled chip acknowledges the attachment without exposing it.
+  // PRIVACY: image PIXELS are never displayed in session views — uploads can be sensitive;
+  // a labeled chip acknowledges the attachment without exposing it.
   if(data.attachments && data.attachments.length){
     const items = data.attachments.map(a=> (a.kind==="image")
       ? `<span class="adoc" title="Image not displayed for privacy">🖼 ${esc(a.name)} <em class="apriv">hidden for privacy</em></span>`
@@ -2279,7 +2167,7 @@ function render(data, target, opts){
       parts.push(`<div class="empty"><span class="k">No span-verified answer.</span> Retrieved
         ${atoms} relevant passage${atoms>1?"s":""}${summ?" ("+summ+")":""}, but the agent couldn't
         ground a direct answer — often because the question asks for a ranking or recommendation
-        the sources don't establish. Try asking about a specific drug, trial, condition, or side effect.</div>`);
+        the sources don't establish. Try asking about a specific technology, method, metric, or trade-off.</div>`);
     } else {
       parts.push(`<div class="empty">${data._note?esc(data._note):"No grounded answer for that question with the chosen sources."}</div>`);
     }
@@ -2295,7 +2183,7 @@ function render(data, target, opts){
       return `<article class="claim" id="f${idx+1}">
         <div class="chead"><span class="fnum">${idx+1}</span><div class="ctext">${esc(c.text)}</div></div>
         <blockquote class="cquote">${esc(c.quote)}</blockquote>
-        <div class="cfoot"><span class="verified" title="A verbatim quote from this source was located and matched — this is a provenance check, not a judgment of source quality, currency, or clinical applicability.">✓ Quote found in source</span>${src}</div>
+        <div class="cfoot"><span class="verified" title="A verbatim quote from this source was located and matched — this is a provenance check, not a judgment of source quality, currency, or applicability.">✓ Quote found in source</span>${src}</div>
       </article>`;
     }).join("");
     const ngaps = (data.coverage_gaps||[]).length;
@@ -2496,15 +2384,15 @@ function convoActionsMarkup(data){
     </div>`);
   } else if(VIDEO_ENABLED && data.grounded){
     slim.push(`<span class="xitem" id="vid"><button type="button" class="xbtn" id="vgo"
-      title="A ~60-second clinical evidence briefing on this conversation — for clinicians, not patients. Takes ~2 minutes.">▶ Briefing video</button>
+      title="A ~60-second evidence briefing on this conversation. Takes ~2 minutes.">▶ Briefing video</button>
       <span class="xhint vhint" id="vhint" hidden></span></span>`);
   }
   if(data.layman_answer){
     boxes.push(`<details class="plain plain-d"><summary class="plain-h">◍ In plain language</summary>
       <div class="plain-b md">${mdToHtml(data.layman_answer)}</div></details>`);
-  } else if(LAYMAN_ENABLED && data.grounded && data.audience !== "patient"){
+  } else if(LAYMAN_ENABLED && data.grounded){
     slim.push(`<span class="xitem" id="plain"><button type="button" class="xbtn" id="plaingo"
-      title="The same answer, re-explained for a patient — plain words, same essence, no new claims.">◍ Plain language</button>
+      title="The same answer, re-explained in plain language — plain words, same essence, no new claims.">◍ Plain language</button>
       <span class="xhint plain-hint" hidden></span></span>`);
   }
   if(data.terms && data.terms.length){
@@ -2651,7 +2539,7 @@ async function generatePlain(root){
   }
 }
 
-// ---- ✦ Key terms: on-demand explanations of an answer's medical vocabulary ----
+// ---- ✦ Key terms: on-demand explanations of an answer's technical vocabulary ----
 // Every explanation accumulates into the All Terms glossary (server-side), and every term
 // links to its RELATED terms — clicking one navigates the knowledge web, explaining
 // not-yet-known terms on the fly (browsing deepens the web).
@@ -2713,7 +2601,7 @@ async function generateTerms(root, data){
 // The one slim-row affordance, shared by Q&A (convoActionsMarkup) and Panel (renderPanelSynth).
 function termsActionHtml(){
   return `<span class="xitem" id="terms"><button type="button" class="xbtn" id="termsgo"
-    title="Explain the key medical terms this answer used — what each is, why it matters, how it's applied — and add them to your All Terms glossary.">✦ Key terms</button>
+    title="Explain the key terms this answer used — what each is, why it matters, how it's applied — and add them to your All Terms glossary.">✦ Key terms</button>
     <span class="xhint terms-hint" hidden></span></span>`;
 }
 
@@ -3024,7 +2912,7 @@ async function tpRender(){
 const FB_MODES = [
   ["W5", "Missing something important"],
   ["W1", "A claim isn't supported by its cited source"],
-  ["W3", "Doesn't apply to this patient or setting"],
+  ["W3", "Doesn't apply to my situation or setting"],
   ["W4", "Overstates weak evidence"],
   ["U1", "Unclear or ambiguous"],
   ["U2", "Misunderstood my question"],
@@ -3168,7 +3056,7 @@ function answerMarkdown(data){
     out.push("## In plain language", "", strip(data.layman_answer), "");
   }
 
-  out.push("_Generated by Eigen — every claim carries a verbatim quote from its cited source (quote-checked for provenance; not a judgment of source quality, currency, or clinical applicability)._");
+  out.push("_Generated by Eigen — every claim carries a verbatim quote from its cited source (quote-checked for provenance; not a judgment of source quality, currency, or applicability)._");
   return out.join("\n");
 }
 async function copyAnswer(data, btn){
@@ -3221,7 +3109,6 @@ async function loadSharedSession(id){
     if(isPanelRow(row)){ openPanelSession(row); window.scrollTo({top:0}); return; }   // panel permalink → panel view
     CURRENT_Q = row.question;
     const thread = row.thread || [];
-    if(PATIENT_MODE_ENABLED) setAudience(row.audience || "clinician");   // continue in the same audience
     if(CONV_ENABLED && thread.length){          // resume the shared conversation (continuable)
       THREAD = {session_id:id, turns:thread.slice()};
       q.value=""; q.style.height="auto"; q.setAttribute("placeholder","");
@@ -3333,8 +3220,8 @@ function renderAttachments(){
                            : esc(a.name||"file");
       return `<span class="chip">${isText?"📄":"📎"} ${label}<button class="x" data-i="${i}" title="Remove" aria-label="Remove">×</button></span>`;
     }).join("") +
-    `<label class="consent" title="Images/documents are sent to the AI model for analysis. By checking, you confirm they contain no identifying patient information — faces, names, IDs.">
-       <input type="checkbox" id="consent"> No identifying patient info <span class="consent-q">ⓘ</span></label>`;
+    `<label class="consent" title="Images/documents are sent to the AI model for analysis. By checking, you confirm they contain no confidential or identifying information — names, IDs, secrets.">
+       <input type="checkbox" id="consent"> No confidential info <span class="consent-q">ⓘ</span></label>`;
   box.querySelectorAll(".x").forEach(b=>b.addEventListener("click",()=>{ ATTACHMENTS.splice(+b.dataset.i,1); renderAttachments(); }));
 }
 $("#attach").addEventListener("click", ()=>$("#file").click());
@@ -3400,12 +3287,11 @@ go.addEventListener("click", e=>{
 // ---- live agent trace (SSE) ----
 function traceLine(ev){
   if(ev.type==="effort")    return `<div class="tstep">⚡ Digging deeper — ${effortTier(ev.effort).name} · ${ev.effort}× effort</div>`;
-  if(ev.type==="audience")  return `<div class="tstep">🧑‍⚕️ Answering for a ${ev.audience==="patient"?"patient":"clinician"}</div>`;
   if(ev.type==="resolved_question") return `<div class="tstep">↳ Interpreting your follow-up as: <span class="tq">${esc(ev.question||"")}</span></div>`;
   if(ev.type==="clarify")   return `<div class="tstep">↳ Need a quick clarification…</div>`;
   if(ev.type==="operate_prior") return `<div class="tstep">↻ Reshaping your previous answer…</div>`;
   if(ev.type==="engine")    return `<div class="tstep">🧭 ${ev.engine==="reasoned"?"Management question — decision-first engine":ev.engine==="understanding"?"Why-question — understanding engine (causal model)":"Evidence lookup — standard synthesis engine"}</div>`;
-  if(ev.type==="scaffold")  return `<div class="tstep">🧠 Mapping the clinical decision space — ${ev.branches} branches to cover</div>`;
+  if(ev.type==="scaffold")  return `<div class="tstep">🧠 Mapping the decision space — ${ev.branches} branches to cover</div>`;
   if(ev.type==="step")      return `<div class="tstep">▸ Step ${ev.step}</div>`;
   if(ev.type==="search")    return `<div class="tstep">🔎 Searching <span class="tq">${esc(ev.query||"")}</span>${(ev.variants&&ev.variants.length)?` <span class="tvar">+${ev.variants.length} reformulations</span>`:""}</div>`;
   if(ev.type==="retrieving") return `<div class="tstep tsub">· ${esc(ev.source||"corpus")} ✓ <b>${ev.hits||0}</b> hit${ev.hits===1?"":"s"}</div>`;
@@ -3549,9 +3435,9 @@ function renderRefineChips(original, refs){
 }
 // Ask Panel (Alpha) — a MODE of the shared shell (body[data-mode="panel"]), not a separate overlay. Panel
 // states render into #panelbody (never the console `out`): landing (shared intake + roster) → convene
-// (auto-select + adjust) → case conference. A clinician describes a case; specialists each review the
+// (auto-select + adjust) → panel review. The user describes a question; analysts each review the
 // evidence through their own lens; the chair synthesizes the pooled verified findings.
-let PANEL_CASE = "";                       // the case under panel review
+let PANEL_CASE = "";                       // the question under panel review
 let APP_MODE = "qa";                        // "qa" | "panel" — which answer surface the shell shows
 let PANEL_STATE = "landing";                // "landing" | "plan" | "conference" — the panel phase
 let HEADING_QA = "What does the evidence show?";   // captured from config; restored on return to Q&A
@@ -3563,7 +3449,7 @@ function wireModeSwitch(el){
   if(!el) return;
   el.querySelectorAll(".mbtn").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
 }
-// Flip the shell between Guided intake, Quick Q&A and Specialist Panel. The header, heading, mode switch and
+// Flip the shell between Guided intake, Quick Q&A and Expert Panel. The header, heading, mode switch and
 // intake box are shared; only the answer surface (and Q&A-only control rows) swap. Typed text is preserved.
 function setMode(mode, opts){
   opts = opts || {};
@@ -3667,7 +3553,7 @@ function _voiceBrowserSay(clean, then){   // local fallback voice (device-depend
   u.lang = navigator.language || "en-US";
   if(!_VOICE_PICKED){ _VOICE_PICK = pickVoice(); _VOICE_PICKED = true; }
   if(_VOICE_PICK) u.voice = _VOICE_PICK;
-  u.rate = 0.88;    // unhurried — a clinician who has time for you
+  u.rate = 0.88;    // unhurried — a calm narrator who has time for you
   u.pitch = 0.92;   // slightly lower register, warm not boomy
   u.onend = ()=>{ voiceUiState("idle"); if(VOICE.on && then) then(); };
   u.onerror = ()=>{ voiceUiState("idle"); if(VOICE.on && then) then(); };
@@ -3680,7 +3566,7 @@ async function voiceSay(text, then){
   const clean = (text||"").replace(/\[\d+\]/g,"").replace(/[*_#`>⚠◍✦◈]/g,"").replace(/\s+/g," ").trim();
   if(!clean){ if(then) then(); return; }
   voiceHush();
-  // NEURAL first: server-rendered warm clinician voice (agent-grade); local voice is the fallback.
+  // NEURAL first: server-rendered warm narrator voice (agent-grade); local voice is the fallback.
   if(VOICE_TTS_NEURAL){
     voiceUiState("speak");
     try{
@@ -3769,7 +3655,7 @@ function voiceToggle(){
   if(!VOICE.on){
     VOICE.on = true; voiceUiState("idle");
     const lastBot = [...TRIAGE.transcript].reverse().find(m=>m.role !== "user");
-    voiceSay(lastBot ? lastBot.text : "Tell me the clinical problem in your own words. I'll ask only what's needed.", voiceListen);
+    voiceSay(lastBot ? lastBot.text : "Tell me your research question in your own words. I'll ask only what's needed.", voiceListen);
   } else if(VOICE.listening){
     if(VOICE.sendNow) VOICE.sendNow();          // "I'm done" — send what we heard, now
   } else if(VOICE.audio || speechSynthesis.speaking){
@@ -3790,11 +3676,11 @@ function renderTriage(fresh){
   // dock the composer to the bottom once the conversation has started (chat feel); top on the empty landing
   document.body.classList.toggle("triage-live", TRIAGE.transcript.length > 0);
   q.setAttribute("placeholder", TRIAGE.transcript.length ? "Type your answer…"
-                                                         : "Describe the clinical problem or question…");
+                                                         : "Describe your research question…");
   const lead = TRIAGE.transcript.length ? "" :
-    `<div class="tgt-lead">Tell me the clinical problem in your own words. I'll ask only what's needed to make
-     the answer high-quality — then point you to a quick answer or a full specialist panel. I don't diagnose
-     or advise; I just help you ask the sharpest question.</div>`;
+    `<div class="tgt-lead">Tell me your research question in your own words. I'll ask only what's needed to make
+     the answer high-quality — then point you to a quick answer or a full expert panel.
+     I just help you ask the sharpest question.</div>`;
   // Persistent "wrap up & search now" — the user can end the intake on ANY turn (server forces a route).
   // Quiet by default; PROMINENT once an urgent detail has surfaced mid-intake.
   const wrap = TRIAGE.transcript.length ?
@@ -3826,7 +3712,7 @@ function handleTriageTurn(d){
   if(d.safety === "urgent" && d.status !== "ready"){
     TRIAGE.urgent = true;   // the wrap-up affordance turns prominent from here on
     const utext = (d.message || "") +
-      "\n\n⚠ Based on what you've described, please seek urgent in-person or emergency medical evaluation now. I can keep researching the evidence meanwhile.";
+      "\n\n⚠ Based on what you've described, this may need immediate attention beyond a research answer. I can keep researching the evidence meanwhile.";
     TRIAGE.transcript.push({role:"assistant", text: utext});
     renderTriage(false);
     if(VOICE.on) voiceSay(utext, voiceListen);
@@ -3909,19 +3795,15 @@ function renderTriageReady(d){
   document.body.classList.add("triage-live");   // keep the composer docked on the hand-off card too
   const refined = d.refined_question || d.understood_problem || "";
   TRIAGE.refined = refined;
-  // Guided picks the evidence base from the framed question (semantic — the intake LLM decides).
-  TRIAGE.modality = (MODALITY_ENABLED && (d.modality||"").toLowerCase()==="alternative") ? "alternative" : "allopathic";
   const rec = d.recommended_mode === "panel" ? "panel" : "qa";
-  const altNote = TRIAGE.modality === "alternative"
-    ? `<div class="tgt-modality">🌿 This looks like an <b>Alternative therapy</b> question — I'll search complementary &amp; alternative medicine evidence (with conventional context and evidence-strength labels).</div>` : "";
   const urgent = d.safety === "urgent"
-    ? `<div class="tgt-urgent">${esc(d.message || "This may need urgent in-person evaluation — please use emergency/local care pathways.")}</div>` : "";
+    ? `<div class="tgt-urgent">${esc(d.message || "This may need immediate attention beyond a research answer.")}</div>` : "";
   const panelBtn = ASK_PANEL_ENABLED ? `<button type="button" class="tgt-route ${rec==='panel'?'rec':''}" data-route="panel">
-      <div class="tgt-route-t">◈ Specialist Panel ${rec==='panel'?'<span class="rec-badge">Recommended</span>':''}</div>
-      <div class="tgt-route-why">Take it to the panel — pick the specialists, then convene.</div></button>` : "";
+      <div class="tgt-route-t">◈ Expert Panel ${rec==='panel'?'<span class="rec-badge">Recommended</span>':''}</div>
+      <div class="tgt-route-why">Take it to the panel — pick the analysts, then convene.</div></button>` : "";
   // Intake v2 ready card (inert on v1-shaped turns, which carry neither field): the PLAIN
-  // understood_problem is the primary ratified text; the clinical-register refined question renders
-  // secondary and still flows into the editable composer via routeTriage (no new gate); the clinical
+  // understood_problem is the primary ratified text; the technical-register refined question renders
+  // secondary and still flows into the editable composer via routeTriage (no new gate); the technical
   // vocabulary shows as small chips.
   const isV2 = Array.isArray(d.retrieval_terms) || (typeof d.register === "string" && d.register);
   const chips = (isV2 && Array.isArray(d.retrieval_terms) && d.retrieval_terms.length)
@@ -3938,7 +3820,6 @@ function renderTriageReady(d){
     <div class="tgt-ready">
       <div class="tgt-ready-h">Here's your refined question — where should it go?</div>
       ${bodyHtml}
-      ${altNote}
       <div class="tgt-routes">
         <button type="button" class="tgt-route ${rec==='qa'?'rec':''}" data-route="qa">
           <div class="tgt-route-t">⚡ Quick Q&amp;A ${rec==='qa'?'<span class="rec-badge">Recommended</span>':''}</div>
@@ -3960,21 +3841,19 @@ function routeTriage(route, refined){
     setMode("panel", {fresh:true, prefill: refined});   // panel landing: question filled, roster to adjust, Convene when ready
   } else {
     setMode("qa");                                       // Q&A intake: effort/format available, ask when ready
-    // apply the modality Guided chose from the framed question (updates the toggle + the request scope)
-    if(MODALITY_ENABLED) setModality(TRIAGE.modality || "allopathic");
     // carry the intake conversation so it's saved on the resulting answer (admin-only audit view)
     PENDING_INTAKE_TRANSCRIPT = (TRIAGE.transcript || []).map(m => ({role: m.role, text: m.text}));
     q.value = refined; autoGrow(); q.focus();
     GUIDED_REFINED = true;   // already sharpened by guided intake → don't offer "pick a sharper question"
   }
 }
-// A random sample case for the panel intake placeholder (mirrors pickPlaceholder for Q&A).
+// A random sample question for the panel intake placeholder (mirrors pickPlaceholder for Q&A).
 function pickPanelCase(){
   const ex = PANEL_EXAMPLES || [];
   return ex.length ? ex[Math.floor(Math.random()*ex.length)]
-                   : "72-year-old with HFrEF and CKD stage 3 on metformin — how should GDMT be optimized?";
+                   : BASE_PLACEHOLDER || "Ask a research question…";
 }
-// A card for one specialist. `mode`: 'lens' shows its expertise (landing); 'why' shows the case rationale (convene).
+// A card for one analyst. `mode`: 'lens' shows its expertise (landing); 'why' shows the rationale (convene).
 function specCard(s, on, mode, rationale){
   const detail = mode === "why" ? (rationale || s.focus || s.lens || "")
                                 : (s.focus || s.lens || "");
@@ -3983,8 +3862,8 @@ function specCard(s, on, mode, rationale){
       <span class="pcard-b"><span class="pcard-name">${esc(s.specialty)}</span>
         <span class="pcard-lens">${esc(detail)}</span></span></label>`;
 }
-// Landing: the shared intake box (up in the shell, identical to Quick Q&A) is the case box; below it, the
-// full roster (each specialist + its lens) and a Convene button. Convening runs the LLM triage. The intake
+// Landing: the shared intake box (up in the shell, identical to Quick Q&A) is the question box; below it, the
+// full roster (each analyst + its lens) and a Convene button. Convening runs the LLM triage. The intake
 // itself — textarea, attach, camera, paste — is the Q&A #ask form, so the two modes share one intake UI.
 function renderPanelLanding(prefill){
   setPanelState("landing");
@@ -3995,12 +3874,12 @@ function renderPanelLanding(prefill){
   if(prefill){ q.value = prefill; autoGrow(); }
   pbody().scrollTop = 0;
   pbody().innerHTML = `<div class="panellanding">
-    <div class="panelsub">Describe the clinical case above. A panel of AI specialists each reviews the evidence
-      through its own lens — dosing, evidence quality, cardiovascular, renal, and more — then the chair
-      synthesizes their verified findings into a case-conference conclusion. Every statement is grounded
+    <div class="panelsub">Describe your research question above. A panel of AI analysts each reviews the evidence
+      through its own lens — each an independent angle on the question — then the chair
+      synthesizes their verified findings into one conclusion. Every statement is grounded
       in retrieved evidence.</div>
-    <div class="rosterhead"><span class="rh-h">The specialists</span>
-      <span class="rh-n">${roster.length} available · the panel is auto-selected per case</span></div>
+    <div class="rosterhead"><span class="rh-h">The analysts</span>
+      <span class="rh-n">${roster.length} available · the panel is auto-selected per question</span></div>
     <div class="rostergrid">${roster.map(s=>specCard(s, false, "lens")).join("")}</div>
     <button type="button" class="panelrun" id="panelconvene" style="margin-top:1.5rem;">Convene panel ▶</button>
   </div>`;
@@ -4022,7 +3901,7 @@ function submitPanelIntake(question){
   const manual = [...pbody().querySelectorAll(".pcard")].filter(l=>l.querySelector(".pchk").checked).map(l=>l.dataset.id);
   askPanel(question, manual);
 }
-// "＋ New case" — clear the shared intake + attachments + any prior conference, and return to a fresh landing.
+// "＋ New question" — clear the shared intake + attachments + any prior conference, and return to a fresh landing.
 function panelNewCase(){
   q.value = ""; autoGrow();
   ATTACHMENTS = []; renderAttachments();
@@ -4031,13 +3910,13 @@ function panelNewCase(){
   renderPanelLanding("");
   window.scrollTo({top:0}); q.focus();
 }
-// Panel sessions live in the Past Sessions "◈ Specialist Panel" tab (buildSessionTabs), not on the panel
+// Panel sessions live in the Past Sessions "◈ Expert Panel" tab (buildSessionTabs), not on the panel
 // home — so the landing stays a clean intake.
-// Phase 1 — CONVENE: auto-select the specialists (LLM triage) and let the user adjust before running.
+// Phase 1 — CONVENE: auto-select the analysts (LLM triage) and let the user adjust before running.
 async function askPanel(question, manual){
   CURRENT_Q = question; PANEL_CASE = question;
   pbody().scrollTop = 0;
-  pbody().innerHTML = `<div class="panelstatus"><span class="spin">◈</span> Convening a panel — selecting the specialists whose expertise fits this case…</div>`;
+  pbody().innerHTML = `<div class="panelstatus"><span class="spin">◈</span> Convening a panel — selecting the analysts whose expertise fits this question…</div>`;
   try{
     const resp = await fetch("/panel/plan", {method:"POST", headers:{"content-type":"application/json"},
       body: JSON.stringify({question, tenant_id:"demo"})});
@@ -4060,8 +3939,8 @@ function renderPanelPlan(question, data, manual){
   pbody().scrollTop = 0;
   pbody().innerHTML = `<div class="panelwrap">
     <div class="panelhead">◈ Convening the panel</div>
-    <div class="panelcase">Case: <b>${esc(question)}</b></div>
-    <div class="planintro">For this case I've selected these specialists — each reviews the evidence through
+    <div class="panelcase">Question: <b>${esc(question)}</b></div>
+    <div class="planintro">For this question I've selected these analysts — each reviews the evidence through
       its own lens. Adjust the panel, then run the analysis.</div>
     <div class="panelrun-bar"><button type="button" class="panelrun" id="panelrun">▶ Run Panel Analysis <span class="panelrun-n"></span></button></div>
     <div class="planblock"><div class="planblock-h">Convening (${chosen.length})</div>
@@ -4073,7 +3952,7 @@ function renderPanelPlan(question, data, manual){
     pbody().querySelectorAll(".pcard").forEach(l=>l.classList.toggle("on", l.querySelector(".pchk").checked));
     const n = pbody().querySelectorAll(".pchk:checked").length;
     const rb = $("#panelrun"); rb.disabled = n===0;
-    rb.querySelector(".panelrun-n").textContent = n ? `· ${n} specialist${n===1?"":"s"}` : "· pick at least one";
+    rb.querySelector(".panelrun-n").textContent = n ? `· ${n} analyst${n===1?"":"s"}` : "· pick at least one";
   };
   pbody().querySelectorAll(".pchk").forEach(c=>c.addEventListener("change", refresh));
   $("#panelrun").addEventListener("click", ()=>{
@@ -4126,16 +4005,16 @@ function renderPanelConversation(){
   setPanelState("conference");
   const turns = PANEL_THREAD.turns.map((t,i)=>{
     const takes = (t.result.takes||[]).map(panelTakeHtml).join("");
-    const qlabel = i===0 ? `Case` : `Follow-up`;
+    const qlabel = i===0 ? `Question` : `Follow-up`;
     return `<div class="panelturn">
       <div class="panelq-echo"><span class="pqt">${qlabel}</span> <b>${esc(t.question)}</b></div>
       <div class="panelsynth" id="psynth-${i}"></div>
-      <div class="paneltakes"><div class="paneltakes-h">Each specialist's assessment</div>${takes}</div>
+      <div class="paneltakes"><div class="paneltakes-h">Each analyst's assessment</div>${takes}</div>
     </div>`;
   }).join("");
   const link = PANEL_THREAD.session_id ? `<span class="metabtns"><button type="button" class="copybtn" id="plink">🔗 Copy link</button></span>` : "";
   pbody().innerHTML = `<div class="panelwrap panelconv">
-    <div class="panelhead">◈ Panel Case Conference <span class="panelmeta">${PANEL_THREAD.ids.length} specialist${PANEL_THREAD.ids.length===1?"":"s"} · ${PANEL_THREAD.turns.length} turn${PANEL_THREAD.turns.length===1?"":"s"}</span>${link}</div>
+    <div class="panelhead">◈ Panel Review <span class="panelmeta">${PANEL_THREAD.ids.length} analyst${PANEL_THREAD.ids.length===1?"":"s"} · ${PANEL_THREAD.turns.length} turn${PANEL_THREAD.turns.length===1?"":"s"}</span>${link}</div>
     <div class="panelturns">${turns}</div>
     <div class="panellive" id="panellive"></div>
     <div class="panelfollow" id="panelfollow" ${PANEL_THREAD.turns.length ? "" : "hidden"}>
@@ -4144,7 +4023,7 @@ function renderPanelConversation(){
         <button type="button" class="go pf-go" id="pfgo" aria-label="Ask the panel">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
       </div>
-      <div class="pf-actions"><button type="button" class="panelbtn" onclick="panelNewCase()">＋ New case</button>
+      <div class="pf-actions"><button type="button" class="panelbtn" onclick="panelNewCase()">＋ New question</button>
         ${PANEL_THREAD.session_id ? `<button type="button" class="panelbtn danger" id="pdel">🗑 Delete discussion</button>` : ""}</div>
     </div>`;
   // render each completed turn's deliberation with the full machinery (reasoning read + evidence panel)
@@ -4234,7 +4113,7 @@ function renderPanelSessionDetail(row){
     return `<div class="panelturn">
       ${i>0?`<div class="panelq-echo"><span class="pqt">Follow-up</span> <b>${esc(t.question||"")}</b></div>`:""}
       <div class="panelsynth" id="pd-synth-${i}"></div>
-      <div class="paneltakes"><div class="paneltakes-h">Each specialist's assessment</div>${takes}</div>
+      <div class="paneltakes"><div class="paneltakes-h">Each analyst's assessment</div>${takes}</div>
     </div>`;
   }).join("");
   sdetail.innerHTML = `<div class="sqhead">
@@ -4276,8 +4155,8 @@ function buildPanelSessionActions(box, row){
   });
 }
 function renderPanelSynth(data, el){
-  // Split off the "Panel deliberation" section → a COLLAPSIBLE block, so the clinical answer leads and the
-  // reasoning is available on demand (busy clinicians want the synthesis; the reasoning stays one click away).
+  // Split off the "Panel deliberation" section → a COLLAPSIBLE block, so the answer leads and the
+  // reasoning is available on demand (busy readers want the synthesis; the reasoning stays one click away).
   let answer = data.synthesis || "", delib = "";
   // Case A: the model emitted a literal <details>…Panel deliberation…</details> block (it sometimes does)
   const dm = answer.match(/<details[^>]*>[\s\S]*?<\/details>/i);
@@ -4354,9 +4233,9 @@ async function runPanelTurn(question){
   const live = $("#panellive");
   live.innerHTML = `<div class="panelturn live">
     ${follow ? `<div class="panelq-echo"><span class="pqt">Follow-up</span> <b>${esc(question)}</b></div>` : ""}
-    <div class="planintro">The panel is reviewing the evidence — each specialist through its own lens.
+    <div class="planintro">The panel is reviewing the evidence — each analyst through its own lens.
       <button type="button" class="pstop" id="pstop">■ Stop</button></div>
-    <div class="pphase" id="pphase"><span class="pph on" data-ph="convene">Convening panel</span><span class="pph-sep">→</span><span class="pph" data-ph="work">${ids.length} specialist${ids.length===1?"":"s"} working</span><span class="pph-sep">→</span><span class="pph" data-ph="synth">Synthesizing</span><span class="pph-elapsed" id="pelapsed"></span></div>
+    <div class="pphase" id="pphase"><span class="pph on" data-ph="convene">Convening panel</span><span class="pph-sep">→</span><span class="pph" data-ph="work">${ids.length} analyst${ids.length===1?"":"s"} working</span><span class="pph-sep">→</span><span class="pph" data-ph="synth">Synthesizing</span><span class="pph-elapsed" id="pelapsed"></span></div>
     <div class="pnet" id="pnet" hidden>⚠ Connection lost — retrying…</div>
     <div class="presolved" id="presolved" hidden></div>
     <div class="prows">${ids.map(id=>`<div class="prow" data-id="${esc(id)}">
@@ -4367,7 +4246,7 @@ async function runPanelTurn(question){
   const rowOf = id => [...live.querySelectorAll(".prow")].find(el=>el.dataset.id===id);
   const setRow = (id, cls, txt) => { const r=rowOf(id); if(r){ r.classList.remove("run","done","err"); r.classList.add(cls); r.querySelector(".prow-st").textContent = txt; } };
   const traceOf = id => { const r=rowOf(id); return r ? r.querySelector(".prow-trace") : null; };
-  // phase line: Convening panel → N specialists working → Synthesizing (advances, never reverses)
+  // phase line: Convening panel → N analysts working → Synthesizing (advances, never reverses)
   const PHASES = ["convene","work","synth"];
   const setPhase = ph => { const pp=$("#pphase"); if(!pp) return; const at=PHASES.indexOf(ph);
     pp.querySelectorAll(".pph").forEach(el=>{ const i=PHASES.indexOf(el.dataset.ph);
@@ -4449,23 +4328,20 @@ async function runPanelTurn(question){
       const msg = esc(String(e.message||e));   // no stopwatch abort anymore — only real failures land here
       live.innerHTML = `<div class="panelstatus">The panel couldn't complete. ${msg}
         <div style="margin-top:1rem"><button type="button" class="panelbtn" onclick="runPanelTurn(${JSON.stringify(question)})">↻ Retry</button>
-          <button type="button" class="panelbtn" onclick="panelNewCase()" style="margin-left:.5rem;">＋ New case</button></div></div>`;
+          <button type="button" class="panelbtn" onclick="panelNewCase()" style="margin-left:.5rem;">＋ New question</button></div></div>`;
     }
   }finally{ clearInterval(tick); }
 }
 
 // ---- A/B DUEL (flag): one fresh question → BOTH engines in parallel, blinded tabs, preference vote.
 // The vote (verdict="prefer", winner engine + both session ids) is the empirical data that settles the
-// retrieval-first vs reasoning-first design question with real clinician preference, not judge debates.
+// retrieval-first vs reasoning-first design question with real user preference, not judge debates.
 async function runDuel(question){
   const flip = Math.random() < 0.5;                                     // blinded, randomized arm order
   const arms = flip ? ["reasoned", "standard"] : ["standard", "reasoned"];   // arms[0] = "Answer A"
   const base = {question, tenant_id: "demo", sources: chosen()};
   if(EFFORT_ENABLED && EFFORT > 1) base.effort = EFFORT;
-  if(PATIENT_MODE_ENABLED && AUDIENCE === "patient") base.audience = "patient";
   if(ATTACHMENTS.length) base.attachments = ATTACHMENTS.slice();
-  if(INTEGRATIVE_ENABLED && INTEGRATIVE_ON) base.integrative = true;      // both duel arms get it
-  if(MODALITY_ENABLED && MODALITY === "alternative") base.modality = "alternative";
   if(USER){ base.user_name = USER.name; base.user_email = USER.email; }
   CURRENT_Q = question;
   q.value = ""; autoGrow();
@@ -4565,10 +4441,7 @@ async function askQuestion(question, opts){
   const conv = CONV_ENABLED;
   const payload = {question, tenant_id:"demo", sources: chosen()};
   if(EFFORT_ENABLED && EFFORT > 1) payload.effort = EFFORT;
-  if(PATIENT_MODE_ENABLED && AUDIENCE === "patient") payload.audience = "patient";
   if(ATTACHMENTS.length) payload.attachments = ATTACHMENTS.slice();
-  if(INTEGRATIVE_ENABLED && INTEGRATIVE_ON) payload.integrative = true;   // per-question opt-in
-  if(MODALITY_ENABLED && MODALITY === "alternative") payload.modality = "alternative";   // CAM mode
   if(PENDING_INTAKE_TRANSCRIPT && PENDING_INTAKE_TRANSCRIPT.length && !THREAD.turns.length){
     payload.intake_transcript = PENDING_INTAKE_TRANSCRIPT;   // save the Guided conversation onto this answer
   }
@@ -5221,16 +5094,14 @@ function closeSessions(){
   document.body.style.overflow = "";
 }
 const fmtDate = s => { try{ return new Date(s).toLocaleString([], {dateStyle:"medium", timeStyle:"short"}); }catch(e){ return ""; } };
-// Build the Past-Sessions tab bar from the active flags. Audience tabs (Clinician|Patient) segment the
-// Q&A list; a Specialist Panel tab isolates panel discussions so they never clutter the Q&A tabs.
+// Build the Past-Sessions tab bar from the active flags. An Expert Panel tab isolates panel
+// discussions so they never clutter the Q&A tabs.
 function buildSessionTabs(){
   const tabs = $("#stabs"); if(!tabs) return;
   const defs = [];
-  // audience tabs removed with the composer's audience toggle — one Q&A list (old patient-audience
-  // sessions still appear, wearing their Patient badge)
   if(ASK_PANEL_ENABLED){
     defs.push({key:"qa", aud:null, kind:"research", label:"Quick Q&amp;A"});
-    defs.push({key:"panel", aud:null, kind:"panel", label:"◈ Specialist Panel"});
+    defs.push({key:"panel", aud:null, kind:"panel", label:"◈ Expert Panel"});
   }
   SESS_TAB = defs[0] || null;
   if(defs.length < 2){ tabs.hidden = true; tabs.innerHTML = ""; return; }
@@ -5239,7 +5110,7 @@ function buildSessionTabs(){
     + ` aria-selected="${i===0?"true":"false"}">${d.label}</button>`).join("");
   tabs.querySelectorAll(".stab").forEach(t => t.addEventListener("click", () => {
     const d = defs.find(x => x.key === t.dataset.key); if(!d) return;
-    SESS_TAB = d; SESS_AUDIENCE = d.aud || SESS_AUDIENCE;
+    SESS_TAB = d;
     tabs.querySelectorAll(".stab").forEach(x => x.setAttribute("aria-selected", x.dataset.key === d.key ? "true" : "false"));
     loadSessionList();
   }));
@@ -5247,23 +5118,21 @@ function buildSessionTabs(){
 async function loadSessionList(){
   const q = ($("#ssearch").value||"").trim();
   slist.innerHTML = `<div class="sempty">Loading…</div>`;
-  // The active tab (see buildSessionTabs) filters the list server-side by kind and/or audience.
+  // The active tab (see buildSessionTabs) filters the list server-side by kind.
   const kindParam = (ASK_PANEL_ENABLED && SESS_TAB) ? `&kind=${SESS_TAB.kind}` : "";
-  const audParam  = (PATIENT_MODE_ENABLED && SESS_TAB && SESS_TAB.aud) ? `&audience=${SESS_TAB.aud}` : "";
   try{
-    const {sessions} = await (await fetch("/sessions?tenant_id=demo&limit=200&q="+encodeURIComponent(q)+kindParam+audParam)).json();
+    const {sessions} = await (await fetch("/sessions?tenant_id=demo&limit=200&q="+encodeURIComponent(q)+kindParam)).json();
     if(!sessions || !sessions.length){
       const empty = q ? "No matching sessions."
-        : (SESS_TAB && SESS_TAB.kind === "panel" ? "No specialist-panel discussions yet."
-          : (PATIENT_MODE_ENABLED ? `No ${SESS_AUDIENCE === "patient" ? "patient" : "clinician"}-driven questions yet.`
-                                  : "No saved questions yet."));
+        : (SESS_TAB && SESS_TAB.kind === "panel" ? "No expert-panel discussions yet."
+                                  : "No saved questions yet.");
       slist.innerHTML = `<div class="sempty">${empty}</div>`; return;
     }
     slist.innerHTML = sessions.map(s=>{
       const who = s.user_name || s.user_email;
       const isPanel = s.kind === "panel";
       return `<button class="srow" data-id="${esc(s.id)}" data-kind="${esc(s.kind||"research")}">
-        <div class="sq">${s.real_patient?'<span class="rpdot" title="Real-world patient case">◉</span> ':""}${isPanel?'<span class="skind">◈ Panel</span> ':""}${esc(s.question)}</div>
+        <div class="sq">${isPanel?'<span class="skind">◈ Panel</span> ':""}${esc(s.question)}</div>
         <div class="sm">
           ${who?`<span class="swho">${esc(who)}</span>`:""}
           ${s.grounded?'<span class="sg">✓ grounded</span>':'<span>ungrounded</span>'}
@@ -5293,18 +5162,9 @@ function showSessionDetail(row, rowEl){
       <div class="qhrow"><div class="qq">${esc(row.question)}</div></div>
       <div class="qm">${who?`Asked by <b>${esc(row.user_name||"")}</b>${row.user_email?" · "+esc(row.user_email):""} · `:""}${fmtDate(row.created_at)}${turns.length>1?` · ${turns.length} turns`:""}</div>
     </div><div class="sactions" id="sactions"></div><div id="sdbody"></div>`;
-  if(PATIENT_MODE_ENABLED && (row.audience||"clinician") === "patient"){
-    const hq = sdetail.querySelector(".qq");
-    if(hq) hq.insertAdjacentHTML("beforeend", ` <span class="audbadge patient">Patient</span>`);
-  }
   const sdbody = $("#sdbody");
   let firstAns = null, firstTurn = turns[0] || row;
-  // audit surface: evidence-mode badge (everyone) + the Guided intake transcript (admin-only)
-  if((firstTurn.modality || "") === "alternative"){
-    const qm = sdetail.querySelector(".qm");
-    if(qm) qm.insertAdjacentHTML("beforeend",
-      ` · <span class="audbadge" style="background:rgba(var(--gold-rgb),.14);color:var(--gold)">🌿 Alternative mode</span>`);
-  }
+  // audit surface: the Guided intake transcript (admin-only)
   const _intake = firstTurn.intake_transcript || [];
   if(_intake.length && sessionStorage.getItem("eigen_apw")){   // admin logged in → show intake conversation
     const it = document.createElement("details"); it.className = "plain plain-d";
@@ -5370,7 +5230,6 @@ function sessionWhereNext(sdbody, row, turns){
   sdbody.appendChild(wr);
   const seed = ()=>{
     THREAD = {session_id: row.id, turns: (row.thread && row.thread.length ? row.thread : [row]).slice()};
-    if(PATIENT_MODE_ENABLED) setAudience(row.audience || "clinician");
     closeSessions();
     q.value=""; q.style.height="auto"; renderThread();
   };
@@ -5418,9 +5277,6 @@ function buildSessionActions(box, row, firstTurn, firstAns, rowEl){
   if(hasHl) bits.push(btn("sa-hl", "✦", "Highlights", "Show color highlights (facts · reasoning · context)"));
   if(hasAns) bits.push(btn("sa-copy", "⧉", "Copy", "Copy this answer"));
   bits.push(btn("sa-link", "🔗", "Link", "Copy a shareable link to this session"));
-  bits.push(btn("sa-rp", "◉", row.real_patient ? "Patient case" : "Mark patient case",
-    "Mark this session as a real-world patient case (orange ◉ in the session list)",
-    row.real_patient ? "rp-on" : ""));
   if(canRetry) bits.push(btn("sa-retry", "↻", "More effort", `Retry at ${effortTier(nextEf).name} · ${nextEf}×`));
   if(CONV_ENABLED) bits.push(btn("sa-cont", "↳", "Continue in chat", "Continue this conversation in the main chat"));
   bits.push(btn("sa-del", "🗑", "Delete", "Delete session", "sact-danger"));
@@ -5443,33 +5299,12 @@ function buildSessionActions(box, row, firstTurn, firstAns, rowEl){
   const ct = box.querySelector("#sa-cont");
   if(ct) ct.addEventListener("click", ()=>{
     THREAD = {session_id: row.id, turns: (row.thread && row.thread.length ? row.thread : [row]).slice()};
-    if(PATIENT_MODE_ENABLED) setAudience(row.audience || "clinician");
     closeSessions();
     q.value=""; q.style.height="auto"; q.setAttribute("placeholder","");
     renderThread(); window.scrollTo({top:0}); q.focus();
   });
   const dl = box.querySelector("#sa-del");
   if(dl) dl.addEventListener("click", ()=>deleteSession(row.id, rowEl));
-  const rp = box.querySelector("#sa-rp");
-  if(rp) rp.addEventListener("click", async ()=>{
-    const want = !row.real_patient;
-    try{
-      const r = await fetch("/sessions/"+encodeURIComponent(row.id)+"/patient-flag",
-        {method:"POST", headers:{"content-type":"application/json"},
-         body:JSON.stringify({real_patient: want})});
-      if(!r.ok) throw 0;
-      row.real_patient = want;
-      rp.classList.toggle("rp-on", want);
-      rp.querySelector(".sact-t").textContent = want ? "Patient case" : "Mark patient case";
-      const sq = rowEl && rowEl.querySelector(".sq");
-      if(sq){
-        const dot = sq.querySelector(".rpdot");
-        if(want && !dot) sq.insertAdjacentHTML("afterbegin",
-          '<span class="rpdot" title="Real-world patient case">◉</span> ');
-        else if(!want && dot) dot.remove();
-      }
-    }catch(e){ alert("Couldn't update the patient-case flag."); }
-  });
 }
 // Re-ask a past question in the main chat at a higher effort — a fresh run (new thread), not an
 // append, so the deeper answer stands on its own next to the original in the session list.
@@ -5586,7 +5421,7 @@ $("#idgo").addEventListener("click", async ()=>{
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ $("#iderr").textContent = "Please enter a valid email."; return; }
   // clicking "I understand — continue" is the attestation: record acceptance of the disclaimer terms
   USER = {name, email, disclaimer_ack: true, disclaimer_ack_at: new Date().toISOString()};
-  // accounts flag on → register server-side (free verified-clinician tier). Fail-open: a registration
+  // accounts flag on → register server-side (free account tier). Fail-open: a registration
   // error never blocks use — the local identity still works; they can re-try from the gate later.
   if(ACCOUNTS_ENABLED){
     const btn = $("#idgo"), was = btn.textContent; btn.textContent = "Registering…"; btn.disabled = true;
@@ -5614,8 +5449,7 @@ $("#idmodal").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#idgo").cl
 const SET_LABELS = {
   duel_enabled:      ["A/B duel answers", "Fresh questions run BOTH engines with a which-is-better vote (2× cost/question)"],
   triage_enabled:    ["Guided intake mode", "The ◍ Guided clarify-then-route mode"],
-  ask_panel_enabled: ["Specialist Panel", "The ◈ multi-specialist panel mode"],
-  integrative_enabled: ["Integrative-medicine opt-in", "Offers the 🌿 per-question complementary/integrative section (user still opts in per question)"],
+  ask_panel_enabled: ["Expert Panel", "The ◈ multi-analyst panel mode"],
   reasoned_default_enabled: ["Dynamic engine selection", "Auto-routes each question: management/case → decision-first engine · why/how → understanding engine (causal model) · evidence lookup → standard synthesis. Duel arms unaffected."],
 };
 function openSettings(){
@@ -5651,7 +5485,7 @@ function renderSettingsUI(d){
   }).join("");
   body.innerHTML = rows + `<div class="sethint" style="margin-top:.6rem;">Applies to the API within ~15 s; this page picks it up on the next reload.</div>` +
     `<div class="setrow"><b>⬡ Relationship graph</b><button type="button" class="idgo" id="setgraph" style="width:auto;padding:.3rem .8rem;font-size:.78rem;">Open console</button>
-     <span class="sethint">Curated clinical edges powering retrieval expansion + the is-it-helping quality watch.</span></div>` +
+     <span class="sethint">Curated knowledge edges powering retrieval expansion + the is-it-helping quality watch.</span></div>` +
     `<div class="setrow"><b>⇪ Ingestion</b><button type="button" class="idgo" id="seting" style="width:auto;padding:.3rem .8rem;font-size:.78rem;">Open console</button>
      <span class="sethint">All corpus sources, their live footprint, and push-ingestion controls.</span></div>` +
     `<div class="setrow"><b>◷ Performance</b><button type="button" class="idgo" id="setperf" style="width:auto;padding:.3rem .8rem;font-size:.78rem;">Open dashboard</button>
@@ -5825,128 +5659,6 @@ function renderIngest(d){
     if(r.ok) setTimeout(loadIngest, 1200);
   });
 }
-// ---- People (⧉): PUBLIC full-page conversational concierge. The agent converges on the
-// right specialist for the situation — asks the ONE question that best splits the live
-// match set (server sends total + distributions), broadens when the user relaxes a
-// constraint, and presents ≤5 focused candidates (membership-validated server-side)
-// instead of dumping lists. Chips show the current facet reading for transparency.
-let PPLC = {messages: [], busy: false};
-function openPeople(){
-  $("#pplpage").hidden = false; document.body.style.overflow = "hidden";
-  renderPeopleShell();
-}
-function closePeople(){ $("#pplpage").hidden = true; document.body.style.overflow = ""; }
-function renderPeopleShell(){
-  if($("#pplq")){ setTimeout(()=>$("#pplq").focus(), 60); return; }   // keep the thread
-  $("#pplbody").innerHTML = `
-    <div class="pplcols">
-      <div>
-        <div class="pplchips" id="pplchips"></div>
-        <div class="pplthread" id="pplthread">
-          <div class="pplmsg agent">Describe the situation and I'll help find the right specialist —
-          the condition or procedure, and roughly where. For example: "I need someone for a complex
-          spine revision near Columbus" or "interventional cardiologist for my father in Houston".</div>
-        </div>
-        <div class="pplask" style="margin-top:.2rem;">
-          <input id="pplq" maxlength="400" placeholder="Describe the situation, answer, or adjust — in your own words" />
-          <button type="button" class="idgo" id="pplgobtn" style="width:auto;padding:.45rem 1.2rem;">Send</button>
-        </div>
-      </div>
-      <aside id="pplprof" class="pplprof" hidden></aside>
-    </div>
-    <p style="font-size:.66rem;color:var(--muted);margin-top:.8rem;">Public-record facts with per-field
-    provenance. Eigen does not evaluate quality or suitability — suggestions reflect only recorded
-    facts (specialty, location, credentials, listed metrics), never a quality ranking.</p>`;
-  $("#pplgobtn").addEventListener("click", pplSend);
-  $("#pplq").addEventListener("keydown", e => { if(e.key === "Enter") pplSend(); });
-  setTimeout(()=>$("#pplq").focus(), 60);
-}
-function pplChips(facets, total){
-  const label = {specialty:"specialty", state:"state", city:"city", name:"name", sort_metric:"sort"};
-  const chips = Object.keys(label).filter(k => facets && facets[k]).map(k =>
-    `<span class="pplchip"><span class="k">${label[k]}</span> ${esc(facets[k])}</span>`);
-  if(total != null) chips.push(`<span class="pplchip" style="border-color:var(--hair);color:var(--muted);">${(+total).toLocaleString()} match</span>`);
-  $("#pplchips").innerHTML = chips.join("");
-}
-function pplAddMsg(role, html){
-  const div = document.createElement("div");
-  div.className = "pplmsg " + role;
-  div.innerHTML = html;
-  $("#pplthread").appendChild(div);
-  div.scrollIntoView({block: "end", behavior: "smooth"});
-  return div;
-}
-async function pplSend(){
-  if(PPLC.busy) return;
-  const q = $("#pplq").value.trim(); if(!q) return;
-  $("#pplq").value = "";
-  PPLC.messages.push({role: "user", content: q});
-  pplAddMsg("user", esc(q));
-  const turn = pplAddMsg("agent", "…");
-  PPLC.busy = true;
-  let r = null, d = null;
-  try{
-    r = await fetch("/people/converse", {method: "POST",
-      headers: {"content-type": "application/json"},
-      body: JSON.stringify({messages: PPLC.messages})});
-    if(r.ok) d = await r.json();
-  }catch(e){ /* handled below */ }
-  PPLC.busy = false;
-  if(!d){
-    turn.textContent = (r && r.status === 404) ? "People is not available right now."
-      : "Something went wrong — please try again.";
-    return;
-  }
-  PPLC.messages.push({role: "assistant", content: d.message});
-  pplChips(d.facets, d.total);
-  turn.innerHTML = esc(d.message) + ((d.candidates || []).length ? `<div class="pplcands">`
-    + d.candidates.map(c => `<div class="pplcand" data-id="${esc(c.entity_id)}">
-        <b>${esc(c.name)}</b> <span class="grtag">${esc(c.specialty)}</span>
-        <span class="grtag">${esc(c.city)}, ${esc(c.state)}</span>
-        ${c.credential ? `<span class="grtag">${esc(c.credential)}</span>` : ""}
-        ${c.sort_value != null ? `<span class="grtag">${(+c.sort_value).toLocaleString()}</span>` : ""}
-        ${(c.affiliations||[]).slice(0,2).map(a => `<span class="grtag" style="border-color:var(--gold);">${esc(a.name || a.affil_key)}</span>`).join("")}
-        <span class="why">tap for profile, contacts &amp; referral network</span></div>`).join("")
-    + `</div>` : "");
-  turn.querySelectorAll(".pplcand").forEach(el =>
-    el.addEventListener("click", () => pplProfile(el.dataset.id)));
-  turn.scrollIntoView({block: "end", behavior: "smooth"});
-}
-async function pplProfile(id){
-  const r = await fetch("/people/entity?id=" + encodeURIComponent(id));
-  if(!r.ok) return;
-  const e = await r.json();
-  $("#pplprof").hidden = false;
-  $("#pplprof").innerHTML = `<h4 style="margin:0 0 .3rem;">${esc(e.name)} — ${esc(e.specialty)} (${esc(e.city)}, ${esc(e.state)})</h4>
-    <div class="grstats">
-      <span class="grchip">license: <b>${esc(e.license_status)}</b></span>
-      <span class="grchip">board: <b>${esc(e.board_certified)}</b></span>
-      <span class="grchip">discipline: <b>${esc(e.discipline_status)}</b></span>
-      <span class="grchip">as of: <b>${esc(e.valid_as_of || "—")}</b></span></div>
-    <h4 style="margin:.8rem 0 .2rem;font-size:.75rem;color:var(--muted);text-transform:uppercase;">Affiliations (hospital &amp; group practice)</h4>
-    ${(e.affiliations||[]).map(a => `<div class="gredge"><span class="grtag">${esc(a.kind.replace(/_/g," "))}</span>
-      <span>${esc(a.name || a.affil_key)}</span><span class="grtag">src: ${esc(a.source)}</span></div>`).join("")
-      || '<p style="color:var(--muted);font-size:.75rem;margin:.2rem 0;">No recorded CMS affiliations for this clinician.</p>'}
-    <h4 style="margin:.8rem 0 .2rem;font-size:.75rem;color:var(--muted);text-transform:uppercase;">Recorded metrics</h4>
-    ${(e.metrics||[]).map(m => `<div class="gredge"><span>${esc(m.metric_label || m.metric_key)}</span>
-      <span class="grtag">${(+m.value).toLocaleString()} ${esc(m.unit)}</span>
-      <span class="grtag">${esc(m.period)}</span><span class="grtag">src: ${esc(m.source)}</span></div>`).join("")
-      || '<p style="color:var(--muted);font-size:.75rem;margin:.2rem 0;">No recorded volume metrics (Medicare by-provider data covers ~half of physicians).</p>'}
-    <h4 style="margin:.8rem 0 .2rem;font-size:.75rem;color:var(--muted);text-transform:uppercase;">Contacts</h4>
-    ${(e.contacts||[]).map(c => `<div class="gredge"><span class="grtag">${esc(c.kind)}</span>
-      <span>${esc(c.value)}</span><span class="grtag">src: ${esc(c.source)}</span></div>`).join("")
-      || '<p style="color:var(--muted);font-size:.75rem;margin:.2rem 0;">No published contacts.</p>'}
-    <h4 style="margin:.8rem 0 .2rem;font-size:.75rem;color:var(--muted);text-transform:uppercase;">Network (evidence-keyed referral connections)</h4>
-    ${(e.connections||[]).map(c => `<div class="gredge" style="cursor:pointer;" data-id="${esc(c.peer)}">
-      <b>${esc(c.name)}</b><span class="grtag">${esc(c.specialty)}</span>
-      <span class="grtag">${esc(c.relation)} @ ${esc(c.evidence_key)}</span>
-      <span class="grtag">${esc(c.city)}, ${esc(c.state)}</span></div>`).join("")
-      || '<p style="color:var(--muted);font-size:.78rem;">No connections yet (edges derive from CMS group/facility data).</p>'}`;
-  document.querySelectorAll("#pplprof .gredge[data-id]").forEach(el =>
-    el.addEventListener("click", () => pplProfile(el.dataset.id)));
-}
-$("#pplback").addEventListener("click", closePeople);
-$("#pplbtn").addEventListener("click", openPeople);
 $("#termsbtn").addEventListener("click", ()=>openTermsPage());
 $("#tpback").addEventListener("click", closeTermsPage);
 let _tpDeb = null;
@@ -5976,7 +5688,6 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel s
   else if(location.hash === "#triage" && TRIAGE_ENABLED){ setMode("triage"); }
   else if(location.hash === "#graph"){ openGraphConsole(); }
   else if(location.hash === "#ingest"){ openIngest(); }
-  else if(location.hash === "#people"){ openPeople(); }
   else if(location.hash === "#terms"){ openTermsPage(); }
 }
 // route only AFTER config loads, so CONV_ENABLED is known (shared threads render as conversations)
