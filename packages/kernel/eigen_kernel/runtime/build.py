@@ -59,7 +59,9 @@ def build_web(*, mode: ProviderMode | str | None = None,
             _floor = ""
             if recent:
                 import datetime
-                _floor = (datetime.date.today() - datetime.timedelta(days=730)).isoformat() + "T00:00:00.000Z"
+                # ~12-month floor: tight enough to EXCLUDE the prior-generation (2024) analysis prose
+                # that otherwise out-ranks current pages; the corpus still holds the full history.
+                _floor = (datetime.date.today() - datetime.timedelta(days=365)).isoformat() + "T00:00:00.000Z"
             inner = ExaWebSearch(include_domains=list(domains or []), start_published_date=_floor)
         else:
             inner = TavilyWebSearch(time_range="year" if recent else "")
