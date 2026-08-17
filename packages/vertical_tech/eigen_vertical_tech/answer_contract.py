@@ -40,18 +40,28 @@ ANSWER_PROFILES: dict = {
     "current": {
         "recency": _CURRENT_RECENCY,
         "suppress_authority": True,        # a fresh announcement must be able to out-rank an older benchmark
-        "web_recency_days": 120,           # (reserved) per-request web floor — the current quarter
+        "web_open": True,                  # OPEN WEB: reach labs' own announcement blogs + niche pages,
+        #                                    not just the trusted whitelist (span-gate still verifies)
+        "web_recency_days": 150,           # per-request web floor ≈ the current ~5 months
+        "max_steps": 14,                   # thorough: discover the leaderboard, then drill into each model
+        "compose_claim_cap": 60,           # a landscape answer spans ~15 models, not a handful
         "planner_steer": (
-            "This question is about the CURRENT / LATEST state. Include at least one search "
-            "specifically for the most RECENT releases, launches, and announcements (this month/"
-            "quarter) — not only established comparisons or overviews."),
+            "This is a CURRENT / LATEST-STATE question. Research it THOROUGHLY, like an analyst: FIRST "
+            "search the current model leaderboard(s) and THIS MONTH's releases/announcements; then, for "
+            "EACH leading provider and EACH newest model you discover (e.g. the specific latest models "
+            "from OpenAI, Anthropic, Google, xAI, Meta, DeepSeek, Moonshot/Kimi, Qwen, Mistral, Z.ai), "
+            "issue a SEPARATE targeted search for that exact model/provider to get its own page. Do not "
+            "stop after one or two overview searches — cover the whole field."),
         "answer_directive": (
-            "REGIME = CURRENT STATE. Lead with the NEWEST developments the evidence reports, ordered "
-            "newest-first. A just-released or just-announced model/product/round IS a first-class fact "
-            "when a cited source states it — but label it '(announced; independent benchmarks pending)' "
-            "and NEVER present an un-benchmarked release as if it had verified benchmark results. Where "
-            "the freshest items lack independent verification, say so plainly. Do not lead with a prior "
-            "generation just because it is more thoroughly benchmarked."),
+            "REGIME = CURRENT STATE — produce a COMPREHENSIVE, well-structured landscape, not a short "
+            "memo. Lead with the newest developments. Include: (1) a TIERED leaderboard TABLE of the "
+            "current frontier models (provider · model · rough standing · what stands out), ordered by "
+            "current standing; (2) a per-provider read of who leads and each provider's distinct "
+            "strength; (3) a short, clearly-labeled OUTLOOK synthesized ONLY from the cited facts. "
+            "CURRENCY DISCIPLINE: label each model's status from its cited source — 'available', "
+            "'announced', or 'on the leaderboard on paper' — and NEVER present an un-benchmarked release "
+            "as if it had verified benchmark results. Cover as many current models as the evidence "
+            "supports; do not lead with a prior generation merely because it is more benchmarked."),
     },
     "established": {
         "recency": None,                   # no recency boost — age is not a virtue here

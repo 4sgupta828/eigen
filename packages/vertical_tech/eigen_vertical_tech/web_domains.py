@@ -9,6 +9,9 @@ from __future__ import annotations
 TRUSTED_WEB_DOMAINS: tuple[str, ...] = (
     # Primary / regulatory
     "sec.gov", "uspto.gov", "patents.google.com",
+    # Primary-source LAB announcements — the horse's-mouth for new-model releases (news tier)
+    "openai.com", "anthropic.com", "blog.google", "deepmind.google", "ai.meta.com",
+    "mistral.ai", "x.ai", "moonshot.ai", "deepseek.com", "qwen.ai", "z.ai",
     # Verified structured — scholarly / benchmarks / code
     "arxiv.org", "openalex.org", "semanticscholar.org", "crossref.org",
     "paperswithcode.com", "mlcommons.org", "huggingface.co", "github.com",
@@ -34,6 +37,12 @@ WEB_DOMAIN_FACETS: dict[str, dict] = {
     "mlcommons.org": {"source_kind": "benchmark"},
     "lmarena.ai": {"source_kind": "benchmark"},
     "artificialanalysis.ai": {"source_kind": "benchmark"},
+    # lab announcement blogs → news tier (a release announcement, not an independent benchmark)
+    "openai.com": {"source_kind": "news"}, "anthropic.com": {"source_kind": "news"},
+    "blog.google": {"source_kind": "news"}, "deepmind.google": {"source_kind": "news"},
+    "ai.meta.com": {"source_kind": "news"}, "mistral.ai": {"source_kind": "news"},
+    "x.ai": {"source_kind": "news"}, "moonshot.ai": {"source_kind": "news"},
+    "deepseek.com": {"source_kind": "news"}, "z.ai": {"source_kind": "news"},
     "theverge.com": {"source_kind": "news"},
     "venturebeat.com": {"source_kind": "news"},
     "github.com": {"source_kind": "code"},

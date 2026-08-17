@@ -26,7 +26,8 @@ class ExaWebSearch:
         # pages, not the most-linked older ones. "" = no floor (byte-identical to today).
         self._start_published_date = start_published_date
 
-    async def search(self, query: str, *, max_results: int = 8) -> list[WebResult]:
+    async def search(self, query: str, *, max_results: int = 8,
+                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
         import httpx
         payload = {
             "query": query,
@@ -38,10 +39,18 @@ class ExaWebSearch:
             "contents": {"text": {"maxCharacters": 4000},
                          "highlights": {"numSentences": 5, "highlightsPerUrl": 2, "query": query}},
         }
-        if self._include_domains:
+        # open_web (answer-contract, per request) → DROP the trusted-domain whitelist for open-web
+        # discovery of the very latest (a lab's own announcement blog, a niche release page). The
+        # tier classifier + span-verification still grade + gate whatever comes back.
+        if self._include_domains and not open_web:
             payload["includeDomains"] = self._include_domains   # trusted-sources-only
-        if self._start_published_date:
-            payload["startPublishedDate"] = self._start_published_date   # freshness floor
+        # per-request recency floor OVERRIDES the constructor default when supplied
+        _floor = self._start_published_date
+        if recency_days:
+            import datetime
+            _floor = (datetime.date.today() - datetime.timedelta(days=int(recency_days))).isoformat() + "T00:00:00.000Z"
+        if _floor:
+            payload["startPublishedDate"] = _floor   # freshness floor
         headers = {"x-api-key": self._api_key, "content-type": "application/json"}
         # Exa is the ONLY web leg (no funded fallback provider): retry transient failures
         # (network / 5xx / 429) with a short backoff before giving up. A 4xx other than 429 is a
@@ -76,9 +85,9 @@ class ExaWebSearch:
                 published=r.get("publishedDate") or None,
                 highlights=tuple(h for h in (r.get("highlights") or []) if h and h.strip()),
             ))
-        # freshness: when a recency floor is active, re-sort the (already relevance-filtered) results
-        # NEWEST-FIRST so the very latest pages lead the atom pool — Exa returns relevance order, which
-        # lets a dense older overview out-rank this week's release. Undated results sort last.
-        if self._start_published_date:
+        # freshness: when a recency floor is active (constructor OR per-request), re-sort the (already
+        # relevance-filtered) results NEWEST-FIRST so the very latest pages lead the atom pool — Exa
+        # returns relevance order, which lets a dense older overview out-rank this week's release.
+        if _floor:
             out.sort(key=lambda r: r.published or "", reverse=True)
         return out

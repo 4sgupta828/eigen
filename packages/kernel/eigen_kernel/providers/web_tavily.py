@@ -21,7 +21,8 @@ class TavilyWebSearch:
         # recency, byte-identical). Fixes "latest state" answers returning old, highly-relevant pages.
         self._time_range = time_range
 
-    async def search(self, query: str, *, max_results: int = 8) -> list[WebResult]:
+    async def search(self, query: str, *, max_results: int = 8,
+                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
         import httpx
         payload = {
             "api_key": self._api_key,
@@ -29,8 +30,13 @@ class TavilyWebSearch:
             "max_results": max_results,
             "include_raw_content": True,
         }
-        if self._time_range:
-            payload["time_range"] = self._time_range
+        # per-request recency maps to Tavily's time_range buckets (it has no day-granular floor);
+        # constructor default otherwise. open_web is a no-op here (Tavily is already open web).
+        _tr = self._time_range
+        if recency_days:
+            _tr = "week" if recency_days <= 7 else "month" if recency_days <= 31 else "year"
+        if _tr:
+            payload["time_range"] = _tr
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.post(TAVILY_URL, json=payload)
             resp.raise_for_status()
@@ -45,6 +51,6 @@ class TavilyWebSearch:
                 published=r.get("published_date") or None,
             ))
         # freshness: recency window active → re-sort newest-first so the latest pages lead the pool
-        if self._time_range:
+        if _tr:
             out.sort(key=lambda r: r.published or "", reverse=True)
         return out

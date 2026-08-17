@@ -25,7 +25,8 @@ class WebResult:
 
 @runtime_checkable
 class WebSearchClient(Protocol):
-    async def search(self, query: str, *, max_results: int = 10) -> list[WebResult]: ...
+    async def search(self, query: str, *, max_results: int = 10,
+                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]: ...
 
 
 class FakeWebSearch:
@@ -34,7 +35,8 @@ class FakeWebSearch:
     def __init__(self, canned: dict[str, list[WebResult]] | None = None):
         self._canned = canned or {}
 
-    async def search(self, query: str, *, max_results: int = 10) -> list[WebResult]:
+    async def search(self, query: str, *, max_results: int = 10,
+                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
         return self._canned.get(query, [])[:max_results]
 
 
@@ -47,14 +49,18 @@ class CassetteWebSearch:
         self._mode = resolve_mode(mode)
         self._cassette = Cassette(root=cassette_root, namespace=namespace)
 
-    async def search(self, query: str, *, max_results: int = 10) -> list[WebResult]:
+    async def search(self, query: str, *, max_results: int = 10,
+                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
+        # cassette KEY stays (query, max_results) so REPLAY tests are unaffected by the new live-only
+        # web controls; the controls only shape live/record fetches (forwarded to the inner client).
         key = hash_request("web", query, max_results)
         if self._mode is ProviderMode.REPLAY:
             return [WebResult(**r) for r in self._cassette.replay(key, hint=query)]
         guard_live(self._mode)
         if self._inner is None:
             raise RuntimeError("CassetteWebSearch in record/live mode requires an inner client")
-        results = await self._inner.search(query, max_results=max_results)
+        results = await self._inner.search(query, max_results=max_results,
+                                           open_web=open_web, recency_days=recency_days)
         if self._mode is ProviderMode.RECORD:
             self._cassette.record(key, [asdict(r) for r in results])
         return results

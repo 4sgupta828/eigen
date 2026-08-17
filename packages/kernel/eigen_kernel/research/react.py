@@ -1061,11 +1061,17 @@ async def run_react(
     _steer = (_profile.get("planner_steer") or "").strip() if _ac else ""
     _answer_dir = (_profile.get("answer_directive") or "").strip() if _ac else ""
     _web_recency_days = _profile.get("web_recency_days") if _ac else None
+    _web_open = bool(_ac and _profile.get("web_open"))   # drop the trusted-domain whitelist (open web)
     # the tier-boost/recency ranker argument, honoring per-question authority suppression
     _ranker_arg = None if _suppress_auth else (evidence_ranker if evidence_fitness else None)
     if _ac:
-        _log.info("answer-contract stance=%s recency=%s suppress_authority=%s web_days=%s",
-                  _contract.stance, bool(_eff_freshness), _suppress_auth, _web_recency_days)
+        # profile-driven THOROUGHNESS: a landscape/current question needs more search steps (discover
+        # the leaderboard → drill into each newest model) and a wider compose cap (a landscape answer
+        # spans ~15 models, not a handful). Overrides only RAISE the caller's values, never lower them.
+        max_steps = max(int(max_steps), int(_profile.get("max_steps") or 0))
+        compose_claim_cap = max(int(compose_claim_cap), int(_profile.get("compose_claim_cap") or 0))
+        _log.info("answer-contract stance=%s recency=%s suppress_authority=%s web_open=%s steps=%s cap=%s",
+                  _contract.stance, bool(_eff_freshness), _suppress_auth, _web_open, max_steps, compose_claim_cap)
 
     stale_searches = 0          # consecutive searches that added NO new atoms (spinning detector)
     premature_answers = 0       # zero-evidence answer attempts (see the guard below)
@@ -1117,6 +1123,7 @@ async def run_react(
                 query=q, tenant_id=tenant_id, workspace_id=workspace_id,
                 query_embedding=qvec, k=k, facets=dict(facets or {}),
                 exclude_facets=dict(exclude_facets or {}),
+                web_open=_web_open, web_recency_days=_web_recency_days,   # web leg honors; corpus ignores
             )
             # Corpus: agent reformulations → multi-query fusion (recall); else a single search.
             # aux (web): ONE call per step on the ORIGINAL query (no per-variant fan-out) — runs

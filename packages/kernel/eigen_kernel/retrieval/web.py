@@ -133,7 +133,12 @@ class WebRetrievalSource:
         return [r for _, _, r in kept]
 
     async def search(self, req: RetrievalRequest) -> list[BlockHit]:
-        results = self._dedup(await self._client.search(req.query, max_results=self._max))
+        # thread the per-request web controls (answer-contract) through to the client; a client that
+        # doesn't accept them ignores the kwargs (they carry safe defaults).
+        results = self._dedup(await self._client.search(
+            req.query, max_results=self._max,
+            open_web=getattr(req, "web_open", False),
+            recency_days=getattr(req, "web_recency_days", None)))
         # Chunk each fetched page body into length-bounded blocks so a verbatim span is findable
         # (a 4000-char blob is nearly unquotable). Provider HIGHLIGHTS (query-aware extracts from
         # anywhere in the page) come FIRST — they can carry a discriminator the truncated body

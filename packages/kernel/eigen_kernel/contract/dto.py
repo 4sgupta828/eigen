@@ -97,6 +97,12 @@ class RetrievalRequest:
     exclude_facets: FacetFilter = field(default_factory=dict)
     k: int = 20
     fetch_pool: int = 60                 # per-leg candidate pool before fusion
+    # Per-request WEB controls (answer-contract): a source that queries the live web MAY honor these.
+    # `web_open` True → ignore the vertical's trusted-domain whitelist for THIS query (open-web
+    # discovery for a currency question); `web_recency_days` → per-request recency floor override.
+    # Corpus sources ignore them. Both default to the source's own configuration (byte-identical).
+    web_open: bool = False
+    web_recency_days: int | None = None
 
 
 class Capability(str, enum.Enum):

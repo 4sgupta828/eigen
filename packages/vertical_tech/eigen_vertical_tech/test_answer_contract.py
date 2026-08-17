@@ -26,11 +26,13 @@ def test_derivation_parses_stance():
 
 def test_current_profile_is_recency_first_authority_suppressed():
     p = ANSWER_PROFILES["current"]
-    assert p["suppress_authority"] is True
+    assert p["suppress_authority"] is True and p["web_open"] is True
     assert p["recency"] and p["recency"]["min_rank"] == 0 and p["recency"]["weight"] >= 0.4
-    assert "recent" in p["planner_steer"].lower() and "newest" in p["answer_directive"].lower()
+    assert p["max_steps"] >= 10 and p["compose_claim_cap"] >= 40   # thorough, wide landscape
+    steer, directive = p["planner_steer"].lower(), p["answer_directive"].lower()
+    assert "leaderboard" in steer and "newest" in directive
     # honesty: a fresh release must be labeled, never presented as benchmarked
-    assert "benchmarks pending" in p["answer_directive"].lower()
+    assert "un-benchmarked" in directive or "benchmarks pending" in directive or "on paper" in directive
 
 
 def test_established_profile_is_authority_first_no_recency():
