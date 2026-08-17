@@ -10,6 +10,7 @@ from .gdelt import GdeltConnector
 from .github import GithubConnector
 from .openalex import OpenAlexConnector
 from .patentsview import PatentsViewConnector
+from .semantic_scholar import SemanticScholarConnector
 
 __all__ = ["ArxivConnector", "EdgarConnector", "GdeltConnector", "GithubConnector",
-           "OpenAlexConnector", "PatentsViewConnector"]
+           "OpenAlexConnector", "PatentsViewConnector", "SemanticScholarConnector"]

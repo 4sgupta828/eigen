@@ -16,7 +16,7 @@ from .terms import TECH_TERMS_PROMPT
 from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
 from .connectors import (ArxivConnector, EdgarConnector, GdeltConnector, GithubConnector,
-                         OpenAlexConnector, PatentsViewConnector)
+                         OpenAlexConnector, PatentsViewConnector, SemanticScholarConnector)
 from .eval_gold import GOLD
 from .fixtures import sample_filings, sample_papers
 from .gaps import TECH_GAP_PROMPT
@@ -42,6 +42,7 @@ def build_manifest() -> VerticalManifest:
             "edgar": EdgarConnector(filings=sample_filings()),
             "arxiv": ArxivConnector(papers=sample_papers()),
             "openalex": OpenAlexConnector(),
+            "semantic_scholar": SemanticScholarConnector(),
             "github": GithubConnector(),
             "patentsview": PatentsViewConnector(),
             "gdelt": GdeltConnector(),
