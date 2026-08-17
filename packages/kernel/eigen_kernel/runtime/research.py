@@ -100,6 +100,9 @@ class ResearchService:
     classify_evidence: object | None = None # vertical structural evidence-tier classifier (source_key, facets) -> kind
     evidence_fitness: bool = False          # boost stronger evidence tiers into the compose cap (flag)
     evidence_ranker: object | None = None   # vertical authority pyramid: evidence_kind -> int rank
+    freshness: dict | None = None           # vertical freshness policy {min_rank,weight,horizon_years}
+    #                                         (flag EIGEN_FRESHNESS_RANKING): recency re-order + as-of
+    #                                         disclosure. None → byte-identical to today.
     evidence_identity: bool = False         # render each atom's document identity ⟨title — source⟩ on
     #                                         every LLM-visible surface (Evidence Contract stage 1, flag)
     claim_congruence: bool = False          # unified batched BINDING judge over loop/claims-first/
@@ -467,6 +470,7 @@ class ResearchService:
             collect_diagnostics=self.collect_diagnostics,
             classify_evidence=self.classify_evidence,
             evidence_fitness=self.evidence_fitness, evidence_ranker=self.evidence_ranker,
+            freshness=self.freshness,
             evidence_identity=self.evidence_identity, claim_congruence=self.claim_congruence,
             question_contract=self.question_contract, contract_prompt=self.contract_prompt,
             explore_legs=self.explore_legs,

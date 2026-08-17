@@ -56,6 +56,10 @@ class ArxivConnector:
             q = (window or {}).get("query", "").strip() or "large language models"
             limit = int((window or {}).get("limit", self._page_size))
             url = f"{API}?search_query=all:{q.replace(' ', '+')}&start=0&max_results={limit}"
+            # freshness ingest lane: sort newest-first so the corpus gets RECENT preprints, not just the
+            # most-cited older ones (default stays relevance). window {"sort":"recent"} opts in.
+            if str((window or {}).get("sort", "")).lower() == "recent":
+                url += "&sortBy=submittedDate&sortOrder=descending"
             papers = self._parse_atom(await self.fetch_strategy.fetch(url))
             for p in papers:
                 self._by_id[paper_doc.arxiv_id(p)] = p

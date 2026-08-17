@@ -28,11 +28,17 @@ class OpenAlexConnector:
         for w in (works or []):
             self._by_id[openalex_doc.openalex_id(w)] = w
 
-    async def _search(self, query: str, limit: int) -> list[dict]:
+    async def _search(self, query: str, limit: int, *, sort: str = "", from_year: str = "") -> list[dict]:
         import json
         per = min(200, max(1, limit))
         q = query.replace(" ", "%20")
         url = f"{API}?search={q}&per_page={per}&mailto={_MAILTO}"
+        # freshness ingest lane: a from-year floor and/or newest-first sort so the corpus captures
+        # RECENT works, not just the most-cited older ones (default = relevance, unchanged).
+        if from_year and str(from_year)[:4].isdigit():
+            url += f"&filter=from_publication_date:{str(from_year)[:4]}-01-01"
+        if str(sort).lower() == "recent":
+            url += "&sort=publication_date:desc"
         data = json.loads(await self.fetch_strategy.fetch(url))
         return (data.get("results") or [])[:limit]
 
@@ -42,7 +48,8 @@ class OpenAlexConnector:
         else:
             q = (window or {}).get("query", "").strip() or "large language models"
             limit = int((window or {}).get("limit", self._page_size))
-            works = await self._search(q, limit)
+            works = await self._search(q, limit, sort=str((window or {}).get("sort", "")),
+                                       from_year=str((window or {}).get("from_year", "")))
             for w in works:
                 self._by_id[openalex_doc.openalex_id(w)] = w
         return [EntityRef(source_key=self.key, native_id=openalex_doc.openalex_id(w),

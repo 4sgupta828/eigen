@@ -32,10 +32,15 @@ class CrossrefConnector:
             if cr.doi(w):
                 self._by_id[cr.doi(w)] = w
 
-    async def _search(self, query: str, limit: int) -> list[dict]:
+    async def _search(self, query: str, limit: int, *, sort: str = "", from_year: str = "") -> list[dict]:
         n = min(100, max(1, limit))
         q = urllib.parse.quote(query)
         url = f"{API}?query={q}&rows={n}&select={urllib.parse.quote(cr.FIELDS)}&mailto={_MAILTO}"
+        # freshness lane: a from-year floor and/or newest-first order (default = relevance, unchanged)
+        if from_year and str(from_year)[:4].isdigit():
+            url += f"&filter=from-pub-date:{str(from_year)[:4]}-01-01"
+        if str(sort).lower() == "recent":
+            url += "&sort=published&order=desc"
         data = json.loads(await self.fetch_strategy.fetch(url))
         items = ((data.get("message") or {}).get("items")) if isinstance(data, dict) else None
         return [w for w in (items or []) if isinstance(w, dict)][:limit]
@@ -46,7 +51,8 @@ class CrossrefConnector:
         else:
             q = (window or {}).get("query", "").strip() or "large language models"
             limit = int((window or {}).get("limit", self._page_size))
-            works = await self._search(q, limit)
+            works = await self._search(q, limit, sort=str((window or {}).get("sort", "")),
+                                       from_year=str((window or {}).get("from_year", "")))
             for w in works:
                 if cr.doi(w):
                     self._by_id[cr.doi(w)] = w

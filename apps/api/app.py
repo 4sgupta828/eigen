@@ -465,6 +465,14 @@ def evidence_fitness_enabled() -> bool:
     return os.environ.get("EIGEN_EVIDENCE_FITNESS", "").lower() in ("1", "true", "yes")
 
 
+def freshness_ranking_enabled() -> bool:
+    """Flag (default OFF, Rule 20): when ON, the vertical's `freshness_policy` re-orders the verified-
+    claim pool by RECENCY across all evidence tiers over a short horizon (so a 2026 paper/repo/news
+    outranks a 2024 one for a fast-moving field), and the answer carries an as-of/staleness disclosure.
+    OFF → recency stays the kernel default (controlling-tier only, 12yr) = byte-identical to today."""
+    return os.environ.get("EIGEN_FRESHNESS_RANKING", "").lower() in ("1", "true", "yes")
+
+
 def evidence_identity_enabled() -> bool:
     """Flag (default OFF, Rule 20 — Evidence Contract stage 1): when ON, every LLM-visible evidence
     surface (planner observations, claims-first extractor + entailment items, compose findings, panel
@@ -779,6 +787,8 @@ class ResearchOut(BaseModel):
     reasoning_purpose: str = ""           # the decision the reasoning serves (empty unless the flag is on)
     reasoning_conclusion: str = ""        # the informed judgment toward that purpose (flag on only)
     diagnostics: dict | None = None       # troubleshooting trace (None unless the diag-trace flag is on)
+    freshness: dict | None = None         # {as_of,newest_year,oldest_year,n_dated,n_total,stale_warning}
+    #                                       (None unless the freshness-ranking flag is on)
 
 
 def build_default_service() -> ResearchService:
@@ -876,6 +886,7 @@ def build_default_service() -> ResearchService:
         classify_evidence=getattr(manifest, "evidence_classifier", None),
         evidence_fitness=evidence_fitness_enabled(),
         evidence_ranker=getattr(getattr(manifest, "authority_policy", None), "rank", None),
+        freshness=(getattr(manifest, "freshness_policy", None) or None) if freshness_ranking_enabled() else None,
         evidence_identity=evidence_identity_enabled(),
         claim_congruence=claim_congruence_enabled(),
         question_contract=question_contract_mode(),
@@ -1202,6 +1213,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "followup_clarify_enabled": followup_clarify_enabled(),
             "answer_visuals_enabled": answer_visuals_enabled(),
             "answer_charts_enabled": answer_charts_enabled(),
+            "freshness_ranking_enabled": freshness_ranking_enabled(),
             "reasoning_read_enabled": reasoning_read_enabled() and structured_answers(),
             "diag_trace_enabled": diag_trace_enabled(),
             "evidence_fitness_enabled": evidence_fitness_enabled(),
@@ -1682,6 +1694,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             reasoning_purpose=(getattr(res, "reasoning_purpose", "") if reasoning_read_enabled() else ""),
             reasoning_conclusion=(getattr(res, "reasoning_conclusion", "") if reasoning_read_enabled() else ""),
             diagnostics=(getattr(res, "diagnostics", None) if diag_trace_enabled() else None),
+            freshness=(getattr(res, "freshness", None) if freshness_ranking_enabled() else None),
         )
 
     @app.post("/research/stream")

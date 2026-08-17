@@ -148,6 +148,15 @@ class VerticalManifest:
     # metadata: e.g. a guideline body's pages carry pub_type "practice guideline"), so the vertical's
     # evidence classifier and authority pyramid grade web evidence like corpus evidence. Empty → none.
     web_domain_facets: dict = field(default_factory=dict)
+    # Optional FRESHNESS policy (flag EIGEN_FRESHNESS_RANKING): how strongly recency re-orders the
+    # verified-claim pool for THIS vertical. Domain-free opaque dict the kernel reads by key:
+    #   {"min_rank": int, "weight": float, "horizon_years": int}
+    # `min_rank` = the lowest evidence tier the recency term applies to (0 = ALL tiers; a fast-moving
+    # vertical wants 0 so a 2026 paper/repo/news outranks a 2024 one; medical wants the controlling
+    # tier so a landmark trial never loses to a newer small one). `weight` = bounded additive recency
+    # boost; `horizon_years` = linear decay-to-zero age. Empty → recency stays the kernel default
+    # (controlling-tier only, 0.10 / 12yr), i.e. byte-identical to today when the flag is off.
+    freshness_policy: dict = field(default_factory=dict)
     # Optional Evidence Pulse watch-topic prompts (LLM-owned judgment, Rule 18): suggest watchable
     # subjects for a Q&A / canonicalize a free-text topic — both against the stable topic registry
     # (repeated runs must converge on the same canonical strings, never variants). None → the

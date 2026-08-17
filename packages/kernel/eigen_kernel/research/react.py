@@ -381,7 +381,8 @@ _LOW_YIELD_ATOMS = 2           # a search adding fewer than this many NEW atoms 
 
 
 async def _rank_claims_by_relevance(question, claims, embedder, top, *,
-                                    evidence_ranker=None, country_boost=None, rank_all=False):
+                                    evidence_ranker=None, country_boost=None, rank_all=False,
+                                    freshness=None):
     """Keep the `top` verified claims most RELEVANT to the question, by dense cosine similarity of
     claim↔question embeddings (Rule 18 — a computable relevance signal, not a keyword heuristic). When
     `evidence_ranker` is supplied (evidence-fitness on), a SMALL bounded evidence-tier boost is added so
@@ -424,8 +425,10 @@ async def _rank_claims_by_relevance(question, claims, embedder, top, *,
             try:
                 r = evidence_ranker(getattr(claims[i], "evidence_kind", "") or "")
                 b += _EVIDENCE_FITNESS_WEIGHT * (max(0, int(r)) / _EVIDENCE_MAX_RANK)
-                if int(r) >= _CONTROLLING_RANK:
-                    # controlling tier + known year → bounded recency term (newest guidance governs)
+                if not freshness and int(r) >= _CONTROLLING_RANK:
+                    # controlling tier + known year → bounded recency term (newest guidance governs).
+                    # Suppressed when a vertical freshness policy is active — the freshness block below
+                    # owns recency then (uniform, all-tiers), so a claim is never double-counted.
                     yr = str((getattr(claims[i], "facets", None) or {}).get("year") or "")[:4]
                     if yr.isdigit():
                         age = max(0, this_year - int(yr))
@@ -451,6 +454,29 @@ async def _rank_claims_by_relevance(question, claims, embedder, top, *,
                     else:
                         b += _COUNTRY_BOOST_WEIGHT * 0.5
             except Exception:   # noqa: BLE001
+                pass
+        # FRESHNESS (flag EIGEN_FRESHNESS_RANKING): a vertical-supplied recency term that re-orders
+        # claims across ALL tiers over a SHORT horizon (fast-moving verticals). Bounded + additive
+        # (boost-only, never demotes below the relevance baseline), independent of evidence-fitness
+        # (min_rank=0 needs no tier). `freshness` None → this block is skipped → byte-identical OFF.
+        if freshness:
+            try:
+                yr = str((getattr(claims[i], "facets", None) or {}).get("year") or "")[:4]
+                if yr.isdigit():
+                    rank = 0
+                    if evidence_ranker is not None:
+                        try:
+                            rank = max(0, int(evidence_ranker(getattr(claims[i], "evidence_kind", "") or "")))
+                        except Exception:   # noqa: BLE001
+                            rank = 0
+                    _y = int(yr)
+                    # future-dated records (bad "forthcoming" metadata: 2050/2114) must NOT earn a
+                    # recency boost — only real past/current years count.
+                    if _y <= this_year and rank >= int(freshness.get("min_rank", _CONTROLLING_RANK)):
+                        age = this_year - _y
+                        hz = max(1, int(freshness.get("horizon_years", _RECENCY_HORIZON_YEARS)))
+                        b += float(freshness.get("weight", _RECENCY_BOOST_WEIGHT)) * max(0.0, 1.0 - age / hz)
+            except Exception:   # noqa: BLE001 — ranking must never break selection
                 pass
         return b
 
@@ -535,6 +561,10 @@ class AnswerResult:
     # {"mode","entities","axes"} whenever a contract was derived (shadow OR steer), independent of
     # the diagnostics flag. None when no contract was derived (flag off / derivation failed).
     question_contract: dict | None = None
+    # Freshness/currency disclosure (flag EIGEN_FRESHNESS_RANKING): {as_of, newest_year, oldest_year,
+    # n_dated, n_total, stale_warning}. None unless a freshness policy drove this run — so the UI/answer
+    # can show an as-of date and flag when the cited evidence predates the vertical's recency horizon.
+    freshness: dict | None = None
 
     @property
     def grounded(self) -> bool:
@@ -598,6 +628,10 @@ async def run_react(
     #                                           drop on judge failure, never a keyword fallback). OFF →
     #                                           stage-1 prompts/enforcement, byte-identical.
     country_boost=None,                       # set of country codes to boost (surface region evidence, no filter)
+    freshness: dict | None = None,            # vertical freshness policy {min_rank,weight,horizon_years}
+    #                                           (flag EIGEN_FRESHNESS_RANKING). Re-orders the claim pool by
+    #                                           recency across all tiers + drives the as-of/staleness
+    #                                           disclosure below. None → byte-identical to today.
     exclude_facets: dict | None = None,       # EXCLUSION facet filter applied to every retrieval leg
     graph_legs: list[dict] | None = None,     # A9 graph-guided evidence legs: [{query, note}] from the
     #                                           relationship graph (caller-computed). Run ONCE before the
@@ -1374,11 +1408,11 @@ async def run_react(
                and _contract.mode == "enumerative" and bool(_contract.entities))
     if _c_enum and len(result.verified_claims) > compose_claim_cap:
         from eigen_kernel.research.contract import match_entities
-        if evidence_select or evidence_fitness or country_boost:
+        if evidence_select or evidence_fitness or country_boost or freshness:
             base = await _rank_claims_by_relevance(
                 question, result.verified_claims, embedder, len(result.verified_claims),
                 evidence_ranker=(evidence_ranker if evidence_fitness else None),
-                country_boost=country_boost, rank_all=True)
+                country_boost=country_boost, rank_all=True, freshness=freshness)
         else:
             base = list(result.verified_claims)     # first-come — today's default ordering
         _queues: dict[str, list] = {}               # entity → its claims, best-ranked first
@@ -1415,12 +1449,12 @@ async def run_react(
     # RELEVANT to the question; under evidence-fitness, additionally boost stronger evidence TIERS into
     # the cap (span+entailment already passed → provenance unchanged; this only reorders/trims already-
     # verified claims). Either flag triggers the ranking pass.
-    if (evidence_select or evidence_fitness or country_boost) and len(result.verified_claims) > compose_claim_cap:
+    if (evidence_select or evidence_fitness or country_boost or freshness) and len(result.verified_claims) > compose_claim_cap:
         await emit({"type": "selecting", "from": len(result.verified_claims), "to": compose_claim_cap})
         result.verified_claims = await _rank_claims_by_relevance(
             question, result.verified_claims, embedder, compose_claim_cap,
             evidence_ranker=(evidence_ranker if evidence_fitness else None),
-            country_boost=country_boost)
+            country_boost=country_boost, freshness=freshness)
 
     # EVIDENCE CONTRACT stage 3 — the SLOT GRID (observability, both modes) + honest coverage
     # gaps (steer only). The grid counts, per contract entity, the FINAL selected claims that
@@ -1485,10 +1519,38 @@ async def run_react(
             note = getattr(vc, "congruence_note", "")
             return f" [{note.replace('_', '-')}]" if note else ""
 
+        def _finding_year(vc) -> str:
+            """Freshness disclosure (flag): surface each finding's publication YEAR so compose can SEE
+            evidence age + flag staleness. OFF (freshness None) → "" and the line is byte-identical."""
+            if not freshness:
+                return ""
+            yr = str((getattr(vc, "facets", None) or {}).get("year") or "")[:4]
+            return f" [{yr}]" if yr.isdigit() else ""
+
         findings = "\n".join(
             f"[{i}] {vc.text}  (quote: \"{vc.quote}\" — source: {_finding_source(vc)})"
-            f"{_finding_note(vc)}"
+            f"{_finding_year(vc)}{_finding_note(vc)}"
             for i, vc in enumerate(result.verified_claims, 1))
+
+        # FRESHNESS disclosure metadata (flag): compute the as-of year, the newest/oldest cited year,
+        # and a stale_warning when the freshest evidence predates the vertical's recency horizon — so
+        # the UI + the answer can say "as of <year>" instead of presenting dated facts as current.
+        if freshness:
+            import datetime as _dt
+            _now = _dt.date.today().year
+            _yrs = []
+            for vc in result.verified_claims:
+                _y = str((getattr(vc, "facets", None) or {}).get("year") or "")[:4]
+                if _y.isdigit() and int(_y) <= _now:   # ignore bogus future-dated records
+                    _yrs.append(int(_y))
+            _hz = max(1, int(freshness.get("horizon_years", _RECENCY_HORIZON_YEARS)))
+            result.freshness = {
+                "as_of": _now,
+                "newest_year": max(_yrs) if _yrs else None,
+                "oldest_year": min(_yrs) if _yrs else None,
+                "n_dated": len(_yrs), "n_total": len(result.verified_claims),
+                "stale_warning": bool(_yrs) and (max(_yrs) < _now - _hz),
+            }
 
         # EVIDENCE CONTRACT stage 4 — when the enumerative-compose decision fired, APPEND the
         # vertical's addendum (an opaque caller-supplied string — kernel litmus) to the existing
@@ -1539,6 +1601,17 @@ async def run_react(
                 "DIRECTLY (e.g. no evidence on the exact intervention/population/outcome asked); then "
                 "put ONE short line in gap_note naming the direct evidence that is missing. Otherwise "
                 "directly_addresses=true and gap_note empty."
+                # FRESHNESS disclosure (flag): each finding is tagged with its publication [YEAR]. When
+                # the question asks for the CURRENT / LATEST / FRONTIER state or where things are HEADED,
+                # you MUST state the year of the most recent evidence you are relying on, and if that
+                # newest evidence predates this year, say plainly the picture is "as of <year>" and may
+                # be dated — never present older evidence as the current state of the art. Base this
+                # ONLY on the [YEAR] tags shown; do not invent newer facts.
+                + (f"\n\nFRESHNESS: today is {_now}. The findings are tagged with a [year]. If the "
+                   "question asks for the current/latest/frontier state or trajectory, state the year of "
+                   "your most recent evidence and, if it predates this year, explicitly note the answer is "
+                   "'as of' that year and may be dated — do NOT present older evidence as current."
+                   if freshness else "")
                 # REASONING READ (flag): anchor the structured interpretation/confidence fields at the
                 # KERNEL level, symmetric to the directly_addresses metadata above — the domain-free
                 # mechanics live here; the domain MEANING (what each kind is, neutrality) is in the

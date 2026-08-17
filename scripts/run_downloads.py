@@ -7,7 +7,7 @@ paces the queue serially. We do NOT block on unavailable sources (see docs/downl
 
 Usage:
   EIGEN_ADMIN_TOKEN=... python scripts/run_downloads.py <tranche> [--limit N] [--dry]
-  tranches: depth | formd | openalex | arxiv | s2 | crossref | wikidata | hn | github | all
+  tranches: depth | formd | openalex | arxiv | s2 | crossref | wikidata | hn | github | recent | all
   --dry prints the jobs without enqueuing.
 """
 from __future__ import annotations
@@ -144,11 +144,27 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("github","all"):
         for o in GITHUB_ORGS:
             jobs.append({"connector":"github","query":o,"limit":limit or 8})
+    # RECENT lane: re-pull the paper sources newest-first / floored at >=2020 so the corpus isn't
+    # relevance-skewed to old highly-cited work. Not part of "all" (it re-queries the same topics with
+    # a freshness filter) — run explicitly: `run_downloads.py recent`.
+    if tranche == "recent":
+        # arXiv dates are reliable → newest-first is clean. OpenAlex/Crossref have bogus "forthcoming"
+        # future dates, so we FLOOR at >=2020 WITHOUT a date sort (relevance within the recent window)
+        # to avoid surfacing 2050/2114 junk. S2 floors by year.
+        _floor = {"from_year": "2020"}
+        for qy in ARXIV_QUERIES:
+            jobs.append({"connector":"arxiv","query":qy,"limit":limit or 30,"facets":{"sector":"ai"},"params":{"sort":"recent"}})
+        for qy in OPENALEX_QUERIES:
+            jobs.append({"connector":"openalex","query":qy,"limit":limit or 30,"facets":{"sector":"ai"},"params":_floor})
+        for qy in S2_QUERIES:
+            jobs.append({"connector":"semantic_scholar","query":qy,"limit":limit or 30,"facets":{"sector":"ai"},"params":_floor})
+        for qy in CROSSREF_QUERIES:
+            jobs.append({"connector":"crossref","query":qy,"limit":limit or 30,"facets":{"sector":"ai"},"params":_floor})
     return jobs
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","github","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","github","recent","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()

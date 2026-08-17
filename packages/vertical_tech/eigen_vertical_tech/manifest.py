@@ -19,6 +19,7 @@ from .connectors import (ArxivConnector, CrossrefConnector, EdgarConnector, Gdel
                          GithubConnector, HackerNewsConnector, OpenAlexConnector, PatentsViewConnector,
                          SemanticScholarConnector, WikidataConnector)
 from .eval_gold import GOLD
+from .freshness import TECH_FRESHNESS_POLICY
 from .fixtures import sample_filings, sample_papers
 from .gaps import TECH_GAP_PROMPT
 from .ma import MA_DIRECTIVE
@@ -74,6 +75,8 @@ def build_manifest() -> VerticalManifest:
         suggest_prompt=TECH_SUGGEST_PROMPT,
         web_domains=TRUSTED_WEB_DOMAINS,
         web_domain_facets=WEB_DOMAIN_FACETS,
+        # Fast-moving tech: recency re-orders ALL tiers over a short horizon (flag EIGEN_FRESHNESS_RANKING).
+        freshness_policy=TECH_FRESHNESS_POLICY,
         # Sub-vertical seam: sectors as a per-question subject scope (AI seeded), NOT separate verticals.
         sector_profiles=SECTOR_PROFILES,
         # Analytical lenses (the orthogonal axis): angles applied within the active sector.

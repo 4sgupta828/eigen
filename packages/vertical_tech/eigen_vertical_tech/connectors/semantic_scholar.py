@@ -38,10 +38,12 @@ class SemanticScholarConnector:
     def _headers(self) -> dict:
         return {"x-api-key": _API_KEY} if _API_KEY else {}
 
-    async def _search(self, query: str, limit: int) -> list[dict]:
+    async def _search(self, query: str, limit: int, *, from_year: str = "") -> list[dict]:
         n = min(100, max(1, limit))
         q = urllib.parse.quote(query)
         url = f"{SEARCH}?query={q}&limit={n}&fields={s2doc.FIELDS}"
+        if from_year and str(from_year)[:4].isdigit():   # freshness lane: only works from this year on
+            url += f"&year={str(from_year)[:4]}-"
         data = json.loads(await self.fetch_strategy.fetch(url, headers=self._headers()))
         return [r for r in (data.get("data") or []) if isinstance(r, dict)][:limit]
 
@@ -51,7 +53,7 @@ class SemanticScholarConnector:
         else:
             q = (window or {}).get("query", "").strip() or "large language models"
             limit = int((window or {}).get("limit", self._page_size))
-            papers = await self._search(q, limit)
+            papers = await self._search(q, limit, from_year=str((window or {}).get("from_year", "")))
             for p in papers:
                 if s2doc.s2_id(p):
                     self._by_id[s2doc.s2_id(p)] = p
