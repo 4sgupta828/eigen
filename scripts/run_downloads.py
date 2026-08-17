@@ -21,6 +21,10 @@ DEPTH_TICKERS = [
     "NVDA","AMD","INTC","AVGO","MU","QCOM","ARM","MRVL","ON","ADI","TXN","LRCX","AMAT","KLAC","SMCI",
     "MSFT","GOOGL","AMZN","META","AAPL","ORCL","CRM","ADBE","NOW","SNOW","PLTR","AI","PATH","MDB","DDOG",
     "NET","CRWD","PANW","ZS","S","FTNT","OKTA","DELL","HPE","IBM","CSCO","ANET","INTU","WDAY","TEAM",
+    # wave 2
+    "ADSK","ANSS","CDNS","SNPS","FICO","MSCI","VRSN","AKAM","FFIV","JNPR","HUBS","ZM","DOCU","TWLO",
+    "ESTC","GTLB","CFLT","U","RBLX","DASH","ABNB","UBER","SHOP","XYZ","PYPL","COIN","HOOD","SOFI","AFRM",
+    "NU","TOST","BILL","MELI","SE","VRT","CRDO","ALAB","TEM","RXRX","SDGR","VEEV","DOCS","HIMS",
 ]
 
 # --- T1b: EDGAR FORM D (private raises via EDGAR full-text search by name) ---
@@ -31,6 +35,12 @@ FORMD_NAMES = [
     "Harvey AI","Sierra","Anysphere","Figure AI","Physical Intelligence","Skild AI","Hippocratic AI","Abridge",
     "Cresta","Writer","Jasper AI","Notion Labs","Rippling","Ramp Business","Brex","Deel","Airtable",
     "Discord","Stripe","Plaid","Chime","Instacart","Canva","Grammarly","Vercel","Retool","Snyk","Wiz",
+    # wave 2
+    "Mistral AI","Reflection AI","Thinking Machines Lab","Safe Superintelligence","World Labs","Luma AI",
+    "Suno","ElevenLabs","Cartesia","Fireworks AI","Baseten","Modal Labs","Replicate","LangChain","LlamaIndex",
+    "Pinecone Systems","Chroma","Weaviate","Neon","Supabase","Clerk","Vanta","Mercury Technologies","Column",
+    "Modern Treasury","Shield AI","Saronic Technologies","Applied Intuition","Hadrian Automation","Xaira Therapeutics",
+    "EvolutionaryScale","Chai Discovery","Cursor","Decagon","Sierra AI","Mercor","Clay","Legora","Cognition AI",
 ]
 
 # --- T2: OpenAlex topics (peer-reviewed, verified_structured; stamp sector=ai) ---
@@ -39,6 +49,11 @@ OPENALEX_QUERIES = [
     "reinforcement learning from human feedback","mixture of experts language model","diffusion model image generation",
     "neural network quantization","approximate nearest neighbor vector search","autonomous language model agents",
     "instruction tuning language model","long context transformer","speculative decoding inference",
+    # wave 2
+    "model distillation neural network","parameter efficient fine-tuning LoRA","chain of thought reasoning",
+    "multimodal large language model","code generation large language model","graph neural network",
+    "differential privacy machine learning","dense passage retrieval","knowledge distillation transformer",
+    "state space model sequence",
 ]
 
 # --- T3: GitHub org traction (technical_signal) ---
@@ -46,6 +61,9 @@ GITHUB_ORGS = [
     "openai","anthropics","google-deepmind","meta-llama","huggingface","nvidia","pytorch","tensorflow",
     "langchain-ai","run-llama","vllm-project","ggml-org","mistralai","databricks","triton-lang","microsoft",
     "google-research","facebookresearch","EleutherAI","allenai","stanfordnlp","deepset-ai","qdrant","weaviate",
+    # wave 2
+    "vercel","supabase","pinecone-io","chroma-core","modal-labs","BerriAI","stanford-crfm","unslothai",
+    "ollama","comfyanonymous","Lightning-AI","ray-project",
 ]
 
 def _post(path: str, body: dict) -> dict:
