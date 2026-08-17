@@ -7,7 +7,7 @@ paces the queue serially. We do NOT block on unavailable sources (see docs/downl
 
 Usage:
   EIGEN_ADMIN_TOKEN=... python scripts/run_downloads.py <tranche> [--limit N] [--dry]
-  tranches: depth | formd | openalex | github | all
+  tranches: depth | formd | openalex | arxiv | github | all
   --dry prints the jobs without enqueuing.
 """
 from __future__ import annotations
@@ -56,6 +56,15 @@ OPENALEX_QUERIES = [
     "state space model sequence",
 ]
 
+# --- T2: arXiv preprints (technical_signal, unreviewed; keyless; stamp sector=ai) ---
+ARXIV_QUERIES = [
+    "large language model inference","retrieval augmented generation","llm agents tool use",
+    "mixture of experts","parameter efficient fine tuning","llm reasoning chain of thought",
+    "long context transformer","speculative decoding","model quantization llm","vector database ann search",
+    "multimodal foundation model","diffusion model","reinforcement learning human feedback",
+    "code generation llm","llm evaluation benchmark",
+]
+
 # --- T3: GitHub org traction (technical_signal) ---
 GITHUB_ORGS = [
     "openai","anthropics","google-deepmind","meta-llama","huggingface","nvidia","pytorch","tensorflow",
@@ -85,6 +94,9 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("openalex","all"):
         for qy in OPENALEX_QUERIES:
             jobs.append({"connector":"openalex","query":qy,"limit":limit or 20,"facets":{"sector":"ai"}})
+    if tranche in ("arxiv","all"):
+        for qy in ARXIV_QUERIES:
+            jobs.append({"connector":"arxiv","query":qy,"limit":limit or 20,"facets":{"sector":"ai"}})
     if tranche in ("github","all"):
         for o in GITHUB_ORGS:
             jobs.append({"connector":"github","query":o,"limit":limit or 8})
@@ -92,7 +104,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","github","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","github","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
