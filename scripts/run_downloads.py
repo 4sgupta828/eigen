@@ -144,14 +144,14 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("github","all"):
         for o in GITHUB_ORGS:
             jobs.append({"connector":"github","query":o,"limit":limit or 8})
-    # RECENT lane: re-pull the paper sources newest-first / floored at >=2020 so the corpus isn't
+    # RECENT lane: re-pull the paper sources newest-first / floored at >=2015 so the corpus isn't
     # relevance-skewed to old highly-cited work. Not part of "all" (it re-queries the same topics with
     # a freshness filter) — run explicitly: `run_downloads.py recent`.
     if tranche == "recent":
         # arXiv dates are reliable → newest-first is clean. OpenAlex/Crossref have bogus "forthcoming"
-        # future dates, so we FLOOR at >=2020 WITHOUT a date sort (relevance within the recent window)
+        # future dates, so we FLOOR at >=2015 WITHOUT a date sort (relevance within the recent window)
         # to avoid surfacing 2050/2114 junk. S2 floors by year.
-        _floor = {"from_year": "2020"}
+        _floor = {"from_year": "2015"}
         for qy in ARXIV_QUERIES:
             jobs.append({"connector":"arxiv","query":qy,"limit":limit or 30,"facets":{"sector":"ai"},"params":{"sort":"recent"}})
         for qy in OPENALEX_QUERIES:
