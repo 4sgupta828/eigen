@@ -2173,44 +2173,88 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         except Exception:   # noqa: BLE001
             return None
 
+    # facet filter spec (tech vertical) — STRUCTURAL filtering only (Rule 18): (ui_key, sql_col, op)
+    _CORPUS_FACET_SPEC = [
+        ("source_key", "source_key", "="),
+        ("source_kind", "facets->>'source_kind'", "="),
+        ("sector", "facets->>'sector'", "="),
+        ("source_country", "facets->>'source_country'", "="),
+        ("year", "facets->>'year'", "="),
+        ("content_type", "content_type", "="),
+    ]
+
+    def _corpus_facet_clauses(filters: dict, params: list) -> list[str]:
+        clauses = []
+        for key, col, op in _CORPUS_FACET_SPEC:
+            v = str((filters or {}).get(key) or "").strip()
+            if v:
+                params.append(f"%{v}%" if op == "ILIKE" else v)
+                clauses.append(f"{col} {op} ${len(params)}")
+        return clauses
+
+    def _parse_facets(f):
+        import json as _json
+        if isinstance(f, dict):
+            return f
+        try:
+            return _json.loads(f) if f else {}
+        except Exception:   # noqa: BLE001
+            return {}
+
     @app.post("/admin/corpus/search")
-    async def admin_corpus_search(body: CorpusSearchIn, x_admin_token: str = Header(default="")) -> dict:
-        """Pure hybrid retrieval (pgvector + tsvector, NO LLM) over the corpus — the raw evidence a
-        query surfaces, for inspecting sources directly rather than through an answer."""
+    async def admin_corpus_search(body: dict, x_admin_token: str = Header(default="")) -> dict:
+        """Pure retrieval over ingested blocks: mode=keyword (tsv full-text) | semantic (pgvector),
+        with optional facet filters. NO LLM, NO answer — the raw blocks + provenance. Empty query +
+        filters → browse the newest blocks under those filters."""
         if not _admin_ok(x_admin_token):
             raise HTTPException(status_code=401, detail="admin token required")
-        if app.state.service is None:
-            app.state.service = build_default_service()
-        svc = app.state.service
-        q = (body.query or "").strip()
-        if not q:
-            raise HTTPException(status_code=400, detail="query required")
-        corpus_key = getattr(svc, "corpus_source_key", "") or "corpus"
-        k = max(1, min(int(body.k or 25), 100))
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            raise HTTPException(status_code=404, detail="no corpus DSN")
+        mode = (body.get("mode") or "keyword").strip().lower()
+        query = (body.get("query") or "").strip()
+        tenant = (body.get("tenant") or "demo").strip()
+        limit = max(1, min(int(body.get("limit") or 25), 100))
+        params: list = [tenant]
+        where = ["tenant_id = $1"] + _corpus_facet_clauses(body.get("filters") or {}, params)
+        if mode == "semantic":
+            if not query:
+                raise HTTPException(status_code=400, detail="semantic mode needs a query")
+            if app.state.service is None:
+                app.state.service = build_default_service()
+            vec = app.state.service.embedder.embed([query])[0]
+            params.append("[" + ",".join(f"{x:.6f}" for x in vec) + "]")
+            where.append("embedding IS NOT NULL")
+            order = f"ORDER BY embedding <=> ${len(params)}::vector"
+        elif query:
+            params.append(query)
+            where.append(f"tsv @@ plainto_tsquery('english', ${len(params)})")
+            order = f"ORDER BY ts_rank_cd(tsv, plainto_tsquery('english', ${len(params)})) DESC"
+        else:
+            order = "ORDER BY created_at DESC NULLS LAST"   # browse newest under the filters
+        sql = (f"SELECT document_id, block_id, left(text, 1400) AS text, facets, document_title, "
+               f"content_type, source_key FROM rs_block WHERE {' AND '.join(where)} {order} LIMIT {limit}")
+        import asyncpg
+        conn = await asyncpg.connect(dsn)
         try:
-            hits = await svc.search(question=q, tenant_id="demo", source_keys=[corpus_key], k=k * 3)
+            rows = await conn.fetch(sql, *params)
         except Exception as e:   # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"search error: {e}") from e
+        finally:
+            await conn.close()
         out = []
-        for h in hits:
-            did = getattr(h, "document_id", "") or ""
-            src = did.split(":", 1)[0] if ":" in did else (getattr(h, "facets", {}) or {}).get("source_key", "")
-            f = getattr(h, "facets", {}) or {}
-            if body.source and src != body.source:
-                continue
-            if body.source_kind and f.get("source_kind") != body.source_kind:
-                continue
-            out.append({"document_id": did, "block_id": getattr(h, "block_id", ""), "source": src,
-                        "score": round(float(getattr(h, "score", 0.0)), 4),
-                        "url": _doc_url(did, f),
-                        "snippet": _clean_snip(getattr(h, "text", "") or "", 450), "facets": f})
-            if len(out) >= k:
-                break
-        return {"query": q, "count": len(out), "hits": out}
+        for r in rows:
+            f = _parse_facets(r["facets"])
+            out.append({"document_id": r["document_id"], "block_id": r["block_id"],
+                        "text": _clean_snip(r["text"] or "", 1400), "title": r["document_title"],
+                        "content_type": r["content_type"], "source_key": r["source_key"],
+                        "facets": f, "url": _doc_url(r["document_id"], f)})
+        return {"mode": mode, "count": len(out), "results": out}
 
-    @app.get("/admin/corpus/doc")
-    async def admin_corpus_doc(document_id: str, x_admin_token: str = Header(default="")) -> dict:
-        """Full ingested document — every block's text in order + its facets — by document_id."""
+    @app.get("/admin/corpus/document")
+    async def admin_corpus_document(document_id: str, tenant: str = "demo",
+                                    x_admin_token: str = Header(default="")) -> dict:
+        """All blocks of ONE ingested document, in order — read the whole source firsthand."""
         if not _admin_ok(x_admin_token):
             raise HTTPException(status_code=401, detail="admin token required")
         dsn = os.environ.get("EIGEN_CORPUS_DSN")
@@ -2220,64 +2264,43 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         conn = await asyncpg.connect(dsn)
         try:
             rows = await conn.fetch(
-                "SELECT block_id, text, facets, created_at FROM rs_block "
-                "WHERE document_id=$1 ORDER BY block_id", document_id)
+                "SELECT block_id, text, facets, document_title, content_type, source_key "
+                "FROM rs_block WHERE tenant_id = $1 AND document_id = $2 ORDER BY block_id LIMIT 2000",
+                tenant, document_id)
         finally:
             await conn.close()
         if not rows:
-            raise HTTPException(status_code=404, detail="document not found")
-        import json as _json
-        blocks = []
-        for r in rows:
-            f = r["facets"]
-            blocks.append({"block_id": r["block_id"], "text": r["text"],
-                           "facets": (_json.loads(f) if isinstance(f, str) else dict(f or {}))})
-        return {"document_id": document_id, "source": document_id.split(":", 1)[0],
-                "n_blocks": len(blocks), "created_at": str(rows[0]["created_at"]),
-                "facets": blocks[0]["facets"], "url": _doc_url(document_id, blocks[0]["facets"]),
-                "blocks": blocks}
+            raise HTTPException(status_code=404, detail="document not found for this tenant")
+        r0 = rows[0]
+        f0 = _parse_facets(r0["facets"])
+        return {"document_id": document_id, "title": r0["document_title"],
+                "content_type": r0["content_type"], "source_key": r0["source_key"],
+                "facets": f0, "n_blocks": len(rows), "url": _doc_url(document_id, f0),
+                "blocks": [{"block_id": r["block_id"], "text": r["text"]} for r in rows]}
 
-    @app.get("/admin/corpus/browse")
-    async def admin_corpus_browse(source: str = "", q: str = "", limit: int = 40,
+    @app.get("/admin/corpus/facets")
+    async def admin_corpus_facets(tenant: str = "demo",
                                   x_admin_token: str = Header(default="")) -> dict:
-        """Browse the corpus WITHOUT a semantic query: per-source counts (for filters) + a list of
-        documents (optionally keyword-filtered / source-scoped), newest first — the source inventory."""
+        """Distinct low-cardinality facet values (for the filter dropdowns), with per-value counts."""
         if not _admin_ok(x_admin_token):
             raise HTTPException(status_code=401, detail="admin token required")
         dsn = os.environ.get("EIGEN_CORPUS_DSN")
         if not dsn:
             raise HTTPException(status_code=404, detail="no corpus DSN")
         import asyncpg
-        lim = max(1, min(int(limit or 40), 200))
         conn = await asyncpg.connect(dsn)
+        out: dict = {}
         try:
-            sources = [{"source": r["source_key"], "docs": r["docs"], "blocks": r["blocks"]}
-                       for r in await conn.fetch(
-                           "SELECT source_key, count(DISTINCT document_id) docs, count(*) blocks "
-                           "FROM rs_block GROUP BY 1 ORDER BY docs DESC")]
-            # one representative row per document (first block = usually the title/header), newest first
-            where, args = [], []
-            if source:
-                args.append(source); where.append(f"source_key=${len(args)}")
-            if q.strip():
-                args.append(f"%{q.strip()}%"); where.append(f"text ILIKE ${len(args)}")
-            wsql = ("WHERE " + " AND ".join(where)) if where else ""
-            args.append(lim)
-            import json as _json2
-            rows = await conn.fetch(
-                f"SELECT DISTINCT ON (document_id) document_id, text, facets, created_at "
-                f"FROM rs_block {wsql} ORDER BY document_id, block_id LIMIT ${len(args)}", *args)
-            docs = []
-            for r in rows:
-                fc = r["facets"]
-                fc = _json2.loads(fc) if isinstance(fc, str) else dict(fc or {})
-                did = r["document_id"]
-                docs.append({"document_id": did, "source": did.split(":", 1)[0],
-                             "url": _doc_url(did, fc), "snippet": _clean_snip(r["text"] or "", 220),
-                             "created_at": str(r["created_at"])})
+            for key in ("source_key", "source_kind", "sector", "source_country", "content_type", "year"):
+                col = key if key in ("source_key", "content_type") else f"facets->>'{key}'"
+                rows = await conn.fetch(
+                    f"SELECT {col} AS v, count(*) AS c FROM rs_block WHERE tenant_id = $1 AND {col} IS NOT NULL "
+                    f"AND {col} <> '' GROUP BY 1 ORDER BY 2 DESC LIMIT 40", tenant)
+                out[key] = [{"value": r["v"], "count": r["c"]} for r in rows]
         finally:
             await conn.close()
-        return {"sources": sources, "count": len(docs), "documents": docs}
+        return {"tenant": tenant, "facets": out}
+
 
     @app.post("/admin/glossary/sanitize")
     async def admin_glossary_sanitize(x_admin_token: str = Header(default="")) -> dict:

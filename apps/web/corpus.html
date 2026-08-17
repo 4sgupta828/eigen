@@ -1,223 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Eigen — Corpus Explorer</title>
+<script>/* apply the app's saved theme before paint (no flash) — mirrors index.html: editorial is the
+   default for new visitors; an explicit saved "light"/"dark" is respected. Shared key "eigen-theme". */
+try{var t=localStorage.getItem("eigen-theme");
+  if(t==="dark"||t==="editorial") document.documentElement.setAttribute("data-theme",t);
+  else if(t!=="light") document.documentElement.setAttribute("data-theme","editorial");
+}catch(e){ document.documentElement.setAttribute("data-theme","editorial"); }</script>
 <style>
-  :root{ --bg:#0b1220; --panel:#0f1a2c; --panel2:#111f36; --ink:#e8ecf3; --muted:#8b96a9;
-    --accent:#5ea8e8; --hair:#22304a; --good:#4fbf95; --warn:#d89a56; --bad:#e08098; }
+  /* Palette mirrors the main app (index.html): clinical LIGHT + opt-in DARK + EDITORIAL default. */
+  :root{
+    color-scheme:light;
+    --bg:#EEF3F8; --panel:#FFFFFF; --panel2:#F4F8FC; --ink:#132430; --muted:#5A6B7B;
+    --gold:#1568B5; --gold-rgb:21,104,181; --verified:#137A54; --gap:#B26A1E; --hair:#D2DEEA;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#060E1B; --panel:#0F1A2C; --panel2:#0C1524; --ink:#ECEBE3; --muted:#8B96A9;
+    --gold:#D3B37C; --gold-rgb:211,179,124; --verified:#57B891; --gap:#D6975A; --hair:#22304A;
+  }
+  :root[data-theme="editorial"]{
+    color-scheme:light;
+    --bg:#F6F3EA; --panel:#FDFBF5; --panel2:#F0ECE0; --ink:#221D12; --muted:#6E6550;
+    --gold:#8A6A1F; --gold-rgb:138,106,31; --verified:#2E6B4F; --gap:#A05C24; --hair:#DCD4C0;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]):not([data-theme="editorial"]){
+    color-scheme:dark;
+    --bg:#060E1B; --panel:#0F1A2C; --panel2:#0C1524; --ink:#ECEBE3; --muted:#8B96A9;
+    --gold:#D3B37C; --gold-rgb:211,179,124; --verified:#57B891; --gap:#D6975A; --hair:#22304A;
+  }}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
-  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
-  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
-  header{display:flex;align-items:center;gap:1rem;padding:.8rem 1.2rem;border-bottom:1px solid var(--hair);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
-  h1{font-size:1.05rem;margin:0;letter-spacing:-.01em}
-  input,select,button{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:.45rem .6rem}
-  input::placeholder{color:var(--muted)}
-  button{cursor:pointer;background:var(--panel2)} button:hover{border-color:var(--accent)}
-  button.go{background:var(--accent);color:#08111f;border-color:var(--accent);font-weight:600}
-  .conn{margin-left:auto;display:flex;gap:.5rem;align-items:center;font-size:.78rem;color:var(--muted)}
-  .dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--good);display:inline-block}
-  .link{cursor:pointer;color:var(--accent)}
-  .wrap{max-width:1100px;margin:0 auto;padding:1rem 1.2rem 4rem}
-  .searchbar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.4rem 0 1rem}
-  .searchbar input[type=text]{flex:1;min-width:240px}
-  .chips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.2rem 0 1rem}
-  .chip{font-size:.72rem;padding:.25rem .6rem;border:1px solid var(--hair);border-radius:999px;background:var(--panel);cursor:pointer;color:var(--muted)}
-  .chip.on{border-color:var(--accent);color:var(--accent);background:rgba(94,168,232,.08)}
-  .chip b{color:var(--ink)}
-  .meta{color:var(--muted);font-size:.8rem;margin:.2rem 0 .8rem}
-  .card{border:1px solid var(--hair);border-radius:12px;background:var(--panel);padding:.7rem .9rem;margin-bottom:.6rem;cursor:pointer}
-  .card:hover{border-color:var(--accent)}
-  .card .top{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.3rem}
-  .src{font-family:ui-monospace,monospace;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:#08111f;background:var(--accent);border-radius:5px;padding:.1rem .4rem}
-  .ext{font-size:.72rem;color:var(--accent);border:1px solid var(--hair);border-radius:5px;padding:.05rem .4rem;white-space:nowrap}
-  .ext:hover{border-color:var(--accent);text-decoration:none;background:rgba(94,168,232,.08)}
-  .did{font-family:ui-monospace,monospace;font-size:.74rem;color:var(--muted);word-break:break-all}
-  .score{margin-left:auto;font-family:ui-monospace,monospace;font-size:.72rem;color:var(--good)}
-  .snip{color:#cdd6e4;font-size:.86rem;white-space:pre-wrap}
-  .facets{margin-top:.4rem;display:flex;gap:.35rem;flex-wrap:wrap}
-  .fac{font-family:ui-monospace,monospace;font-size:.64rem;color:var(--muted);border:1px solid var(--hair);border-radius:5px;padding:.05rem .35rem}
-  .empty{color:var(--muted);padding:2rem;text-align:center}
-  .overlay{position:fixed;inset:0;background:rgba(3,7,15,.78);display:none;z-index:20;padding:2rem 1rem;overflow:auto}
-  .overlay.on{display:block}
-  .doc{max-width:900px;margin:0 auto;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:1.1rem 1.3rem}
-  .doc h2{font-size:.9rem;margin:.1rem 0 .2rem;word-break:break-all;font-family:ui-monospace,monospace}
-  .close{float:right;background:transparent;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer}
-  .block{border-top:1px dashed var(--hair);padding:.6rem 0;font-size:.9rem;color:#dbe3ee}
-  .block .bid{font-family:ui-monospace,monospace;font-size:.62rem;color:var(--muted);margin-bottom:.35rem}
-  .block h4{font-size:.95rem;margin:.6rem 0 .2rem;color:var(--ink)}
-  .block p{margin:.35rem 0} .block .li{margin:.1rem 0 .1rem .6rem}
-  .block code{font-family:ui-monospace,monospace;font-size:.82rem;background:#0b1626;border:1px solid var(--hair);border-radius:4px;padding:0 .25rem}
-  .block b{color:var(--ink)}
-  .spin{color:var(--muted)}
-  /* token gate */
-  .gate{position:fixed;inset:0;background:rgba(3,7,15,.9);display:none;z-index:40;align-items:center;justify-content:center;padding:1rem}
-  .gate.on{display:flex}
-  .gatebox{width:min(420px,94vw);background:var(--panel);border:1px solid var(--hair);border-radius:16px;padding:1.6rem 1.5rem;text-align:center}
-  .gatebox h2{margin:.2rem 0 .3rem;font-size:1.1rem}
-  .gatebox p{color:var(--muted);font-size:.85rem;margin:0 0 1.1rem}
-  .gaterow{display:flex;gap:.5rem}
-  .gaterow input{flex:1}
-  .gateerr{color:var(--bad);font-size:.8rem;min-height:1.2rem;margin-top:.6rem}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;
+    font-size:15px;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(120% 60% at 85% -10%, rgba(var(--gold-rgb),.06), transparent 60%);}
+  .wrap{max-width:60rem;margin:0 auto;padding:1.5rem 1.15rem 5rem;}
+  header{display:flex;align-items:center;gap:.8rem;padding:.1rem 0 1.2rem;border-bottom:1px solid var(--hair);margin-bottom:1.6rem;flex-wrap:wrap;}
+  .logo{height:52px;width:auto;}
+  .htext{display:flex;flex-direction:column;gap:.15rem;}
+  h1{font-family:var(--serif);font-size:1.7rem;margin:.2rem 0 0;letter-spacing:-.01em;}
+  .subtitle{font-size:.85rem;color:var(--muted);}
+  .back{margin-left:auto;font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--muted);text-decoration:none;border:1px solid var(--hair);border-radius:8px;padding:.4rem .8rem;align-self:flex-start;}
+  .back:hover{color:var(--gold);border-color:var(--gold);}
+  .muted{color:var(--muted);font-size:.85rem;}
+  .note{font-size:.7rem;color:var(--muted);}
+
+  /* ---- Page-level gate ---- */
+  .gate{background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:1.4rem 1.4rem 1.5rem;max-width:26rem;margin:1rem auto 0;}
+  .gate h2{font-family:var(--serif);font-size:1.15rem;margin:0 0 .35rem;}
+  .gate p{margin:0 0 1rem;color:var(--muted);font-size:.85rem;line-height:1.45;}
+  .gate .row{display:flex;gap:.5rem;}
+  .gate input{flex:1;font-family:var(--sans);font-size:.9rem;color:var(--ink);background:var(--panel2);
+    border:1px solid var(--hair);border-radius:8px;padding:.55rem .65rem;}
+  .gate input:focus{outline:none;border-color:var(--gold);}
+
+  /* ---- Notice (not enabled / errors) ---- */
+  .notice{background:var(--panel);border:1px solid var(--hair);border-left:3px solid var(--gap);border-radius:12px;
+    padding:1rem 1.15rem;max-width:32rem;margin:1rem auto 0;color:var(--ink);font-size:.9rem;line-height:1.5;}
+  .notice b{color:var(--gap);}
+
+  /* ---- Controls ---- */
+  .controls{display:flex;flex-wrap:wrap;gap:.6rem;align-items:flex-end;margin:.3rem 0 .8rem;}
+  .field{display:flex;flex-direction:column;gap:.25rem;}
+  .field label{font-family:var(--mono);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);}
+  .field input,.field select{font-family:var(--sans);font-size:.85rem;color:var(--ink);background:var(--panel);
+    border:1px solid var(--hair);border-radius:8px;padding:.42rem .55rem;min-width:8rem;}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--gold);}
+  .seg{display:inline-flex;border:1px solid var(--hair);border-radius:8px;overflow:hidden;}
+  .seg button{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;
+    background:var(--panel);color:var(--muted);border:none;padding:.44rem .75rem;cursor:pointer;}
+  .seg button.on{background:var(--gold);color:#fff;}
+  .btn{font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;
+    background:var(--gold);color:#fff;border:1px solid var(--gold);border-radius:8px;padding:.48rem .95rem;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .status{font-size:.82rem;color:var(--muted);margin:.2rem 0 .9rem;min-height:1.1em;}
+  .status.err{color:var(--gap);}
+
+  /* ---- Result cards ---- */
+  .card{background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:.85rem 1rem;margin-bottom:.8rem;}
+  .card-title{font-family:var(--serif);font-size:1.05rem;line-height:1.3;margin-bottom:.4rem;}
+  .card-title a{color:var(--gold);text-decoration:none;}
+  .card-title a:hover{text-decoration:underline;}
+  .card-title .plain{color:var(--ink);}
+  .src-mark{font-family:var(--mono);font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:var(--gold);
+    white-space:nowrap;margin-left:.35rem;}
+  .chips{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.55rem;align-items:center;}
+  .chip{font-family:var(--mono);font-size:.6rem;letter-spacing:.03em;border-radius:999px;padding:.14rem .5rem;
+    border:1px solid var(--hair);color:var(--muted);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;}
+  .chip b{color:var(--ink);font-weight:660;}
+  .block-text{font-size:.9rem;color:var(--ink);white-space:pre-wrap;word-break:break-word;line-height:1.6;
+    max-width:44rem;border-left:2px solid var(--hair);padding-left:.85rem;margin:.2rem 0 .55rem;}
+  .card-actions{display:flex;}
+  .open-btn{font-family:var(--mono);font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;cursor:pointer;
+    background:transparent;border:1px solid var(--hair);border-radius:999px;padding:.16rem .6rem;color:var(--gold);}
+  .open-btn:hover{border-color:var(--gold);}
+
+  /* ---- Document modal ---- */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-start;justify-content:center;
+    padding:2.5rem 1rem;z-index:50;overflow-y:auto;}
+  .modal[hidden]{display:none;}
+  .dialog{background:var(--panel);border:1px solid var(--hair);border-radius:14px;max-width:52rem;width:100%;
+    padding:1.2rem 1.3rem 1.6rem;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+  .dhead{display:flex;align-items:flex-start;gap:.7rem;margin-bottom:.6rem;}
+  .dclose{margin-left:auto;flex:none;font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;
+    cursor:pointer;background:transparent;border:1px solid var(--hair);border-radius:8px;padding:.32rem .7rem;color:var(--muted);}
+  .dclose:hover{color:var(--gold);border-color:var(--gold);}
+  .dtitle-text{font-family:var(--serif);font-size:1.2rem;line-height:1.3;}
+  .dtitle-text a{color:var(--gold);text-decoration:none;} .dtitle-text a:hover{text-decoration:underline;}
+  .dblock{border-top:1px solid var(--hair);padding:.65rem 0;}
+  .dblock:last-child{padding-bottom:0;}
+  .dblock .bid{font-family:var(--mono);font-size:.58rem;color:var(--muted);margin-bottom:.25rem;}
+  @media (max-width:560px){ .logo{height:44px;} h1{font-size:1.4rem;} }
 </style>
-
-<header>
-  <h1>◧ Eigen Corpus Explorer</h1>
-  <span class="meta mono" id="totals">—</span>
-  <div class="conn" id="conn" hidden><span class="dot"></span> connected · <span class="link" onclick="openGate()">change token</span></div>
-</header>
-
-<div class="wrap" id="app" hidden>
-  <div class="searchbar">
-    <input id="q" type="text" placeholder="Search the corpus — semantic + keyword (e.g. 'GPU supply agreement', 'stock repurchase authorization')" onkeydown="if(event.key==='Enter')run()">
-    <select id="kind" title="evidence kind">
-      <option value="">any kind</option><option value="filing">filing</option><option value="paper">paper</option>
-      <option value="preprint">preprint</option><option value="code">code</option><option value="news">news</option>
-      <option value="social">social</option><option value="reference">reference</option>
-    </select>
-    <select id="k"><option>25</option><option>50</option><option>100</option></select>
-    <button class="go" onclick="run()">Search</button>
-    <button onclick="browse()" title="list documents without a semantic query">Browse</button>
-  </div>
-  <div class="chips" id="sources"></div>
-  <div class="meta" id="status"></div>
-  <div id="results"></div>
-</div>
-
-<!-- token gate: asked ONCE, verified, then querying is unlocked -->
-<div class="gate" id="gate">
-  <div class="gatebox">
-    <h2>◧ Corpus Explorer</h2>
-    <p>Enter the admin token to browse the ingested corpus.</p>
-    <div class="gaterow">
-      <input id="gtok" type="password" placeholder="admin token" autocomplete="off"
-             onkeydown="if(event.key==='Enter')connect()">
-      <button class="go" id="gbtn" onclick="connect()">Connect</button>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img class="logo" src="/eigen-mark.png" alt="Eigen" />
+    <div class="htext">
+      <h1>Corpus Explorer</h1>
+      <div class="subtitle">Search the ingested corpus directly — no answers, the raw sources.</div>
     </div>
-    <div class="gateerr" id="gerr"></div>
+    <a class="back" href="/">← Research</a>
+  </header>
+
+  <!-- Page-level admin-token gate. Everything below #tool stays hidden until the token verifies. -->
+  <div id="gate" class="gate">
+    <h2>Admin access</h2>
+    <p>This tool is admin-only. Enter the admin token to search the corpus.</p>
+    <div class="row">
+      <input id="pw" type="password" placeholder="admin token" autocomplete="off" />
+      <button type="button" class="btn" id="unlock">Unlock</button>
+    </div>
+    <div class="status" id="gate-status"></div>
+  </div>
+
+  <!-- "Not enabled" notice (shown when the corpus endpoints 404 — no corpus DSN) -->
+  <div id="disabled" class="notice" hidden>
+    <b>Not enabled</b> — Corpus Explorer is not available on this server (no corpus configured).
+  </div>
+
+  <!-- The tool proper — hidden until the token verifies against /admin/corpus/facets. -->
+  <div id="tool" hidden>
+    <div class="controls">
+      <div class="field"><label>Tenant</label><input id="tenant" value="demo" /></div>
+      <div class="field" style="flex:1;min-width:16rem;"><label>Query</label><input id="q" placeholder="keywords…" /></div>
+      <div class="field"><label>Mode</label>
+        <div class="seg" id="mode"><button type="button" data-mode="keyword" class="on">Keyword</button><button type="button" data-mode="semantic">Semantic</button></div>
+      </div>
+      <div class="field"><label>Limit</label><input id="limit" type="number" value="20" min="1" max="100" style="min-width:5rem;" /></div>
+    </div>
+    <div class="controls">
+      <div class="field"><label>source_key</label><select id="f-source_key"><option value="">any</option></select></div>
+      <div class="field"><label>source_kind</label><select id="f-source_kind"><option value="">any</option></select></div>
+      <div class="field"><label>sector</label><select id="f-sector"><option value="">any</option></select></div>
+      <div class="field"><label>country</label><select id="f-source_country"><option value="">any</option></select></div>
+      <div class="field"><label>content_type</label><select id="f-content_type"><option value="">any</option></select></div>
+      <div class="field"><label>year</label><select id="f-year"><option value="">any</option></select></div>
+      <div class="field"><label>&nbsp;</label><button type="button" class="btn" id="search">Search</button></div>
+    </div>
+    <div class="note" style="margin:-.3rem 0 .7rem;">Empty query + filters = browse newest.</div>
+    <div class="status" id="status"></div>
+    <div id="results"></div>
   </div>
 </div>
 
-<div class="overlay" id="overlay" onclick="if(event.target.id==='overlay')closeDoc()">
-  <div class="doc" id="doc"></div>
+<!-- Single-document viewer (all blocks in order) -->
+<div class="modal" id="modal" hidden>
+  <div class="dialog">
+    <div class="dhead">
+      <div id="dtitle" style="flex:1;min-width:0;"></div>
+      <button type="button" class="dclose" id="dclose">✕ close</button>
+    </div>
+    <div id="dbody"></div>
+  </div>
 </div>
 
 <script>
-let TOKEN = localStorage.getItem("eigen-admin-tok") || "";
-let SRC = "";
-function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-function authHdr(){ return {"X-Admin-Token": TOKEN}; }   // GET: no content-type
-function jsonHdr(){ return {"content-type":"application/json","X-Admin-Token": TOKEN}; }
+const $ = s => document.querySelector(s);
+// textContent-based escaper — never inject raw corpus text into innerHTML.
+const esc = s => { const d=document.createElement("div"); d.textContent=s??""; return d.innerHTML; };
+const fmt = n => (n||0).toLocaleString();
 
-// ---- token gate: verify once, then unlock ----
-function openGate(){ document.getElementById("gate").classList.add("on"); const g=document.getElementById("gtok"); g.value=TOKEN; g.focus(); document.getElementById("gerr").textContent=""; }
-function closeGate(){ document.getElementById("gate").classList.remove("on"); }
-async function connect(){
-  const t = document.getElementById("gtok").value.trim();
-  const btn=document.getElementById("gbtn"), err=document.getElementById("gerr");
-  if(!t){ err.textContent="Token required."; return; }
-  btn.disabled=true; err.textContent="verifying…";
-  try{
-    const r = await fetch("/admin/corpus/browse?limit=1",{headers:{"X-Admin-Token":t}});
-    if(r.status===401){ err.textContent="Invalid token."; btn.disabled=false; return; }
-    if(!r.ok){ err.textContent="Error "+r.status; btn.disabled=false; return; }
-    TOKEN=t; localStorage.setItem("eigen-admin-tok",t);
-    btn.disabled=false; closeGate(); unlock();
-    const d=await r.json(); paintTotals(d.sources);
-    loadSources();
-  }catch(e){ err.textContent="Error: "+e; btn.disabled=false; }
-}
-function unlock(){ document.getElementById("app").hidden=false; document.getElementById("conn").hidden=false; document.getElementById("q").focus(); }
+// Admin token held in a JS var ONLY (never persisted) and sent as the x-admin-token header on
+// every corpus call. 401 → bad token; 404 → not enabled / no corpus DSN.
+const CE = { tok:"", lastResults:[] };
+// Facet selects populated from /admin/corpus/facets (with per-value counts). STRUCTURAL filters only.
+const FACET_KEYS = ["source_key","source_kind","sector","source_country","content_type","year"];
 
-function paintTotals(sources){
-  const tot=(sources||[]).reduce((a,s)=>({docs:a.docs+s.docs,blocks:a.blocks+s.blocks}),{docs:0,blocks:0});
-  document.getElementById("totals").textContent = tot.docs.toLocaleString()+" docs · "+tot.blocks.toLocaleString()+" blocks";
+function setStatus(sel, msg, isErr){
+  const el = $(sel);
+  if(!el) return;
+  el.textContent = msg || "";
+  el.className = "status" + (isErr ? " err" : "");
 }
-async function loadSources(){
-  try{
-    const r=await fetch("/admin/corpus/browse?limit=1",{headers:authHdr()});
-    if(r.status===401){ openGate(); return; }
-    const d=await r.json(); paintTotals(d.sources);
-    document.getElementById("sources").innerHTML =
-      `<span class="chip ${SRC?'':'on'}" onclick="setSrc('')">all</span>`+
-      d.sources.map(s=>`<span class="chip ${SRC===s.source?'on':''}" onclick="setSrc('${esc(s.source)}')">${esc(s.source)} <b>${s.docs.toLocaleString()}</b></span>`).join("");
-  }catch(e){ status("error loading sources: "+e); }
-}
-function setSrc(s){ SRC=s; loadSources(); const q=document.getElementById("q").value.trim(); q?run():browse(); }
-function status(m){ document.getElementById("status").textContent = m||""; }
 
-async function run(){
-  const q=document.getElementById("q").value.trim();
-  if(!q) return browse();
-  status("searching…");
-  const body={query:q, source:SRC, source_kind:document.getElementById("kind").value, k:+document.getElementById("k").value};
-  try{
-    const r=await fetch("/admin/corpus/search",{method:"POST",headers:jsonHdr(),body:JSON.stringify(body)});
-    if(r.status===401){ openGate(); return; }
-    if(!r.ok){ status("error "+r.status+": "+(await r.text()).slice(0,120)); return; }
-    const d=await r.json();
-    status(d.count+" blocks matched"+(SRC?` · source=${SRC}`:""));
-    render(d.hits.map(h=>({...h,kind:"hit"})));
-  }catch(e){ status("error: "+e); }
-}
-async function browse(){
-  status("loading documents…");
-  const p=new URLSearchParams(); if(SRC)p.set("source",SRC);
-  const q=document.getElementById("q").value.trim(); if(q)p.set("q",q); p.set("limit","60");
-  try{
-    const r=await fetch("/admin/corpus/browse?"+p,{headers:authHdr()});
-    if(r.status===401){ openGate(); return; }
-    if(!r.ok){ status("error "+r.status); return; }
-    const d=await r.json();
-    status(d.count+" documents"+(SRC?` · source=${SRC}`:"")+(q?` · matching "${q}"`:""));
-    render(d.documents.map(x=>({document_id:x.document_id,source:x.source,snippet:x.snippet,facets:{},kind:"doc"})));
-  }catch(e){ status("error: "+e); }
-}
-function render(items){
-  const el=document.getElementById("results");
-  if(!items.length){ el.innerHTML=`<div class="empty">No results.</div>`; return; }
-  el.innerHTML=items.map(h=>`
-    <div class="card" onclick="openDoc('${encodeURIComponent(h.document_id)}')">
-      <div class="top"><span class="src">${esc(h.source||"?")}</span>
-      ${h.url?`<a class="ext" href="${esc(h.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗ open source</a>`:""}
-      <span class="did">${esc(h.document_id)}</span>
-      ${h.score!=null&&h.kind==="hit"?`<span class="score">${h.score}</span>`:""}</div>
-      <div class="snip">${esc(h.snippet||"")}</div>
-      ${Object.keys(h.facets||{}).length?`<div class="facets">${Object.entries(h.facets).slice(0,8).map(([k,v])=>`<span class="fac">${esc(k)}=${esc(String(v).slice(0,30))}</span>`).join("")}</div>`:""}
-    </div>`).join("");
-}
-// light markdown → HTML for the doc viewer (ingested docs are markdown; raw text reads as noise)
-function mdlite(t){
-  let s = esc((t||"").trim());
-  s = s.replace(/^#{1,6}\s+(.*)$/gm,'<h4>$1</h4>');           // headers → h4
-  s = s.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
-  s = s.replace(/^\s*[-*]\s+(.*)$/gm,'<div class="li">• $1</div>');   // bullets
-  s = s.replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>');   // paragraphs / line breaks
-  return '<p>'+s+'</p>';
-}
-async function openDoc(didEnc){
-  const did=decodeURIComponent(didEnc), ov=document.getElementById("overlay"), doc=document.getElementById("doc");
-  ov.classList.add("on"); doc.innerHTML=`<button class="close" onclick="closeDoc()">×</button><div class="spin">loading ${esc(did)}…</div>`;
-  try{
-    const r=await fetch("/admin/corpus/doc?document_id="+encodeURIComponent(did),{headers:authHdr()});
-    if(!r.ok){ doc.innerHTML=`<button class="close" onclick="closeDoc()">×</button><div class="empty">error ${r.status}</div>`; return; }
-    const d=await r.json();
-    doc.innerHTML=`<button class="close" onclick="closeDoc()">×</button>
-      <h2><span class="src">${esc(d.source)}</span> ${esc(d.document_id)}
-        ${d.url?`<a class="ext" href="${esc(d.url)}" target="_blank" rel="noopener">↗ open source</a>`:""}</h2>
-      <div class="meta mono">${d.n_blocks} blocks · ${esc(d.created_at||"")}</div>
-      <div class="facets">${Object.entries(d.facets||{}).map(([k,v])=>`<span class="fac">${esc(k)}=${esc(String(v).slice(0,40))}</span>`).join("")}</div>
-      ${d.blocks.map(b=>`<div class="block"><div class="bid">${esc(b.block_id)}</div>${mdlite(b.text)}</div>`).join("")}`;
-  }catch(e){ doc.innerHTML=`<button class="close" onclick="closeDoc()">×</button><div class="empty">error: ${esc(String(e))}</div>`; }
-}
-function closeDoc(){ document.getElementById("overlay").classList.remove("on"); }
-document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ closeDoc(); } });
-
-// ---- init: if a stored token still works, unlock silently; else show the gate ----
-(async function init(){
-  if(TOKEN){
-    try{
-      const r=await fetch("/admin/corpus/browse?limit=1",{headers:authHdr()});
-      if(r.ok){ unlock(); const d=await r.json(); paintTotals(d.sources); loadSources(); return; }
-    }catch(e){}
+// Render an external source link only when the url is an http(s) link (guards against
+// javascript: and other schemes). Returns escaped-safe HTML.
+function sourceLink(title, url){
+  const label = title && title.trim() ? title : "(untitled)";
+  const safe = typeof url === "string" && /^https?:\/\//i.test(url);
+  if(safe){
+    return `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>` +
+           `<span class="src-mark">↗ source</span>`;
   }
-  openGate();
-})();
+  return `<span class="plain">${esc(label)}</span>`;
+}
+
+async function ceFetch(path, opts){
+  opts = opts || {};
+  const headers = Object.assign({"x-admin-token": CE.tok}, opts.headers || {});
+  const r = await fetch(path, Object.assign({}, opts, {headers}));
+  if(r.status === 401){ const e = new Error("bad admin token"); e.code = 401; throw e; }
+  if(r.status === 404){ const e = new Error("not enabled"); e.code = 404; throw e; }
+  if(!r.ok){
+    let detail = "";
+    try{ detail = (await r.json()).detail || ""; }catch(_e){}
+    const e = new Error(detail || ("request failed (" + r.status + ")")); e.code = r.status; throw e;
+  }
+  return r.json();
+}
+
+function showDisabled(){
+  $("#gate").hidden = true;
+  $("#tool").hidden = true;
+  $("#disabled").hidden = false;
+}
+
+function mode(){
+  const on = document.querySelector("#mode button.on");
+  return on ? on.dataset.mode : "keyword";
+}
+
+function chip(label, val){
+  if(val === undefined || val === null || val === "") return "";
+  return `<span class="chip"><b>${esc(label)}</b> ${esc(String(val))}</span>`;
+}
+
+function provChips(source_key, content_type, f){
+  f = f || {};
+  return [
+    chip("source", source_key),
+    chip("type", content_type),
+    chip("kind", f.source_kind),
+    chip("sector", f.sector),
+    chip("country", f.source_country),
+    chip("year", f.year),
+  ].filter(Boolean).join("");
+}
+
+async function loadFacets(){
+  const tenant = ($("#tenant").value || "demo").trim();
+  const d = await ceFetch("/admin/corpus/facets?tenant=" + encodeURIComponent(tenant));
+  const f = d.facets || {};
+  for(const key of FACET_KEYS){
+    const sel = $("#f-" + key);
+    if(!sel) continue;
+    const prev = sel.value;
+    sel.innerHTML = "";
+    const any = document.createElement("option"); any.value = ""; any.textContent = "any"; sel.appendChild(any);
+    for(const o of (f[key] || [])){
+      const opt = document.createElement("option");
+      opt.value = o.value == null ? "" : String(o.value);
+      opt.textContent = (o.value == null ? "" : String(o.value)) + " (" + fmt(o.count) + ")";
+      sel.appendChild(opt);
+    }
+    sel.value = prev; // keep prior choice if still present
+  }
+}
+
+// ---- Page-level gate: verify the token by calling facets. ----
+async function unlock(){
+  CE.tok = $("#pw").value;
+  if(!CE.tok){ setStatus("#gate-status", "enter the admin token", true); return; }
+  setStatus("#gate-status", "verifying…");
+  try{
+    await loadFacets();          // 401 → bad token; 404 → not enabled
+    $("#gate").hidden = true;
+    $("#tool").hidden = false;
+    setStatus("#status", "");
+  }catch(e){
+    if(e && e.code === 404){ showDisabled(); }
+    else if(e && e.code === 401){ setStatus("#gate-status", "bad admin token", true); }
+    else { setStatus("#gate-status", (e && e.message) || "verification failed", true); }
+  }
+}
+
+async function search(){
+  const tenant = ($("#tenant").value || "demo").trim();
+  const m = mode();
+  const query = $("#q").value.trim();
+  if(m === "semantic" && !query){ setStatus("#status", "semantic mode needs a query", true); return; }
+  const limit = Math.max(1, Math.min(parseInt($("#limit").value || "20", 10) || 20, 100));
+  const filters = {};
+  for(const key of FACET_KEYS){ const v = $("#f-" + key).value; if(v) filters[key] = v; }
+  setStatus("#status", "searching…");
+  $("#results").innerHTML = "";
+  try{
+    const d = await ceFetch("/admin/corpus/search", {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({mode: m, query, tenant, limit, filters}),
+    });
+    renderResults(d, query);
+  }catch(e){
+    if(e && e.code === 404){ showDisabled(); }
+    else if(e && e.code === 401){ setStatus("#status", "bad admin token", true); }
+    else { setStatus("#status", (e && e.message) || "search failed", true); }
+  }
+}
+
+function renderResults(d, query){
+  const results = (d && d.results) || [];
+  CE.lastResults = results;
+  const n = (d && d.count) || 0;
+  setStatus("#status", fmt(n) + " block" + (n === 1 ? "" : "s") + " · mode: " + ((d && d.mode) || ""));
+  if(!results.length){
+    $("#results").innerHTML = `<div class="muted">No blocks matched. ` +
+      (query ? `Try a broader query, or clear some filters.` : `Add a query or a filter to browse the newest blocks.`) + `</div>`;
+    return;
+  }
+  $("#results").innerHTML = results.map((r, i) => {
+    const f = r.facets || {};
+    return `<div class="card">
+      <div class="card-title">${sourceLink(r.title, r.url)}</div>
+      <div class="chips">${provChips(r.source_key, r.content_type, f)}</div>
+      <div class="block-text">${esc(r.text || "")}</div>
+      <div class="card-actions"><button type="button" class="open-btn" data-idx="${i}">▸ view all blocks</button></div>
+    </div>`;
+  }).join("");
+  document.querySelectorAll("#results .open-btn").forEach(b => {
+    b.addEventListener("click", () => { const r = CE.lastResults[+b.dataset.idx]; if(r) openDoc(r.document_id); });
+  });
+}
+
+async function openDoc(docId){
+  if(!docId) return;
+  const tenant = ($("#tenant").value || "demo").trim();
+  const modal = $("#modal");
+  $("#dtitle").innerHTML = `<div class="muted">Loading document…</div>`;
+  $("#dbody").innerHTML = "";
+  modal.hidden = false;
+  try{
+    const d = await ceFetch("/admin/corpus/document?document_id=" + encodeURIComponent(docId) + "&tenant=" + encodeURIComponent(tenant));
+    const f = d.facets || {};
+    const nb = d.n_blocks || 0;
+    $("#dtitle").innerHTML =
+      `<div class="dtitle-text">${sourceLink(d.title, d.url)}</div>` +
+      `<div class="chips" style="margin-top:.45rem;">${provChips(d.source_key, d.content_type, f)}</div>` +
+      `<div class="note" style="margin-top:.3rem;">${fmt(nb)} block${nb === 1 ? "" : "s"}${nb >= 2000 ? " (capped at 2000 server-side)" : ""}</div>`;
+    $("#dbody").innerHTML = ((d.blocks) || []).map(b =>
+      `<div class="dblock"><div class="bid">block ${esc(String(b.block_id))}</div>` +
+      `<div class="block-text">${esc(b.text || "")}</div></div>`).join("");
+  }catch(e){
+    $("#dtitle").innerHTML = `<div class="status err">${esc((e && e.message) || "failed to load document")}</div>`;
+  }
+}
+
+function closeModal(){ const m = $("#modal"); if(m) m.hidden = true; }
+
+function init(){
+  $("#unlock").addEventListener("click", unlock);
+  $("#pw").addEventListener("keydown", e => { if(e.key === "Enter") unlock(); });
+  $("#search").addEventListener("click", search);
+  $("#q").addEventListener("keydown", e => { if(e.key === "Enter") search(); });
+  $("#tenant").addEventListener("change", () => { if(!$("#tool").hidden && CE.tok) loadFacets().catch(()=>{}); });
+  document.querySelectorAll("#mode button").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("#mode button").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+  }));
+  $("#dclose").addEventListener("click", closeModal);
+  $("#modal").addEventListener("click", e => { if(e.target === $("#modal")) closeModal(); });
+  document.addEventListener("keydown", e => { if(e.key === "Escape" && !$("#modal").hidden) closeModal(); });
+}
+init();
 </script>
+</body>
+</html>
