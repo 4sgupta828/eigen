@@ -7,7 +7,7 @@ paces the queue serially. We do NOT block on unavailable sources (see docs/downl
 
 Usage:
   EIGEN_ADMIN_TOKEN=... python scripts/run_downloads.py <tranche> [--limit N] [--dry]
-  tranches: depth | formd | openalex | arxiv | s2 | crossref | github | all
+  tranches: depth | formd | openalex | arxiv | s2 | crossref | wikidata | hn | github | all
   --dry prints the jobs without enqueuing.
 """
 from __future__ import annotations
@@ -81,6 +81,22 @@ ARXIV_QUERIES = [
     "code generation llm","llm evaluation benchmark",
 ]
 
+# --- T2: Wikidata company profiles (KEYLESS Crunchbase fallback: founders/ownership/M&A; reference tier) ---
+WIKIDATA_NAMES = [
+    "OpenAI","Anthropic","Databricks","Scale AI","Anduril Industries","xAI","Cohere","Perplexity AI",
+    "Mistral AI","Hugging Face","Groq","SambaNova Systems","Cerebras Systems","Together AI","Runway",
+    "Stripe","Databricks","Canva","Figma","Notion","Rippling","Ramp","Brex","Plaid","Chime","Discord",
+    "NVIDIA","Advanced Micro Devices","Palantir Technologies","CrowdStrike","Snowflake Inc","Datadog",
+    "Palo Alto Networks","ServiceNow","Cloudflare","MongoDB","Atlassian","Shopify","Coinbase","Block Inc",
+]
+
+# --- T3: Hacker News via Algolia (KEYLESS sentiment fallback; sentiment_signal tier, labeled) ---
+HN_QUERIES = [
+    "OpenAI","Anthropic","NVIDIA","CrowdStrike","Databricks","Palantir","Snowflake","Datadog",
+    "large language model","AI agents","vector database","retrieval augmented generation",
+    "Mistral","Perplexity","Cursor","llama","GPU shortage","AI regulation",
+]
+
 # --- T3: GitHub org traction (technical_signal) ---
 GITHUB_ORGS = [
     "openai","anthropics","google-deepmind","meta-llama","huggingface","nvidia","pytorch","tensorflow",
@@ -119,6 +135,12 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("crossref","all"):
         for qy in CROSSREF_QUERIES:
             jobs.append({"connector":"crossref","query":qy,"limit":limit or 20,"facets":{"sector":"ai"}})
+    if tranche in ("wikidata","all"):
+        for nm in WIKIDATA_NAMES:
+            jobs.append({"connector":"wikidata","query":nm,"limit":limit or 1})
+    if tranche in ("hn","all"):
+        for qy in HN_QUERIES:
+            jobs.append({"connector":"hackernews","query":qy,"limit":limit or 25})
     if tranche in ("github","all"):
         for o in GITHUB_ORGS:
             jobs.append({"connector":"github","query":o,"limit":limit or 8})
@@ -126,7 +148,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","github","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","github","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
