@@ -83,6 +83,10 @@ class ResearchService:
     alt_query_hint: str | None = None            # retrieval-steering hint for Alternative mode
     understanding_answer_format: str | None = None  # UNDERSTANDING engine: causal-model compose contract
     understanding_query_hint: str | None = None     # UNDERSTANDING engine: mechanism-steering hint
+    retrieval_source_cap: float | None = None       # source-diversity cap (flag EIGEN_RETRIEVAL_DIVERSITY):
+    #                                                 cap any one source_key to ceil(k*frac) of the top-k
+    #                                                 fused pool so a volume-skewed source can't crowd out
+    #                                                 others on broad queries. None → byte-identical.
     max_calls: int = 80                     # 40 → 80: stage-2 BudgetState-honesty re-plan — the
     #                                         claims-first/binding/fallback/frame-repair calls are
     #                                         now charged (see budget.py DEFAULT_MAX_LLM_CALLS)
@@ -473,6 +477,7 @@ class ResearchService:
             collect_diagnostics=self.collect_diagnostics,
             classify_evidence=self.classify_evidence,
             evidence_fitness=self.evidence_fitness, evidence_ranker=self.evidence_ranker,
+            retrieval_source_cap=self.retrieval_source_cap,
             freshness=self.freshness, answer_profiles=self.answer_profiles,
             evidence_identity=self.evidence_identity, claim_congruence=self.claim_congruence,
             question_contract=self.question_contract, contract_prompt=self.contract_prompt,

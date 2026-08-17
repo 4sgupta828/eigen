@@ -28,6 +28,7 @@ async def multi_query_retrieve(
     embedder: Embedder | None = None,
     original_weight: float = ORIGINAL_WEIGHT,
     repeat_bonus: float = REPEAT_BONUS,
+    source_cap_frac: float | None = None,
 ) -> list[BlockHit]:
     import asyncio
     # Reuse the original query's embedding (already computed by the caller) — no double-embed —
@@ -62,7 +63,37 @@ async def multi_query_retrieve(
     for bid in scores:
         scores[bid] *= (1.0 + repeat_bonus * (appears[bid] - 1))
 
-    ranked = sorted(scores, key=lambda b: (-scores[b], b))[: base_req.k]
+    order = sorted(scores, key=lambda b: (-scores[b], b))   # full fused order, best-first
+    k = base_req.k
+    # SOURCE-DIVERSITY CAP (flag-gated by the caller; None → byte-identical top-k). A corpus skewed
+    # heavily (e.g. 200:1) toward one source_key would otherwise fill every top-k seat with that source
+    # on a broad query, starving the thinner sources BEFORE the ranker ever sees them.
+    # The cap admits at most ceil(k * frac) blocks per source_key, then BACKFILLS from the overflow in
+    # score order if too few distinct sources exist — so recall is never reduced, only rebalanced.
+    if source_cap_frac and source_cap_frac > 0 and len(order) > k:
+        import math
+        cap = max(1, math.ceil(k * source_cap_frac))
+
+        def _src(bid: str) -> str:
+            h = hit_by_id[bid]
+            return (h.source_key or (h.document_id.split(":", 1)[0] if ":" in h.document_id else "")) or "?"
+
+        selected: list[str] = []
+        overflow: list[str] = []
+        per: Counter[str] = Counter()
+        for bid in order:
+            if per[_src(bid)] < cap:
+                selected.append(bid)
+                per[_src(bid)] += 1
+            else:
+                overflow.append(bid)
+            if len(selected) >= k:
+                break
+        if len(selected) < k:                       # too few distinct sources → backfill by score
+            selected += overflow[: k - len(selected)]
+        ranked = selected[:k]
+    else:
+        ranked = order[:k]
     return [replace(hit_by_id[bid], score=scores[bid],
                     extra={**hit_by_id[bid].extra, "queries_hit": appears[bid]})
             for bid in ranked]

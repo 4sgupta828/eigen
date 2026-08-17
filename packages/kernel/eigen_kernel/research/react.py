@@ -689,6 +689,11 @@ async def run_react(
     #                                           an OPAQUE caller-supplied string (manifest field;
     #                                           kernel litmus: zero domain vocabulary here).
     #                                           None/"" → stage-4 routing never fires.
+    retrieval_source_cap: float | None = None,  # SOURCE-DIVERSITY cap (flag EIGEN_RETRIEVAL_DIVERSITY):
+    #                                           per multi-query fusion, cap any one source_key to
+    #                                           ceil(k*frac) of the top-k pool (backfill preserves
+    #                                           recall) so a volume-skewed source can't crowd out
+    #                                           other sources on broad queries. None → byte-identical.
 ) -> AnswerResult:
     import asyncio
     atoms = AtomStore()
@@ -1128,7 +1133,8 @@ async def run_react(
             # Corpus: agent reformulations → multi-query fusion (recall); else a single search.
             # aux (web): ONE call per step on the ORIGINAL query (no per-variant fan-out) — runs
             # CONCURRENTLY with the corpus so it adds breadth without multiplying latency.
-            corpus_co = (multi_query_retrieve(source, base_req, step.queries, embedder=embedder)
+            corpus_co = (multi_query_retrieve(source, base_req, step.queries, embedder=embedder,
+                                              source_cap_frac=retrieval_source_cap)
                          if step.queries else source.search(base_req))
 
             # Intra-retrieval progress (additive): each leg announces the moment it lands —

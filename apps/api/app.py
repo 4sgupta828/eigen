@@ -397,6 +397,24 @@ def duel_enabled() -> bool:
     return os.environ.get("EIGEN_DUEL", "").lower() in ("1", "true", "yes")
 
 
+def retrieval_diversity_frac() -> float | None:
+    """Flag (default OFF, Rule 20): EIGEN_RETRIEVAL_DIVERSITY caps any single source_key to
+    ceil(k*frac) of the top-k fused retrieval pool, so a volume-skewed source (e.g. 464k SEC blocks
+    vs a few thousand research/community blocks) can't crowd out other sources on broad queries.
+    Backfill preserves recall. Value is the fraction (default 0.5 when the flag is on/"1"/"true", or a
+    numeric override like "0.4"); OFF/unset/invalid → None → retrieval is byte-identical to today."""
+    raw = os.environ.get("EIGEN_RETRIEVAL_DIVERSITY", "").strip().lower()
+    if raw in ("", "0", "false", "no", "off"):
+        return None
+    if raw in ("1", "true", "yes", "on"):
+        return 0.5
+    try:
+        v = float(raw)
+        return v if 0.0 < v <= 1.0 else None
+    except ValueError:
+        return None
+
+
 def reasoned_default_enabled() -> bool:
     """Flag (default OFF, live-toggleable): when ON, single answers (no explicit engine — i.e. whenever
     the A/B duel isn't running the question) DEFAULT to the REASONED engine: clinical scaffold →
@@ -941,6 +959,7 @@ def build_default_service() -> ResearchService:
         integrative_query_hint=getattr(manifest, "integrative_query_hint", None),
         understanding_answer_format=getattr(manifest, "understanding_answer_format", None),
         understanding_query_hint=getattr(manifest, "understanding_query_hint", None),
+        retrieval_source_cap=retrieval_diversity_frac(),
         vertical_name=manifest.name, ui=manifest.ui,
         connectors=connectors, corpus_source_key=corpus_key,
     )
