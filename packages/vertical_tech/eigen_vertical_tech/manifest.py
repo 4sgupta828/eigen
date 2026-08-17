@@ -15,10 +15,11 @@ from .answer_format import (TECH_ANSWER_FORMAT, TECH_DILIGENCE_SYNTHESIS_FORMAT,
 from .terms import TECH_TERMS_PROMPT
 from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
-from .connectors import (ArxivConnector, CrossrefConnector, EdgarConnector, GdeltConnector,
-                         GithubConnector, HackerNewsConnector, HuggingFaceConnector, OpenAlexConnector,
-                         OpenReviewConnector, PatentsViewConnector, RedditConnector,
-                         SemanticScholarConnector, StackExchangeConnector, WikidataConnector)
+from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnector, EdgarConnector,
+                         GdeltConnector, GithubConnector, HackerNewsConnector, HuggingFaceConnector,
+                         OpenAlexConnector, OpenReviewConnector, PatentsViewConnector, RedditConnector,
+                         SemanticScholarConnector, StackExchangeConnector, UsptoConnector,
+                         WikidataConnector)
 from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT
 from .reasoned import (TECH_REASONED_ANSWER_FORMAT, TECH_REASONED_SCAFFOLD_PROMPT,
                        TECH_UNDERSTANDING_ANSWER_FORMAT, TECH_UNDERSTANDING_QUERY_HINT)
@@ -56,6 +57,8 @@ def build_manifest() -> VerticalManifest:
             "stackoverflow": StackExchangeConnector(),
             "huggingface": HuggingFaceConnector(),
             "openreview": OpenReviewConnector(),
+            "companies_house": CompaniesHouseConnector(),
+            "uspto": UsptoConnector(),
             "github": GithubConnector(),
             "patentsview": PatentsViewConnector(),
             "gdelt": GdeltConnector(),

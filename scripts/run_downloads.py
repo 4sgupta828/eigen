@@ -127,6 +127,18 @@ OPENREVIEW_QUERIES = [
     "long context transformers","efficient inference","agentic reasoning",
 ]
 
+# --- UK Companies House: non-US filings + officers/team (primary_filing); needs EIGEN_COMPANIES_HOUSE_KEY ---
+CH_QUERIES = [
+    "DeepMind","Stability AI","Synthesia","Wayve","PolyAI","ElevenLabs","Graphcore","Darktrace",
+    "Faculty AI","Tractable","Speechmatics","Builder.ai","Improbable","Quantexa","Cohere UK",
+]
+# --- USPTO patents (primary_filing granted / technical_signal application); needs EIGEN_USPTO_KEY ---
+USPTO_QUERIES = [
+    "large language model","transformer neural network","attention mechanism","retrieval augmented generation",
+    "neural network accelerator","AI inference chip","speech recognition model","diffusion image generation",
+    "reinforcement learning","vector similarity search",
+]
+
 # --- T3: GitHub org traction (technical_signal) ---
 GITHUB_ORGS = [
     "openai","anthropics","google-deepmind","meta-llama","huggingface","nvidia","pytorch","tensorflow",
@@ -187,6 +199,12 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("openreview","all"):
         for qy in OPENREVIEW_QUERIES:
             jobs.append({"connector":"openreview","query":qy,"limit":limit or 30,"facets":{"sector":"ai"}})
+    if tranche in ("companies_house","all"):
+        for qy in CH_QUERIES:
+            jobs.append({"connector":"companies_house","query":qy,"limit":limit or 10})
+    if tranche in ("uspto","all"):
+        for qy in USPTO_QUERIES:
+            jobs.append({"connector":"uspto","query":qy,"limit":limit or 25})
     # RECENT lane: re-pull the paper sources newest-first / floored at >=2010 so the corpus isn't
     # relevance-skewed to old highly-cited work. Not part of "all" (it re-queries the same topics with
     # a freshness filter) — run explicitly: `run_downloads.py recent`.
@@ -207,7 +225,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","hf","stackoverflow","openreview","github","recent","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","hf","stackoverflow","openreview","companies_house","uspto","github","recent","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()

@@ -5,6 +5,7 @@ fetch_artifact). Domain nouns live only in returned refs' facets/extra. All are
 fixture-injectable so they run offline in tests; live use fetches over HttpStrategy.
 """
 from .arxiv import ArxivConnector
+from .companies_house import CompaniesHouseConnector
 from .crossref import CrossrefConnector
 from .edgar import EdgarConnector
 from .gdelt import GdeltConnector
@@ -17,9 +18,10 @@ from .patentsview import PatentsViewConnector
 from .reddit import RedditConnector
 from .semantic_scholar import SemanticScholarConnector
 from .stackexchange import StackExchangeConnector
+from .uspto import UsptoConnector
 from .wikidata import WikidataConnector
 
-__all__ = ["ArxivConnector", "CrossrefConnector", "EdgarConnector", "GdeltConnector",
-           "GithubConnector", "HackerNewsConnector", "HuggingFaceConnector", "OpenAlexConnector",
-           "OpenReviewConnector", "PatentsViewConnector", "RedditConnector", "SemanticScholarConnector",
-           "StackExchangeConnector", "WikidataConnector"]
+__all__ = ["ArxivConnector", "CompaniesHouseConnector", "CrossrefConnector", "EdgarConnector",
+           "GdeltConnector", "GithubConnector", "HackerNewsConnector", "HuggingFaceConnector",
+           "OpenAlexConnector", "OpenReviewConnector", "PatentsViewConnector", "RedditConnector",
+           "SemanticScholarConnector", "StackExchangeConnector", "UsptoConnector", "WikidataConnector"]
