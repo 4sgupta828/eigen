@@ -12,9 +12,10 @@ from .github import GithubConnector
 from .hackernews import HackerNewsConnector
 from .openalex import OpenAlexConnector
 from .patentsview import PatentsViewConnector
+from .reddit import RedditConnector
 from .semantic_scholar import SemanticScholarConnector
 from .wikidata import WikidataConnector
 
 __all__ = ["ArxivConnector", "CrossrefConnector", "EdgarConnector", "GdeltConnector",
            "GithubConnector", "HackerNewsConnector", "OpenAlexConnector", "PatentsViewConnector",
-           "SemanticScholarConnector", "WikidataConnector"]
+           "RedditConnector", "SemanticScholarConnector", "WikidataConnector"]

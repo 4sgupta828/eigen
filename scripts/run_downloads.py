@@ -97,6 +97,17 @@ HN_QUERIES = [
     "Mistral","Perplexity","Cursor","llama","GPU shortage","AI regulation",
 ]
 
+# --- Reddit: broader-community SENTIMENT signal (needs EIGEN_REDDIT_CLIENT_ID/SECRET in prod).
+# (subreddit, query) pairs — scoped search of the high-signal AI/tech/startup communities.
+REDDIT_QUERIES = [
+    ("MachineLearning", "large language model"), ("MachineLearning", "benchmark"),
+    ("LocalLLaMA", "open weights model"), ("LocalLLaMA", "quantization"),
+    ("artificial", "AGI"), ("singularity", "frontier model"),
+    ("OpenAI", "GPT"), ("StableDiffusion", "image model"),
+    ("startups", "AI startup funding"), ("venturecapital", "AI investment"),
+    ("hardware", "GPU"), ("datascience", "RAG"),
+]
+
 # --- T3: GitHub org traction (technical_signal) ---
 GITHUB_ORGS = [
     "openai","anthropics","google-deepmind","meta-llama","huggingface","nvidia","pytorch","tensorflow",
@@ -144,6 +155,10 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("github","all"):
         for o in GITHUB_ORGS:
             jobs.append({"connector":"github","query":o,"limit":limit or 8})
+    if tranche in ("reddit","all"):
+        for sub, qy in REDDIT_QUERIES:
+            jobs.append({"connector":"reddit","query":qy,"limit":limit or 25,
+                         "params":{"subreddit":sub}})
     # RECENT lane: re-pull the paper sources newest-first / floored at >=2010 so the corpus isn't
     # relevance-skewed to old highly-cited work. Not part of "all" (it re-queries the same topics with
     # a freshness filter) — run explicitly: `run_downloads.py recent`.
@@ -164,7 +179,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","github","recent","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","github","recent","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()

@@ -45,7 +45,7 @@ def classify(source_key: str, facets: dict[str, str] | None, title: str = "", te
         return "analysis"
 
     # 5) SENTIMENT SIGNAL — social / forum / tone. Lowest tier; never controlling.
-    if src_kind in ("social", "sentiment") or sk in ("hackernews", "gdelt"):
+    if src_kind in ("social", "sentiment") or sk in ("hackernews", "gdelt", "reddit"):
         return "sentiment_signal"
 
     return ""   # unknown → rank 0 (never boosts, never demotes)
