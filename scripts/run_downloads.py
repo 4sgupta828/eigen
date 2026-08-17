@@ -108,6 +108,25 @@ REDDIT_QUERIES = [
     ("hardware", "GPU"), ("datascience", "RAG"),
 ]
 
+# --- Hugging Face Hub: model-adoption signal (technical_signal); keyless, EIGEN_HF_TOKEN optional ---
+HF_QUERIES = [
+    "large language model","text generation","embedding","reranker","vision language model",
+    "code generation","speech recognition","diffusion","mixture of experts","function calling",
+    "llama","mistral","qwen","gemma","phi","deepseek",
+]
+# --- Stack Overflow: developer-adoption signal (sentiment_signal); keyless ---
+SO_QUERIES = [
+    "langchain","llama.cpp","vllm","transformers huggingface","openai api","pgvector",
+    "retrieval augmented generation","fine-tuning LLM","ollama","llama-index","cuda out of memory",
+    "vector database",
+]
+# --- OpenReview: peer-reviewed research (verified_structured when accepted); keyless ---
+OPENREVIEW_QUERIES = [
+    "large language models","retrieval augmented generation","mixture of experts","in-context learning",
+    "reinforcement learning from human feedback","diffusion models","state space models",
+    "long context transformers","efficient inference","agentic reasoning",
+]
+
 # --- T3: GitHub org traction (technical_signal) ---
 GITHUB_ORGS = [
     "openai","anthropics","google-deepmind","meta-llama","huggingface","nvidia","pytorch","tensorflow",
@@ -159,6 +178,15 @@ def build(tranche: str, limit: int | None) -> list[dict]:
         for sub, qy in REDDIT_QUERIES:
             jobs.append({"connector":"reddit","query":qy,"limit":limit or 25,
                          "params":{"subreddit":sub}})
+    if tranche in ("hf","all"):
+        for qy in HF_QUERIES:
+            jobs.append({"connector":"huggingface","query":qy,"limit":limit or 30,"facets":{"sector":"ai"}})
+    if tranche in ("stackoverflow","all"):
+        for qy in SO_QUERIES:
+            jobs.append({"connector":"stackoverflow","query":qy,"limit":limit or 25})
+    if tranche in ("openreview","all"):
+        for qy in OPENREVIEW_QUERIES:
+            jobs.append({"connector":"openreview","query":qy,"limit":limit or 30,"facets":{"sector":"ai"}})
     # RECENT lane: re-pull the paper sources newest-first / floored at >=2010 so the corpus isn't
     # relevance-skewed to old highly-cited work. Not part of "all" (it re-queries the same topics with
     # a freshness filter) — run explicitly: `run_downloads.py recent`.
@@ -179,7 +207,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","github","recent","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","hf","stackoverflow","openreview","github","recent","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()

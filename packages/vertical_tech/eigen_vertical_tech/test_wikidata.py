@@ -32,15 +32,16 @@ def test_discover_list_fetch_profile():
     assert "**Founder:**" in md and "Elon Musk" in md
 
 
-def test_facets_and_neutral_tier():
+def test_facets_and_reference_tier():
     f = wd.facets("Q21708200", [tuple(r) for r in _OPENAI["rows"]])
     assert f["source_kind"] == "reference" and f["entity_type"] == "company"
     assert f["source_country"] == "US" and f["year"] == "2015"
-    # reference is UNCLASSIFIED → neutral tier (rank 0): retrievable, never boosts, never controlling
+    # curated structured reference (founder/inception/ownership) → verified_structured: a real boost
+    # (previously UNMAPPED → silently rank 0), but still NON-controlling (only a filing is controlling).
     kind = evidence_kind.classify("wikidata", f)
-    assert kind == ""
+    assert kind == "verified_structured"
     pol = TechAuthorityPolicy()
-    assert pol.rank(kind) == 0 and not pol.is_controlling(kind)
+    assert pol.rank(kind) > 0 and not pol.is_controlling(kind)
 
 
 def test_registered_in_manifest():

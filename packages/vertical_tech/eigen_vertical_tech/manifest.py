@@ -16,8 +16,9 @@ from .terms import TECH_TERMS_PROMPT
 from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
 from .connectors import (ArxivConnector, CrossrefConnector, EdgarConnector, GdeltConnector,
-                         GithubConnector, HackerNewsConnector, OpenAlexConnector, PatentsViewConnector,
-                         RedditConnector, SemanticScholarConnector, WikidataConnector)
+                         GithubConnector, HackerNewsConnector, HuggingFaceConnector, OpenAlexConnector,
+                         OpenReviewConnector, PatentsViewConnector, RedditConnector,
+                         SemanticScholarConnector, StackExchangeConnector, WikidataConnector)
 from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT
 from .reasoned import (TECH_REASONED_ANSWER_FORMAT, TECH_REASONED_SCAFFOLD_PROMPT,
                        TECH_UNDERSTANDING_ANSWER_FORMAT, TECH_UNDERSTANDING_QUERY_HINT)
@@ -52,6 +53,9 @@ def build_manifest() -> VerticalManifest:
             "wikidata": WikidataConnector(),
             "hackernews": HackerNewsConnector(),
             "reddit": RedditConnector(),
+            "stackoverflow": StackExchangeConnector(),
+            "huggingface": HuggingFaceConnector(),
+            "openreview": OpenReviewConnector(),
             "github": GithubConnector(),
             "patentsview": PatentsViewConnector(),
             "gdelt": GdeltConnector(),

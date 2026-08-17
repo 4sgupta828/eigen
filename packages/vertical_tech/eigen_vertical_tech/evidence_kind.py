@@ -27,17 +27,24 @@ def classify(source_key: str, facets: dict[str, str] | None, title: str = "", te
         granted = str(f.get("grant_status") or f.get("is_granted") or "").lower()
         return "primary_filing" if granted in ("granted", "true", "1", "yes") else "technical_signal"
 
-    # 2) VERIFIED STRUCTURED — peer-reviewed papers, funding records, benchmarks.
+    # 2) VERIFIED STRUCTURED — peer-reviewed papers, funding records, benchmarks, curated reference.
     if src_kind == "funding" or src_kind == "benchmark":
         return "verified_structured"
     if src_kind == "paper":
         reviewed = str(f.get("is_peer_reviewed") or "").lower()
         return "verified_structured" if reviewed in ("true", "1", "yes") else "technical_signal"
+    # Curated structured reference (Wikidata: founder/inception/ownership/ticker) — structured facts a
+    # source published about itself, above press but below a filing. Previously UNMAPPED → silently rank 0.
+    if src_kind == "reference" or sk == "wikidata":
+        return "verified_structured"
 
-    # 3) TECHNICAL SIGNAL — preprints, open-source traction.
+    # 3) TECHNICAL SIGNAL — preprints, open-source + model-hub traction.
     if src_kind in ("preprint",) or sk == "arxiv":
         return "technical_signal"
     if src_kind == "code" or sk == "github":
+        return "technical_signal"
+    # Hugging Face model-hub adoption (downloads/likes) — a real but self-reported adoption signal.
+    if src_kind == "model" or sk == "huggingface":
         return "technical_signal"
 
     # 4) ANALYSIS — reputable press / analyst notes.
@@ -45,7 +52,7 @@ def classify(source_key: str, facets: dict[str, str] | None, title: str = "", te
         return "analysis"
 
     # 5) SENTIMENT SIGNAL — social / forum / tone. Lowest tier; never controlling.
-    if src_kind in ("social", "sentiment") or sk in ("hackernews", "gdelt", "reddit"):
+    if src_kind in ("social", "sentiment") or sk in ("hackernews", "gdelt", "reddit", "stackoverflow"):
         return "sentiment_signal"
 
     return ""   # unknown → rank 0 (never boosts, never demotes)
