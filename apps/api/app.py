@@ -722,6 +722,14 @@ class CorpusIngestIn(BaseModel):
     source_country: str = ""               # optional per-batch facet stamp on every ingested block
 
 
+class CorpusSearchIn(BaseModel):
+    """Corpus-explorer pure-retrieval query (admin)."""
+    query: str = ""
+    source: str = ""          # exact source_key filter (edgar/github/openalex/…); "" = all
+    source_kind: str = ""     # facet filter (filing/code/paper/news/…); "" = all
+    k: int = 25
+
+
 class DiscoverIn(BaseModel):
     """Discovery / sourcing: 'which companies are working on X' over the corpus."""
     query: str
@@ -2144,12 +2152,6 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
     def _admin_ok(tok: str) -> bool:
         want = os.environ.get("EIGEN_ADMIN_TOKEN", "")
         return (not want) or tok == want
-
-    class CorpusSearchIn(BaseModel):
-        query: str = ""
-        source: str = ""          # exact source_key filter (edgar/github/openalex/…); "" = all
-        source_kind: str = ""     # facet filter (filing/code/paper/news/…); "" = all
-        k: int = 25
 
     @app.post("/admin/corpus/search")
     async def admin_corpus_search(body: CorpusSearchIn, x_admin_token: str = Header(default="")) -> dict:
