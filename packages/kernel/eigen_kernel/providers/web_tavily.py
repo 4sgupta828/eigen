@@ -44,4 +44,7 @@ class TavilyWebSearch:
                 body=r.get("raw_content") or r.get("content", ""),
                 published=r.get("published_date") or None,
             ))
+        # freshness: recency window active → re-sort newest-first so the latest pages lead the pool
+        if self._time_range:
+            out.sort(key=lambda r: r.published or "", reverse=True)
         return out

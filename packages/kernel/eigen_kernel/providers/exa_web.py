@@ -76,4 +76,9 @@ class ExaWebSearch:
                 published=r.get("publishedDate") or None,
                 highlights=tuple(h for h in (r.get("highlights") or []) if h and h.strip()),
             ))
+        # freshness: when a recency floor is active, re-sort the (already relevance-filtered) results
+        # NEWEST-FIRST so the very latest pages lead the atom pool — Exa returns relevance order, which
+        # lets a dense older overview out-rank this week's release. Undated results sort last.
+        if self._start_published_date:
+            out.sort(key=lambda r: r.published or "", reverse=True)
         return out
