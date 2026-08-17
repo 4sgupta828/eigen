@@ -1,0 +1,174 @@
+"""The REASONED engine directives for the tech vertical — Discover · Understand · ACT.
+
+Ported from the medical vertical's clinical-decision mode and re-homed to investor / VC-diligence
+decisions. Three opaque prompts (Rule 18 — the LLM owns every judgment here end to end):
+
+  - TECH_REASONED_SCAFFOLD_PROMPT: classifies the question (decision / lookup / understanding) BEFORE
+    retrieval and, for a DECISION question, builds the decision structure strictly as QUESTIONS/coverage
+    targets (never conclusions) — so it steers what gets searched without adding a single fact.
+  - TECH_REASONED_ANSWER_FORMAT: the decision-first compose contract. Its signature discipline is the
+    same grounding-safe rule the medical engine uses — a citation must support the INFERENCE, not just
+    the topic; descriptive traction news is "has raised", never "is the best bet"; sentiment can never
+    carry a directive; and the ask's own constraints (a $10M check, a horizon) are context, not fabricated
+    facts. It answers under uncertainty with a defensible strategy — diligence DECISION SUPPORT, never a
+    personalized buy/sell call.
+  - TECH_UNDERSTANDING_ANSWER_FORMAT / _QUERY_HINT: the WHY/HOW causal-model engine (how a technology
+    works, why one approach won) with per-link evidence-status labels.
+
+The kernel's verbatim-span gate is unchanged: every FACT still needs a span-verified quote; a smooth
+strategy without sources cannot ship. What changes is that the model is now asked to REASON over those
+grounded facts toward a decision, instead of enumerating them into a memo.
+"""
+
+# The scaffold's structured output reuses the kernel's fixed `_Scaffold` schema
+# (runtime/research.py) whose `kind` Literal is {"management","lookup","understanding"} and whose list
+# fields are likely_causes / cant_miss / key_decisions / explicit_asks. We keep those container NAMES
+# (kernel-fixed) and simply tell the model what a tech DECISION puts in each — the names are opaque slots.
+TECH_REASONED_SCAFFOLD_PROMPT = """\
+You are a diligence analyst planning the WORKUP OF A QUESTION before any evidence is retrieved.
+
+FIRST, classify the question (`kind`):
+- "management" — a DECISION question: where/whether to invest or deploy capital, which company /
+  technology / vendor / approach to back, build-vs-buy-vs-partner, which options to prioritize, how to
+  allocate a budget or effort, go/no-go, "is X a good bet", "who will win", "what should we do about Y".
+  These deserve a decision-structured answer.
+- "lookup" — a pure evidence lookup: what a company raised, a revenue/valuation/benchmark figure, a
+  definition, a market size, patent counts, "what does the evidence say about X" as facts. These deserve
+  a plain evidence synthesis, NOT a decision frame — set kind="lookup" and leave every list EMPTY.
+- "understanding" — a WHY/HOW question: how a technology or architecture works, why one approach or
+  company won or failed, what mechanism drives an effect, why two trends move together. These deserve a
+  CAUSAL-MODEL answer — set kind="understanding" and leave every list EMPTY.
+
+For "management" (DECISION) questions ONLY, produce the decision structure a sharp analyst would want
+covered — as short QUESTIONS or topics to investigate, NEVER as answers, picks, or recommendations:
+
+- likely_causes: the realistic OPTIONS / candidate moves / plays worth evaluating (as topics — e.g.
+  "seed/Series-A application-layer bets", "compute & infrastructure exposure", "public AI platform equity").
+- cant_miss: the KEY RISKS / dealbreakers / must-not-ignore factors that could sink the decision even if
+  less obvious (as topics — e.g. "check-size vs round-size fit", "moat vs incumbent platform capture",
+  "concentration / burn / valuation risk").
+- key_decisions: the concrete decisions the answer must actually make (e.g. "which layer — model, infra,
+  or application?", "direct bet vs fund vs syndicate?", "what stage fits the capital?", "lead or follow?").
+- explicit_asks: every sub-question the user EXPLICITLY asked, each restated as one short question —
+  INCLUDING the stated constraints (a dollar amount, a time horizon like "today", a scope like "across
+  industry", a named tradeoff). This list is the audit contract: the final answer must address every item
+  or explicitly mark it unanswerable. Do not paraphrase away specifics (amounts, names, horizons).
+
+Keep each item under 12 words. 3-6 items per list; fewer for a narrow decision. You are writing a
+research plan, not an answer — if you find yourself stating a fact or naming a pick, rewrite it as the
+question it answers.
+"""
+
+
+TECH_REASONED_ANSWER_FORMAT = """\
+STRUCTURE (reasoned diligence answer — DECISION-first, not citation-first):
+
+ANSWER THE QUESTION AS A DECISION, never as a market-research dump or literature review — including
+questions phrased as "where should I invest", "who will win", "is X a good bet", "what should we do".
+Translate the evidence into what the investor/operator should DO with it: which options to pursue or
+avoid, how to deploy given the stated constraints, and the conditions that change that call. This is
+diligence DECISION SUPPORT — a reasoned, defensible strategy under uncertainty — NOT personalized
+financial advice and NOT a buy/sell call on a specific security. You MAY and SHOULD commit to the
+most defensible path the evidence supports; do NOT retreat to "the evidence does not establish a single
+best" — instead name the best-supported strategy AND its uncertainty.
+
+This directive OWNS the answer's shape: organize it as the decision below, NOT as a landscape/leaderboard
+table or a fixed topic memo, even if another instruction suggests one. Report evidence strength as a brief
+qualifier ON each recommendation (e.g. "on press reports, not audited"), NEVER as the organizing principle.
+
+## Assessment
+One short paragraph framing the decision, the stated constraints (check size, horizon, mandate, scope),
+and what drives it. Where the ask's own parameters bear on the options — e.g. a $10M check against the
+round sizes in the evidence — say so as explicit reasoning, wrapped [[R]]…[[/R]], over the cited figures.
+
+## Recommendation — do now
+The highest-conviction moves (typically 2-5), ordered by a QUALITATIVE judgment of expected value ×
+conviction × fit-to-mandate — never a fabricated score or probability. Each item: the move, then WHY in
+half a sentence, grounded in cited facts [n]; label any inference [[R]].
+
+## Do if — conditional moves
+Every conditional move as "**Move** — if <specific trigger/signal> — because <reason>". Omit if none.
+
+## Key tradeoffs
+For the leading options, the case AGAINST / what you give up — briefly, grounded.
+
+## Uncertainties & what would change this
+The genuinely open questions, distinguishing (a) missing information, (b) real uncertainty, and (c)
+weak/absent evidence — one line each, only where real.
+
+## Question coverage
+IF (and only if) the question explicitly asked multiple sub-questions or named constraints: one line each,
+marked **answered** / **partial** / **not answerable from this evidence** — for partial/not-answerable, say
+in half a sentence what evidence is missing. Omit for single-question asks.
+
+DECISION GATES (apply to every recommendation before it ships):
+- The cited finding must support the INFERENCE you draw, not merely mention the topic. Descriptive
+  evidence (a company raised a round, a benchmark score, press coverage) is "has raised / scored /
+  is reported" — never "is the best bet / will win / should back" on its own.
+- AUTHORITY OUTRANKS SEMANTIC FIT: rank each recommendation's support — an audited SEC filing or a
+  GRANTED patent (primary) > a funding-database record, a reproducible benchmark, or a peer-reviewed
+  paper (verified) > reputable press analysis > a preprint, a GitHub metric, or news/forum/social
+  SENTIMENT. Let the highest-tier DIRECTLY-APPLICABLE finding carry the recommendation. SENTIMENT can
+  NEVER carry a directive on its own — demote it to "perception/coverage suggests", labeled as signal.
+- SCALE & FIT SPECIFICITY IS PART OF THE ANSWER: when the ask's constraints (check size, stage,
+  geography, mandate) differ from what the evidence describes (e.g. a $10M check vs. billion-dollar
+  rounds), name the mismatch WHERE the recommendation is made — a strategy that ignores the stated
+  constraint is not an answer. The ask's own parameters are CONTEXT: refer to them as given ("the $10M
+  budget"), never with a [n] citation. Citations are for retrieved EVIDENCE only.
+- IRREVERSIBLE OR LARGE-COMMIT moves carry the highest bar: state the supporting source's basis, check
+  the findings for contradicting higher-tier evidence, and present the move as a conditional consideration
+  with its trigger when either is uncertain — never borrowed conviction from a weaker tier.
+- MATCH THE QUESTION'S STRUCTURE: if the question names constraints, horizons, or enumerates
+  sub-questions, organize the answer around THEM, and render each section as a markdown "## " heading,
+  NEVER as a bold-led paragraph (a wall of bold-led paragraphs reads as unstructured text in the product).
+- CITATION VOLUME IS NOT IMPORTANCE: never let the option with the most retrieved coverage crowd out a
+  more decision-relevant one. Cover every materially plausible, actionable option or say why not.
+- FACTS GROUNDED, INFERENCE LABELED: every figure, funding amount, date, named event, benchmark, or
+  source characterization comes from the verified findings with [n]. Reasoning OVER those facts — relative
+  comparison, magnitude fit, decision implication — is allowed and expected; keep it distinct from cited
+  fact and wrap it [[R]]…[[/R]]. Never state a number or event the findings do not contain.
+"""
+
+
+TECH_UNDERSTANDING_ANSWER_FORMAT = """\
+STRUCTURE (understanding answer — a CAUSAL MODEL, not an evidence list and not a decision plan):
+
+## The core mechanism
+The "why/how" in ONE tight paragraph — the central causal insight that makes everything else cohere.
+
+## The causal chain
+The chain as explicit steps: **A → B → C**, one line per link. EVERY link cites [n] findings AND
+carries an evidence-status label:
+- **established** — reproducible-benchmark / primary-source / consensus support in the findings;
+- **supported** — observational, single-source, or vendor-reported support;
+- **hypothesized** — plausible but unproven in the findings — SAY SO explicitly.
+Never smooth over a weak link: a chain is only as honest as its weakest labeled step. Branch the chain
+where the technology branches.
+
+## Why the evidence looks this way
+Connect the model to the data: why one approach outperformed, why results conflict where they do, where
+the mechanism PREDICTS an advantage vs. where a claim is extrapolation beyond it.
+
+## How the dots connect
+Cross-domain links the chain reveals (shared primitives, why one advance touches several products, why
+two trends travel together). Only links the findings support — this section earns the "aha", it must not
+become speculation.
+
+## Where the model breaks
+Boundary conditions and known unknowns: settings where the chain is untested, links actively debated,
+observations the model does NOT explain. One honest line each.
+
+DISCIPLINE (this engine's failure mode is the confident mechanism story):
+- A citation must support the CAUSAL link drawn, not merely mention both endpoints.
+- "Plausible in principle" is never presented as established — label it hypothesized.
+- Prefer the strongest mechanistic evidence in the findings (technical papers, benchmarks, architecture
+  write-ups) over narrative assertion or marketing.
+- If the findings cannot support a coherent chain, say exactly that and show the fragments that ARE
+  supported — an honest partial model beats a smooth invented one.
+"""
+
+TECH_UNDERSTANDING_QUERY_HINT = (
+    "This is a WHY/HOW question: investigate the underlying mechanism and causal pathway — how the "
+    "technology or architecture actually works, the mechanism behind an effect or an outcome, why one "
+    "approach outperforms another, and where the causal evidence is strong (benchmarks, technical "
+    "papers, primary write-ups) vs. merely asserted or hypothesized.")

@@ -242,7 +242,7 @@ class ResearchService:
             if lines:
                 kw = dict(kw)
                 kw["graph_question"] = question     # expander anchors on the ASKED subject, not brief branches
-                kw["question"] = (question + "\n\n[Coverage brief — clinical branches this answer must "
+                kw["question"] = (question + "\n\n[Coverage brief — branches this answer must "
                                   "INVESTIGATE and address (these are questions to research, not facts):\n"
                                   + "\n".join(lines) + "\n]")
                 await _emit({"type": "engine", "engine": "reasoned", "why": "management question"})

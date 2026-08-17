@@ -19,6 +19,8 @@ from .connectors import (ArxivConnector, CrossrefConnector, EdgarConnector, Gdel
                          GithubConnector, HackerNewsConnector, OpenAlexConnector, PatentsViewConnector,
                          SemanticScholarConnector, WikidataConnector)
 from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT
+from .reasoned import (TECH_REASONED_ANSWER_FORMAT, TECH_REASONED_SCAFFOLD_PROMPT,
+                       TECH_UNDERSTANDING_ANSWER_FORMAT, TECH_UNDERSTANDING_QUERY_HINT)
 from .eval_gold import GOLD
 from .freshness import TECH_FRESHNESS_POLICY
 from .fixtures import sample_filings, sample_papers
@@ -82,6 +84,15 @@ def build_manifest() -> VerticalManifest:
         # current/established/balanced → customizes retrieval+ranking+compose per question.
         contract_prompt=TECH_CONTRACT_PROMPT,
         answer_profiles=ANSWER_PROFILES,
+        # REASONED engine (flag EIGEN_REASONED_DEFAULT, default OFF — the noesis clinical-decision mode
+        # re-homed to diligence): one scaffold call classifies the question (decision/lookup/understanding)
+        # → decision-shaped questions get a coverage-brief-steered retrieval + a decision-first, grounding-
+        # safe compose contract; lookups fall through to the standard engine; why/how → causal-model engine.
+        # OFF → the engine param is ignored and answers are byte-identical to today.
+        reasoned_scaffold_prompt=TECH_REASONED_SCAFFOLD_PROMPT,
+        reasoned_answer_format=TECH_REASONED_ANSWER_FORMAT,
+        understanding_answer_format=TECH_UNDERSTANDING_ANSWER_FORMAT,
+        understanding_query_hint=TECH_UNDERSTANDING_QUERY_HINT,
         # Sub-vertical seam: sectors as a per-question subject scope (AI seeded), NOT separate verticals.
         sector_profiles=SECTOR_PROFILES,
         # Analytical lenses (the orthogonal axis): angles applied within the active sector.
