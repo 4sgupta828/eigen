@@ -2153,6 +2153,26 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         want = os.environ.get("EIGEN_ADMIN_TOKEN", "")
         return (not want) or tok == want
 
+    import re as _re
+    def _clean_snip(t: str, n: int = 400) -> str:
+        """Tidy a raw block chunk for display: collapse runs of spaces/newlines so it reads as clean
+        text instead of ragged markdown noise."""
+        t = _re.sub(r"[ \t]{2,}", " ", (t or "").strip())
+        t = _re.sub(r"\n{2,}", "\n", t)
+        return t[:n]
+
+    def _doc_url(document_id: str, facets: dict | None):
+        """Canonical external URL for a document via the vertical's link builder (needs facets for
+        e.g. the EDGAR CIK). None when the vertical has no clean page."""
+        s = app.state.service
+        if s is None:
+            s = app.state.service = build_default_service()
+        ui = getattr(s, "ui", None)
+        try:
+            return ui.source_url(document_id, facets=facets) if ui else None
+        except Exception:   # noqa: BLE001
+            return None
+
     @app.post("/admin/corpus/search")
     async def admin_corpus_search(body: CorpusSearchIn, x_admin_token: str = Header(default="")) -> dict:
         """Pure hybrid retrieval (pgvector + tsvector, NO LLM) over the corpus — the raw evidence a
@@ -2182,7 +2202,8 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 continue
             out.append({"document_id": did, "block_id": getattr(h, "block_id", ""), "source": src,
                         "score": round(float(getattr(h, "score", 0.0)), 4),
-                        "snippet": (getattr(h, "text", "") or "")[:500], "facets": f})
+                        "url": _doc_url(did, f),
+                        "snippet": _clean_snip(getattr(h, "text", "") or "", 450), "facets": f})
             if len(out) >= k:
                 break
         return {"query": q, "count": len(out), "hits": out}
@@ -2213,7 +2234,8 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                            "facets": (_json.loads(f) if isinstance(f, str) else dict(f or {}))})
         return {"document_id": document_id, "source": document_id.split(":", 1)[0],
                 "n_blocks": len(blocks), "created_at": str(rows[0]["created_at"]),
-                "facets": blocks[0]["facets"], "blocks": blocks}
+                "facets": blocks[0]["facets"], "url": _doc_url(document_id, blocks[0]["facets"]),
+                "blocks": blocks}
 
     @app.get("/admin/corpus/browse")
     async def admin_corpus_browse(source: str = "", q: str = "", limit: int = 40,
@@ -2241,11 +2263,18 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 args.append(f"%{q.strip()}%"); where.append(f"text ILIKE ${len(args)}")
             wsql = ("WHERE " + " AND ".join(where)) if where else ""
             args.append(lim)
-            docs = [{"document_id": r["document_id"], "source": r["document_id"].split(":", 1)[0],
-                     "snippet": (r["text"] or "")[:240], "created_at": str(r["created_at"])}
-                    for r in await conn.fetch(
-                        f"SELECT DISTINCT ON (document_id) document_id, text, created_at "
-                        f"FROM rs_block {wsql} ORDER BY document_id, block_id LIMIT ${len(args)}", *args)]
+            import json as _json2
+            rows = await conn.fetch(
+                f"SELECT DISTINCT ON (document_id) document_id, text, facets, created_at "
+                f"FROM rs_block {wsql} ORDER BY document_id, block_id LIMIT ${len(args)}", *args)
+            docs = []
+            for r in rows:
+                fc = r["facets"]
+                fc = _json2.loads(fc) if isinstance(fc, str) else dict(fc or {})
+                did = r["document_id"]
+                docs.append({"document_id": did, "source": did.split(":", 1)[0],
+                             "url": _doc_url(did, fc), "snippet": _clean_snip(r["text"] or "", 220),
+                             "created_at": str(r["created_at"])})
         finally:
             await conn.close()
         return {"sources": sources, "count": len(docs), "documents": docs}

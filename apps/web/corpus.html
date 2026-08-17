@@ -27,6 +27,8 @@
   .card:hover{border-color:var(--accent)}
   .card .top{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.3rem}
   .src{font-family:ui-monospace,monospace;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:#08111f;background:var(--accent);border-radius:5px;padding:.1rem .4rem}
+  .ext{font-size:.72rem;color:var(--accent);border:1px solid var(--hair);border-radius:5px;padding:.05rem .4rem;white-space:nowrap}
+  .ext:hover{border-color:var(--accent);text-decoration:none;background:rgba(94,168,232,.08)}
   .did{font-family:ui-monospace,monospace;font-size:.74rem;color:var(--muted);word-break:break-all}
   .score{margin-left:auto;font-family:ui-monospace,monospace;font-size:.72rem;color:var(--good)}
   .snip{color:#cdd6e4;font-size:.86rem;white-space:pre-wrap}
@@ -38,8 +40,12 @@
   .doc{max-width:900px;margin:0 auto;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:1.1rem 1.3rem}
   .doc h2{font-size:.9rem;margin:.1rem 0 .2rem;word-break:break-all;font-family:ui-monospace,monospace}
   .close{float:right;background:transparent;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer}
-  .block{border-top:1px dashed var(--hair);padding:.6rem 0;font-size:.86rem;white-space:pre-wrap;color:#dbe3ee}
-  .block .bid{font-family:ui-monospace,monospace;font-size:.62rem;color:var(--muted);margin-bottom:.2rem}
+  .block{border-top:1px dashed var(--hair);padding:.6rem 0;font-size:.9rem;color:#dbe3ee}
+  .block .bid{font-family:ui-monospace,monospace;font-size:.62rem;color:var(--muted);margin-bottom:.35rem}
+  .block h4{font-size:.95rem;margin:.6rem 0 .2rem;color:var(--ink)}
+  .block p{margin:.35rem 0} .block .li{margin:.1rem 0 .1rem .6rem}
+  .block code{font-family:ui-monospace,monospace;font-size:.82rem;background:#0b1626;border:1px solid var(--hair);border-radius:4px;padding:0 .25rem}
+  .block b{color:var(--ink)}
   .spin{color:var(--muted)}
   /* token gate */
   .gate{position:fixed;inset:0;background:rgba(3,7,15,.9);display:none;z-index:40;align-items:center;justify-content:center;padding:1rem}
@@ -169,11 +175,22 @@ function render(items){
   if(!items.length){ el.innerHTML=`<div class="empty">No results.</div>`; return; }
   el.innerHTML=items.map(h=>`
     <div class="card" onclick="openDoc('${encodeURIComponent(h.document_id)}')">
-      <div class="top"><span class="src">${esc(h.source||"?")}</span><span class="did">${esc(h.document_id)}</span>
+      <div class="top"><span class="src">${esc(h.source||"?")}</span>
+      ${h.url?`<a class="ext" href="${esc(h.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗ open source</a>`:""}
+      <span class="did">${esc(h.document_id)}</span>
       ${h.score!=null&&h.kind==="hit"?`<span class="score">${h.score}</span>`:""}</div>
       <div class="snip">${esc(h.snippet||"")}</div>
       ${Object.keys(h.facets||{}).length?`<div class="facets">${Object.entries(h.facets).slice(0,8).map(([k,v])=>`<span class="fac">${esc(k)}=${esc(String(v).slice(0,30))}</span>`).join("")}</div>`:""}
     </div>`).join("");
+}
+// light markdown → HTML for the doc viewer (ingested docs are markdown; raw text reads as noise)
+function mdlite(t){
+  let s = esc((t||"").trim());
+  s = s.replace(/^#{1,6}\s+(.*)$/gm,'<h4>$1</h4>');           // headers → h4
+  s = s.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
+  s = s.replace(/^\s*[-*]\s+(.*)$/gm,'<div class="li">• $1</div>');   // bullets
+  s = s.replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>');   // paragraphs / line breaks
+  return '<p>'+s+'</p>';
 }
 async function openDoc(didEnc){
   const did=decodeURIComponent(didEnc), ov=document.getElementById("overlay"), doc=document.getElementById("doc");
@@ -183,10 +200,11 @@ async function openDoc(didEnc){
     if(!r.ok){ doc.innerHTML=`<button class="close" onclick="closeDoc()">×</button><div class="empty">error ${r.status}</div>`; return; }
     const d=await r.json();
     doc.innerHTML=`<button class="close" onclick="closeDoc()">×</button>
-      <h2><span class="src">${esc(d.source)}</span> ${esc(d.document_id)}</h2>
+      <h2><span class="src">${esc(d.source)}</span> ${esc(d.document_id)}
+        ${d.url?`<a class="ext" href="${esc(d.url)}" target="_blank" rel="noopener">↗ open source</a>`:""}</h2>
       <div class="meta mono">${d.n_blocks} blocks · ${esc(d.created_at||"")}</div>
       <div class="facets">${Object.entries(d.facets||{}).map(([k,v])=>`<span class="fac">${esc(k)}=${esc(String(v).slice(0,40))}</span>`).join("")}</div>
-      ${d.blocks.map(b=>`<div class="block"><div class="bid">${esc(b.block_id)}</div>${esc(b.text)}</div>`).join("")}`;
+      ${d.blocks.map(b=>`<div class="block"><div class="bid">${esc(b.block_id)}</div>${mdlite(b.text)}</div>`).join("")}`;
   }catch(e){ doc.innerHTML=`<button class="close" onclick="closeDoc()">×</button><div class="empty">error: ${esc(String(e))}</div>`; }
 }
 function closeDoc(){ document.getElementById("overlay").classList.remove("on"); }

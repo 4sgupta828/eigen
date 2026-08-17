@@ -13,8 +13,8 @@ class _EntityView:
 
 
 class TechUI:
-    def source_url(self, document_id, quote=None):
-        return _links.source_url(document_id, quote)
+    def source_url(self, document_id, quote=None, facets=None):
+        return _links.source_url(document_id, quote, facets)
 
     def coverage_plan(self):
         """Declared coverage roadmap for the tech vertical — what sectors/sources are live
