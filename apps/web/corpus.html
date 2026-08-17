@@ -1,0 +1,160 @@
+<title>Eigen — Corpus Explorer</title>
+<style>
+  :root{ --bg:#0b1220; --panel:#0f1a2c; --panel2:#111f36; --ink:#e8ecf3; --muted:#8b96a9;
+    --accent:#5ea8e8; --hair:#22304a; --good:#4fbf95; --warn:#d89a56; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  header{display:flex;align-items:center;gap:1rem;padding:.8rem 1.2rem;border-bottom:1px solid var(--hair);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+  h1{font-size:1.05rem;margin:0;letter-spacing:-.01em}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+  .tok{margin-left:auto;display:flex;gap:.4rem;align-items:center}
+  input,select,button{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:.45rem .6rem}
+  input::placeholder{color:var(--muted)}
+  button{cursor:pointer;background:var(--panel2)} button:hover{border-color:var(--accent)}
+  button.go{background:var(--accent);color:#08111f;border-color:var(--accent);font-weight:600}
+  .wrap{max-width:1100px;margin:0 auto;padding:1rem 1.2rem 4rem}
+  .searchbar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.4rem 0 1rem}
+  .searchbar input[type=text]{flex:1;min-width:240px}
+  .chips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.2rem 0 1rem}
+  .chip{font-size:.72rem;padding:.25rem .6rem;border:1px solid var(--hair);border-radius:999px;background:var(--panel);cursor:pointer;color:var(--muted)}
+  .chip.on{border-color:var(--accent);color:var(--accent);background:rgba(94,168,232,.08)}
+  .chip b{color:var(--ink)}
+  .meta{color:var(--muted);font-size:.8rem;margin:.2rem 0 .8rem}
+  .card{border:1px solid var(--hair);border-radius:12px;background:var(--panel);padding:.7rem .9rem;margin-bottom:.6rem;cursor:pointer}
+  .card:hover{border-color:var(--accent)}
+  .card .top{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.3rem}
+  .src{font-family:ui-monospace,monospace;font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:#08111f;background:var(--accent);border-radius:5px;padding:.1rem .4rem}
+  .did{font-family:ui-monospace,monospace;font-size:.74rem;color:var(--muted);word-break:break-all}
+  .score{margin-left:auto;font-family:ui-monospace,monospace;font-size:.72rem;color:var(--good)}
+  .snip{color:#cdd6e4;font-size:.86rem;white-space:pre-wrap}
+  .facets{margin-top:.4rem;display:flex;gap:.35rem;flex-wrap:wrap}
+  .fac{font-family:ui-monospace,monospace;font-size:.64rem;color:var(--muted);border:1px solid var(--hair);border-radius:5px;padding:.05rem .35rem}
+  .empty{color:var(--muted);padding:2rem;text-align:center}
+  /* doc overlay */
+  .overlay{position:fixed;inset:0;background:rgba(3,7,15,.7);display:none;z-index:20;padding:2rem 1rem;overflow:auto}
+  .overlay.on{display:block}
+  .doc{max-width:900px;margin:0 auto;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:1.1rem 1.3rem}
+  .doc h2{font-size:.9rem;margin:.1rem 0 .2rem;word-break:break-all;font-family:ui-monospace,monospace}
+  .doc .close{float:right;background:transparent;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer}
+  .block{border-top:1px dashed var(--hair);padding:.6rem 0;font-size:.86rem;white-space:pre-wrap;color:#dbe3ee}
+  .block .bid{font-family:ui-monospace,monospace;font-size:.62rem;color:var(--muted);margin-bottom:.2rem}
+  .spin{color:var(--muted)}
+</style>
+
+<header>
+  <h1>◧ Eigen Corpus Explorer</h1>
+  <span class="meta mono" id="totals">—</span>
+  <div class="tok">
+    <input id="token" type="password" placeholder="admin token" size="22" autocomplete="off">
+    <button onclick="saveTok()">save</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="searchbar">
+    <input id="q" type="text" placeholder="Search the corpus — semantic + keyword (e.g. 'GPU supply agreement', 'stock repurchase authorization')" onkeydown="if(event.key==='Enter')run()">
+    <select id="kind" title="evidence kind">
+      <option value="">any kind</option><option value="filing">filing</option><option value="paper">paper</option>
+      <option value="preprint">preprint</option><option value="code">code</option><option value="news">news</option>
+      <option value="social">social</option><option value="reference">reference</option>
+    </select>
+    <select id="k"><option>25</option><option>50</option><option>100</option></select>
+    <button class="go" onclick="run()">Search</button>
+    <button onclick="browse()" title="list documents without a semantic query">Browse</button>
+  </div>
+  <div class="chips" id="sources"></div>
+  <div class="meta" id="status"></div>
+  <div id="results"></div>
+</div>
+
+<div class="overlay" id="overlay" onclick="if(event.target.id==='overlay')closeDoc()">
+  <div class="doc" id="doc"></div>
+</div>
+
+<script>
+const API = "";
+let SRC = "";   // active source filter
+function tok(){ return localStorage.getItem("eigen-admin-tok") || ""; }
+function saveTok(){ localStorage.setItem("eigen-admin-tok", document.getElementById("token").value.trim()); loadSources(); }
+function hdr(){ return {"content-type":"application/json","X-Admin-Token":tok()}; }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function loadSources(){
+  try{
+    const r = await fetch(API+"/admin/corpus/browse?limit=1",{headers:hdr()});
+    if(r.status===401){ status("enter a valid admin token"); return; }
+    const d = await r.json();
+    const tot = d.sources.reduce((a,s)=>({docs:a.docs+s.docs,blocks:a.blocks+s.blocks}),{docs:0,blocks:0});
+    document.getElementById("totals").textContent = tot.docs.toLocaleString()+" docs · "+tot.blocks.toLocaleString()+" blocks";
+    const el = document.getElementById("sources");
+    el.innerHTML = `<span class="chip ${SRC?'':'on'}" onclick="setSrc('')">all</span>` +
+      d.sources.map(s=>`<span class="chip ${SRC===s.source?'on':''}" onclick="setSrc('${esc(s.source)}')">${esc(s.source)} <b>${s.docs.toLocaleString()}</b></span>`).join("");
+  }catch(e){ status("error loading sources: "+e); }
+}
+function setSrc(s){ SRC=s; loadSources(); const q=document.getElementById("q").value.trim(); q?run():browse(); }
+function status(m){ document.getElementById("status").textContent = m||""; }
+
+async function run(){
+  const q = document.getElementById("q").value.trim();
+  if(!q){ return browse(); }
+  status("searching…");
+  const body = {query:q, source:SRC, source_kind:document.getElementById("kind").value, k:+document.getElementById("k").value};
+  try{
+    const r = await fetch(API+"/admin/corpus/search",{method:"POST",headers:hdr(),body:JSON.stringify(body)});
+    if(!r.ok){ status("error "+r.status+": "+(await r.text()).slice(0,120)); return; }
+    const d = await r.json();
+    status(d.count+" blocks matched"+(SRC?` · source=${SRC}`:""));
+    render(d.hits.map(h=>({...h, kind:"hit"})));
+  }catch(e){ status("error: "+e); }
+}
+
+async function browse(){
+  status("loading documents…");
+  const p = new URLSearchParams(); if(SRC)p.set("source",SRC);
+  const q=document.getElementById("q").value.trim(); if(q)p.set("q",q); p.set("limit","60");
+  try{
+    const r = await fetch(API+"/admin/corpus/browse?"+p,{headers:hdr()});
+    if(!r.ok){ status("error "+r.status); return; }
+    const d = await r.json();
+    status(d.count+" documents"+(SRC?` · source=${SRC}`:"")+(q?` · matching "${q}"`:""));
+    render(d.documents.map(x=>({document_id:x.document_id, source:x.source, snippet:x.snippet, facets:{}, kind:"doc"})));
+  }catch(e){ status("error: "+e); }
+}
+
+function render(items){
+  const el = document.getElementById("results");
+  if(!items.length){ el.innerHTML = `<div class="empty">No results.</div>`; return; }
+  el.innerHTML = items.map(h=>`
+    <div class="card" onclick="openDoc('${encodeURIComponent(h.document_id)}')">
+      <div class="top">
+        <span class="src">${esc(h.source||"?")}</span>
+        <span class="did">${esc(h.document_id)}</span>
+        ${h.score!=null&&h.kind==="hit"?`<span class="score">${h.score}</span>`:""}
+      </div>
+      <div class="snip">${esc(h.snippet||"")}</div>
+      ${Object.keys(h.facets||{}).length?`<div class="facets">${Object.entries(h.facets).slice(0,8).map(([k,v])=>`<span class="fac">${esc(k)}=${esc(String(v).slice(0,30))}</span>`).join("")}</div>`:""}
+    </div>`).join("");
+}
+
+async function openDoc(didEnc){
+  const did = decodeURIComponent(didEnc);
+  const ov = document.getElementById("overlay"), doc = document.getElementById("doc");
+  ov.classList.add("on"); doc.innerHTML = `<button class="close" onclick="closeDoc()">×</button><div class="spin">loading ${esc(did)}…</div>`;
+  try{
+    const r = await fetch(API+"/admin/corpus/doc?document_id="+encodeURIComponent(did),{headers:hdr()});
+    if(!r.ok){ doc.innerHTML = `<button class="close" onclick="closeDoc()">×</button><div class="empty">error ${r.status}</div>`; return; }
+    const d = await r.json();
+    doc.innerHTML = `<button class="close" onclick="closeDoc()">×</button>
+      <h2><span class="src">${esc(d.source)}</span> ${esc(d.document_id)}</h2>
+      <div class="meta mono">${d.n_blocks} blocks · ${esc(d.created_at||"")}</div>
+      <div class="facets">${Object.entries(d.facets||{}).map(([k,v])=>`<span class="fac">${esc(k)}=${esc(String(v).slice(0,40))}</span>`).join("")}</div>
+      ${d.blocks.map(b=>`<div class="block"><div class="bid">${esc(b.block_id)}</div>${esc(b.text)}</div>`).join("")}`;
+  }catch(e){ doc.innerHTML = `<button class="close" onclick="closeDoc()">×</button><div class="empty">error: ${esc(String(e))}</div>`; }
+}
+function closeDoc(){ document.getElementById("overlay").classList.remove("on"); }
+document.addEventListener("keydown",e=>{ if(e.key==="Escape")closeDoc(); });
+
+document.getElementById("token").value = tok();
+loadSources();
+</script>
