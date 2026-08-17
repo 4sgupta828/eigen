@@ -18,3 +18,14 @@ def test_clean_strips_tags_and_whitespace():
 def test_recency_days_to_ddg_timelimit():
     d = DuckDuckGoWebSearch._df
     assert d(None) == "" and d(1) == "d" and d(7) == "w" and d(30) == "m" and d(150) == "y"
+
+
+def test_composite_merges_and_dedups_across_providers():
+    import asyncio
+    from eigen_kernel.providers.websearch import CompositeWebSearch, FakeWebSearch, WebResult
+    a = FakeWebSearch({"q": [WebResult("https://a.com/1", "A", "s"), WebResult("https://shared.com/x/", "S", "s")]})
+    b = FakeWebSearch({"q": [WebResult("http://shared.com/x", "S2", "s"), WebResult("https://b.com/2", "B", "s")]})
+    rs = asyncio.run(CompositeWebSearch([a, b]).search("q", max_results=10))
+    urls = [r.url for r in rs]
+    assert len(rs) == 3                                  # shared.com/x deduped across providers
+    assert "https://a.com/1" in urls and "https://b.com/2" in urls   # both providers contribute

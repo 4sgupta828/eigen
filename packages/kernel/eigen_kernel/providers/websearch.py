@@ -5,6 +5,7 @@ supplied through the vertical contract, never hardcoded here.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -27,6 +28,44 @@ class WebResult:
 class WebSearchClient(Protocol):
     async def search(self, query: str, *, max_results: int = 10,
                      open_web: bool = False, recency_days: int | None = None) -> list[WebResult]: ...
+
+
+def _norm_url(u: str) -> str:
+    """Normalize a URL for cross-provider dedup: drop scheme, trailing slash, '#…', lowercase host."""
+    u = (u or "").strip()
+    u = re.sub(r"^https?://", "", u, flags=re.I).split("#", 1)[0].rstrip("/")
+    return u.lower()
+
+
+class CompositeWebSearch:
+    """ADDITIVE web leg: fan out to several providers CONCURRENTLY and merge, deduping by URL. Each
+    provider is best-effort (a failure/empty contributes nothing). Broadens coverage — e.g. Exa's
+    whitelisted, credible results PLUS DuckDuckGo's open-web breadth — while the downstream tier
+    classifier + span gate still grade + verify whatever is actually cited. Provider-major interleave
+    so EVERY provider gets representation (breadth), not just the first one's list."""
+
+    def __init__(self, clients: list):
+        self._clients = [c for c in clients if c is not None]
+
+    async def search(self, query: str, *, max_results: int = 10,
+                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
+        import asyncio
+        lists = await asyncio.gather(
+            *(c.search(query, max_results=max_results, open_web=open_web, recency_days=recency_days)
+              for c in self._clients),
+            return_exceptions=True)
+        lists = [r for r in lists if isinstance(r, list)]
+        out: list[WebResult] = []
+        seen: set[str] = set()
+        for rank in range(max((len(r) for r in lists), default=0)):
+            for r in lists:
+                if rank < len(r):
+                    hit = r[rank]
+                    key = _norm_url(hit.url)
+                    if key and key not in seen:
+                        seen.add(key)
+                        out.append(hit)
+        return out
 
 
 class FakeWebSearch:

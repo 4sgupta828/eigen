@@ -19,7 +19,7 @@ from eigen_kernel.providers.embeddings import (
 )
 from eigen_kernel.providers.llm import CassetteLLM, LLMClient
 from eigen_kernel.providers.web_tavily import TavilyWebSearch
-from eigen_kernel.providers.websearch import CassetteWebSearch, WebSearchClient
+from eigen_kernel.providers.websearch import CassetteWebSearch, CompositeWebSearch, WebSearchClient
 
 
 def default_cassette_root() -> Path:
@@ -54,13 +54,7 @@ def build_web(*, mode: ProviderMode | str | None = None,
     # current news/pages, not the most-linked 2024-era write-ups (the corpus still holds the history).
     inner = None
     if m is not ProviderMode.REPLAY:
-        # provider precedence: forced `EIGEN_WEB_PROVIDER` > Exa (if key) > Tavily (if key) >
-        # DuckDuckGo (KEYLESS free fallback — the system runs web search with NO paid key at all).
-        provider = os.environ.get("EIGEN_WEB_PROVIDER", "").strip().lower()
-        if provider == "ddg":
-            from eigen_kernel.providers.ddg_web import DuckDuckGoWebSearch
-            inner = DuckDuckGoWebSearch()
-        elif provider != "tavily" and os.environ.get("EXA_API_KEY"):
+        def _exa():
             from eigen_kernel.providers.exa_web import ExaWebSearch
             _floor = ""
             if recent:
@@ -69,12 +63,32 @@ def build_web(*, mode: ProviderMode | str | None = None,
                 # so newest-first sorting surfaces the very latest models (not last spring's overview);
                 # the corpus still holds the full history for non-"latest" questions.
                 _floor = (datetime.date.today() - datetime.timedelta(days=120)).isoformat() + "T00:00:00.000Z"
-            inner = ExaWebSearch(include_domains=list(domains or []), start_published_date=_floor)
-        elif os.environ.get("TAVILY_API_KEY"):
+            return ExaWebSearch(include_domains=list(domains or []), start_published_date=_floor)
+
+        def _ddg():
+            from eigen_kernel.providers.ddg_web import DuckDuckGoWebSearch
+            return DuckDuckGoWebSearch()
+
+        _has_exa, _has_tav = bool(os.environ.get("EXA_API_KEY")), bool(os.environ.get("TAVILY_API_KEY"))
+        provider = os.environ.get("EIGEN_WEB_PROVIDER", "").strip().lower()
+        if provider == "ddg":                                   # forced single provider (override)
+            inner = _ddg()
+        elif provider == "exa" and _has_exa:
+            inner = _exa()
+        elif provider == "tavily" and _has_tav:
             inner = TavilyWebSearch(time_range="year" if recent else "")
         else:
-            from eigen_kernel.providers.ddg_web import DuckDuckGoWebSearch
-            inner = DuckDuckGoWebSearch()   # keyless: web search works with zero paid providers
+            # DEFAULT = ADDITIVE: the best keyed provider (credible, whitelisted) PLUS the keyless
+            # DuckDuckGo (open-web breadth), fanned out concurrently + merged. Downstream tier-grading
+            # + span-verification decide what's actually cited, so credible sources still lead while
+            # DDG adds reach. With NO paid key, DDG alone runs the web leg (free).
+            clients = []
+            if _has_exa:
+                clients.append(_exa())
+            elif _has_tav:
+                clients.append(TavilyWebSearch(time_range="year" if recent else ""))
+            clients.append(_ddg())
+            inner = clients[0] if len(clients) == 1 else CompositeWebSearch(clients)
     return CassetteWebSearch(inner, cassette_root=cassette_root or default_cassette_root(),
                              namespace="web", mode=m)
 
