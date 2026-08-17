@@ -40,8 +40,12 @@ ANSWER_PROFILES: dict = {
     "current": {
         "recency": _CURRENT_RECENCY,
         "suppress_authority": True,        # a fresh announcement must be able to out-rank an older benchmark
-        "web_open": True,                  # OPEN WEB: reach labs' own announcement blogs + niche pages,
-        #                                    not just the trusted whitelist (span-gate still verifies)
+        # web_open deliberately OFF: fully dropping the whitelist surfaced content-farm/SEO junk
+        # (icreat.ai, swfte.com…) that out-ranked authoritative pages. The EXPANDED whitelist now
+        # includes the labs' own announcement blogs (openai.com/anthropic.com/blog.google/x.ai…) +
+        # leaderboards + trade press, which — with the deep discover→drill research below — already
+        # reaches the newest models (GPT-5.6/Opus 5/Kimi K3/DeepSeek-V4-Pro) via CREDIBLE sources.
+        "web_open": False,
         "web_recency_days": 150,           # per-request web floor ≈ the current ~5 months
         "max_steps": 14,                   # thorough: discover the leaderboard, then drill into each model
         "compose_claim_cap": 60,           # a landscape answer spans ~15 models, not a handful

@@ -26,7 +26,7 @@ def test_derivation_parses_stance():
 
 def test_current_profile_is_recency_first_authority_suppressed():
     p = ANSWER_PROFILES["current"]
-    assert p["suppress_authority"] is True and p["web_open"] is True
+    assert p["suppress_authority"] is True and p["web_open"] is False   # whitelist kept (credible sources)
     assert p["recency"] and p["recency"]["min_rank"] == 0 and p["recency"]["weight"] >= 0.4
     assert p["max_steps"] >= 10 and p["compose_claim_cap"] >= 40   # thorough, wide landscape
     steer, directive = p["planner_steer"].lower(), p["answer_directive"].lower()
