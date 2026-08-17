@@ -12,9 +12,12 @@ TRUSTED_WEB_DOMAINS: tuple[str, ...] = (
     # Verified structured — scholarly / benchmarks / code
     "arxiv.org", "openalex.org", "semanticscholar.org", "crossref.org",
     "paperswithcode.com", "mlcommons.org", "huggingface.co", "github.com",
+    # Live leaderboards — the current "who leads" signal for fast-moving model races
+    "lmarena.ai", "artificialanalysis.ai",
     # Analysis — reputable trade / business press
     "reuters.com", "bloomberg.com", "ft.com", "wsj.com", "theinformation.com",
     "techcrunch.com", "arstechnica.com", "nature.com", "ieee.org",
+    "theverge.com", "venturebeat.com",
     # Structured company/funding profiles (public pages)
     "crunchbase.com", "dealroom.co", "pitchbook.com",
 )
@@ -29,6 +32,10 @@ WEB_DOMAIN_FACETS: dict[str, dict] = {
     "semanticscholar.org": {"source_kind": "paper"},
     "paperswithcode.com": {"source_kind": "benchmark"},
     "mlcommons.org": {"source_kind": "benchmark"},
+    "lmarena.ai": {"source_kind": "benchmark"},
+    "artificialanalysis.ai": {"source_kind": "benchmark"},
+    "theverge.com": {"source_kind": "news"},
+    "venturebeat.com": {"source_kind": "news"},
     "github.com": {"source_kind": "code"},
     "reuters.com": {"source_kind": "news"},
     "bloomberg.com": {"source_kind": "news"},

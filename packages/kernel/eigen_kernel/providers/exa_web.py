@@ -16,12 +16,15 @@ EXA_URL = "https://api.exa.ai/search"
 
 class ExaWebSearch:
     def __init__(self, *, api_key: str | None = None, timeout: float = 10.0,
-                 include_domains: list[str] | None = None):
+                 include_domains: list[str] | None = None, start_published_date: str = ""):
         self._api_key = api_key or os.environ.get("EXA_API_KEY", "")
         self._timeout = timeout
         # Restrict results to a whitelist of trusted domains (the VERTICAL supplies these — e.g.
         # peer-reviewed journals, guideline bodies, gov/authoritative sources). Empty → open web.
         self._include_domains = [d for d in (include_domains or []) if d]
+        # freshness: ISO date floor (Exa startPublishedDate) so "latest state" queries return recent
+        # pages, not the most-linked older ones. "" = no floor (byte-identical to today).
+        self._start_published_date = start_published_date
 
     async def search(self, query: str, *, max_results: int = 8) -> list[WebResult]:
         import httpx
@@ -37,6 +40,8 @@ class ExaWebSearch:
         }
         if self._include_domains:
             payload["includeDomains"] = self._include_domains   # trusted-sources-only
+        if self._start_published_date:
+            payload["startPublishedDate"] = self._start_published_date   # freshness floor
         headers = {"x-api-key": self._api_key, "content-type": "application/json"}
         # Exa is the ONLY web leg (no funded fallback provider): retry transient failures
         # (network / 5xx / 429) with a short backoff before giving up. A 4xx other than 429 is a

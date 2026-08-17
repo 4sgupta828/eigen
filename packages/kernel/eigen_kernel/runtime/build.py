@@ -45,17 +45,24 @@ def build_embedder(*, mode: ProviderMode | str | None = None, cassette_root: Pat
 
 def build_web(*, mode: ProviderMode | str | None = None,
               cassette_root: Path | None = None,
-              domains: tuple[str, ...] | list[str] | None = None) -> WebSearchClient:
+              domains: tuple[str, ...] | list[str] | None = None,
+              recent: bool = False) -> WebSearchClient:
     m = resolve_mode(mode)
     # Prefer Exa (neural search) when its key is set; else Tavily. Same WebSearchClient port.
-    # `domains` (from the vertical) restricts Exa to a trusted-sources whitelist.
+    # `domains` (from the vertical) restricts Exa to a trusted-sources whitelist. `recent` (freshness
+    # flag) biases the web leg to the last ~2 years so "latest state of the world" questions get
+    # current news/pages, not the most-linked 2024-era write-ups (the corpus still holds the history).
     inner = None
     if m is not ProviderMode.REPLAY:
         if os.environ.get("EXA_API_KEY"):
             from eigen_kernel.providers.exa_web import ExaWebSearch
-            inner = ExaWebSearch(include_domains=list(domains or []))
+            _floor = ""
+            if recent:
+                import datetime
+                _floor = (datetime.date.today() - datetime.timedelta(days=730)).isoformat() + "T00:00:00.000Z"
+            inner = ExaWebSearch(include_domains=list(domains or []), start_published_date=_floor)
         else:
-            inner = TavilyWebSearch()
+            inner = TavilyWebSearch(time_range="year" if recent else "")
     return CassetteWebSearch(inner, cassette_root=cassette_root or default_cassette_root(),
                              namespace="web", mode=m)
 

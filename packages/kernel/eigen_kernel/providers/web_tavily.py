@@ -14,9 +14,12 @@ TAVILY_URL = "https://api.tavily.com/search"
 
 
 class TavilyWebSearch:
-    def __init__(self, *, api_key: str | None = None, timeout: float = 18.0):
+    def __init__(self, *, api_key: str | None = None, timeout: float = 18.0, time_range: str = ""):
         self._api_key = api_key or os.environ.get("TAVILY_API_KEY", "")
         self._timeout = timeout
+        # freshness: bias to a recency window ("day"|"week"|"month"|"year"); "" = no filter (open
+        # recency, byte-identical). Fixes "latest state" answers returning old, highly-relevant pages.
+        self._time_range = time_range
 
     async def search(self, query: str, *, max_results: int = 8) -> list[WebResult]:
         import httpx
@@ -26,6 +29,8 @@ class TavilyWebSearch:
             "max_results": max_results,
             "include_raw_content": True,
         }
+        if self._time_range:
+            payload["time_range"] = self._time_range
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.post(TAVILY_URL, json=payload)
             resp.raise_for_status()

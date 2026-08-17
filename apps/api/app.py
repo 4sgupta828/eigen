@@ -819,7 +819,8 @@ def build_default_service() -> ResearchService:
     else:
         sources = dict(manifest.retrieval_sources)      # fixture (in-memory) corpus
     sources["web"] = WebRetrievalSource(
-        build_web(mode=mode, domains=getattr(manifest, "web_domains", ())),
+        build_web(mode=mode, domains=getattr(manifest, "web_domains", ()),
+                  recent=freshness_ranking_enabled()),
         # venue-authority facets + the corpus embedder: web evidence gets graded and reranked
         # by the same machinery as corpus evidence (authority tiers, recency, query relevance)
         domain_facets=getattr(manifest, "web_domain_facets", None),
