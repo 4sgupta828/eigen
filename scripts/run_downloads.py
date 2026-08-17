@@ -7,7 +7,7 @@ paces the queue serially. We do NOT block on unavailable sources (see docs/downl
 
 Usage:
   EIGEN_ADMIN_TOKEN=... python scripts/run_downloads.py <tranche> [--limit N] [--dry]
-  tranches: depth | formd | openalex | arxiv | s2 | github | all
+  tranches: depth | formd | openalex | arxiv | s2 | crossref | github | all
   --dry prints the jobs without enqueuing.
 """
 from __future__ import annotations
@@ -64,6 +64,14 @@ S2_QUERIES = [
     "neural network quantization","dense retrieval","diffusion models generative",
 ]
 
+# --- T2: Crossref (DOI/venue authority + citations, verified_structured/technical_signal; keyless) ---
+CROSSREF_QUERIES = [
+    "large language model","retrieval augmented generation","mixture of experts transformer",
+    "reinforcement learning from human feedback","parameter efficient fine tuning","vector database search",
+    "neural machine translation attention","diffusion model image synthesis","graph neural network",
+    "self supervised representation learning","knowledge graph embedding","federated learning privacy",
+]
+
 # --- T2: arXiv preprints (technical_signal, unreviewed; keyless; stamp sector=ai) ---
 ARXIV_QUERIES = [
     "large language model inference","retrieval augmented generation","llm agents tool use",
@@ -108,6 +116,9 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("s2","all"):
         for qy in S2_QUERIES:
             jobs.append({"connector":"semantic_scholar","query":qy,"limit":limit or 20,"facets":{"sector":"ai"}})
+    if tranche in ("crossref","all"):
+        for qy in CROSSREF_QUERIES:
+            jobs.append({"connector":"crossref","query":qy,"limit":limit or 20,"facets":{"sector":"ai"}})
     if tranche in ("github","all"):
         for o in GITHUB_ORGS:
             jobs.append({"connector":"github","query":o,"limit":limit or 8})
@@ -115,7 +126,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","github","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","github","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
