@@ -473,6 +473,16 @@ def freshness_ranking_enabled() -> bool:
     return os.environ.get("EIGEN_FRESHNESS_RANKING", "").lower() in ("1", "true", "yes")
 
 
+def answer_contract_enabled() -> bool:
+    """Flag (default OFF, Rule 20): when ON, one LLM classification per question derives an evidence
+    STANCE (via the vertical's contract_prompt), and the vertical's `answer_profiles[stance]` re-tunes
+    retrieval + ranking + compose for THAT question — "current" (latest/news → recency-first, authority
+    suppressed, lead with newest) vs "established" (proven/benchmarked/reviewed → authority-first) vs
+    "balanced" (today's behavior). Retrieval stays generic; the contract is the single locus of
+    intelligence. OFF → no stance is resolved and every knob is byte-identical to today."""
+    return os.environ.get("EIGEN_ANSWER_CONTRACT", "").lower() in ("1", "true", "yes")
+
+
 def evidence_identity_enabled() -> bool:
     """Flag (default OFF, Rule 20 — Evidence Contract stage 1): when ON, every LLM-visible evidence
     surface (planner observations, claims-first extractor + entailment items, compose findings, panel
@@ -820,7 +830,7 @@ def build_default_service() -> ResearchService:
         sources = dict(manifest.retrieval_sources)      # fixture (in-memory) corpus
     sources["web"] = WebRetrievalSource(
         build_web(mode=mode, domains=getattr(manifest, "web_domains", ()),
-                  recent=freshness_ranking_enabled()),
+                  recent=(freshness_ranking_enabled() or answer_contract_enabled())),
         # venue-authority facets + the corpus embedder: web evidence gets graded and reranked
         # by the same machinery as corpus evidence (authority tiers, recency, query relevance)
         domain_facets=getattr(manifest, "web_domain_facets", None),
@@ -888,6 +898,7 @@ def build_default_service() -> ResearchService:
         evidence_fitness=evidence_fitness_enabled(),
         evidence_ranker=getattr(getattr(manifest, "authority_policy", None), "rank", None),
         freshness=(getattr(manifest, "freshness_policy", None) or None) if freshness_ranking_enabled() else None,
+        answer_profiles=(getattr(manifest, "answer_profiles", None) or None) if answer_contract_enabled() else None,
         evidence_identity=evidence_identity_enabled(),
         claim_congruence=claim_congruence_enabled(),
         question_contract=question_contract_mode(),
@@ -1215,6 +1226,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "answer_visuals_enabled": answer_visuals_enabled(),
             "answer_charts_enabled": answer_charts_enabled(),
             "freshness_ranking_enabled": freshness_ranking_enabled(),
+            "answer_contract_enabled": answer_contract_enabled(),
             "reasoning_read_enabled": reasoning_read_enabled() and structured_answers(),
             "diag_trace_enabled": diag_trace_enabled(),
             "evidence_fitness_enabled": evidence_fitness_enabled(),

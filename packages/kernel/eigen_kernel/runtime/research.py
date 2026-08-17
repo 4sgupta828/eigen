@@ -103,6 +103,9 @@ class ResearchService:
     freshness: dict | None = None           # vertical freshness policy {min_rank,weight,horizon_years}
     #                                         (flag EIGEN_FRESHNESS_RANKING): recency re-order + as-of
     #                                         disclosure. None → byte-identical to today.
+    answer_profiles: dict | None = None     # ANSWER-CONTRACT (flag EIGEN_ANSWER_CONTRACT): {stance:
+    #                                         profile} — one classification customizes retrieval+
+    #                                         ranking+compose per question. None → byte-identical.
     evidence_identity: bool = False         # render each atom's document identity ⟨title — source⟩ on
     #                                         every LLM-visible surface (Evidence Contract stage 1, flag)
     claim_congruence: bool = False          # unified batched BINDING judge over loop/claims-first/
@@ -470,7 +473,7 @@ class ResearchService:
             collect_diagnostics=self.collect_diagnostics,
             classify_evidence=self.classify_evidence,
             evidence_fitness=self.evidence_fitness, evidence_ranker=self.evidence_ranker,
-            freshness=self.freshness,
+            freshness=self.freshness, answer_profiles=self.answer_profiles,
             evidence_identity=self.evidence_identity, claim_congruence=self.claim_congruence,
             question_contract=self.question_contract, contract_prompt=self.contract_prompt,
             explore_legs=self.explore_legs,

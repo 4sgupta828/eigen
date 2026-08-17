@@ -18,6 +18,7 @@ from .authority import TechAuthorityPolicy
 from .connectors import (ArxivConnector, CrossrefConnector, EdgarConnector, GdeltConnector,
                          GithubConnector, HackerNewsConnector, OpenAlexConnector, PatentsViewConnector,
                          SemanticScholarConnector, WikidataConnector)
+from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT
 from .eval_gold import GOLD
 from .freshness import TECH_FRESHNESS_POLICY
 from .fixtures import sample_filings, sample_papers
@@ -77,6 +78,10 @@ def build_manifest() -> VerticalManifest:
         web_domain_facets=WEB_DOMAIN_FACETS,
         # Fast-moving tech: recency re-orders ALL tiers over a short horizon (flag EIGEN_FRESHNESS_RANKING).
         freshness_policy=TECH_FRESHNESS_POLICY,
+        # Question-driven evidence regime (flag EIGEN_ANSWER_CONTRACT): one classification →
+        # current/established/balanced → customizes retrieval+ranking+compose per question.
+        contract_prompt=TECH_CONTRACT_PROMPT,
+        answer_profiles=ANSWER_PROFILES,
         # Sub-vertical seam: sectors as a per-question subject scope (AI seeded), NOT separate verticals.
         sector_profiles=SECTOR_PROFILES,
         # Analytical lenses (the orthogonal axis): angles applied within the active sector.

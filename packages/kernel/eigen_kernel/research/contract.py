@@ -26,6 +26,12 @@ class Contract:
     mode: str                                  # "enumerative" | "exploratory"
     entities: list[str] = field(default_factory=list)   # candidate items (enumerative mode)
     axes: list[str] = field(default_factory=list)       # required evidence dimensions (short phrases)
+    # Evidence STANCE (answer-contract): the vertical-defined regime a question demands — e.g.
+    # "current" (news/latest → recency-first) vs "established" (proven/benchmarked/reviewed →
+    # authority-first). An OPAQUE string: the kernel never interprets it; the vertical names the
+    # stances in its derivation prompt and defines each one's knobs in `answer_profiles`. "" = no
+    # stance emitted → the caller keeps its default regime (byte-identical).
+    stance: str = ""
 
 
 class _ContractOut(BaseModel):
@@ -34,6 +40,7 @@ class _ContractOut(BaseModel):
     mode: str = "exploratory"
     entities: list[str] = []
     axes: list[str] = []
+    stance: str = ""                            # evidence regime (vertical-defined); "" = default
 
 
 async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str | None,
@@ -61,10 +68,11 @@ async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str 
                 if isinstance(e, str) and e.strip()]
     axes = [a.strip() for a in (getattr(p, "axes", None) or [])
             if isinstance(a, str) and a.strip()]
+    stance = (getattr(p, "stance", "") or "").strip().lower()   # opaque; validated by the vertical map
     if mode == "enumerative" and not entities:
         mode = "exploratory"                   # nothing to enumerate → inert contract, not None,
         #                                        so the derivation verdict stays observable in diag
-    return Contract(mode=mode, entities=entities, axes=axes)
+    return Contract(mode=mode, entities=entities, axes=axes, stance=stance)
 
 
 def build_legs(contract: Contract | None, *, cap: int = 12,

@@ -632,6 +632,13 @@ async def run_react(
     #                                           (flag EIGEN_FRESHNESS_RANKING). Re-orders the claim pool by
     #                                           recency across all tiers + drives the as-of/staleness
     #                                           disclosure below. None → byte-identical to today.
+    answer_profiles: dict | None = None,      # ANSWER-CONTRACT (flag EIGEN_ANSWER_CONTRACT): {stance:
+    #                                           profile} map. The derived contract's `stance` selects a
+    #                                           profile whose knobs (recency / suppress_authority /
+    #                                           web_recency_days / planner_steer / answer_directive)
+    #                                           customize retrieval+ranking+compose PER QUESTION. When a
+    #                                           profile supplies `recency` it OVERRIDES the static
+    #                                           `freshness` above. None / no match → today's behavior.
     exclude_facets: dict | None = None,       # EXCLUSION facet filter applied to every retrieval leg
     graph_legs: list[dict] | None = None,     # A9 graph-guided evidence legs: [{query, note}] from the
     #                                           relationship graph (caller-computed). Run ONCE before the
@@ -872,6 +879,11 @@ async def run_react(
         # "empty ONLY if NONE relevant" clause is the loophole the recovery must override).
         if mode != "extract":
             instr = instr + discipline
+        # ANSWER-CONTRACT planner steer: the resolved stance profile nudges WHAT to search for this
+        # question (e.g. "current" → also search the most recent releases/announcements; "established"
+        # → prefer benchmarked/peer-reviewed sources). "" → byte-identical. Not applied in extract mode.
+        if _steer and mode != "extract":
+            instr = instr + " " + _steer
         # One fresh user message per step (all evidence so far). Ends with a user
         # turn — required by chat LLMs — and keeps the agent stateless per step.
         # img_ctx (if any) frames the search but is never merged into `question` (so it
@@ -984,7 +996,8 @@ async def run_react(
     # when explore_legs is on; OFF strips them right here so nothing downstream can consume them.
     _contract = None
     _c_stash: list[tuple[str, list]] = []       # steer: (query, hits) held back until post-loop
-    if question_contract in ("shadow", "steer") and (contract_prompt or "").strip():
+    # derive the contract when the QuestionContract flag is on OR the ANSWER-CONTRACT needs a stance
+    if ((question_contract in ("shadow", "steer")) or answer_profiles) and (contract_prompt or "").strip():
         from eigen_kernel.research.contract import build_legs, derive_contract
         try:
             budget.reserve()
@@ -996,7 +1009,8 @@ async def run_react(
             result.question_contract = {        # phase 0) — independent of the diagnostics flag
                 "mode": _contract.mode,
                 "entities": list(_contract.entities),
-                "axes": list(_contract.axes)}
+                "axes": list(_contract.axes),
+                "stance": _contract.stance}
         _c_graph_qs = {(_l.get("query") or "").strip() for _l in (graph_legs or [])[:2]}
         _c_queries = build_legs(_contract, cap=12, exclude=_c_graph_qs)
         if _contract is not None and _contract.mode == "exploratory" and not explore_legs:
@@ -1036,6 +1050,22 @@ async def run_react(
             await emit({"type": "contract", "mode": question_contract,
                         "contract_mode": _contract.mode,
                         "entities": list(_contract.entities), "legs": list(_c_queries)})
+
+    # ANSWER-CONTRACT resolution: the derived contract's `stance` selects ONE opaque profile whose
+    # knobs re-tune retrieval+ranking+compose for THIS question. `answer_profiles` None / no stance /
+    # unmatched stance → `_profile` None → every effective knob below is today's behavior (byte-identical).
+    _profile = (answer_profiles or {}).get((_contract.stance or "")) if (answer_profiles and _contract) else None
+    _ac = _profile is not None
+    _eff_freshness = _profile.get("recency") if _ac else freshness   # profile recency OVERRIDES static
+    _suppress_auth = bool(_ac and _profile.get("suppress_authority"))
+    _steer = (_profile.get("planner_steer") or "").strip() if _ac else ""
+    _answer_dir = (_profile.get("answer_directive") or "").strip() if _ac else ""
+    _web_recency_days = _profile.get("web_recency_days") if _ac else None
+    # the tier-boost/recency ranker argument, honoring per-question authority suppression
+    _ranker_arg = None if _suppress_auth else (evidence_ranker if evidence_fitness else None)
+    if _ac:
+        _log.info("answer-contract stance=%s recency=%s suppress_authority=%s web_days=%s",
+                  _contract.stance, bool(_eff_freshness), _suppress_auth, _web_recency_days)
 
     stale_searches = 0          # consecutive searches that added NO new atoms (spinning detector)
     premature_answers = 0       # zero-evidence answer attempts (see the guard below)
@@ -1408,11 +1438,11 @@ async def run_react(
                and _contract.mode == "enumerative" and bool(_contract.entities))
     if _c_enum and len(result.verified_claims) > compose_claim_cap:
         from eigen_kernel.research.contract import match_entities
-        if evidence_select or evidence_fitness or country_boost or freshness:
+        if evidence_select or evidence_fitness or country_boost or _eff_freshness or _suppress_auth:
             base = await _rank_claims_by_relevance(
                 question, result.verified_claims, embedder, len(result.verified_claims),
-                evidence_ranker=(evidence_ranker if evidence_fitness else None),
-                country_boost=country_boost, rank_all=True, freshness=freshness)
+                evidence_ranker=_ranker_arg,
+                country_boost=country_boost, rank_all=True, freshness=_eff_freshness)
         else:
             base = list(result.verified_claims)     # first-come — today's default ordering
         _queues: dict[str, list] = {}               # entity → its claims, best-ranked first
@@ -1449,12 +1479,12 @@ async def run_react(
     # RELEVANT to the question; under evidence-fitness, additionally boost stronger evidence TIERS into
     # the cap (span+entailment already passed → provenance unchanged; this only reorders/trims already-
     # verified claims). Either flag triggers the ranking pass.
-    if (evidence_select or evidence_fitness or country_boost or freshness) and len(result.verified_claims) > compose_claim_cap:
+    if (evidence_select or evidence_fitness or country_boost or _eff_freshness or _suppress_auth) and len(result.verified_claims) > compose_claim_cap:
         await emit({"type": "selecting", "from": len(result.verified_claims), "to": compose_claim_cap})
         result.verified_claims = await _rank_claims_by_relevance(
             question, result.verified_claims, embedder, compose_claim_cap,
-            evidence_ranker=(evidence_ranker if evidence_fitness else None),
-            country_boost=country_boost, freshness=freshness)
+            evidence_ranker=_ranker_arg,
+            country_boost=country_boost, freshness=_eff_freshness)
 
     # EVIDENCE CONTRACT stage 3 — the SLOT GRID (observability, both modes) + honest coverage
     # gaps (steer only). The grid counts, per contract entity, the FINAL selected claims that
@@ -1522,7 +1552,7 @@ async def run_react(
         def _finding_year(vc) -> str:
             """Freshness disclosure (flag): surface each finding's publication YEAR so compose can SEE
             evidence age + flag staleness. OFF (freshness None) → "" and the line is byte-identical."""
-            if not freshness:
+            if not _eff_freshness:
                 return ""
             yr = str((getattr(vc, "facets", None) or {}).get("year") or "")[:4]
             return f" [{yr}]" if yr.isdigit() else ""
@@ -1535,7 +1565,7 @@ async def run_react(
         # FRESHNESS disclosure metadata (flag): compute the as-of year, the newest/oldest cited year,
         # and a stale_warning when the freshest evidence predates the vertical's recency horizon — so
         # the UI + the answer can say "as of <year>" instead of presenting dated facts as current.
-        if freshness:
+        if _eff_freshness:
             import datetime as _dt
             _now = _dt.date.today().year
             _yrs = []
@@ -1543,7 +1573,7 @@ async def run_react(
                 _y = str((getattr(vc, "facets", None) or {}).get("year") or "")[:4]
                 if _y.isdigit() and int(_y) <= _now:   # ignore bogus future-dated records
                     _yrs.append(int(_y))
-            _hz = max(1, int(freshness.get("horizon_years", _RECENCY_HORIZON_YEARS)))
+            _hz = max(1, int(_eff_freshness.get("horizon_years", _RECENCY_HORIZON_YEARS)))
             result.freshness = {
                 "as_of": _now,
                 "newest_year": max(_yrs) if _yrs else None,
@@ -1611,7 +1641,11 @@ async def run_react(
                    "question asks for the current/latest/frontier state or trajectory, state the year of "
                    "your most recent evidence and, if it predates this year, explicitly note the answer is "
                    "'as of' that year and may be dated — do NOT present older evidence as current."
-                   if freshness else "")
+                   if _eff_freshness else "")
+                # ANSWER-CONTRACT: the resolved stance profile's framing directive (e.g. "current" →
+                # lead with the newest, labeled announced/unbenchmarked; "established" → prioritize
+                # benchmarked/peer-reviewed evidence). "" when no profile → byte-identical.
+                + (("\n\n" + _answer_dir) if _answer_dir else "")
                 # REASONING READ (flag): anchor the structured interpretation/confidence fields at the
                 # KERNEL level, symmetric to the directly_addresses metadata above — the domain-free
                 # mechanics live here; the domain MEANING (what each kind is, neutrality) is in the

@@ -157,6 +157,15 @@ class VerticalManifest:
     # boost; `horizon_years` = linear decay-to-zero age. Empty → recency stays the kernel default
     # (controlling-tier only, 0.10 / 12yr), i.e. byte-identical to today when the flag is off.
     freshness_policy: dict = field(default_factory=dict)
+    # Optional ANSWER-CONTRACT profiles (flag EIGEN_ANSWER_CONTRACT): the per-question evidence REGIME
+    # map. The vertical's `contract_prompt` classifies a question into a `stance` string; this map
+    # supplies each stance's opaque policy dict the kernel threads generically:
+    #   {stance: {"recency": {min_rank,weight,horizon_years}|None, "suppress_authority": bool,
+    #             "web_recency_days": int|None, "planner_steer": str, "answer_directive": str}}
+    # so ONE classification customizes retrieval + ranking + compose (e.g. "current" → recency-first
+    # news; "established" → authority-first benchmarked/reviewed). The kernel interprets NONE of the
+    # stance names — a legal/biotech vertical supplies its own. Empty → the contract sets no regime.
+    answer_profiles: dict = field(default_factory=dict)
     # Optional Evidence Pulse watch-topic prompts (LLM-owned judgment, Rule 18): suggest watchable
     # subjects for a Q&A / canonicalize a free-text topic — both against the stable topic registry
     # (repeated runs must converge on the same canonical strings, never variants). None → the
