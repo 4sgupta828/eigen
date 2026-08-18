@@ -1,7 +1,7 @@
-# Eigen API image — the TECH vertical (deep-tech research Q&A). LEAN: serves the API only.
-# Structured-API ingest synthesizes markdown; full-text paper ingest (HTML + DOCLING/torch PDF
-# parsing) runs on the SEPARATE ingest worker (deploy/Dockerfile.worker), so this image stays small
-# and deploys fast. Set EIGEN_INGEST_IN_API=false here so ingestion runs only on the worker.
+# Eigen image — the TECH vertical (deep-tech research Q&A). ONE image, TWO roles (deploy/start.sh
+# dispatches on EIGEN_ROLE): the API service serves; the separate ingest-WORKER service runs the corpus
+# drain (full-text HTML + DOCLING/torch PDF parsing). docling is a cached layer, so API code pushes
+# don't rebuild it, and it's imported lazily so serving never loads torch. No Node/ffmpeg video add-on.
 FROM python:3.13-slim
 
 WORKDIR /app
@@ -16,7 +16,10 @@ RUN pip install --no-cache-dir --upgrade pip
 # image decode (vision uploads), a light PDF reader for attachments, numpy, and boto3 for R2.
 RUN pip install --no-cache-dir Pillow PyMuPDF numpy boto3
 
-# (docling/torch live on the ingest worker image, not here — keeps the API lean.)
+# DOCLING — full-text PDF-fallback parser for the WORKER role (arXiv HTML covers most papers with no
+# heavy dep). CPU-only torch; own cached layer so code pushes don't rebuild it; imported lazily so the
+# API role never loads it.
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu docling
 
 # Install the kernel (serve + postgres extras) and the TECH vertical.
 COPY packages packages
