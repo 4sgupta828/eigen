@@ -81,6 +81,40 @@ ARXIV_QUERIES = [
     "code generation llm","llm evaluation benchmark",
 ]
 
+# --- DEEP-TECH BREADTH: cross-domain topics beyond AI (the product is deep-tech intelligence broadly,
+# not just AI). Fanned across the research connectors (arxiv/openalex/s2/crossref/openreview) by the
+# `deeptech` tranche so the corpus covers the whole frontier, not one sector. ---
+DEEPTECH_TOPICS = [
+    # robotics & autonomy
+    "humanoid robotics control","robot manipulation learning","autonomous driving perception",
+    "SLAM simultaneous localization mapping","legged robot locomotion","drone swarm coordination",
+    # semiconductors & compute
+    "chiplet architecture interconnect","RISC-V processor design","silicon photonics computing",
+    "in-memory computing accelerator","AI inference ASIC","advanced lithography EUV",
+    # quantum
+    "quantum error correction","superconducting qubit","trapped ion quantum computing",
+    "quantum advantage algorithm",
+    # bio & health tech
+    "protein structure prediction","CRISPR gene editing","mRNA therapeutics","synthetic biology engineering",
+    "single cell RNA sequencing","AI drug discovery","brain computer interface",
+    # climate & energy
+    "solid state battery","green hydrogen electrolysis","direct air carbon capture",
+    "perovskite solar cell","nuclear fusion tokamak","grid scale energy storage","geothermal drilling",
+    # space
+    "reusable rocket propulsion","satellite constellation broadband","in-space manufacturing",
+    # materials & manufacturing
+    "2D materials graphene","metamaterials photonics","metal additive manufacturing","solid electrolyte",
+    # security & cryptography
+    "post quantum cryptography","zero knowledge proof","confidential computing enclave",
+    "homomorphic encryption",
+    # data / dev infra
+    "vector database indexing","stream processing systems","data lakehouse architecture",
+    "wasm edge computing",
+    # fintech / spatial / neuro
+    "real time payments infrastructure","decentralized finance protocol","augmented reality waveguide display",
+    "neural rendering 3D reconstruction",
+]
+
 # --- T2: Wikidata company profiles (KEYLESS Crunchbase fallback: founders/ownership/M&A; reference tier) ---
 WIKIDATA_NAMES = [
     "OpenAI","Anthropic","Databricks","Scale AI","Anduril Industries","xAI","Cohere","Perplexity AI",
@@ -202,6 +236,16 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("companies_house","all"):
         for qy in CH_QUERIES:
             jobs.append({"connector":"companies_house","query":qy,"limit":limit or 10})
+    # DEEP-TECH BREADTH: fan the cross-domain topics across the research connectors so the corpus
+    # covers the whole frontier (robotics/semi/quantum/bio/climate/space/materials/security/…), not
+    # just AI. NOT in "all" (it's a large, deliberate breadth pass) — run explicitly: `deeptech`.
+    if tranche == "deeptech":
+        for qy in DEEPTECH_TOPICS:
+            jobs.append({"connector":"arxiv","query":qy,"limit":limit or 20})
+            jobs.append({"connector":"openalex","query":qy,"limit":limit or 20})
+            jobs.append({"connector":"semantic_scholar","query":qy,"limit":limit or 15})
+            jobs.append({"connector":"crossref","query":qy,"limit":limit or 15})
+            jobs.append({"connector":"openreview","query":qy,"limit":limit or 10})
     if tranche in ("uspto","all"):
         for qy in USPTO_QUERIES:
             jobs.append({"connector":"uspto","query":qy,"limit":limit or 25})
@@ -225,7 +269,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","hf","stackoverflow","openreview","companies_house","uspto","github","recent","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","hf","stackoverflow","openreview","companies_house","uspto","github","recent","deeptech","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
