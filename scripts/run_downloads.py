@@ -81,6 +81,47 @@ ARXIV_QUERIES = [
     "code generation llm","llm evaluation benchmark",
 ]
 
+# --- SEMINAL WORKS: the FOUNDATIONAL trunk of the field. The recency/relevance lanes miss these (an
+# ingest query for "RAG" returns 2024 derivatives, not the 2020 original), so the corpus loses to web
+# on genesis/history questions. Curated landmark TITLES fetched exact via OpenAlex title.search+cited
+# (verified to return the exact paper), so the seminal works are GUARANTEED in the corpus. ---
+SEMINAL_PAPERS = [
+    "Attention Is All You Need",
+    "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+    "Language Models are Few-Shot Learners",
+    "Deep Residual Learning for Image Recognition",
+    "ImageNet Classification with Deep Convolutional Neural Networks",
+    "Adam: A Method for Stochastic Optimization",
+    "Generative Adversarial Networks",
+    "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+    "Denoising Diffusion Probabilistic Models",
+    "High-Resolution Image Synthesis with Latent Diffusion Models",
+    "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models",
+    "LoRA: Low-Rank Adaptation of Large Language Models",
+    "Training language models to follow instructions with human feedback",
+    "Learning Transferable Visual Models From Natural Language Supervision",
+    "Scaling Laws for Neural Language Models",
+    "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness",
+    "LLaMA: Open and Efficient Foundation Language Models",
+    "Efficient Estimation of Word Representations in Vector Space",
+    "Sequence to Sequence Learning with Neural Networks",
+    "Neural Machine Translation by Jointly Learning to Align and Translate",
+    "Playing Atari with Deep Reinforcement Learning",
+    "Mastering the game of Go with deep neural networks and tree search",
+    "Highly accurate protein structure prediction with AlphaFold",
+    "Dropout: A Simple Way to Prevent Neural Networks from Overfitting",
+    "Batch Normalization: Accelerating Deep Network Training",
+    "Long Short-Term Memory",
+    "Distilling the Knowledge in a Neural Network",
+    "Mixtral of Experts",
+    "Direct Preference Optimization",
+    "Segment Anything",
+    "Emergent Abilities of Large Language Models",
+    "GPT-4 Technical Report",
+    "Quantum supremacy using a programmable superconducting processor",
+    "Deep learning",
+]
+
 # --- DEEP-TECH BREADTH: cross-domain topics beyond AI (the product is deep-tech intelligence broadly,
 # not just AI). Fanned across the research connectors (arxiv/openalex/s2/crossref/openreview) by the
 # `deeptech` tranche so the corpus covers the whole frontier, not one sector. ---
@@ -280,6 +321,13 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("podcast","all"):
         for qy in ("deep tech","AI","engineering"):
             jobs.append({"connector":"podcast","query":qy,"limit":limit or 30})
+    if tranche in ("seminal","all"):
+        # curated landmark papers, exact-title → the exact seminal work (closes the genesis/history gap)
+        for title in SEMINAL_PAPERS:
+            jobs.append({"connector":"openalex","query":title,"limit":2,"params":{"sort":"cited"}})
+        # + citation-ranked breadth: the most-cited titled works per deep-tech topic (foundational trunk)
+        for qy in DEEPTECH_TOPICS:
+            jobs.append({"connector":"openalex","query":qy,"limit":limit or 12,"params":{"sort":"cited"}})
     # RECENT lane: re-pull the paper sources newest-first / floored at >=2010 so the corpus isn't
     # relevance-skewed to old highly-cited work. Not part of "all" (it re-queries the same topics with
     # a freshness filter) — run explicitly: `run_downloads.py recent`.
@@ -300,7 +348,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","github","recent","deeptech","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","seminal","github","recent","deeptech","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--priority", type=int, default=0,
                     help="claim priority (higher = jumps the FIFO backlog; e.g. 500 for strategic sources)")

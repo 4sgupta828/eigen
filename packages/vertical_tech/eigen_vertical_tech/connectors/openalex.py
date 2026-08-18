@@ -30,15 +30,25 @@ class OpenAlexConnector:
 
     async def _search(self, query: str, limit: int, *, sort: str = "", from_year: str = "") -> list[dict]:
         import json
+        import urllib.parse
         per = min(200, max(1, limit))
-        q = query.replace(" ", "%20")
-        url = f"{API}?search={q}&per_page={per}&mailto={_MAILTO}"
-        # freshness ingest lane: a from-year floor and/or newest-first sort so the corpus captures
-        # RECENT works, not just the most-cited older ones (default = relevance, unchanged).
+        # SEMINAL ingest lane (sort=cited): the FOUNDATIONAL works OF THE TOPIC. Broad full-text
+        # search + citation sort fails — it returns universally-mega-cited papers (SciPy, etc.) that
+        # loosely match. Restrict to TITLE matches, then sort by citations, so the top hits are the
+        # seminal papers of that topic (e.g. the original "Retrieval-Augmented Generation…" paper).
+        filters = []
+        if str(sort).lower() == "cited":
+            filters.append("title.search:" + urllib.parse.quote(query))
+            url = f"{API}?per_page={per}&mailto={_MAILTO}&sort=cited_by_count:desc"
+        else:
+            url = f"{API}?search={query.replace(' ', '%20')}&per_page={per}&mailto={_MAILTO}"
+            if str(sort).lower() == "recent":
+                url += "&sort=publication_date:desc"
+        # freshness floor (any lane): a from-year filter so a lane can capture recent works.
         if from_year and str(from_year)[:4].isdigit():
-            url += f"&filter=from_publication_date:{str(from_year)[:4]}-01-01"
-        if str(sort).lower() == "recent":
-            url += "&sort=publication_date:desc"
+            filters.append(f"from_publication_date:{str(from_year)[:4]}-01-01")
+        if filters:
+            url += "&filter=" + ",".join(filters)
         data = json.loads(await self.fetch_strategy.fetch(url))
         return (data.get("results") or [])[:limit]
 
