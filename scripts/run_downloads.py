@@ -322,11 +322,14 @@ def build(tranche: str, limit: int | None) -> list[dict]:
         for qy in ("deep tech","AI","engineering"):
             jobs.append({"connector":"podcast","query":qy,"limit":limit or 30})
     if tranche == "fulltext":
-        # FULL-TEXT depth: re-ingest high-value arXiv papers with the WHOLE body (HTML-first, docling
-        # PDF fallback) instead of just the abstract → ~30-40 blocks/paper, so answers ground in
-        # methods/results. Expensive (many embeddings/paper), so modest limits. Not part of "all".
-        for qy in (ARXIV_QUERIES + DEEPTECH_TOPICS[:20]):
-            jobs.append({"connector":"arxiv","query":qy,"limit":limit or 8,"params":{"fulltext":True}})
+        # FULL-TEXT depth: re-ingest arXiv papers with the WHOLE body (HTML-first, docling PDF fallback)
+        # instead of the abstract → answers ground in methods/results, not just the abstract. Runs on
+        # the ingest worker (docling); arXiv rate-limits, so the connector paces. Not part of "all".
+        for qy in (ARXIV_QUERIES + DEEPTECH_TOPICS):
+            jobs.append({"connector":"arxiv","query":qy,"limit":limit or 6,"params":{"fulltext":True}})
+        # the seminal landmark papers, full-text (fetched by exact title via arXiv)
+        for title in SEMINAL_PAPERS:
+            jobs.append({"connector":"arxiv","query":title,"limit":1,"params":{"fulltext":True}})
     if tranche in ("seminal","all"):
         # curated landmark papers, exact-title → the exact seminal work (closes the genesis/history gap)
         for title in SEMINAL_PAPERS:
