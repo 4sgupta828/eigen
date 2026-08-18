@@ -74,6 +74,7 @@ def index_document(
     repo: CorpusRepository,
     embedder: Embedder | None = None,
     min_chars: int = 1,
+    target_chars: int = 0,
 ) -> IndexSummary:
     """parse → block → (optionally embed) → persist for one Document.
 
@@ -90,7 +91,7 @@ def index_document(
     repo.add_parsed(ParsedDoc(document_id=document.id, text=text,
                               parser_version=getattr(parser, "version", "parser.v1")))
 
-    blocks = _splitter.split(document.id, text, min_chars=min_chars)
+    blocks = _splitter.split(document.id, text, min_chars=min_chars, target_chars=target_chars)
     repo.add_blocks(blocks)
     summary.blocks = len(blocks)
 

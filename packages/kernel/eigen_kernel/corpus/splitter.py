@@ -10,7 +10,7 @@ from __future__ import annotations
 from eigen_kernel.corpus.models import Block
 from eigen_kernel.ingestion.storage import content_key
 
-SPLITTER_VERSION = "para.v2"
+SPLITTER_VERSION = "para.v3"   # v3: optional target_chars coalescing (default output unchanged)
 
 # Hard cap on a single block's characters. A paragraph longer than this is sub-split at whitespace
 # boundaries so no block can exceed an embedder's input-token limit (OpenAI text-embedding-3 = 8192
@@ -47,10 +47,14 @@ def _heading_level(line: str) -> int | None:
 
 
 def split(document_id: str, text: str, *, min_chars: int = 1,
-          max_chars: int = MAX_BLOCK_CHARS) -> list[Block]:
-    blocks: list[Block] = []
+          max_chars: int = MAX_BLOCK_CHARS, target_chars: int = 0) -> list[Block]:
+    """Paragraph blocks with an optional COALESCE pass (target_chars > 0): consecutive paragraphs in
+    the SAME section are merged into one block until ~target_chars (never exceeding max_chars), so a
+    long full-text document yields coherent multi-paragraph blocks instead of hundreds of fragments
+    that scatter context. target_chars <= 0 → one block per paragraph (byte-identical to before)."""
+    # First pass → per-paragraph pieces (text, char_start, section); a second pass coalesces them.
+    pieces: list[tuple[str, int, tuple]] = []
     section: list[str] = []          # current heading stack (titles)
-    index = 0
     pos = 0
     n = len(text)
 
@@ -99,16 +103,37 @@ def split(document_id: str, text: str, *, min_chars: int = 1,
             if len(piece) < min_chars:
                 offset += len(piece)
                 continue
-            char_start = base + offset
-            blocks.append(Block(
-                document_id=document_id,
-                index=index,
-                content_key=content_key(piece.encode("utf-8")),
-                text=piece,
-                char_start=char_start,
-                char_end=char_start + len(piece),
-                section_path=tuple(section),
-            ))
-            index += 1
+            pieces.append((piece, base + offset, tuple(section)))
             offset += len(piece)
+
+    # ── Emit blocks: one per piece (default), or COALESCE same-section pieces up to target_chars. ──
+    blocks: list[Block] = []
+    index = 0
+
+    def _emit(txt: str, char_start: int, sec: tuple) -> None:
+        nonlocal index
+        blocks.append(Block(
+            document_id=document_id, index=index,
+            content_key=content_key(txt.encode("utf-8")), text=txt,
+            char_start=char_start, char_end=char_start + len(txt), section_path=sec))
+        index += 1
+
+    if target_chars and target_chars > 0:
+        buf: list[str] = []
+        buf_start = 0
+        buf_sec: tuple = ()
+        for txt, cstart, sec in pieces:
+            joined_len = sum(len(t) for t in buf) + (2 * len(buf))   # +\n\n between pieces
+            # flush when the section changes or adding this piece would overshoot the target
+            if buf and (sec != buf_sec or joined_len + len(txt) > target_chars):
+                _emit("\n\n".join(buf), buf_start, buf_sec)
+                buf = []
+            if not buf:
+                buf_start, buf_sec = cstart, sec
+            buf.append(txt)
+        if buf:
+            _emit("\n\n".join(buf), buf_start, buf_sec)
+    else:
+        for txt, cstart, sec in pieces:
+            _emit(txt, cstart, sec)
     return blocks

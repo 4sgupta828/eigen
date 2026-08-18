@@ -1,7 +1,7 @@
-# Eigen API image — the TECH vertical (deep-tech research Q&A).
-# Mostly lean: arXiv/EDGAR ingest synthesizes markdown from structured APIs. FULL-TEXT paper ingest is
-# HTML-first (no heavy deps); DOCLING is the PDF-FALLBACK parser (its one heavy dep is torch), imported
-# lazily so the serving path never loads it. No Node/ffmpeg video add-on.
+# Eigen API image — the TECH vertical (deep-tech research Q&A). LEAN: serves the API only.
+# Structured-API ingest synthesizes markdown; full-text paper ingest (HTML + DOCLING/torch PDF
+# parsing) runs on the SEPARATE ingest worker (deploy/Dockerfile.worker), so this image stays small
+# and deploys fast. Set EIGEN_INGEST_IN_API=false here so ingestion runs only on the worker.
 FROM python:3.13-slim
 
 WORKDIR /app
@@ -16,10 +16,7 @@ RUN pip install --no-cache-dir --upgrade pip
 # image decode (vision uploads), a light PDF reader for attachments, numpy, and boto3 for R2.
 RUN pip install --no-cache-dir Pillow PyMuPDF numpy boto3
 
-# DOCLING — the full-text PDF-fallback parser (arXiv HTML covers most papers with no heavy dep; docling
-# handles PDF-only/older papers). CPU-only torch to keep the image as small as this dep allows. Its own
-# cached layer so code pushes don't rebuild it. Imported lazily in the arxiv connector.
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu docling
+# (docling/torch live on the ingest worker image, not here — keeps the API lean.)
 
 # Install the kernel (serve + postgres extras) and the TECH vertical.
 COPY packages packages

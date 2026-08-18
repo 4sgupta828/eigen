@@ -397,6 +397,14 @@ def duel_enabled() -> bool:
     return os.environ.get("EIGEN_DUEL", "").lower() in ("1", "true", "yes")
 
 
+def ingest_in_api_enabled() -> bool:
+    """Whether the API process runs the corpus-ingest drain thread. Default TRUE (single-service
+    behavior). Set EIGEN_INGEST_IN_API=false once a SEPARATE ingest worker (deploy/Dockerfile.worker,
+    which carries docling for full-text PDF parsing) runs the drain — so ingestion runs ONLY on the
+    worker and the API stays lean. Job claims are atomic, so a brief overlap is safe, not doubled."""
+    return os.environ.get("EIGEN_INGEST_IN_API", "true").lower() not in ("0", "false", "no", "off")
+
+
 def source_routing_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_SOURCE_ROUTING lets the research agent name source TYPES to
     ALSO target for a query (an additive scoped retrieval leg on top of the flat search — never a
@@ -1068,7 +1076,10 @@ async def _gap_processor_loop(dsn: str, vertical: str) -> None:
                 window=_window,
                 object_store=object_store,
                 facet_overrides=_ov or None,
-                min_chars=40)   # drop metadata one-liner noise (panel: no tiny blocks)
+                min_chars=40,   # drop metadata one-liner noise (panel: no tiny blocks)
+                # COALESCE paragraphs into coherent ~1.8k-char blocks (full-text papers otherwise
+                # fragment into hundreds of tiny blocks that scatter context). Deep-tech tuned.
+                target_chars=1800)
             await q.complete(job["id"], n)
             if currency is not None:
                 try:
@@ -1200,7 +1211,8 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         prod-direct ingestion (gap-fill AND bulk batches) never blocks the API's serving loop.
         Replica-safe: each replica's thread claims jobs atomically, so N replicas share the drain."""
         dsn = os.environ.get("EIGEN_CORPUS_DSN")
-        if gap_healing_enabled() and dsn and not getattr(app.state, "_gap_thread", None):
+        if gap_healing_enabled() and dsn and ingest_in_api_enabled() \
+                and not getattr(app.state, "_gap_thread", None):
             import threading
             vertical = load_active_vertical().name
             t = threading.Thread(target=_run_gap_processor, args=(dsn, vertical),
