@@ -8,6 +8,7 @@ from .arxiv import ArxivConnector
 from .companies_house import CompaniesHouseConnector
 from .crossref import CrossrefConnector
 from .edgar import EdgarConnector
+from .eng_blog import EngBlogConnector
 from .gdelt import GdeltConnector
 from .github import GithubConnector
 from .hackernews import HackerNewsConnector
@@ -28,6 +29,7 @@ from .wikidata import WikidataConnector
 from .wikipedia import WikipediaConnector
 
 __all__ = ["ArxivConnector", "CompaniesHouseConnector", "CrossrefConnector", "EdgarConnector",
+           "EngBlogConnector",
            "ExpertFeedConnector", "GdeltConnector", "GithubConnector", "HackerNewsConnector",
            "HuggingFaceConnector", "LobstersConnector", "NihReporterConnector", "NsfConnector",
            "OpenAlexConnector",

@@ -321,6 +321,12 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("podcast","all"):
         for qy in ("deep tech","AI","engineering"):
             jobs.append({"connector":"podcast","query":qy,"limit":limit or 30})
+    if tranche in ("eng_blog","all"):
+        # feed connector ignores the query text (pulls its curated SOTA allowlist of company eng blogs);
+        # a few passes catch recent full-text items across all feeds. corp_eng → technical_signal tier.
+        for qy in ("distributed systems architecture","infrastructure at scale","reliability performance",
+                   "databases storage","machine learning platform"):
+            jobs.append({"connector":"eng_blog","query":qy,"limit":limit or 40})
     if tranche == "fulltext":
         # FULL-TEXT depth: re-ingest arXiv papers with the WHOLE body (HTML-first, docling PDF fallback)
         # instead of the abstract → answers ground in methods/results, not just the abstract. Runs on
@@ -357,7 +363,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","seminal","fulltext","github","recent","deeptech","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","eng_blog","seminal","fulltext","github","recent","deeptech","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--priority", type=int, default=0,
                     help="claim priority (higher = jumps the FIFO backlog; e.g. 500 for strategic sources)")

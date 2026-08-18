@@ -16,6 +16,7 @@ from .terms import TECH_TERMS_PROMPT
 from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
 from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnector, EdgarConnector,
+                         EngBlogConnector,
                          ExpertFeedConnector, GdeltConnector, GithubConnector, HackerNewsConnector,
                          HuggingFaceConnector, LobstersConnector, NihReporterConnector, NsfConnector,
                          OpenAlexConnector,
@@ -67,6 +68,7 @@ def build_manifest() -> VerticalManifest:
             "nsf": NsfConnector(),
             "nih_reporter": NihReporterConnector(),
             "expert_feed": ExpertFeedConnector(),
+            "eng_blog": EngBlogConnector(),
             "podcast": PodcastConnector(),
             "github": GithubConnector(),
             "patentsview": PatentsViewConnector(),

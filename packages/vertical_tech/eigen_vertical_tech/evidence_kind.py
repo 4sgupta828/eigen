@@ -46,6 +46,13 @@ def classify(source_key: str, facets: dict[str, str] | None, title: str = "", te
     # Hugging Face model-hub adoption (downloads/likes) — a real but self-reported adoption signal.
     if src_kind == "model" or sk == "huggingface":
         return "technical_signal"
+    # Company engineering blogs (Netflix/Cloudflare/Meta Eng/…) — a self-reported corporate account of
+    # how an org builds. Genuinely technical, but written BY the org ABOUT its own tech (self-promotion
+    # bias), so it sits at the SAME self-reported tier as github/preprints — deliberately BELOW a named
+    # individual's essay (expert_analysis) and never able to outrank fact-checked press on the org's own
+    # tech. STRUCTURAL: reads the source_kind the connector stamped, judges nothing.
+    if src_kind == "corp_eng" or sk == "eng_blog":
+        return "technical_signal"
 
     # 3b) EXPERT ANALYSIS — a NAMED expert's interpretation/foresight (essays, newsletters, recorded
     # expert/practitioner discussion). Opinion above an unreviewed preprint, below fact-checked press;
