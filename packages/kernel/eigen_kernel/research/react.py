@@ -15,7 +15,7 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
 _log = logging.getLogger(__name__)
@@ -93,6 +93,11 @@ class AgentStep(BaseModel):
     action: Literal["search", "answer"]
     query: str | None = None
     queries: list[str] = []     # optional reformulations → multi-query fusion (recall)
+    # SOURCE ROUTING (flag EIGEN_SOURCE_ROUTING): the agent may name source TYPES (opaque vertical-
+    # defined `source_kind` values) to ALSO target for this query. This adds a SCOPED retrieval leg ON
+    # TOP OF the unchanged flat search — never a filter (a mis-route can't lose recall, the flat pass
+    # still fires). Empty / flag off → byte-identical.
+    source_kinds: list[str] = []
     claims: list[ClaimOut] = []
 
     @field_validator("queries", "claims", mode="before")
@@ -694,6 +699,10 @@ async def run_react(
     #                                           evidence isn't demoted below filings on foresight/wisdom
     #                                           queries. ORs with the stance profile's suppression. Default
     #                                           False → today's behavior (byte-identical).
+    source_routing: bool = False,              # SOURCE ROUTING (flag EIGEN_SOURCE_ROUTING): when on, the
+    #                                           planner may emit AgentStep.source_kinds to ADD a scoped
+    #                                           retrieval leg (never a filter). Off → the field is ignored
+    #                                           and no scoped leg runs (byte-identical).
     retrieval_source_cap: float | None = None,  # SOURCE-DIVERSITY cap (flag EIGEN_RETRIEVAL_DIVERSITY):
     #                                           per multi-query fusion, cap any one source_key to
     #                                           ceil(k*frac) of the top-k pool (backfill preserves
@@ -894,6 +903,15 @@ async def run_react(
         # → prefer benchmarked/peer-reviewed sources). "" → byte-identical. Not applied in extract mode.
         if _steer and mode != "extract":
             instr = instr + " " + _steer
+        # SOURCE ROUTING (flag): tell the agent it MAY name source TYPES to also target for a query. This
+        # ADDS a scoped leg on top of the flat search (never restricts it), so route toward the source
+        # types most likely to hold the discriminator for THIS sub-question. Off → not mentioned.
+        if source_routing and mode != "extract":
+            instr = instr + (
+                " Optionally also set `source_kinds` (a list) to ALSO target specific SOURCE TYPES for "
+                "this query — use the source-type names described in your instructions, choosing the "
+                "one(s) most likely to hold the answer to THIS sub-question. Leave it empty to search "
+                "all sources; it only ADDS a targeted probe, it never removes the broad search.")
         # One fresh user message per step (all evidence so far). Ends with a user
         # turn — required by chat LLMs — and keeps the agent stateless per step.
         # img_ctx (if any) frames the search but is never merged into `question` (so it
@@ -1141,6 +1159,18 @@ async def run_react(
             corpus_co = (multi_query_retrieve(source, base_req, step.queries, embedder=embedder,
                                               source_cap_frac=retrieval_source_cap)
                          if step.queries else source.search(base_req))
+            # SOURCE ROUTING (flag): the agent may name source TYPES to ALSO target for this query.
+            # This is an ADDITIVE scoped leg ON TOP OF the flat corpus pass above — never a filter, so
+            # a mis-route can't lose recall (the flat leg still fires). Off / no source_kinds → no leg.
+            _routed_kinds = ([s.strip() for s in (step.source_kinds or [])
+                              if isinstance(s, str) and s.strip()] if source_routing else [])
+            routed_co = None
+            if _routed_kinds:
+                routed_req = replace(base_req,
+                                     facets={**base_req.facets, "source_kind": tuple(_routed_kinds)})
+                routed_co = (multi_query_retrieve(source, routed_req, step.queries, embedder=embedder,
+                                                  source_cap_frac=retrieval_source_cap)
+                             if step.queries else source.search(routed_req))
 
             # Intra-retrieval progress (additive): each leg announces the moment it lands —
             # {"type":"retrieving","source":<leg>,"hits":N} between 'search' and 'found' — so a
@@ -1152,15 +1182,22 @@ async def run_react(
                 await emit({"type": "retrieving", "source": leg, "hits": len(r)})
                 return r
 
+            # Assemble the retrieval legs: the flat corpus pass, the optional ADDITIVE routed leg
+            # (source-kind scoped, flag-gated), and the optional web leg — run concurrently. Off path
+            # (no routed leg, no web) is a single "corpus" leg, identical to before.
+            _legs = [("corpus", corpus_co)]
+            if routed_co is not None:
+                _legs.append(("corpus:routed", routed_co))
             if aux_source is not None:
-                got = await _timed("retrieval_ms", asyncio.gather(_traced_leg("corpus", corpus_co),
-                                           _traced_leg("web", aux_source.search(base_req)),
-                                           return_exceptions=True))
+                _legs.append(("web", aux_source.search(base_req)))
+            if len(_legs) > 1:
+                got = await _timed("retrieval_ms", asyncio.gather(
+                    *[_traced_leg(name, co) for name, co in _legs], return_exceptions=True))
                 hits = []
-                for leg, r in zip(("corpus", "web"), got):
+                for (leg, _co), r in zip(_legs, got):
                     if isinstance(r, Exception):
                         # a dead leg must be VISIBLE (Rule 13) — the answer proceeds on the other
-                        # leg, but the trace and diagnostics say the evidence base was degraded
+                        # legs, but the trace and diagnostics say the evidence base was degraded
                         _log.warning("%s search leg failed on %r: %s", leg, q, r)
                         if diag is not None:
                             diag.setdefault("failures", []).append(

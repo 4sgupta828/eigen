@@ -397,6 +397,14 @@ def duel_enabled() -> bool:
     return os.environ.get("EIGEN_DUEL", "").lower() in ("1", "true", "yes")
 
 
+def source_routing_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_SOURCE_ROUTING lets the research agent name source TYPES to
+    ALSO target for a query (an additive scoped retrieval leg on top of the flat search — never a
+    filter, so a mis-route can't lose recall). OFF → the agent's source_kinds field is ignored and no
+    scoped leg runs (byte-identical)."""
+    return os.environ.get("EIGEN_SOURCE_ROUTING", "").lower() in ("1", "true", "yes")
+
+
 def retrieval_diversity_frac() -> float | None:
     """Flag (default OFF, Rule 20): EIGEN_RETRIEVAL_DIVERSITY caps any single source_key to
     ceil(k*frac) of the top-k fused retrieval pool, so a volume-skewed source (e.g. 464k SEC blocks
@@ -960,6 +968,7 @@ def build_default_service() -> ResearchService:
         understanding_answer_format=getattr(manifest, "understanding_answer_format", None),
         understanding_query_hint=getattr(manifest, "understanding_query_hint", None),
         retrieval_source_cap=retrieval_diversity_frac(),
+        source_routing=source_routing_enabled(),
         vertical_name=manifest.name, ui=manifest.ui,
         connectors=connectors, corpus_source_key=corpus_key,
     )

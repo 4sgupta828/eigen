@@ -83,6 +83,9 @@ class ResearchService:
     alt_query_hint: str | None = None            # retrieval-steering hint for Alternative mode
     understanding_answer_format: str | None = None  # UNDERSTANDING engine: causal-model compose contract
     understanding_query_hint: str | None = None     # UNDERSTANDING engine: mechanism-steering hint
+    source_routing: bool = False                     # SOURCE ROUTING (flag EIGEN_SOURCE_ROUTING): let the
+    #                                                 agent name source TYPES to ALSO target per query
+    #                                                 (additive scoped leg, never a filter). False → off.
     retrieval_source_cap: float | None = None       # source-diversity cap (flag EIGEN_RETRIEVAL_DIVERSITY):
     #                                                 cap any one source_key to ceil(k*frac) of the top-k
     #                                                 fused pool so a volume-skewed source can't crowd out
@@ -482,6 +485,7 @@ class ResearchService:
             classify_evidence=self.classify_evidence,
             evidence_fitness=self.evidence_fitness, evidence_ranker=self.evidence_ranker,
             retrieval_source_cap=self.retrieval_source_cap, suppress_authority=suppress_authority,
+            source_routing=self.source_routing,
             freshness=self.freshness, answer_profiles=self.answer_profiles,
             evidence_identity=self.evidence_identity, claim_congruence=self.claim_congruence,
             question_contract=self.question_contract, contract_prompt=self.contract_prompt,
