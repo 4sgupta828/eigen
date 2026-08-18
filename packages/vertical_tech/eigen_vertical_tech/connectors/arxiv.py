@@ -1,10 +1,19 @@
-"""arXiv connector — preprint metadata (public API, Atom XML).
+"""arXiv connector — preprint metadata (public API, Atom XML) + optional FULL TEXT.
 
 discover_entities → query the arXiv API (or use injected fixture records); one EntityRef per
 paper. list_documents → one synthesized markdown paper-document per arXiv id. fetch_artifact →
 the assembled markdown bytes. Tests inject `papers` so they run offline.
+
+FULL TEXT (opt-in, window param `fulltext`): by default we synthesize title+abstract only (a
+paper = 2 blocks). With fulltext, fetch_artifact pulls the WHOLE paper body — HTML FIRST
+(arxiv.org/html/{id}, clean LaTeXML text, best for tables/equations, no heavy deps) and DOCLING
+as the PDF fallback (arxiv.org/pdf/{id}) for papers without HTML. The pipeline then chunks the
+body into many blocks, so questions can ground in methods/results, not just the abstract. docling
+is imported LAZILY — if it's absent the PDF fallback is skipped (HTML-only), never a crash.
 """
 from __future__ import annotations
+
+import logging
 
 from eigen_kernel.contract.dto import DocumentRef, EntityRef
 
@@ -12,6 +21,36 @@ from .. import paper_doc
 from ._http import HttpStrategy
 
 API = "https://export.arxiv.org/api/query"
+HTML_URL = "https://arxiv.org/html/{id}"
+PDF_URL = "https://arxiv.org/pdf/{id}"
+_FULLTEXT_MIN_CHARS = 3000        # a real full body dwarfs an abstract; below this → not real full text
+_log = logging.getLogger(__name__)
+
+
+def _strip_html(raw: bytes) -> str:
+    """arXiv HTML → plain text (stdlib only): drop script/style, unwrap tags, collapse whitespace."""
+    import html as _html
+    import re
+    s = raw.decode("utf-8", "ignore")
+    s = re.sub(r"(?is)<(script|style|nav|footer|header)\b.*?</\1>", " ", s)
+    s = re.sub(r"(?s)<[^>]+>", " ", s)          # drop remaining tags
+    s = _html.unescape(s)
+    s = re.sub(r"[ \t]+", " ", s)
+    s = re.sub(r"\n\s*\n\s*\n+", "\n\n", s)
+    return s.strip()
+
+
+def _docling_pdf_to_markdown(pdf_bytes: bytes) -> str:
+    """Parse a PDF to markdown with DOCLING (and ONLY docling, per the ingest design). Imported
+    lazily so the connector runs without docling installed — absence just disables the PDF fallback.
+    Runs on a worker thread (docling is synchronous + heavy). Raises on failure (the caller catches)."""
+    import tempfile
+    from docling.document_converter import DocumentConverter   # lazy — heavy dep
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
+        f.write(pdf_bytes)
+        f.flush()
+        res = DocumentConverter().convert(f.name)
+        return (res.document.export_to_markdown() or "").strip()
 
 
 class ArxivConnector:
@@ -50,6 +89,9 @@ class ArxivConnector:
         return out
 
     async def discover_entities(self, window: dict) -> list[EntityRef]:
+        # FULL-TEXT intent (window param): mark the cached records so fetch_artifact pulls the body.
+        # Carried on the record (not a block facet) so it survives discover→list→fetch within a job.
+        _ft = str((window or {}).get("fulltext", "")).lower() in ("1", "true", "yes")
         if not (window or {}).get("query") and self._by_id:
             papers = list(self._by_id.values())
         else:
@@ -63,6 +105,9 @@ class ArxivConnector:
             papers = self._parse_atom(await self.fetch_strategy.fetch(url))
             for p in papers:
                 self._by_id[paper_doc.arxiv_id(p)] = p
+        if _ft:
+            for p in papers:
+                p["_fulltext"] = True
         return [EntityRef(source_key=self.key, native_id=paper_doc.arxiv_id(p),
                           title=paper_doc.title(p), facets=paper_doc.facets(p))
                 for p in papers if paper_doc.arxiv_id(p)]
@@ -74,6 +119,24 @@ class ArxivConnector:
                             facets=paper_doc.facets(p) if p else dict(entity.facets),
                             entity_ids=(entity.native_id,))]
 
+    async def _fulltext_body(self, arxiv_id: str) -> str:
+        """The paper's full body — HTML first (clean, no heavy deps), docling PDF fallback. "" if neither."""
+        # 1) arXiv HTML (LaTeXML). Real papers are large; a "no HTML available" stub is tiny → fall back.
+        try:
+            html = _strip_html(await self.fetch_strategy.fetch(HTML_URL.format(id=arxiv_id)))
+            if len(html) >= _FULLTEXT_MIN_CHARS:
+                return html
+        except Exception as e:   # noqa: BLE001 — HTML missing/blocked → try the PDF path
+            _log.info("arxiv %s: HTML fetch failed (%s) — trying PDF", arxiv_id, str(e)[:80])
+        # 2) DOCLING on the PDF (lazy import; absent → skip, keep abstract-only). Runs off the loop.
+        try:
+            pdf = await self.fetch_strategy.fetch(PDF_URL.format(id=arxiv_id))
+            import asyncio
+            return await asyncio.to_thread(_docling_pdf_to_markdown, pdf)
+        except Exception as e:   # noqa: BLE001 — no docling / parse failure → abstract-only fallback
+            _log.info("arxiv %s: PDF/docling fallback failed (%s)", arxiv_id, str(e)[:80])
+            return ""
+
     async def fetch_artifact(self, doc: DocumentRef) -> bytes:
         p = self._by_id.get(doc.native_id)
         if p is None:
@@ -81,4 +144,9 @@ class ArxivConnector:
             recs = self._parse_atom(await self.fetch_strategy.fetch(url))
             p = recs[0] if recs else {"id": doc.native_id}
             self._by_id[doc.native_id] = p
-        return paper_doc.to_markdown(p).encode("utf-8")
+        md = paper_doc.to_markdown(p)                          # title + abstract + metadata header
+        if p.get("_fulltext"):
+            body = await self._fulltext_body(paper_doc.arxiv_id(p) or doc.native_id)
+            if body:
+                md = md.rstrip() + "\n\n## Full text\n\n" + body
+        return md.encode("utf-8")

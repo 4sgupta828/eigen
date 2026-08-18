@@ -321,6 +321,12 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("podcast","all"):
         for qy in ("deep tech","AI","engineering"):
             jobs.append({"connector":"podcast","query":qy,"limit":limit or 30})
+    if tranche == "fulltext":
+        # FULL-TEXT depth: re-ingest high-value arXiv papers with the WHOLE body (HTML-first, docling
+        # PDF fallback) instead of just the abstract → ~30-40 blocks/paper, so answers ground in
+        # methods/results. Expensive (many embeddings/paper), so modest limits. Not part of "all".
+        for qy in (ARXIV_QUERIES + DEEPTECH_TOPICS[:20]):
+            jobs.append({"connector":"arxiv","query":qy,"limit":limit or 8,"params":{"fulltext":True}})
     if tranche in ("seminal","all"):
         # curated landmark papers, exact-title → the exact seminal work (closes the genesis/history gap)
         for title in SEMINAL_PAPERS:
@@ -348,7 +354,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","seminal","github","recent","deeptech","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","seminal","fulltext","github","recent","deeptech","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--priority", type=int, default=0,
                     help="claim priority (higher = jumps the FIFO backlog; e.g. 500 for strategic sources)")
