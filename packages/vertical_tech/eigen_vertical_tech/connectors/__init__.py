@@ -12,6 +12,7 @@ from .gdelt import GdeltConnector
 from .github import GithubConnector
 from .hackernews import HackerNewsConnector
 from .huggingface import HuggingFaceConnector
+from .lobsters import LobstersConnector
 from .nih_reporter import NihReporterConnector
 from .nsf import NsfConnector
 from .openalex import OpenAlexConnector
@@ -28,7 +29,8 @@ from .wikipedia import WikipediaConnector
 
 __all__ = ["ArxivConnector", "CompaniesHouseConnector", "CrossrefConnector", "EdgarConnector",
            "ExpertFeedConnector", "GdeltConnector", "GithubConnector", "HackerNewsConnector",
-           "HuggingFaceConnector", "NihReporterConnector", "NsfConnector", "OpenAlexConnector",
+           "HuggingFaceConnector", "LobstersConnector", "NihReporterConnector", "NsfConnector",
+           "OpenAlexConnector",
            "OpenReviewConnector", "PatentsViewConnector", "PodcastConnector", "RedditConnector",
            "SemanticScholarConnector", "StackExchangeConnector", "UsptoConnector", "WikidataConnector",
            "WikipediaConnector"]

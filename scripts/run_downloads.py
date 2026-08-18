@@ -224,12 +224,23 @@ def build(tranche: str, limit: int | None) -> list[dict]:
         for sub, qy in REDDIT_QUERIES:
             jobs.append({"connector":"reddit","query":qy,"limit":limit or 25,
                          "params":{"subreddit":sub}})
+    if tranche in ("lobsters","all"):
+        # feed connector pulls curated tech tags; the query loosely filters. A few passes catch breadth.
+        for qy in ("machine learning","LLM","hardware","security","distributed systems","databases",
+                   "programming languages","performance"):
+            jobs.append({"connector":"lobsters","query":qy,"limit":limit or 30})
     if tranche in ("hf","all"):
         for qy in HF_QUERIES:
             jobs.append({"connector":"huggingface","query":qy,"limit":limit or 30,"facets":{"sector":"ai"}})
     if tranche in ("stackoverflow","all"):
         for qy in SO_QUERIES:
             jobs.append({"connector":"stackoverflow","query":qy,"limit":limit or 25})
+        # fan across the technical Stack Exchange sites (AI / Data Science / Cross-Validated / CS /
+        # Security / SWE / Quantum / …) — broader human deep-tech discussion, same connector.
+        for site in ("ai","datascience","stats","cs","security","softwareengineering","quantumcomputing","robotics"):
+            for qy in ("machine learning","neural network","optimization","algorithm","cryptography"):
+                jobs.append({"connector":"stackoverflow","query":qy,"limit":limit or 15,
+                             "params":{"site":site}})
     if tranche in ("openreview","all"):
         for qy in OPENREVIEW_QUERIES:
             jobs.append({"connector":"openreview","query":qy,"limit":limit or 30,"facets":{"sector":"ai"}})
@@ -289,7 +300,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","github","recent","deeptech","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","github","recent","deeptech","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()

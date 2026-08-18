@@ -17,7 +17,8 @@ from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
 from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnector, EdgarConnector,
                          ExpertFeedConnector, GdeltConnector, GithubConnector, HackerNewsConnector,
-                         HuggingFaceConnector, NihReporterConnector, NsfConnector, OpenAlexConnector,
+                         HuggingFaceConnector, LobstersConnector, NihReporterConnector, NsfConnector,
+                         OpenAlexConnector,
                          OpenReviewConnector, PatentsViewConnector, PodcastConnector, RedditConnector,
                          SemanticScholarConnector, StackExchangeConnector, UsptoConnector,
                          WikidataConnector, WikipediaConnector)
@@ -56,6 +57,7 @@ def build_manifest() -> VerticalManifest:
             "wikidata": WikidataConnector(),
             "hackernews": HackerNewsConnector(),
             "reddit": RedditConnector(),
+            "lobsters": LobstersConnector(),
             "stackoverflow": StackExchangeConnector(),
             "huggingface": HuggingFaceConnector(),
             "openreview": OpenReviewConnector(),
