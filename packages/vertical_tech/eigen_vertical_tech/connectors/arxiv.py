@@ -43,14 +43,23 @@ def _strip_html(raw: bytes) -> str:
 def _docling_pdf_to_markdown(pdf_bytes: bytes) -> str:
     """Parse a PDF to markdown with DOCLING (and ONLY docling, per the ingest design). Imported
     lazily so the connector runs without docling installed — absence just disables the PDF fallback.
-    Runs on a worker thread (docling is synchronous + heavy). Raises on failure (the caller catches)."""
-    import tempfile
-    from docling.document_converter import DocumentConverter   # lazy — heavy dep
-    with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
-        f.write(pdf_bytes)
-        f.flush()
-        res = DocumentConverter().convert(f.name)
-        return (res.document.export_to_markdown() or "").strip()
+    Runs on a worker thread (docling is synchronous + heavy). Raises on failure (the caller catches).
+
+    Uses factra's proven pipeline settings: docling for LAYOUT + TABLE STRUCTURE (TableFormer), NO OCR
+    — arXiv PDFs are digital/text-bearing, so OCR adds large per-page cost and zero value (and the
+    default OCR backend can be absent in a lean image). Parses from an in-memory stream (no temp file)."""
+    import io
+    from docling.datamodel.base_models import DocumentStream, InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+    opts = PdfPipelineOptions()
+    opts.do_ocr = False                                    # text-bearing PDFs → no OCR
+    opts.do_table_structure = True                         # keep tables (TableFormer)
+    opts.table_structure_options.do_cell_matching = True
+    converter = DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+    stream = DocumentStream(name="paper.pdf", stream=io.BytesIO(pdf_bytes))
+    return (converter.convert(stream).document.export_to_markdown() or "").strip()
 
 
 class ArxivConnector:
