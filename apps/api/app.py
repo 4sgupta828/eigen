@@ -2161,7 +2161,9 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 jobs.append({"connector": c, "query": query, "limit": cap(j.get("limit"), 200),
                              "kind": (j.get("kind") or "")[:80], "quality": (j.get("quality") or "")[:120],
                              "facets": {str(k): str(v) for k, v in (_jf or {}).items() if v},
-                             "params": _jp})
+                             "params": _jp,
+                             # higher = claimed first (strategic sources jump the FIFO backlog); clamp 0..1000
+                             "priority": max(0, min(int(j.get("priority") or 0), 1000))})
         if not jobs:
             raise HTTPException(status_code=400, detail="no valid jobs (unknown connector or empty inputs)")
         # a batch-level source_country stamps every job's blocks (per-job override wins)

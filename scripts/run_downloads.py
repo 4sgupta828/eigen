@@ -302,10 +302,15 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","github","recent","deeptech","all"])
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--priority", type=int, default=0,
+                    help="claim priority (higher = jumps the FIFO backlog; e.g. 500 for strategic sources)")
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
     jobs = build(a.tranche, a.limit)
-    print(f"tranche={a.tranche}  jobs={len(jobs)}  (limit/job default applied)")
+    if a.priority:
+        for jb in jobs:
+            jb["priority"] = a.priority
+    print(f"tranche={a.tranche}  jobs={len(jobs)}  priority={a.priority}  (limit/job default applied)")
     if a.dry:
         print(json.dumps(jobs[:5], indent=2)); print(f"... ({len(jobs)} total)"); return 0
     if not os.environ.get("EIGEN_ADMIN_TOKEN"):

@@ -39,7 +39,8 @@ ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS source_country TEXT 
 ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS modality TEXT DEFAULT '';
 ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS facets JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS params JSONB NOT NULL DEFAULT '{}';
-CREATE INDEX IF NOT EXISTS idx_gapq_status ON eigen_corpus_gap_queue (vertical, status, created_at);
+ALTER TABLE eigen_corpus_gap_queue ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_gapq_claim ON eigen_corpus_gap_queue (vertical, status, priority DESC, created_at);
 """
 
 # A 'running' job older than this (crash / redeploy mid-ingest) is reclaimed to 'pending'.
@@ -78,12 +79,13 @@ class GapQueue:
                 import json as _json
                 await conn.execute(
                     """INSERT INTO eigen_corpus_gap_queue
-                       (id, vertical, tenant_id, connector, query, lim, kind, rationale, quality, question, source_country, modality, facets, params)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb)""",
+                       (id, vertical, tenant_id, connector, query, lim, kind, rationale, quality, question, source_country, modality, facets, params, priority)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15)""",
                     jid, self._vertical, tenant_id, j["connector"], j["query"],
                     int(j.get("limit", 200)), j.get("kind", ""), j.get("rationale", ""),
                     j.get("quality", ""), question, j.get("source_country", ""), j.get("modality", ""),
-                    _json.dumps(j.get("facets") or {}), _json.dumps(j.get("params") or {}))
+                    _json.dumps(j.get("facets") or {}), _json.dumps(j.get("params") or {}),
+                    int(j.get("priority", 0)))
                 ids.append(jid)
         return ids
 
@@ -101,7 +103,7 @@ class GapQueue:
                     """UPDATE eigen_corpus_gap_queue q SET status='running', updated_at=now()
                        FROM (SELECT id FROM eigen_corpus_gap_queue
                              WHERE vertical=$1 AND status='pending'
-                             ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) c
+                             ORDER BY priority DESC, created_at LIMIT 1 FOR UPDATE SKIP LOCKED) c
                        WHERE q.id=c.id
                        RETURNING q.id, q.connector, q.query, q.lim, q.tenant_id, q.source_country, q.modality, q.facets, q.params""",
                     self._vertical)
