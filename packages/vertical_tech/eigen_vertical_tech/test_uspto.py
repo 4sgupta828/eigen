@@ -63,3 +63,21 @@ def test_inert_without_key(monkeypatch):
     c = UsptoConnector()   # no fixtures, no key
     ents = asyncio.run(c.discover_entities({"query": "solid state battery"}))
     assert ents == []
+
+
+def test_normalize_maps_real_odp_response_shape():
+    """The live ODP Patent File Wrapper record nests fields under applicationMetaData. _normalize must
+    flatten it to patent_doc's shape and read grant vs pre-grant correctly (confirmed Aug 2026)."""
+    from .connectors.uspto import _normalize, _granted
+    granted = _normalize({"applicationNumberText": "17123456", "applicationMetaData": {
+        "inventionTitle": "Attention-based transformer", "patentNumber": "11123456",
+        "grantDate": "2023-05-02", "applicationStatusDescriptionText": "Patented Case",
+        "applicantBag": [{"applicantNameText": "OpenAI Inc"}]}})
+    assert granted["patent_id"] == "11123456" and granted["patent_title"] == "Attention-based transformer"
+    assert granted["assignees"] == [{"assignee_organization": "OpenAI Inc"}]
+    assert granted["grant_status"] == "granted" and _granted(granted)
+    pregrant = _normalize({"applicationNumberText": "17999999", "applicationMetaData": {
+        "inventionTitle": "Pending method", "applicationStatusDescriptionText": "Docketed New Case",
+        "applicantBag": [{"applicantNameText": "Acme AI"}]}})
+    assert pregrant["patent_id"] == "17999999" and pregrant["grant_status"] == "application"
+    assert not _granted(pregrant)

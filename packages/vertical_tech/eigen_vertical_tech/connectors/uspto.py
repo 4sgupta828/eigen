@@ -14,22 +14,24 @@ Tests inject `patents` (already in patent_doc shape) so they run fully offline.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
-import urllib.parse
 
 from eigen_kernel.contract.dto import DocumentRef, EntityRef
 
 from .. import patent_doc
 from ._http import HttpStrategy
 
-# ─── LIVE-API SINGLE POINT OF CHANGE ────────────────────────────────────────────────────────────
-# USPTO Open Data Portal patent-search endpoint. The ODP docs are JS-rendered (not machine-fetchable
-# at build time), so the exact search path + raw field names below are the ONE place to adjust once
-# confirmed against https://data.uspto.gov/apis (the offline contract does NOT depend on these — all
-# tests inject already-normalized fixtures and never hit the network). ODP is a POST-body search API.
-SEARCH_URL = "https://api.uspto.gov/api/v1/patent/applications/search"
+# ─── LIVE-API CONTRACT (confirmed against data.uspto.gov ODP, Aug 2026) ─────────────────────────
+# USPTO Open Data Portal "Patent File Wrapper" search — a POST-body search API. Confirmed shape:
+#   POST https://data.uspto.gov/api/v1/patent/applications/search   header: X-API-KEY: <key>
+#   body: {"q": "<query>", "pagination": {"offset": 0, "limit": N}}
+#   resp: {"count": N, "patentFileWrapperDataBag": [ {"applicationNumberText": ...,
+#            "applicationMetaData": {"inventionTitle","patentNumber","grantDate","filingDate",
+#            "applicationStatusDescriptionText","applicantBag":[{"applicantNameText"}], ...}} ]}
+# (The offline contract does not depend on this — tests inject already-normalized fixtures.)
+SEARCH_URL = "https://data.uspto.gov/api/v1/patent/applications/search"
+RESULTS_KEY = "patentFileWrapperDataBag"
 KEY_HEADER = "X-API-KEY"
 
 
@@ -50,32 +52,37 @@ def _normalize(raw: dict) -> dict:
     if "patent_title" in raw and "assignees" in raw:
         return raw
 
-    # ── ODP raw → patent_doc keys (adjust here once ODP field names are confirmed) ──
-    num = raw.get("patentNumber") or raw.get("patent_number") or raw.get("documentNumber") \
-        or raw.get("applicationNumberText") or raw.get("document_number")
-    title = raw.get("inventionTitle") or raw.get("invention_title") or raw.get("patentTitle") \
-        or raw.get("title")
-    abstract = raw.get("abstractText") or raw.get("abstract") or raw.get("patent_abstract")
-    date = raw.get("grantDate") or raw.get("patentIssueDate") or raw.get("publicationDate") \
-        or raw.get("filingDate") or raw.get("patent_date")
+    # ODP nests the descriptive fields under applicationMetaData; the app number sits at the top level.
+    md = raw.get("applicationMetaData") if isinstance(raw.get("applicationMetaData"), dict) else {}
+    app_no = raw.get("applicationNumberText") or md.get("applicationNumberText")
+    num = md.get("patentNumber") or raw.get("patentNumber") or app_no
+    title = md.get("inventionTitle") or raw.get("inventionTitle") or raw.get("title")
+    abstract = md.get("abstractText") or raw.get("abstractText") or raw.get("abstract")
+    grant_date = md.get("grantDate") or raw.get("grantDate")
+    date = grant_date or md.get("filingDate") or raw.get("filingDate") or raw.get("patent_date")
+    status = str(md.get("applicationStatusDescriptionText")
+                 or raw.get("applicationStatusDescriptionText") or "").lower()
 
-    # Assignees / applicants → list[{"assignee_organization": org}] (patent_doc reads that shape).
+    # Applicants/assignees → list[{"assignee_organization": org}] (patent_doc reads that shape).
     assignees: list[dict] = []
-    for a in (raw.get("assignees") or raw.get("assigneeBag")
-              or raw.get("applicants") or raw.get("applicantBag") or []):
+    bag = (md.get("applicantBag") or md.get("assigneeBag")
+           or raw.get("applicantBag") or raw.get("assigneeBag") or [])
+    for a in bag:
         if isinstance(a, dict):
-            org = a.get("assignee_organization") or a.get("organizationName") \
-                or a.get("applicantNameText") or a.get("name")
+            org = a.get("applicantNameText") or a.get("assignee_organization") \
+                or a.get("organizationName") or a.get("name")
             if org:
                 assignees.append({"assignee_organization": str(org)})
         elif isinstance(a, str) and a.strip():
             assignees.append({"assignee_organization": a.strip()})
+    if not assignees and (md.get("firstApplicantName") or raw.get("firstApplicantName")):
+        assignees.append({"assignee_organization":
+                          str(md.get("firstApplicantName") or raw.get("firstApplicantName"))})
 
-    # grant vs pre-grant publication → grant_status ("granted" | "application"). A granted patent
-    # carries a grant/issue date or an explicit grant flag; otherwise it is a pre-grant publication.
-    is_grant = bool(raw.get("grantDate") or raw.get("patentIssueDate")) \
-        or str(raw.get("documentKind") or raw.get("kindCode") or "").upper().startswith("B") \
-        or str(raw.get("recordType") or "").lower() in ("grant", "granted")
+    # grant vs pre-grant publication: a granted patent has a patentNumber + grantDate, or a
+    # "patented"/"granted" status. Otherwise it is a pre-grant application (intent, not fact).
+    is_grant = bool(md.get("patentNumber") or raw.get("patentNumber")) and bool(grant_date) \
+        or "patent" in status or "granted" in status
     grant_status = "granted" if is_grant else "application"
 
     rec = {
@@ -87,9 +94,6 @@ def _normalize(raw: dict) -> dict:
     }
     if abstract:
         rec["patent_abstract"] = str(abstract).strip()
-    for cpc_key in ("cpc_current", "cpcs"):
-        if raw.get(cpc_key):
-            rec[cpc_key] = raw[cpc_key]
     return rec
 
 
@@ -115,14 +119,17 @@ class UsptoConnector:
             _log.warning("uspto: EIGEN_USPTO_KEY not set — skipping (no patents ingested)")
             return []
         n = min(50, max(1, limit))
-        # ODP is a POST-body search; HttpStrategy is GET-only, so pass the query as URL params and
-        # let the ODP gateway accept them (single point of change — adjust with SEARCH_URL above).
-        params = {"q": query, "rows": n}
-        url = SEARCH_URL + "?" + urllib.parse.urlencode(params)
-        raw = await self.fetch_strategy.fetch(url, headers={KEY_HEADER: self._key})
-        data = json.loads(raw)
-        records = data.get("patentBag") or data.get("results") or data.get("patents") or []
-        return [_normalize(r) for r in records if isinstance(r, dict)][:limit]
+        # ODP search is a POST with a JSON body (HttpStrategy is GET-only), so use httpx directly
+        # — same as the reddit connector's token POST.
+        import httpx
+        body = {"q": query, "pagination": {"offset": 0, "limit": n}}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.post(SEARCH_URL, json=body,
+                                  headers={KEY_HEADER: self._key, "Accept": "application/json"})
+            r.raise_for_status()
+            data = r.json()
+        records = data.get(RESULTS_KEY) or data.get("results") or []
+        return [_normalize(rec) for rec in records if isinstance(rec, dict)][:limit]
 
     async def discover_entities(self, window: dict) -> list[EntityRef]:
         win = window or {}
