@@ -278,6 +278,10 @@ class ResearchService:
         clarify: bool = False,               # ask a clarifying question when a follow-up is ambiguous (flag)
         answer_format_override: str | None = None,   # per-call compose directive (alternate engine); None → default
         extra_directive: str | None = None,          # per-call ADDENDUM appended to the selected directive
+        suppress_authority: bool = False,            # per-call: neutralize the authority tier-boost in
+        #                                              ranking (a use-case lens for opinion/foresight
+        #                                              queries, so expert/discussion evidence isn't
+        #                                              demoted below filings). False → today's behavior.
         graph_question: str | None = None,   # PRISTINE user question for the graph expander — callers
         #                                      that augment `question` (reasoned coverage brief, engine
         #                                      hints) MUST pass the original here, or topic matching
@@ -477,7 +481,7 @@ class ResearchService:
             collect_diagnostics=self.collect_diagnostics,
             classify_evidence=self.classify_evidence,
             evidence_fitness=self.evidence_fitness, evidence_ranker=self.evidence_ranker,
-            retrieval_source_cap=self.retrieval_source_cap,
+            retrieval_source_cap=self.retrieval_source_cap, suppress_authority=suppress_authority,
             freshness=self.freshness, answer_profiles=self.answer_profiles,
             evidence_identity=self.evidence_identity, claim_congruence=self.claim_congruence,
             question_contract=self.question_contract, contract_prompt=self.contract_prompt,

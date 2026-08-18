@@ -16,10 +16,12 @@ from .terms import TECH_TERMS_PROMPT
 from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
 from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnector, EdgarConnector,
-                         GdeltConnector, GithubConnector, HackerNewsConnector, HuggingFaceConnector,
-                         OpenAlexConnector, OpenReviewConnector, PatentsViewConnector, RedditConnector,
+                         ExpertFeedConnector, GdeltConnector, GithubConnector, HackerNewsConnector,
+                         HuggingFaceConnector, NihReporterConnector, NsfConnector, OpenAlexConnector,
+                         OpenReviewConnector, PatentsViewConnector, PodcastConnector, RedditConnector,
                          SemanticScholarConnector, StackExchangeConnector, UsptoConnector,
-                         WikidataConnector)
+                         WikidataConnector, WikipediaConnector)
+from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT
 from .reasoned import (TECH_REASONED_ANSWER_FORMAT, TECH_REASONED_SCAFFOLD_PROMPT,
                        TECH_UNDERSTANDING_ANSWER_FORMAT, TECH_UNDERSTANDING_QUERY_HINT)
@@ -59,6 +61,11 @@ def build_manifest() -> VerticalManifest:
             "openreview": OpenReviewConnector(),
             "companies_house": CompaniesHouseConnector(),
             "uspto": UsptoConnector(),
+            "wikipedia": WikipediaConnector(),
+            "nsf": NsfConnector(),
+            "nih_reporter": NihReporterConnector(),
+            "expert_feed": ExpertFeedConnector(),
+            "podcast": PodcastConnector(),
             "github": GithubConnector(),
             "patentsview": PatentsViewConnector(),
             "gdelt": GdeltConnector(),
@@ -70,7 +77,10 @@ def build_manifest() -> VerticalManifest:
         authority_policy=TechAuthorityPolicy(),
         evidence_classifier=evidence_kind.classify,   # structural facets → evidence tier (Rule 18)
         discovery_entity_of=discovery.entity_of,       # "who is working on X" scouting (M&A/corp-dev)
-        answer_modes={"acquirer": MA_DIRECTIVE},        # M&A/corp-dev lens (reframe diligence for an acquirer)
+        # Analytical modes / USE-CASE LENSES: acquirer (M&A) + the deep-tech-intelligence lenses
+        # (foresight/wisdom/genesis/market/whitespace/moat) that re-mix + re-posture the same grounded
+        # evidence per what the user is doing. Selected via the request `mode`.
+        answer_modes={"acquirer": MA_DIRECTIVE, **USE_CASE_LENSES},
         ui=TechUI(),
         answer_format=TECH_ANSWER_FORMAT,
         # Enhanced A/B synthesis variant (reuses the kernel's enhanced-answer slot; same section set).

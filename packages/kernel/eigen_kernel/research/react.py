@@ -689,6 +689,11 @@ async def run_react(
     #                                           an OPAQUE caller-supplied string (manifest field;
     #                                           kernel litmus: zero domain vocabulary here).
     #                                           None/"" → stage-4 routing never fires.
+    suppress_authority: bool = False,          # per-call authority-neutralize (use-case lens): when True,
+    #                                           the evidence-tier boost is dropped so opinion/discussion
+    #                                           evidence isn't demoted below filings on foresight/wisdom
+    #                                           queries. ORs with the stance profile's suppression. Default
+    #                                           False → today's behavior (byte-identical).
     retrieval_source_cap: float | None = None,  # SOURCE-DIVERSITY cap (flag EIGEN_RETRIEVAL_DIVERSITY):
     #                                           per multi-query fusion, cap any one source_key to
     #                                           ceil(k*frac) of the top-k pool (backfill preserves
@@ -1062,7 +1067,7 @@ async def run_react(
     _profile = (answer_profiles or {}).get((_contract.stance or "")) if (answer_profiles and _contract) else None
     _ac = _profile is not None
     _eff_freshness = _profile.get("recency") if _ac else freshness   # profile recency OVERRIDES static
-    _suppress_auth = bool(_ac and _profile.get("suppress_authority"))
+    _suppress_auth = bool(_ac and _profile.get("suppress_authority")) or bool(suppress_authority)
     _steer = (_profile.get("planner_steer") or "").strip() if _ac else ""
     _answer_dir = (_profile.get("answer_directive") or "").strip() if _ac else ""
     _web_recency_days = _profile.get("web_recency_days") if _ac else None

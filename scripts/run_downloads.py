@@ -249,6 +249,26 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("uspto","all"):
         for qy in USPTO_QUERIES:
             jobs.append({"connector":"uspto","query":qy,"limit":limit or 25})
+    if tranche in ("wikipedia","all"):
+        # tech + company/ecosystem history/genesis pages
+        for qy in (list(WIKIDATA_NAMES) + DEEPTECH_TOPICS[:30]):
+            jobs.append({"connector":"wikipedia","query":qy,"limit":limit or 5})
+    if tranche in ("nsf","all"):
+        for qy in DEEPTECH_TOPICS:
+            jobs.append({"connector":"nsf","query":qy,"limit":limit or 20})
+    if tranche in ("nih","all"):
+        for qy in ("mRNA","CRISPR gene editing","protein structure prediction","synthetic biology",
+                   "AI drug discovery","single cell sequencing","brain computer interface","genomics",
+                   "cancer immunotherapy","neurotechnology"):
+            jobs.append({"connector":"nih_reporter","query":qy,"limit":limit or 25})
+    if tranche in ("expert","all"):
+        # feed connector ignores the query text (pulls its curated allowlist) — a few passes catch
+        # recent items across all feeds. Broad terms keep the ingest question meaningful in logs.
+        for qy in ("deep tech expert analysis","AI trends","semiconductors","research commentary"):
+            jobs.append({"connector":"expert_feed","query":qy,"limit":limit or 40})
+    if tranche in ("podcast","all"):
+        for qy in ("deep tech","AI","engineering"):
+            jobs.append({"connector":"podcast","query":qy,"limit":limit or 30})
     # RECENT lane: re-pull the paper sources newest-first / floored at >=2010 so the corpus isn't
     # relevance-skewed to old highly-cited work. Not part of "all" (it re-queries the same topics with
     # a freshness filter) — run explicitly: `run_downloads.py recent`.
@@ -269,7 +289,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","hf","stackoverflow","openreview","companies_house","uspto","github","recent","deeptech","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","github","recent","deeptech","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()

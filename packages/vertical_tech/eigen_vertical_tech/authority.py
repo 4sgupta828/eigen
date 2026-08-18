@@ -12,8 +12,13 @@ from __future__ import annotations
 
 # higher = stronger evidence
 _RANK: dict[str, int] = {
-    "sentiment_signal": 1,     # HN / social / GDELT tone / blogs — perception, NOT fact
+    "sentiment_signal": 1,     # HN / social / forum tone — perception, NOT fact
     "technical_signal": 2,     # arXiv preprints, GitHub activity (unreviewed / self-reported)
+    "expert_analysis": 3,      # a NAMED expert's interpretation/foresight — essays, newsletters,
+    #                            recorded expert discussion. Above an unreviewed preprint's self-claim,
+    #                            below fact-checked press and verified/primary evidence. Opinion, not
+    #                            fact (never controlling); the "wisdom/foresight" retrieval lens
+    #                            promotes it for the queries that ask for it (see answer_modes).
     "analysis": 4,             # major reputable press, analyst notes
     "verified_structured": 5,  # funding-DB records, reproducible benchmarks, peer-reviewed papers
     "primary_filing": 6,       # audited SEC filings, GRANTED patents, Form D — attested/legal record

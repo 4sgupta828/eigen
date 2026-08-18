@@ -47,6 +47,13 @@ def classify(source_key: str, facets: dict[str, str] | None, title: str = "", te
     if src_kind == "model" or sk == "huggingface":
         return "technical_signal"
 
+    # 3b) EXPERT ANALYSIS — a NAMED expert's interpretation/foresight (essays, newsletters, recorded
+    # expert/practitioner discussion). Opinion above an unreviewed preprint, below fact-checked press;
+    # never controlling. STRUCTURAL: reads the source_kind the connector stamped, judges nothing.
+    if src_kind in ("essay", "newsletter", "expert", "podcast") \
+            or sk in ("expert_feed", "podcast"):
+        return "expert_analysis"
+
     # 4) ANALYSIS — reputable press / analyst notes.
     if src_kind == "news" or sk in ("reuters", "bloomberg", "ft"):
         return "analysis"

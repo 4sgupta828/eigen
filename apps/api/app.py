@@ -1613,12 +1613,19 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             hint = getattr(svc_, "integrative_query_hint", None)
             if hint:
                 _q = body.question + "\n\n[" + hint + "]"
-        # Analytical MODE (e.g. acquirer / M&A): swap in the vertical-supplied mode directive as a
-        # compose addendum, so the same grounded evidence is re-lensed for that audience.
+        # Analytical MODE (e.g. acquirer / M&A) or USE-CASE LENS (wisdom/foresight/genesis/market/
+        # whitespace/moat): re-lens the same grounded evidence for that audience. A mode value is EITHER
+        # a plain directive string (back-compat, e.g. acquirer) OR a dict {directive, suppress_authority}
+        # — the lens dict can also neutralize the authority tier-boost so opinion/discussion evidence
+        # isn't demoted below filings on a foresight/wisdom question.
         _mode = (body.mode or "").strip().lower()
+        _mode_suppress = False
         if _mode:
             _modes = getattr(load_active_vertical(), "answer_modes", {}) or {}
-            _mode_dir = _modes.get(_mode)
+            _mode_val = _modes.get(_mode)
+            _mode_dir = _mode_val.get("directive") if isinstance(_mode_val, dict) else _mode_val
+            if isinstance(_mode_val, dict):
+                _mode_suppress = bool(_mode_val.get("suppress_authority"))
             if _mode_dir:
                 _extra = (_extra + "\n\n" + _mode_dir) if _extra else _mode_dir
         res = await _ask(
@@ -1626,7 +1633,8 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             workspace_id=body.workspace_id, source_keys=body.sources,
             images=images, documents=docs, pdf_docs=pdfs, history=history, on_event=on_event,
             effort=effort, audience=audience,
-            answer_focus=focus, clarify=followup_clarify_enabled(), extra_directive=_extra)
+            answer_focus=focus, clarify=followup_clarify_enabled(), extra_directive=_extra,
+            suppress_authority=_mode_suppress)
         # Ambiguous follow-up → return the clarifying question; no research ran, nothing to persist.
         if getattr(res, "clarification", ""):
             return ResearchOut(grounded=False, answer="", claims=[], coverage_gaps=[], rejected=0,
