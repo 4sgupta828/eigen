@@ -23,14 +23,16 @@ from .. import patent_doc
 from ._http import HttpStrategy
 
 # ─── LIVE-API CONTRACT (confirmed against data.uspto.gov ODP, Aug 2026) ─────────────────────────
-# USPTO Open Data Portal "Patent File Wrapper" search — a POST-body search API. Confirmed shape:
-#   POST https://data.uspto.gov/api/v1/patent/applications/search   header: X-API-KEY: <key>
+# USPTO Open Data Portal "Patent File Wrapper" search — a POST-body search API. Confirmed LIVE (200)
+# with a real key, Aug 2026:
+#   POST https://api.uspto.gov/api/v1/patent/applications/search   header: X-API-KEY: <key>
 #   body: {"q": "<query>", "pagination": {"offset": 0, "limit": N}}
 #   resp: {"count": N, "patentFileWrapperDataBag": [ {"applicationNumberText": ...,
 #            "applicationMetaData": {"inventionTitle","patentNumber","grantDate","filingDate",
 #            "applicationStatusDescriptionText","applicantBag":[{"applicantNameText"}], ...}} ]}
-# (The offline contract does not depend on this — tests inject already-normalized fixtures.)
-SEARCH_URL = "https://data.uspto.gov/api/v1/patent/applications/search"
+# NOTE: the API host is api.uspto.gov — data.uspto.gov/api/... is the web-UI backend and 400s with
+# "use the api.uspto.gov endpoint". (Offline contract doesn't depend on this — tests inject fixtures.)
+SEARCH_URL = "https://api.uspto.gov/api/v1/patent/applications/search"
 RESULTS_KEY = "patentFileWrapperDataBag"
 KEY_HEADER = "X-API-KEY"
 
@@ -120,14 +122,18 @@ class UsptoConnector:
             return []
         n = min(50, max(1, limit))
         # ODP search is a POST with a JSON body (HttpStrategy is GET-only), so use httpx directly
-        # — same as the reddit connector's token POST.
+        # — same as the reddit connector's token POST. Fail-safe: any API error → [] (never error a job).
         import httpx
         body = {"q": query, "pagination": {"offset": 0, "limit": n}}
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.post(SEARCH_URL, json=body,
-                                  headers={KEY_HEADER: self._key, "Accept": "application/json"})
-            r.raise_for_status()
-            data = r.json()
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.post(SEARCH_URL, json=body,
+                                      headers={KEY_HEADER: self._key, "Accept": "application/json"})
+                r.raise_for_status()
+                data = r.json()
+        except Exception as e:   # noqa: BLE001 — transient/API error → skip this query, don't crash ingest
+            _log.warning("uspto: search failed (%s) — skipping", str(e)[:120])
+            return []
         records = data.get(RESULTS_KEY) or data.get("results") or []
         return [_normalize(rec) for rec in records if isinstance(rec, dict)][:limit]
 
