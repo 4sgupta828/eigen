@@ -14,6 +14,7 @@ is imported LAZILY — if it's absent the PDF fallback is skipped (HTML-only), n
 from __future__ import annotations
 
 import logging
+import os
 
 from eigen_kernel.contract.dto import DocumentRef, EntityRef
 
@@ -25,6 +26,22 @@ HTML_URL = "https://arxiv.org/html/{id}"
 PDF_URL = "https://arxiv.org/pdf/{id}"
 _FULLTEXT_MIN_CHARS = 3000        # a real full body dwarfs an abstract; below this → not real full text
 _log = logging.getLogger(__name__)
+
+# arXiv is a DEPTH source: the product wants whole paper bodies, not abstracts. So full-text is the
+# DEFAULT — a job pulls the full body UNLESS it explicitly opts out (`fulltext: false`). This also makes
+# re-ingest NON-DEGRADING: the corpus clean-replaces a document's blocks on re-ingest (materialize.py
+# A1), so an abstract-only re-ingest of an already-full-text paper would DELETE its body blocks. With
+# full-text as the floor, breadth lanes (deeptech/recent) re-enrich rather than thin the same papers.
+# Flag `EIGEN_ARXIV_FULLTEXT_DEFAULT` (default on) is the reversible switch back to abstract-default.
+_FULLTEXT_DEFAULT = os.environ.get("EIGEN_ARXIV_FULLTEXT_DEFAULT", "true").lower() in ("1", "true", "yes")
+
+
+def _want_fulltext(window: dict | None) -> bool:
+    """Resolve full-text intent: explicit window['fulltext'] wins; absent → the flag default."""
+    raw = (window or {}).get("fulltext")
+    if raw is None:
+        return _FULLTEXT_DEFAULT
+    return str(raw).lower() in ("1", "true", "yes")
 
 
 def _strip_html(raw: bytes) -> str:
@@ -98,9 +115,10 @@ class ArxivConnector:
         return out
 
     async def discover_entities(self, window: dict) -> list[EntityRef]:
-        # FULL-TEXT intent (window param): mark the cached records so fetch_artifact pulls the body.
-        # Carried on the record (not a block facet) so it survives discover→list→fetch within a job.
-        _ft = str((window or {}).get("fulltext", "")).lower() in ("1", "true", "yes")
+        # FULL-TEXT intent: default ON (arXiv is a depth source); explicit fulltext:false opts out.
+        # Mark the cached records so fetch_artifact pulls the body — carried on the record (not a block
+        # facet) so it survives discover→list→fetch within a job.
+        _ft = _want_fulltext(window)
         if not (window or {}).get("query") and self._by_id:
             papers = list(self._by_id.values())
         else:

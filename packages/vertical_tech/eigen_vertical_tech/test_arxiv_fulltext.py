@@ -41,10 +41,25 @@ def _fetch(c, window):
     return asyncio.run(c.fetch_artifact(docs[0])).decode()
 
 
-def test_default_is_abstract_only():
+def test_default_is_fulltext():
+    # arXiv is a depth source: no fulltext param → full body pulled (flag default ON). This prevents an
+    # abstract-only re-ingest from clean-replacing an already-full-text paper down to 2 blocks.
     md = _fetch(_conn(), {})                          # no fulltext param
+    assert "## Full text" in md
+    assert "Introduction" in md and "Experiments" in md
+
+
+def test_explicit_fulltext_false_opts_out_to_abstract():
+    md = _fetch(_conn(), {"fulltext": "false"})       # explicit opt-out wins over the default
     assert "## Full text" not in md and "An abstract." in md
     assert len(md) < 500                              # abstract-sized
+
+
+def test_flag_off_restores_abstract_default(monkeypatch):
+    # EIGEN_ARXIV_FULLTEXT_DEFAULT=off → no-param jobs go back to abstract-only (reversible switch).
+    monkeypatch.setattr(arx, "_FULLTEXT_DEFAULT", False)
+    md = _fetch(_conn(), {})
+    assert "## Full text" not in md and "An abstract." in md
 
 
 def test_fulltext_appends_html_body():
