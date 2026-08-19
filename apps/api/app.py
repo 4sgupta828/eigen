@@ -405,6 +405,15 @@ def ingest_in_api_enabled() -> bool:
     return os.environ.get("EIGEN_INGEST_IN_API", "true").lower() not in ("0", "false", "no", "off")
 
 
+def pdf_bridge_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_PDF_BRIDGE opens POST /admin/corpus/ingest-pdf — the
+    local→prod full-text bridge. arXiv rate-limits the PROD IP on PDF fetches (old papers with no HTML
+    degrade to abstract-only), so a good-IP LOCAL box downloads the PDF and ships the bytes here; prod
+    runs its already-working docling + the normal ingest (clean-replace recovers the abstract stub).
+    OFF → the endpoint 404s (byte-identical)."""
+    return os.environ.get("EIGEN_PDF_BRIDGE", "").lower() in ("1", "true", "yes")
+
+
 def source_routing_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_SOURCE_ROUTING lets the research agent name source TYPES to
     ALSO target for a query (an additive scoped retrieval leg on top of the flat search — never a
@@ -754,6 +763,14 @@ class CorpusIngestIn(BaseModel):
     jobs into the corpus queue that the prod processor drains straight into the prod corpus."""
     jobs: list[dict] = []                  # explicit passthrough {connector, query, limit, facets, ...}
     source_country: str = ""               # optional per-batch facet stamp on every ingested block
+
+
+class PdfIngestIn(BaseModel):
+    """Local→prod full-text bridge payload: PDF bytes downloaded on a good-IP box, shipped for prod
+    docling + ingest. Each doc: {native_id, title, facets?, pdf_b64}. source_key defaults to arxiv so
+    the ingest REPLACES (not duplicates) the matching arxiv:{native_id} doc via clean-replace."""
+    docs: list[dict] = []
+    source_key: str = "arxiv"
 
 
 class CorpusSearchIn(BaseModel):
@@ -2197,6 +2214,78 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"queue error: {e}") from e
         return {"queued": len(ids), "jobs": len(jobs)}
+
+    @app.post("/admin/corpus/ingest-pdf")
+    async def admin_corpus_ingest_pdf(body: PdfIngestIn, x_admin_token: str = Header(default="")) -> dict:
+        """LOCAL→PROD full-text bridge. arXiv rate-limits the PROD IP on PDF fetches, so old papers with
+        no HTML degrade to abstract-only. A good-IP LOCAL box downloads the PDF and POSTs the bytes here;
+        prod runs its already-working docling + the NORMAL ingest pipeline. Because the ingest derives
+        document_id = f"{source_key}:{native_id}", passing the arxiv id REPLACES (clean-replace) that
+        paper's abstract stub with full text — recovery, not duplication. Admin + flag gated; mutates
+        the corpus + spends embedding credits."""
+        if not pdf_bridge_enabled():
+            raise HTTPException(status_code=404, detail="pdf bridge not enabled")
+        want = os.environ.get("EIGEN_ADMIN_TOKEN", "")
+        if want and x_admin_token != want:
+            raise HTTPException(status_code=401, detail="admin token required")
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            raise HTTPException(status_code=404, detail="no corpus dsn configured")
+        import base64 as _b64
+        from eigen_kernel.providers.base import resolve_mode
+        from eigen_kernel.retrieval.postgres import PostgresRetrievalSource
+        from eigen_kernel.runtime.build import build_embedder
+        from eigen_kernel.runtime.ingest import ingest_connector_to_postgres
+        from eigen_kernel.runtime.preparsed import PreParsedConnector
+        # cache the pool + embedder across requests (the driver POSTs many small batches) so we don't
+        # churn a pg pool per call.
+        if getattr(app.state, "_pdf_pg", None) is None:
+            app.state._pdf_embedder = build_embedder(mode=resolve_mode())
+            app.state._pdf_pg = PostgresRetrievalSource(
+                dsn, dim=app.state._pdf_embedder.dim, table="rs_block")
+        embedder = app.state._pdf_embedder
+        pg = app.state._pdf_pg
+        object_store = None
+        if os.environ.get("R2_BUCKET"):
+            try:
+                from eigen_kernel.ingestion.s3_storage import S3ObjectStore
+                object_store = S3ObjectStore.from_env(
+                    prefix=os.environ.get("EIGEN_R2_PREFIX", "eigen/raw"))
+            except Exception:   # noqa: BLE001 — raw persistence best-effort; index still lands
+                object_store = None
+        src_key = (body.source_key or "arxiv").strip() or "arxiv"
+        out: list[dict] = []
+        for d in (body.docs or []):
+            nid = str(d.get("native_id") or "").strip()
+            title = str(d.get("title") or "").strip()
+            pdf_b64 = d.get("pdf_b64") or ""
+            pre_md = d.get("markdown") or ""     # already-parsed on the LOCAL box → skip prod docling
+            if not (nid and (pdf_b64 or pre_md)):
+                out.append({"native_id": nid, "error": "missing native_id or pdf_b64/markdown"}); continue
+            try:
+                if pre_md:                       # LOCAL-parsed path: no docling/torch on the serving pod
+                    md_body = str(pre_md)
+                else:                            # PROD-docling path: parse the shipped PDF bytes here.
+                    # docling lives in the (single, tech) vertical; lazy-import so the markdown path
+                    # (and the whole API) never loads torch unless a PDF is actually shipped.
+                    from eigen_vertical_tech.connectors.arxiv import _docling_pdf_to_markdown
+                    pdf = _b64.b64decode(pdf_b64)
+                    md_body = await asyncio.to_thread(_docling_pdf_to_markdown, pdf)
+                if not md_body or len(md_body) < 500:   # a real paper body dwarfs this; guard junk input
+                    out.append({"native_id": nid,
+                                "error": f"body too small ({len(md_body or '')} chars)"}); continue
+                md = md_body if md_body.lstrip().startswith("#") else f"# {title}\n\n## Full text\n\n{md_body}"
+                facets = dict(d.get("facets")) if isinstance(d.get("facets"), dict) else {}
+                facets.setdefault("source_kind", "paper")
+                conn = PreParsedConnector(source_key=src_key, native_id=nid, title=title,
+                                          markdown=md, facets=facets)
+                n = await ingest_connector_to_postgres(
+                    conn, pg, tenant_id="demo", embedder=embedder, object_store=object_store,
+                    min_chars=40, target_chars=1800)
+                out.append({"native_id": nid, "blocks": n, "body_chars": len(md_body)})
+            except Exception as e:   # noqa: BLE001 — record per-doc + continue the batch
+                out.append({"native_id": nid, "error": str(e)[:200]})
+        return {"ingested": out}
 
     # ---- Corpus Explorer (admin-gated PURE RETRIEVAL — inspect ingested sources first-hand) ----
     def _admin_ok(tok: str) -> bool:
