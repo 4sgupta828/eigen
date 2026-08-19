@@ -6,8 +6,14 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
+# ca-certificates/curl for TLS + healthcheck; the libgl/libxcb/glib cluster is docling's RUNTIME system
+# deps — python:3.13-slim omits them, so docling's PDF layout/table backend fails at load with
+# "libxcb.so.1: cannot open shared object file" and silently degrades old (no-HTML) papers to abstract
+# only (and a worker re-ingest could clean-replace a recovered full-text back down). libgomp1 = OpenMP
+# for torch/onnx. Without these, full-text PDF parsing is broken on prod even though docling imports.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
+      libgl1 libglib2.0-0 libxcb1 libxrender1 libsm6 libxext6 libgomp1 \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir --upgrade pip
