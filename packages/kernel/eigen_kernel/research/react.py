@@ -56,8 +56,16 @@ _READABILITY_STYLE = (
     "- Avoid em-dash pile-ups and nested parentheticals ((a)…(b)…). Say the point plainly first, then add "
     "detail in a following short sentence.\n"
     "- Lead each sentence with its point, then the support. Prefer plain words over jargon.\n"
+    "- FORMAT TO SCAN. When you list two or more things — companies, options, factors, gaps, examples, "
+    "steps — use a markdown bullet list with ONE item per line. Never pack a list into a comma-run or an "
+    "(a)/(b)/(c) sentence. Put each distinct point on its own line.\n"
+    "- Keep paragraphs SHORT: at most 2–3 sentences. If an explanation runs long, lead with one sentence, "
+    "then break the specifics into a short bullet list underneath.\n"
+    "- BALANCE — do not over-format: use a sentence or two for a single point or a narrative link; use "
+    "bullets for enumerations. Do not bullet a lone statement, and do not fragment every sentence into its "
+    "own bullet. No walls of text, and no confetti of one-line bullets either.\n"
     "- Do NOT shorten by dropping facts, citations, or [[R]] labels — only by writing them more simply. "
-    "Same information, lighter prose.")
+    "Same information, lighter and more scannable.")
 
 # Compose sees only the verified findings, capped for cost + scannability. Default selection is
 # first-come (retrieval/extraction order). Under the evidence-select flag we collect MORE candidates
