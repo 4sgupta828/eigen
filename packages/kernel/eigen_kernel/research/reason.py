@@ -15,8 +15,8 @@ to a basis of grounded facts, and the leap was checked" — auditable ideation, 
 """
 from __future__ import annotations
 
-import json
 import logging
+import re
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
@@ -54,6 +54,12 @@ class _Verdict(BaseModel):
 
 class _Verdicts(BaseModel):
     verdicts: list[_Verdict] = Field(default_factory=list)
+
+
+class _Ranking(BaseModel):
+    """Priority order over the surviving derivations — most decision-changing first; trivial/redundant
+    ones omitted. Indices are 1-based into the list handed to the ranker."""
+    order: list[int] = Field(default_factory=list)
 
 
 @dataclass
@@ -157,8 +163,56 @@ def _judge_prompt(question: str, findings: list, cands: list[DeriveCandidate]) -
         "Return one verdict per derivation (by its number).")
 
 
+_LABEL_RANK = {"inference": 3, "hypothesis": 2, "speculation": 1, "": 0}
+
+
+def _dedupe(claims: list[DerivedClaim], *, overlap: float = 0.6) -> list[DerivedClaim]:
+    """Structural near-duplicate removal: two conclusions that share ≥`overlap` of their word set are
+    the same point said twice — keep the stronger-labeled one. No semantics (Rule 18), just set overlap."""
+    kept: list[DerivedClaim] = []
+    seen: list[set[str]] = []
+    # process strongest labels first so a duplicate pair keeps the inference over the speculation
+    for c in sorted(claims, key=lambda x: -_LABEL_RANK.get(x.label, 0)):
+        # full word tokens (keep numbers + short entity ids like "A"/"M1" — they are the discriminators
+        # between otherwise-similar conclusions, so dropping them would wrongly merge distinct points)
+        toks = set(re.findall(r"\w+", c.conclusion.lower()))
+        if not toks:
+            continue
+        if any(len(toks & s) / max(1, len(toks | s)) >= overlap for s in seen):
+            continue
+        kept.append(c); seen.append(toks)
+    return kept
+
+
+async def _prioritize(question: str, claims: list[DerivedClaim], llm, *, cap: int) -> list[DerivedClaim]:
+    """Keep only the few derivations that most change the answer, in priority order. Semantic selection
+    is the LLM's job (Rule 18); on any failure fall back to label-strength order + hard cap so a ranker
+    outage can't dump the whole noisy list."""
+    if len(claims) <= cap:
+        # still order by label strength so the solid inferences lead
+        return sorted(claims, key=lambda x: -_LABEL_RANK.get(x.label, 0))
+    listing = "\n".join(f"[{i}] ({c.label}) {c.conclusion}" for i, c in enumerate(claims, 1))
+    prompt = (
+        f"QUESTION:\n{question}\n\nDERIVATIONS:\n{listing}\n\n"
+        f"Return, in `order`, the 1-based indices of the AT MOST {cap} derivations that most change the "
+        "answer to the question — most decision-relevant first. OMIT redundant restatements and trivial "
+        "points (e.g. a bare arithmetic difference with no consequence). Keep genuinely distinct, "
+        "consequential conclusions only.")
+    try:
+        r = await llm.complete(
+            system="You rank reasoning by how much it changes the decision. Be ruthless about noise.",
+            messages=[{"role": "user", "content": prompt}], response_format=_Ranking, max_tokens=200)
+        order = [i for i in (getattr(r.parsed, "order", []) or []) if isinstance(i, int) and 1 <= i <= len(claims)]
+        picked = [claims[i - 1] for i in dict.fromkeys(order)][:cap]      # dedupe indices, honor cap
+        if picked:
+            return picked
+    except Exception as e:   # noqa: BLE001 — ranking is best-effort; never lose the whole answer
+        _log.warning("derive: prioritize failed (%s) — falling back to label order", str(e)[:120])
+    return sorted(claims, key=lambda x: -_LABEL_RANK.get(x.label, 0))[:cap]
+
+
 async def derive(question: str, findings: list, llm, *, generate_ideas: bool = False,
-                 judge_llm=None, max_tokens: int = 2000) -> list[DerivedClaim]:
+                 judge_llm=None, max_tokens: int = 2000, max_out: int = 5) -> list[DerivedClaim]:
     """Verified findings → gated, labeled derivations. Never adds a fact; only reasons over findings.
 
     Two LLM calls: (1) propose candidates, (2) validity-judge them (via `judge_llm` if given, ideally a
@@ -219,4 +273,11 @@ async def derive(question: str, findings: list, llm, *, generate_ideas: bool = F
         out.append(DerivedClaim(
             conclusion=c.conclusion.strip(), basis=tuple(c.basis), kind=c.kind,
             warrant=(c.warrant or "").strip(), falsifier=(c.falsifier or "").strip(), label=label))
+
+    # 5) PRIORITIZE — dedupe near-identical points, then keep only the few most decision-relevant, in
+    # priority order. This is what turns a correct-but-noisy list into an answer a human can read (the
+    # head-to-head showed the gate is sound but the raw list drowns the signal).
+    out = _dedupe(out)
+    if len(out) > max_out:
+        out = await _prioritize(question, out, judge_llm or llm, cap=max_out)
     return out

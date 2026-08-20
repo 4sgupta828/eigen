@@ -10,7 +10,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from .reason import (DeriveCandidate, DeriveCandidates, DerivedClaim, _Verdict, _Verdicts, derive)
+from .reason import (DeriveCandidate, DeriveCandidates, DerivedClaim, _Ranking, _Verdict, _Verdicts,
+                     _dedupe, derive)
 
 
 @dataclass
@@ -30,12 +31,14 @@ _FINDINGS = [
 class _FakeLLM:
     """Returns canned candidates on the generate call and canned verdicts on the judge call, dispatched
     by response_format. `cands`/`verdicts` are what the 'model' proposes; the GATE decides what survives."""
-    def __init__(self, cands, verdicts):
-        self._cands, self._verdicts = cands, verdicts
+    def __init__(self, cands, verdicts, order=None):
+        self._cands, self._verdicts, self._order = cands, verdicts, order
 
     async def complete(self, *, system, messages, response_format, max_tokens):
         if response_format is DeriveCandidates:
             parsed = DeriveCandidates(derivations=self._cands)
+        elif response_format is _Ranking:
+            parsed = _Ranking(order=self._order or [])
         else:
             parsed = _Verdicts(verdicts=self._verdicts)
         return type("R", (), {"parsed": parsed, "output_tokens": 0})()
@@ -107,6 +110,38 @@ def test_arithmetic_new_figure_allowed_when_operands_grounded():
                    [_Verdict(index=1, verdict="valid")])
     out = asyncio.run(derive("profit?", findings, llm))
     assert len(out) == 1 and out[0].label == "inference"
+
+
+def test_dedupe_keeps_stronger_label_of_a_duplicate_pair():
+    a = DerivedClaim(conclusion="Project A has the most GitHub stars overall.", basis=(1,),
+                     kind="comparative", label="hypothesis")
+    b = DerivedClaim(conclusion="Project A has the most GitHub stars.", basis=(1,),
+                     kind="comparative", label="inference")   # same point, stronger label
+    c = DerivedClaim(conclusion="Project C is growing the fastest by rate.", basis=(2,),
+                     kind="comparative", label="inference")   # distinct point
+    kept = _dedupe([a, b, c])
+    assert len(kept) == 2                                     # the a/b duplicate collapses to one
+    keptset = {k.conclusion for k in kept}
+    assert "Project A has the most GitHub stars." in keptset  # kept the inference, dropped the hypothesis
+    assert any("growing the fastest" in k.conclusion for k in kept)
+
+
+def test_prioritize_caps_and_orders_by_ranker():
+    # 6 GENUINELY DISTINCT valid derivations → 6 > cap(2) → ranker selects 2, in its order.
+    texts = [
+        "Group A leads on adoption today.",
+        "Adoption is accelerating in the larger segment.",
+        "Size does not predict the eventual winner here.",
+        "Momentum favors the smaller entrant here.",
+        "Outcomes track team quality more than the approach.",
+        "The early lead is eroding for the leader.",
+    ]
+    cands = [DeriveCandidate(conclusion=t, basis=[1], kind="comparative", warrant="w") for t in texts]
+    verdicts = [_Verdict(index=i, verdict="valid") for i in range(1, 7)]
+    llm = _FakeLLM(cands, verdicts, order=[4, 2])             # ranker prefers #4 then #2
+    out = asyncio.run(derive("Which matters?", _FINDINGS, llm, max_out=2))
+    assert len(out) == 2
+    assert "smaller entrant" in out[0].conclusion and "accelerating" in out[1].conclusion
 
 
 def test_judge_failure_demotes_does_not_upgrade():

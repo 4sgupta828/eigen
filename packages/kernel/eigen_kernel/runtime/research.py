@@ -21,6 +21,28 @@ class _PlainAnswer(BaseModel):
     text: str
 
 
+_DERIVE_LABEL_UI = {"inference": "Inference", "hypothesis": "Hypothesis", "speculation": "💡 Idea"}
+
+
+def _render_derivations(ds: list) -> str:
+    """Render gated derivations as a compact, labeled 'Reasoning & ideas' section. Each line shows the
+    epistemic label, the conclusion, the finding basis (auditable), and the falsifier when present."""
+    lines = []
+    for d in ds:
+        label = _DERIVE_LABEL_UI.get(getattr(d, "label", ""), getattr(d, "label", ""))
+        basis = ", ".join(str(b) for b in getattr(d, "basis", ()) or ())
+        tail = f"  _(from {basis})_" if basis else ""
+        fals = (getattr(d, "falsifier", "") or "").strip()
+        if fals and getattr(d, "label", "") != "inference":
+            tail += f" — wrong if: {fals}"
+        lines.append(f"- **{label}:** {getattr(d, 'conclusion', '').strip()}{tail}")
+    if not lines:
+        return ""
+    return ("## Reasoning & ideas\n"
+            "_Derived from the findings above — each step is labeled by confidence, cites the findings "
+            "it rests on, and says what would make it wrong._\n\n" + "\n".join(lines))
+
+
 def build_history_context(history, *, answer_focus: bool = False) -> str | None:
     """Prior conversation turns → a compact context block (a follow-up can be elliptical). Context ONLY —
     it frames search/interpretation and NEVER becomes a citable claim. Shared by ask() and ask_panel() so
@@ -103,6 +125,9 @@ class ResearchService:
     evidence_select: bool = False           # rank claims by relevance before the cap + wider atom window (flag)
     atom_cap: int = 1600                    # per-atom char window for the extractor (raised under evidence_select)
     reasoning_read: bool = False            # surface the validated interpretation + confidence layer (flag)
+    derive: bool = False                    # EIGEN_DERIVE: gated, labeled derivations over verified claims
+    derive_ideas: bool = False              # EIGEN_DERIVE_IDEAS: also generate grounded 'opportunity' ideas
+    derive_judge_llm: object | None = None  # optional cross-family validity judge (else reuses self.llm)
     collect_diagnostics: bool = False       # capture a troubleshooting trace (turns/tools/retries/failures) (flag)
     classify_evidence: object | None = None # vertical structural evidence-tier classifier (source_key, facets) -> kind
     evidence_fitness: bool = False          # boost stronger evidence tiers into the compose cap (flag)
@@ -497,6 +522,22 @@ class ResearchService:
         res.visual_observation = visual_obs      # surface the image reading (UI panel)
         res.effort = sc.effort                   # echo the resolved multiplier (observability)
         res.resolved_question = resolved_question # condensed question if it differed (observability)
+
+        # GROUNDED REASONING (flag): derive labeled, checked conclusions FROM the verified findings —
+        # a second trust regime on top of the fact gate. Additive: adds no fact, only reasons over the
+        # findings run_react already verified; a failure never breaks the answer.
+        if self.derive and getattr(res, "verified_claims", None):
+            try:
+                from eigen_kernel.research.reason import derive as _derive
+                ds = await _derive(
+                    resolved_question or question, res.verified_claims, self.llm,
+                    generate_ideas=self.derive_ideas, judge_llm=self.derive_judge_llm)
+                res.derivations = ds
+                section = _render_derivations(ds)
+                if section:
+                    res.composed_answer = (res.composed_answer or "").rstrip() + "\n\n" + section
+            except Exception:   # noqa: BLE001 — reasoning is additive; never sink the grounded answer
+                pass
         return res
 
     def panel_roster(self) -> list[dict]:

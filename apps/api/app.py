@@ -604,6 +604,21 @@ def reasoning_read_enabled() -> bool:
     return os.environ.get("EIGEN_REASONING_READ", "").lower() in ("1", "true", "yes")
 
 
+def derive_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_DERIVE runs the grounded-reasoning GATE — after the fact gate,
+    derive labeled conclusions (inference/hypothesis/speculation) FROM the verified findings, each with a
+    finding basis and a falsifier, pruned to the few that matter. A second trust regime: facts are
+    source-provenanced, reasoning is premise-provenanced + validity-checked. OFF → no derivations
+    (byte-identical)."""
+    return os.environ.get("EIGEN_DERIVE", "").lower() in ("1", "true", "yes")
+
+
+def derive_ideas_enabled() -> bool:
+    """Flag (default OFF): EIGEN_DERIVE_IDEAS also generates grounded 'opportunity' derivations
+    (whitespace / second-order implications) — the brainstorming surface. Rides EIGEN_DERIVE."""
+    return os.environ.get("EIGEN_DERIVE_IDEAS", "").lower() in ("1", "true", "yes")
+
+
 def answer_focus_enabled() -> bool:
     """Flag (default OFF, Rule 20): when ON, elliptical conversational follow-ups are condensed into a
     self-contained question (so retrieval + compose inherit the subject) AND compose ANSWERS the
@@ -855,6 +870,8 @@ class ResearchOut(BaseModel):
     confidence: dict | None = None        # 3-dimension confidence read (None unless the flag is on)
     reasoning_purpose: str = ""           # the decision the reasoning serves (empty unless the flag is on)
     reasoning_conclusion: str = ""        # the informed judgment toward that purpose (flag on only)
+    derivations: list = []                # gated labeled derivations {label,kind,conclusion,basis,
+    #                                       falsifier} (empty unless EIGEN_DERIVE is on) — the audit view
     diagnostics: dict | None = None       # troubleshooting trace (None unless the diag-trace flag is on)
     freshness: dict | None = None         # {as_of,newest_year,oldest_year,n_dated,n_total,stale_warning}
     #                                       (None unless the freshness-ranking flag is on)
@@ -952,6 +969,8 @@ def build_default_service() -> ResearchService:
         claims_first=claims_first, extraction_lenses=getattr(manifest, "extraction_lenses", ()),
         evidence_select=evidence_select, atom_cap=atom_cap,
         reasoning_read=reasoning_read_enabled(),
+        derive=derive_enabled(),
+        derive_ideas=derive_ideas_enabled(),
         collect_diagnostics=diag_trace_enabled(),
         classify_evidence=getattr(manifest, "evidence_classifier", None),
         evidence_fitness=evidence_fitness_enabled(),
@@ -1784,6 +1803,9 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             confidence=(getattr(res, "confidence", None) if reasoning_read_enabled() else None),
             reasoning_purpose=(getattr(res, "reasoning_purpose", "") if reasoning_read_enabled() else ""),
             reasoning_conclusion=(getattr(res, "reasoning_conclusion", "") if reasoning_read_enabled() else ""),
+            derivations=([{"label": d.label, "kind": d.kind, "conclusion": d.conclusion,
+                           "basis": list(d.basis), "falsifier": d.falsifier}
+                          for d in (getattr(res, "derivations", []) or [])] if derive_enabled() else []),
             diagnostics=(getattr(res, "diagnostics", None) if diag_trace_enabled() else None),
             freshness=(getattr(res, "freshness", None) if freshness_ranking_enabled() else None),
         )

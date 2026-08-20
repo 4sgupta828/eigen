@@ -552,6 +552,10 @@ class AnswerResult:
     clarification: str = ""              # a clarifying question to ask instead of answering (ambiguous follow-up)
     charts: list = field(default_factory=list)   # validated grounded bar charts (dicts) for the UI
     derived_from_prior: bool = False     # answer is a transform of the PREVIOUS answer (no new retrieval)
+    # Grounded reasoning (flag EIGEN_DERIVE): gated, labeled derivations built FROM the verified claims —
+    # each with a basis (finding indices), an epistemic label (inference/hypothesis/speculation) the gate
+    # assigned, and a falsifier. Adds no fact; empty unless the derive flag is on (byte-identical OFF).
+    derivations: list = field(default_factory=list)
     # Reasoning Read (flag): a purpose-driven analysis — a stated PURPOSE, the interpretation FACTORS
     # that bear on it, a converging CONCLUSION, and the 3-dimension confidence read. All empty/None
     # unless the reasoning-read flag drove the compose directive (byte-identical OFF).
