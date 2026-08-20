@@ -604,6 +604,15 @@ def reasoning_read_enabled() -> bool:
     return os.environ.get("EIGEN_REASONING_READ", "").lower() in ("1", "true", "yes")
 
 
+def readable_prose_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_READABLE_PROSE appends a plain-language WRITING-STYLE layer to
+    compose so answers read like a crisp analyst brief, not a research paper (short sentences, one idea
+    each, no em-dash pile-ups). Changes ONLY prose style — never the sections/structure (that's the
+    question-driven contract's job), and never the findings, [n] citations, or [[R]] labels. OFF → the
+    compose directive is unchanged (byte-identical)."""
+    return os.environ.get("EIGEN_READABLE_PROSE", "").lower() in ("1", "true", "yes")
+
+
 def derive_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_DERIVE runs the grounded-reasoning GATE — after the fact gate,
     derive labeled conclusions (inference/hypothesis/speculation) FROM the verified findings, each with a
@@ -969,6 +978,7 @@ def build_default_service() -> ResearchService:
         claims_first=claims_first, extraction_lenses=getattr(manifest, "extraction_lenses", ()),
         evidence_select=evidence_select, atom_cap=atom_cap,
         reasoning_read=reasoning_read_enabled(),
+        readable_prose=readable_prose_enabled(),
         derive=derive_enabled(),
         derive_ideas=derive_ideas_enabled(),
         collect_diagnostics=diag_trace_enabled(),

@@ -125,6 +125,7 @@ class ResearchService:
     evidence_select: bool = False           # rank claims by relevance before the cap + wider atom window (flag)
     atom_cap: int = 1600                    # per-atom char window for the extractor (raised under evidence_select)
     reasoning_read: bool = False            # surface the validated interpretation + confidence layer (flag)
+    readable_prose: bool = False            # EIGEN_READABLE_PROSE: plain-language style over compose (flag)
     derive: bool = False                    # EIGEN_DERIVE: gated, labeled derivations over verified claims
     derive_ideas: bool = False              # EIGEN_DERIVE_IDEAS: also generate grounded 'opportunity' ideas
     derive_judge_llm: object | None = None  # optional cross-family validity judge (else reuses self.llm)
@@ -505,7 +506,8 @@ class ResearchService:
             facets=facets or {}, exclude_facets=exclude_facets or {},
             max_steps=sc.max_steps, k=sc.k, planner_atom_window=sc.planner_atom_window,
             compose_claim_cap=sc.compose_claim_cap, extract_collect=sc.extract_collect,
-            answer_focus=answer_focus, reasoning_read=self.reasoning_read, country_boost=country_boost,
+            answer_focus=answer_focus, reasoning_read=self.reasoning_read,
+            readable_prose=self.readable_prose, country_boost=country_boost,
             collect_diagnostics=self.collect_diagnostics,
             classify_evidence=self.classify_evidence,
             evidence_fitness=self.evidence_fitness, evidence_ranker=self.evidence_ranker,

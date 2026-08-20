@@ -41,6 +41,24 @@ _COMPOSE_FAIL_NOTE = (
     "_The written answer couldn't be generated just now, but the evidence below was retrieved and "
     "verified against its sources. Please retry the question._")
 
+# READABILITY (flag): a WRITING-STYLE layer only. It changes HOW the prose reads, never WHAT the answer
+# contains or its structure — the sections/headings/order stay exactly as the contract-chosen directive
+# dictates, every [n] citation and every [[R]] label is kept. It only asks for plain, short-sentence
+# prose so the answer reads like a sharp brief, not a research paper. Appended AFTER the directive so it
+# governs style regardless of which structure the question-driven contract selected.
+_READABILITY_STYLE = (
+    "WRITING STYLE — read this LAST; it governs only HOW you write the prose inside the structure above. "
+    "It does NOT change the sections, headings, their order, or which findings/citations you include, and "
+    "you must keep EVERY [n] citation and EVERY [[R]] reasoning label exactly as required above:\n"
+    "- Write for a smart, busy reader — a crisp analyst brief, NOT a research paper.\n"
+    "- One idea per sentence. Keep sentences short (aim ~12–22 words). If a point needs a caveat, put the "
+    "caveat in the NEXT sentence — do not chain it on with an em-dash.\n"
+    "- Avoid em-dash pile-ups and nested parentheticals ((a)…(b)…). Say the point plainly first, then add "
+    "detail in a following short sentence.\n"
+    "- Lead each sentence with its point, then the support. Prefer plain words over jargon.\n"
+    "- Do NOT shorten by dropping facts, citations, or [[R]] labels — only by writing them more simply. "
+    "Same information, lighter prose.")
+
 # Compose sees only the verified findings, capped for cost + scannability. Default selection is
 # first-come (retrieval/extraction order). Under the evidence-select flag we collect MORE candidates
 # and keep the ones most RELEVANT to the question — so compose gets the BEST findings, not the first.
@@ -619,6 +637,8 @@ async def run_react(
     extract_collect: int = _EXTRACT_COLLECT,      # candidate pool before relevance-ranking (effort-scalable)
     answer_focus: bool = False,               # ANSWER the question + scope to its subject (vs compile findings)
     reasoning_read: bool = False,             # surface the validated interpretation + confidence layer (flag)
+    readable_prose: bool = False,             # plain-language WRITING-STYLE layer over compose (flag) —
+    #                                           readability only; changes no section/structure/citation
     collect_diagnostics: bool = False,        # capture a troubleshooting trace (turns/tools/retries/failures)
     classify_evidence=None,                   # vertical hook (source_key, facets) -> evidence_kind str (Rule 18: structural)
     evidence_fitness: bool = False,           # boost stronger evidence tiers into the compose cap (flag)
@@ -1719,7 +1739,10 @@ async def run_react(
                    "set `basis_findings` to the finding number(s) it rests on and introduce no number/"
                    "date/dose not already in those findings."
                    if reasoning_read else "")
-                + (("\n\n" + directive) if directive else ""))
+                + (("\n\n" + directive) if directive else "")
+                # READABILITY (flag): plain-language STYLE layer, last so it governs prose across whatever
+                # structure the contract chose. Never alters sections/citations (byte-identical when OFF).
+                + (("\n\n" + _READABILITY_STYLE) if readable_prose else ""))
             comp = await llm.complete(
                 system=system_prompt,
                 messages=[{"role": "user", "content": compose_user}],
