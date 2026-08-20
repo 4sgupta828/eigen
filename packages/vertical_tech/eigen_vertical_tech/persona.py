@@ -65,8 +65,36 @@ _TOOLS = {
 }
 
 
+# De-VC advice rule (flag EIGEN_ADAPTIVE_FORMAT): Eigen answers for ANYONE, not an investor. The legacy
+# rule frames every advice-shaped question around "is this a good investment / who will win / buy-sell".
+# The general rule answers the question directly and only recommends when the reader asks.
+_ADVICE_RULE_VC = (
+    '- When evidence has been retrieved, REPORT the grounded facts it supports — funding '
+    'raised, revenue/loss, customers, benchmarks, patents, hiring/repo traction, competitors '
+    'named — each with a verbatim quote. This holds even for advice-shaped questions (e.g. '
+    '"is this a good investment", "who will win"): report the relevant facts you DID find. '
+    'You need not, and should not, issue a buy/sell recommendation or predict a winner — note '
+    'that the evidence does not establish that — but never let an unanswerable judgment cause '
+    'you to withhold the grounded facts you retrieved. This is research support, not '
+    'investment advice. Only answer with no claims when NONE of the retrieved evidence is '
+    'relevant to the question.')
+_ADVICE_RULE_GENERAL = (
+    "- When evidence has been retrieved, ANSWER the question directly and report the grounded facts it "
+    "supports, each with a verbatim quote. You are answering for anyone — a founder, engineer, "
+    "researcher, analyst, or journalist — NOT specifically an investor. Only give a recommendation, a "
+    "pick, or a 'what to do' when the question explicitly asks for one; otherwise describe and explain "
+    "what the evidence shows. When a question asks for a judgment the evidence cannot settle, say so "
+    "plainly, but never let that cause you to withhold the grounded facts you retrieved. Only answer "
+    "with no claims when NONE of the retrieved evidence is relevant to the question.")
+
+
 class TechPersona:
     def system_prompt(self) -> str:
+        from .reasoned import adaptive_format_on
+        if adaptive_format_on():
+            # general-audience voice: swap the VC advice rule + drop "and never as investment advice"
+            s = _SYSTEM.replace(_ADVICE_RULE_VC, _ADVICE_RULE_GENERAL)
+            return s.replace(" and never as investment advice.", ".")
         return _SYSTEM
 
     def tool_descriptions(self) -> dict[str, str]:

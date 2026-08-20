@@ -25,8 +25,10 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
                          WikidataConnector, WikipediaConnector)
 from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT
-from .reasoned import (TECH_REASONED_ANSWER_FORMAT, TECH_REASONED_SCAFFOLD_PROMPT,
-                       TECH_UNDERSTANDING_ANSWER_FORMAT, TECH_UNDERSTANDING_QUERY_HINT)
+from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
+                       TECH_REASONED_ANSWER_FORMAT, TECH_REASONED_SCAFFOLD_PROMPT,
+                       TECH_UNDERSTANDING_ANSWER_FORMAT, TECH_UNDERSTANDING_QUERY_HINT,
+                       adaptive_format_on)
 from .eval_gold import GOLD
 from .freshness import TECH_FRESHNESS_POLICY
 from .fixtures import sample_filings, sample_papers
@@ -111,8 +113,13 @@ def build_manifest() -> VerticalManifest:
         # → decision-shaped questions get a coverage-brief-steered retrieval + a decision-first, grounding-
         # safe compose contract; lookups fall through to the standard engine; why/how → causal-model engine.
         # OFF → the engine param is ignored and answers are byte-identical to today.
-        reasoned_scaffold_prompt=TECH_REASONED_SCAFFOLD_PROMPT,
-        reasoned_answer_format=TECH_REASONED_ANSWER_FORMAT,
+        # FLAG EIGEN_ADAPTIVE_FORMAT: swap the ported clinical/VC decision memo for the general-audience,
+        # question-adaptive format + de-VC scaffold (the persona de-VCs in lockstep, in persona.py). OFF →
+        # legacy (byte-identical). Read at manifest-build (process start), so flip = redeploy.
+        reasoned_scaffold_prompt=(TECH_ADAPTIVE_SCAFFOLD_PROMPT if adaptive_format_on()
+                                  else TECH_REASONED_SCAFFOLD_PROMPT),
+        reasoned_answer_format=(TECH_ADAPTIVE_ANSWER_FORMAT if adaptive_format_on()
+                                else TECH_REASONED_ANSWER_FORMAT),
         understanding_answer_format=TECH_UNDERSTANDING_ANSWER_FORMAT,
         understanding_query_hint=TECH_UNDERSTANDING_QUERY_HINT,
         # Sub-vertical seam: sectors as a per-question subject scope (AI seeded), NOT separate verticals.

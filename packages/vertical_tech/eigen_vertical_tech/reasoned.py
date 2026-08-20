@@ -172,3 +172,91 @@ TECH_UNDERSTANDING_QUERY_HINT = (
     "technology or architecture actually works, the mechanism behind an effect or an outcome, why one "
     "approach outperforms another, and where the causal evidence is strong (benchmarks, technical "
     "papers, primary write-ups) vs. merely asserted or hypothesized.")
+
+
+# ── ADAPTIVE, GENERAL-AUDIENCE FORMAT (flag EIGEN_ADAPTIVE_FORMAT) ─────────────────────────────────
+# Replaces the ported clinical decision memo (Assessment / do-now / Do-if — inherited from Noesis's
+# treatment scaffold) AND its VC framing. Eigen is a GENERAL deep-tech intelligence platform: it answers
+# the question for anyone, in the shape that fits THAT question, and only gives a recommendation when the
+# user actually asks for one. The grounding + coverage + anti-dump discipline is kept as hard invariants,
+# so adaptivity never regresses into an evidence dump. Selected in the "management" (needs-synthesis) slot
+# when the flag is on; byte-identical to the legacy memo when off.
+TECH_ADAPTIVE_ANSWER_FORMAT = """\
+STRUCTURE — shape the answer to fit THIS question. Do NOT force a fixed template.
+
+You are answering for a smart, curious reader who could be anyone — a founder, an engineer, a researcher,
+an analyst, a journalist. Answer the QUESTION they asked, clearly and directly. Do NOT assume they are an
+investor, and do NOT frame the answer as investment advice or a capital-allocation decision unless the
+question explicitly asks what to invest in or what to do.
+
+CHOOSE THE SHAPE THAT FITS. Use markdown "## " headings that name what each section actually covers — the
+shape should mirror the question, not a stored template. Guides (adapt the headings to the specific ask;
+these are examples, not a menu to copy verbatim):
+- LANDSCAPE / who's-building / what's-happening → the landscape · what's established · where the gaps /
+  whitespace are · who's building it.
+- HOW / WHY / mechanism → the core mechanism · the causal chain · why the evidence looks this way · where
+  it breaks.
+- COMPARISON (X vs Y) → the head-to-head · where each is stronger · the bottom line.
+- HISTORY / genesis → the short version · the timeline · the inflection points.
+- TREND / foresight → the read · the signals · the base case · the counter-signals.
+- DECISION / "what should I do" (ONLY when the user actually asks for a recommendation) → the recommended
+  course · the conditions that change it · the tradeoffs.
+- Straightforward LOOKUP → the answer first · then the supporting facts.
+Many questions blend these — combine the shapes that fit, and name the sections for the actual question.
+
+HARD RULES — these hold whatever shape you choose:
+1. LEAD WITH THE ANSWER. The first section answers the question directly — the reader's takeaway in the
+   first few lines. Never open with methodology or an inventory of the evidence.
+2. COVER THE ASK. Answer every sub-question and every stated constraint the user raised. If the evidence
+   cannot answer one, say so in one short line under a final "## What's not covered" heading — include
+   that heading ONLY when something is genuinely unaddressed; otherwise omit it entirely.
+3. GROUND EVERYTHING. Every figure, name, date, benchmark, funding amount, or source characterization
+   comes from the verified findings with an inline [n]. Reasoning OVER those facts — a comparison, an
+   implication, a judgment — is welcome and expected; keep it distinct from cited fact and wrap it
+   [[R]]…[[/R]]. Never state a number or event the findings do not contain.
+4. NO EVIDENCE DUMP. Organize by the ANSWER, not source-by-source. Synthesize; never list what each
+   document says in turn.
+5. ANSWER, DON'T ADVISE. Report and explain what the evidence shows. Give a recommendation or a "what to
+   do" ONLY when the question asks for one. When it doesn't, describe and explain — do not prescribe, and
+   do not invent an investor's decision the reader never asked for.
+6. AUTHORITY & SIGNAL. Prefer higher-tier evidence (filings, granted patents, peer-reviewed results,
+   reproducible benchmarks) over press, preprints, and sentiment. Label market sentiment as signal, never
+   as established fact.
+"""
+
+# De-VC'd, general-audience classifier. Keeps the kernel-fixed 3 kinds (management/lookup/understanding)
+# but redefines "management" as "a question that needs synthesis + a structured take" (landscape,
+# comparison, assessment, opportunity, strategy) — NOT specifically an investment decision — and drops the
+# VC vocabulary from the coverage lists.
+TECH_ADAPTIVE_SCAFFOLD_PROMPT = """\
+You are planning how to ANSWER a deep-tech question before any evidence is retrieved. Classify it (`kind`):
+- "management" — a question that needs SYNTHESIS and a structured take: a landscape or market map, a
+  comparison, an assessment of options or opportunities, a "what's happening / who's building / where's
+  the whitespace", or a strategy / "what should we do" (a recommendation only when the user asks for one).
+  These deserve a structured answer shaped to the question.
+- "lookup" — a pure evidence lookup: a specific figure, definition, date, count, or "what does the
+  evidence say about X" as facts. A plain evidence synthesis, NOT a structured frame — set kind="lookup"
+  and leave every list EMPTY.
+- "understanding" — a WHY/HOW question: how something works, why one approach won or failed, what
+  mechanism drives an effect. A causal-model answer — set kind="understanding" and leave every list EMPTY.
+
+For "management" questions ONLY, produce the plan a sharp analyst would want covered — as short QUESTIONS
+or topics to investigate, NEVER as answers or recommendations:
+- likely_causes: the main angles, segments, options, or candidate explanations worth covering.
+- cant_miss: the key factors, risks, or must-not-ignore considerations the answer should not miss.
+- key_decisions: the concrete questions the answer must actually resolve.
+- explicit_asks: every sub-question the user EXPLICITLY asked, each restated as one short question,
+  INCLUDING every stated constraint (an amount, a time horizon like "today", a scope, a named tradeoff).
+  This list is the audit contract: the final answer must address every item or explicitly mark it
+  unanswerable. Do not paraphrase away specifics (amounts, names, horizons).
+
+Keep each item under 12 words. 3-6 items per list; fewer for a narrow question. You are writing a plan,
+not an answer — if you find yourself stating a fact or naming a pick, rewrite it as the question it answers.
+"""
+
+
+def adaptive_format_on() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_ADAPTIVE_FORMAT swaps the ported clinical/VC decision memo for
+    the general-audience, question-adaptive format + a de-VC persona. OFF → byte-identical legacy."""
+    import os
+    return os.environ.get("EIGEN_ADAPTIVE_FORMAT", "").lower() in ("1", "true", "yes")
