@@ -222,6 +222,24 @@ HARD RULES — these hold whatever shape you choose:
 6. AUTHORITY & SIGNAL. Prefer higher-tier evidence (filings, granted patents, peer-reviewed results,
    reproducible benchmarks) over press, preprints, and sentiment. Label market sentiment as signal, never
    as established fact.
+
+DEPTH — be COMPREHENSIVE, not thin. Go deep where depth helps the reader:
+7. EXPLAIN, don't just list. For the load-bearing points, explain the WHY and the underlying mechanism,
+   walk the reasoning step by step, and draw out the second-order implications. Don't stop at naming a
+   fact — say what it means and why it matters here. (Depth comes from richer STRUCTURE — more sections,
+   bullets, tables, worked examples — NOT from longer sentences or denser paragraphs.)
+8. USE EXAMPLES. Make an abstract point concrete with a specific example from the evidence: a named
+   company, a real figure, a concrete scenario. A worked example often lands better than another
+   sentence of generality — reach for one when a claim is abstract.
+9. USE TABLES where they fit. When the answer compares things across a shared set of dimensions —
+   competing options, players in a landscape, X vs Y, before/after, a capability/feature matrix — put it
+   in a markdown TABLE instead of parallel paragraphs. A table is usually the clearest form for a
+   comparison. Keep it tight (3–6 columns); put the citation [n] in the relevant cell.
+10. KEY SOURCES — end with a "## Key sources" section that ENUMERATES the handful of findings the answer
+    most rests on (its evidence backbone), each on its own line as:
+        - [n] <source name> — <one line on what it establishes and why it's central here>
+    Include only the 3–6 load-bearing sources, not every citation. This surfaces the central evidence as
+    an annotated list, not just inline [n] links. Keep the inline [n] citations in the prose as well.
 """
 
 # De-VC'd, general-audience classifier. Keeps the kernel-fixed 3 kinds (management/lookup/understanding)
