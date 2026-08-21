@@ -288,35 +288,31 @@ def adaptive_format_on() -> bool:
 # sections are ANTI-BLOAT capped, grounded to already-retrieved findings only, and omitted on lookups.
 TECH_ANSWER_360_BLOCK = """
 
-MULTI-PERSPECTIVE & 360 — add these two sections WHEN THEY ADD VALUE (see the caps and the omit rules):
+MULTI-PERSPECTIVE & 360 — enrich the ONE integrated answer. The user's actual question stays CENTRAL and
+is the spine and the lead; everything below serves that answer, it does not compete with it.
 
-11. PERSPECTIVES — for a question with genuinely different angles, add a "## Perspectives" section giving
-    2–3 DISTINCT viewpoints that actually matter for THIS question. Choose the angles that fit — e.g. the
-    technical / mechanism view, the practitioner / deployment view, the market / adoption view, the
-    skeptic / risk / failure-mode view, or the historical / base-rate view. Each viewpoint is 1–2 short
-    sentences. Ground every fact with [n]; wrap interpretation in [[R]]…[[/R]]. Do NOT invent an
-    artificial opposing view when the evidence genuinely skews one way — instead say the evidence points
-    one way and note what would be needed to argue otherwise. OMIT this section for simple lookups. Max 3
-    viewpoints (4 only for a broad landscape / comparison).
+11. PERSPECTIVES — when the question has genuinely different angles, show them. Either weave the angles
+    into the prose, or — if it reads cleaner — give a short "## Perspectives" section with 2–3 DISTINCT
+    viewpoints that actually matter for THIS question (e.g. the technical / mechanism view, the
+    practitioner / deployment view, the market / adoption view, the skeptic / risk view, the historical /
+    base-rate view). Keep each to 1–2 sentences. Ground every fact with [n]; wrap interpretation in
+    [[R]]…[[/R]]. Do NOT invent an artificial opposing view when the evidence genuinely skews one way —
+    say so and note what would be needed to argue otherwise. Skip this for simple lookups. At most 3
+    viewpoints (4 for a broad landscape / comparison).
 
-12. RELATED QUESTIONS (360) — just before "## Key sources", add a "## Related questions" section.
-    CHOOSING the questions works like collaborative filtering, but the signal is YOUR OWN KNOWLEDGE of how
-    this domain's questions cluster: pick the 2–3 questions that people who ask THIS question most
-    naturally ALSO want answered — the adjacent things a knowledgeable guide would anticipate (the next
-    layer down, the obvious comparison, the "but what about…", the practical how-to, the key risk). Use
-    what you know about the topic to surface genuinely useful NEIGHBORS, not narrow restatements of the
-    original ask.
-    ANSWERING them is the opposite — strictly GROUNDED: answer each in 1–2 sentences using ONLY the
-    findings already retrieved for THIS answer. Introduce no fact, number, or name that is not in the
-    cited findings, and do NOT answer from general knowledge. If the retrieved evidence does not settle a
-    related question, say so plainly ("the evidence here doesn't establish X — it would take Y") instead
-    of answering it ungrounded. Every fact still cites [n]; interpretation is [[R]]. OMIT for simple
-    lookups. Max 3 questions (5 only for a long, exploratory answer).
+12. 360 — ANTICIPATE the adjacent questions and FOLD them into THIS answer. Do NOT append a separate
+    "related questions" Q&A list at the end — the answer itself should already cover them. Up front, think
+    like collaborative filtering, but the signal is YOUR OWN KNOWLEDGE of how this domain's questions
+    cluster: what do people who ask THIS question almost always ALSO need to know — the next layer down,
+    the obvious comparison, the "but what about…", the practical how-to, the key risk? Use that to make the
+    single integrated answer feel COMPLETE — cover those adjacent points where they naturally fit inside
+    the answer, WITHOUT drifting from the user's question. Everything stays grounded: cite [n], label
+    reasoning [[R]], and if the retrieved evidence doesn't settle an adjacent point, say so plainly rather
+    than answering it ungrounded. The enrichment must never bloat the answer or bury the core reply.
 
-BALANCE — Perspectives + Related questions together stay a SMALL share of the answer (a quarter at most);
-they enrich it, they don't take it over. Never restate a table or a section you already wrote — a
-perspective adds an angle, it does not repeat content. Keep LEADING with the direct answer, and keep
-"## Key sources" as the final section.
+BALANCE — enrichment enriches, it never takes over. Keep LEADING with the direct answer to the user's
+question, don't restate a table or section you already wrote, and keep "## Key sources" as the final
+section.
 """
 
 
