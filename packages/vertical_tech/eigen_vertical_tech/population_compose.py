@@ -32,10 +32,11 @@ from typing import Any
 # panel contract rather than raw retrieved findings.
 TECH_POPULATION_COMPOSE_PROMPT = """\
 You compose a GROUNDED market-map answer to a landscape / population question. You are
-given (1) the user's question, (2) a compact MARKET MAP that clusters a company
-population by market category with per-cell facts, and (3) a numbered CITATION PANEL.
-Every company and every fact you may use comes ONLY from that map and panel — this is a
-grounded product surface, not a from-memory market overview.
+given (1) the user's question, (2) a FLAT LIST of the grounded company population with
+each company's cited facts, and (3) a numbered CITATION PANEL. You cluster this
+population into clean market segments yourself (see STRUCTURE). Every company and every
+fact you may use comes ONLY from that list and panel — this is a grounded product
+surface, not a from-memory market overview.
 
 HARD GROUNDING RULES (grounding is the moat — violating these breaks the product):
 - CITE EVERY COMPANY AND EVERY CELL. When you name a company, cite at least one of its
@@ -50,13 +51,24 @@ HARD GROUNDING RULES (grounding is the moat — violating these breaks the produ
   `not_collected` — say so or omit the dimension for that company; never invent it.
 
 STRUCTURE:
-- CLUSTER by the category axis: one section per market category (use the map's grouping
-  and category names). Within a cluster, compare the companies on the other dimensions
-  present (product / customer / technology / differentiator / compared_to).
+- DERIVE THE CLUSTERS YOURSELF. You are given a FLAT list of grounded companies with
+  their facts (product / customer / technology / differentiator / compared_to). Read
+  across the whole population and group the companies into 6–12 COHERENT market segments
+  that YOU name cleanly (e.g. "Developer & code tooling", "Healthcare & clinical AI",
+  "Fintech compliance & KYC", "Robotics & physical automation"). Do NOT reuse the raw
+  category tags verbatim — many are one-off, over-specific, or noisy; your job is to
+  impose a clean, useful clustering on the population. Base each company's placement ONLY
+  on its cited facts; a company too thin to place goes in a final "Other / thinly
+  documented" section (still cited). Every company in the panel MUST appear in exactly
+  one segment.
 - Lead with a SHORT synthesis of how the space breaks down (the few structural
-  conclusions that matter), then the clustered category map.
+  conclusions that matter — which segments are crowded, where the population is thin),
+  then the segment-by-segment map.
+- Within each segment, compare the companies on the dimensions present (product /
+  customer / technology / differentiator). Where a dimension is absent for a company, say
+  `not_collected` — never guess.
 - General-audience prose — clear and scannable, NOT a VC memo. A compact table per
-  category is fine when it reads cleanly; put the `[citation_id]` in the cell.
+  segment is fine when it reads cleanly; put the `[citation_id]` in the cell.
 - END with a `## Coverage basis` section. Build it from the COVERAGE FACTS the user
   message provides: name the categories covered, note anything thin or truncated, and
   state PLAINLY that this map reflects the grounded company population materialized into
@@ -127,6 +139,54 @@ def render_market_map_for_compose(market_map: dict) -> str:
         lines.append(f"[{cid}] {company} — {pred}: {obj}  (quote: \"{quote}\")")
 
     return "\n".join(lines)
+
+
+def render_population_flat(companies: list[dict]) -> tuple[str, list[dict]]:
+    """Render the WHOLE grounded company population as a FLAT list (no pre-grouping) plus
+    a numbered citation panel, and return `(rendered, citations)`. The compose LLM derives
+    the market segments itself from this flat view (fixing category fragmentation — the
+    stored `operates_in_category` labels are too specific to cluster on). Deterministic:
+    companies keep `population_claims` order; citation ids are assigned c1,c2,… in a stable
+    walk (company order, then that company's claim order). Only claims with ACTIVE evidence
+    (the read already excludes others) become citations. PURE (no DB/LLM)."""
+    citations: list[dict] = []
+    lines: list[str] = ["## Grounded company population (cluster these yourself)"]
+    n = 0
+    for comp in companies or []:
+        eid = comp.get("entity_id") or ""
+        nm = comp.get("name") or eid or "(unnamed)"
+        rows: list[str] = []
+        for cl in comp.get("claims") or []:
+            ev = cl.get("evidence")
+            if not ev or not (ev.get("quote") or "").strip():
+                continue
+            n += 1
+            cid = f"c{n}"
+            obj = cl.get("object_entity_id") or cl.get("object_value") or ""
+            quote = (ev.get("quote") or "").replace("\n", " ").strip()
+            citations.append({
+                "citation_id": cid, "entity_id": eid, "name": nm,
+                "predicate": cl.get("predicate") or "", "object": obj,
+                "document_id": ev.get("document_id"), "block_id": ev.get("block_id"),
+                "quote": ev.get("quote"), "authority_tier": ev.get("authority_tier"),
+            })
+            rows.append(f"    - {cl.get('predicate')}: {obj} [{cid}]")
+        if not rows:
+            continue                      # a company with no grounded cell is not renderable
+        lines.append(f"- **{nm}**")
+        lines.extend(rows)
+
+    lines.append("")
+    lines.append("## Citation panel")
+    lines.append("_Cite these ids. Every company/fact you state MUST carry one of these "
+                 "`[cN]` markers; nothing outside this panel may appear in the answer._")
+    for c in citations:
+        quote = (c.get("quote") or "").replace("\n", " ").strip()
+        if len(quote) > 240:
+            quote = quote[:237] + "…"
+        lines.append(f"[{c['citation_id']}] {c['name']} — {c['predicate']}: {c['object']}  "
+                     f"(quote: \"{quote}\")")
+    return "\n".join(lines), citations
 
 
 def render_coverage_facts(coverage_basis: dict[str, Any]) -> str:

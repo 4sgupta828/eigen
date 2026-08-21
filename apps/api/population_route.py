@@ -34,12 +34,10 @@ from pydantic import BaseModel
 from api.claimgraph import ClaimGraphStore
 from eigen_kernel.research.reason import derive
 from eigen_kernel.runtime.research import _render_derivations
-from eigen_vertical_tech.claim_predicates import SLICE1_PREDICATES
-from eigen_vertical_tech.landscape_map import build_market_map
 from eigen_vertical_tech.population_compose import (
     TECH_POPULATION_COMPOSE_PROMPT,
     render_coverage_facts,
-    render_market_map_for_compose,
+    render_population_flat,
 )
 
 _log = logging.getLogger(__name__)
@@ -87,54 +85,48 @@ def _validate_citations(answer: str, valid_ids: set[str]) -> tuple[str, int]:
     return cleaned, dropped
 
 
-def _company_names(market_map: dict) -> dict[str, str]:
-    names: dict[str, str] = {}
-    for cat in market_map.get("categories") or []:
-        for comp in cat.get("companies") or []:
-            eid, nm = comp.get("entity_id") or "", comp.get("name") or ""
-            if eid and nm:
-                names[eid] = nm
-    return names
-
-
 async def answer_from_population(*, question: str, tenant_id: str, dsn: str, llm,
-                                 top_categories: int = 12, company_cap: int = 400,
+                                 top_categories: int = 12, company_cap: int = 150,
                                  judge_llm=None) -> dict:
     """End-to-end grounded population answer. Returns
       {answer, citations, stats, coverage_basis, n_uncited_dropped, meta,
        derivations_rendered}.
     On an unrecoverable error, returns {error, answer:"", ...} — never a fabricated
-    answer. See module docstring for the pipeline + grounding contract."""
+    answer. See module docstring for the pipeline + grounding contract.
+
+    The compose derives the market SEGMENTS itself from the FLAT grounded population
+    (the stored `operates_in_category` labels are too fragmented to cluster on) — so the
+    whole population is passed, not a top-N-categories slice."""
     store = ClaimGraphStore(dsn)
     try:
-        # 1) SCOPE — the top-N categories by member count (compact map for slice 1).
+        # 1) POPULATION — the WHOLE grounded company population (not scoped to noisy
+        #    top-N categories, which dropped most companies). The compose LLM clusters.
         cats = await store.distinct_categories(tenant_id=tenant_id)
-        scope = cats[:top_categories] if top_categories and top_categories > 0 else cats
-        scope_norms = [c["object_norm"] for c in scope] or None
-
-        # 2) POPULATION — grounded companies × their cited cells → market map.
         pop = await store.population_claims(
-            tenant_id=tenant_id, category_norms=scope_norms, company_cap=company_cap)
-        market_map = build_market_map(pop["companies"], predicates=SLICE1_PREDICATES)
+            tenant_id=tenant_id, category_norms=None, company_cap=company_cap)
 
-        citations = market_map.get("citations") or []
-        stats = market_map.get("stats") or {}
+        # 2) Render FLAT (company → cited cells) + the citation panel the LLM cites against.
+        rendered_map, citations = render_population_flat(pop["companies"])
+        n_companies = sum(1 for c in pop["companies"]
+                          if any((cl.get("evidence") or {}).get("quote") for cl in c.get("claims") or []))
+        stats = {"n_companies": n_companies, "n_cited_claims": len(citations),
+                 "n_categories_in_graph": len(cats)}
 
         # coverage_basis: structured facts (the compose ALSO emits a `## Coverage basis`,
         # but the caller gets the facts too). Assembled from cats + pop meta + the honest
         # population statement.
         coverage_basis = {
-            "categories_covered": [c["name"] for c in scope],
+            "categories_covered": [c["name"] for c in cats[:top_categories]],
             "n_categories_total": len(cats),
-            "n_categories_in_scope": len(scope),
-            "n_companies": stats.get("n_companies", 0),
+            "n_categories_in_scope": len(cats),
+            "n_companies": n_companies,
             "truncation": pop.get("meta") or {},
             "population_statement": _POPULATION_STATEMENT,
             "tenant_id": tenant_id,
         }
 
         # 3) EMPTY-POPULATION FAIL-SAFE — honest no-data, never parametric fabrication.
-        if not market_map.get("categories") or not citations:
+        if not citations:
             answer = (
                 f"No grounded startup population has been ingested into the claim graph "
                 f"yet for tenant '{tenant_id}' — there is nothing to map. Once companies "
@@ -151,9 +143,9 @@ async def answer_from_population(*, question: str, tenant_id: str, dsn: str, llm
                 "empty_population": True,
             }
 
-        # 4) COMPOSE — self-contained population-compose prompt as system; rendered map +
-        #    citation panel + question + coverage facts as user (match research.py shape).
-        rendered_map = render_market_map_for_compose(market_map)
+        # 4) COMPOSE — self-contained population-compose prompt as system; the FLAT
+        #    population + citation panel + question + coverage facts as user. The LLM
+        #    derives the segments itself. (matches research.py llm.complete shape.)
         coverage_facts = render_coverage_facts(coverage_basis)
         user = (f"QUESTION:\n{question}\n\n{rendered_map}\n\n{coverage_facts}")
         comp = await llm.complete(
@@ -168,16 +160,16 @@ async def answer_from_population(*, question: str, tenant_id: str, dsn: str, llm
 
         # 6) DERIVE — grounded reasoning layer over the cited facts (additive; a failure
         #    never sinks the answer). Each finding is one citation (text + verbatim quote).
+        #    max_tokens raised (candidate generation truncated at the 2000 default).
         derivations_rendered = ""
         try:
-            names = _company_names(market_map)
             findings = [
                 _Finding(
-                    text=(f"{names.get(c.get('entity_id') or '', c.get('entity_id') or '')} "
+                    text=(f"{c.get('name') or c.get('entity_id') or ''} "
                           f"— {c.get('predicate') or ''}: {c.get('object') or ''}").strip(),
                     quote=c.get("quote") or "")
                 for c in citations]
-            ds = await derive(question, findings, llm, judge_llm=judge_llm)
+            ds = await derive(question, findings, llm, judge_llm=judge_llm, max_tokens=4000)
             section = _render_derivations(ds)
             if section:
                 derivations_rendered = section
