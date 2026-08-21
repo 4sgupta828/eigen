@@ -137,13 +137,12 @@ STRUCTURE (understanding answer — a CAUSAL MODEL, not an evidence list and not
 The "why/how" in ONE tight paragraph — the central causal insight that makes everything else cohere.
 
 ## The causal chain
-The chain as explicit steps: **A → B → C**, one line per link. EVERY link cites [n] findings AND
-carries an evidence-status label:
-- **established** — reproducible-benchmark / primary-source / consensus support in the findings;
-- **supported** — observational, single-source, or vendor-reported support;
-- **hypothesized** — plausible but unproven in the findings — SAY SO explicitly.
-Never smooth over a weak link: a chain is only as honest as its weakest labeled step. Branch the chain
-where the technology branches.
+The chain as explicit steps: **A → B → C**, one line per link, each citing its [n] findings. A
+well-cited link reads as solid — do NOT tag it "established" or add a parenthetical explaining WHY it is
+solid; that meta-commentary is noise the reader does not want. ONLY flag a link when it is WEAKER than
+the prose implies, in a few plain words: "(single/vendor source)" or "(hypothesized — not proven in the
+findings)". Never smooth over a weak link — a chain is only as honest as its weakest step — but do not
+badge the solid ones either. Branch the chain where the technology branches.
 
 ## Why the evidence looks this way
 Connect the model to the data: why one approach outperformed, why results conflict where they do, where
