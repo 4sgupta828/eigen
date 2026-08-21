@@ -1500,6 +1500,57 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         except Exception as e:   # provider errors (auth, credits, rate limit, timeout)
             raise HTTPException(status_code=502, detail=f"provider error: {e}") from e
 
+    @app.post("/research/population")
+    async def research_population(body: ResearchIn,
+                                  x_eigen_token: str = Header(default="")) -> dict:
+        """Task 4 capstone route (flag-gated, Rule 20). When EIGEN_STARTUP_POPULATION is
+        ON, answer a landscape/population question by AGGREGATING the grounded claim
+        graph (population → market map → compose + derive) instead of a retrieval sample.
+        SEPARATE from `_do_research` — the OFF path is byte-identical (404 when the flag
+        is off, so this endpoint is a true no-op)."""
+        if not startup_population_enabled():
+            raise HTTPException(status_code=404, detail="startup population route not enabled")
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            raise HTTPException(status_code=503, detail="EIGEN_CORPUS_DSN not configured")
+        if app.state.service is None:
+            app.state.service = build_default_service()
+        llm = app.state.service.llm
+        from api.population_route import answer_from_population
+        try:
+            result = await answer_from_population(
+                question=body.question, tenant_id=body.tenant_id, dsn=dsn, llm=llm)
+        except CassetteMiss as e:
+            raise HTTPException(status_code=503, detail=(
+                "No model available in replay mode. Set EIGEN_PROVIDER_MODE=live "
+                "with ANTHROPIC_API_KEY + OPENAI_API_KEY to answer live, or record "
+                "cassettes first.")) from e
+        except Exception as e:   # provider errors (auth, credits, rate limit, timeout)
+            raise HTTPException(status_code=502, detail=f"provider error: {e}") from e
+        # Best-effort session persist (so the answer shows in /sessions). Never breaks
+        # the response — a store/DB hiccup leaves session_id None and returns the answer.
+        session_id = None
+        if not result.get("error") and result.get("answer"):
+            store = _store()
+            if store is not None:
+                try:
+                    cb = result.get("coverage_basis") or {}
+                    session_id = await store.save(
+                        tenant_id=body.tenant_id, workspace_id=body.workspace_id,
+                        question=body.question, answer=result["answer"],
+                        grounded=not result.get("empty_population", False),
+                        claims=[], source_stats={},
+                        coverage_gaps=[], rejected=0, sources=body.sources,
+                        user_name=body.user_name, user_email=body.user_email,
+                        kind="population",
+                        extra={"population_stats": result.get("stats") or {},
+                               "coverage_basis": cb,
+                               "n_uncited_dropped": result.get("n_uncited_dropped", 0)})
+                except Exception:
+                    session_id = None
+        result["session_id"] = session_id
+        return result
+
     @app.post("/panel/plan")
     async def panel_plan(body: PanelIn) -> dict:
         """Phase 1 (Convene): auto-select the specialists for this case + return the full roster (each
