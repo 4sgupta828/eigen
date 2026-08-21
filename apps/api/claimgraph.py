@@ -107,6 +107,17 @@ def _iso(d: "date | None") -> str:
     return d.isoformat() if d is not None else ""
 
 
+def _as_dict(f: Any) -> dict:
+    """asyncpg may hand back a jsonb column as a dict OR a JSON string — normalize to a dict
+    (mirrors `app.py::_parse_facets`). Fail-safe → {}."""
+    if isinstance(f, dict):
+        return f
+    try:
+        return json.loads(f) if f else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 # --------------------------------------------------------------------------- #
 # DDL — 7 tables, CREATE TABLE IF NOT EXISTS, on EIGEN_CORPUS_DSN             #
 # --------------------------------------------------------------------------- #
@@ -647,6 +658,179 @@ class ClaimGraphStore:
             d["valid_to"] = _iso(r["valid_to"]) or None
             out.append(d)
         return out
+
+    # ---- canonicalization support (Task S2a) ------------------------------- #
+    async def find_entities_by_norm(self, norm: str, kind: str, *,
+                                    tenant_id: str = "demo") -> list[dict]:
+        """Active entities of `kind` (tenant-scoped) whose canonical name OR any registered
+        alias normalizes (`normalize_name`) to `norm`. Returns `{entity_id, name, facets}`
+        per match, deterministic id order. Structural exact-normalized lookup only (Rule 18:
+        a computable string match, NOT fuzzy ER) — this is the ambiguity surface the entity
+        resolver hands to the LLM when it returns >1."""
+        await self.ensure_schema()
+        if not norm:
+            return []
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            # Candidate set = entities of the kind that either (a) have an alias whose stored
+            # alias_norm equals `norm`, or (b) are a superset we re-check by name in Python
+            # (normalize_name is not an SQL function — mirror `find_company`'s Python re-check).
+            alias_ids = {r["entity_id"] for r in await conn.fetch(
+                """SELECT a.entity_id FROM rs_entity_alias a
+                   JOIN rs_entity e ON e.entity_id = a.entity_id
+                   WHERE a.alias_norm = $1 AND e.tenant_id = $2
+                     AND e.status = 'active' AND e.kind = $3""",
+                norm, tenant_id, kind)}
+            rows = await conn.fetch(
+                "SELECT entity_id, name, facets FROM rs_entity "
+                "WHERE tenant_id = $1 AND status = 'active' AND kind = $2 ORDER BY entity_id",
+                tenant_id, kind)
+        out: list[dict] = []
+        for r in rows:
+            if r["entity_id"] in alias_ids or normalize_name(r["name"]) == norm:
+                out.append({"entity_id": r["entity_id"], "name": r["name"],
+                            "facets": _as_dict(r["facets"])})
+        return out
+
+    async def subject_predicate_claims(self, subject_id: str, predicate: str, *,
+                                       tenant_id: str = "demo") -> list[dict]:
+        """ACTIVE (non-retracted, non-superseded) claims for one `(subject, predicate)`, each
+        carrying the fields conflict resolution orders on: `claim_id, object_kind,
+        object_value, object_entity_id, object_norm, confidence, valid_from, ingested_at`.
+        Evidence is fetched separately via `claim_evidence_tiers` (a claim may cite N spans)."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT claim_id, object_kind, object_value, object_entity_id, object_norm,
+                          confidence, valid_from, ingested_at
+                   FROM rs_claim
+                   WHERE tenant_id = $1 AND subject_id = $2 AND predicate = $3
+                     AND retracted_at IS NULL AND superseded_at IS NULL
+                   ORDER BY claim_id""",
+                tenant_id, subject_id, predicate)
+        return [{
+            "claim_id": r["claim_id"], "object_kind": r["object_kind"],
+            "object_value": r["object_value"], "object_entity_id": r["object_entity_id"],
+            "object_norm": r["object_norm"],
+            "confidence": float(r["confidence"]) if r["confidence"] is not None else 0.0,
+            "valid_from": _iso(r["valid_from"]) or None, "ingested_at": r["ingested_at"],
+        } for r in rows]
+
+    async def claim_evidence_tiers(self, claim_id: str) -> list[dict]:
+        """The ACTIVE evidence rows' `(authority_tier, evidence_kind)` for a claim, strongest
+        first — the signal conflict resolution uses to detect controlling evidence and the
+        claim's best authority tier."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT authority_tier, evidence_kind FROM rs_claim_evidence "
+                "WHERE claim_id = $1 AND evidence_status = 'active' "
+                "ORDER BY authority_tier DESC, retrieved_at",
+                claim_id)
+        return [{"authority_tier": int(r["authority_tier"]),
+                 "evidence_kind": r["evidence_kind"] or ""} for r in rows]
+
+    async def record_resolution(self, *, subject_id: str, predicate: str, valid_bucket: str,
+                                winning_claim_id: str, conflict_claim_ids: Sequence[str],
+                                winner_authority_tier: int, rationale: str,
+                                tenant_id: str = "demo") -> None:
+        """Upsert the WINNER row for a `(subject, predicate, valid_bucket)` group into
+        `rs_claim_resolution`. Losers are named in `conflict_claim_ids` but NEVER retracted —
+        they stay queryable in `rs_claim`. Idempotent via ON CONFLICT DO UPDATE, so re-running
+        the resolver rewrites the same winner."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO rs_claim_resolution
+                     (tenant_id, subject_id, predicate, valid_bucket, winning_claim_id,
+                      conflict_claim_ids, winner_authority_tier, rationale)
+                   VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8)
+                   ON CONFLICT (tenant_id, subject_id, predicate, valid_bucket) DO UPDATE SET
+                     winning_claim_id = EXCLUDED.winning_claim_id,
+                     conflict_claim_ids = EXCLUDED.conflict_claim_ids,
+                     winner_authority_tier = EXCLUDED.winner_authority_tier,
+                     rationale = EXCLUDED.rationale,
+                     resolved_at = now()""",
+                tenant_id, subject_id, predicate, valid_bucket, winning_claim_id,
+                json.dumps(list(conflict_claim_ids)), winner_authority_tier, rationale)
+
+    async def resolved_entity_claims(self, subject_id: str, *,
+                                     predicates: Sequence[str] | None = None,
+                                     tenant_id: str = "demo") -> list[dict]:
+        """Winner-PREFERRED read: like `entity_claims`, but where a `rs_claim_resolution`
+        winner exists for a `(subject, predicate, valid_bucket)` group, return ONLY the winner
+        for that group with `is_resolved=True` and `alternates` (the loser claim summaries)
+        attached; groups with no resolution return all active claims unchanged. This is the
+        read a diligence brief uses to show 'sources agree / disagree'."""
+        await self.ensure_schema()
+        claims = await self.entity_claims(subject_id, predicates=predicates, tenant_id=tenant_id)
+        resolutions = await self._fetch_resolutions(subject_id, predicates, tenant_id)
+
+        # Group the active claims by (predicate, valid_bucket) — bucket = valid_from's year.
+        groups: dict[tuple[str, str], list[dict]] = {}
+        order: list[tuple[str, str]] = []
+        for c in claims:
+            vf = c.get("valid_from")
+            bucket = vf[:4] if isinstance(vf, str) and len(vf) >= 4 else ""
+            key = (c["predicate"], bucket)
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append(c)
+
+        out: list[dict] = []
+        for key in order:
+            group = groups[key]
+            res = resolutions.get(key)
+            if res is None:
+                out.extend(group)  # no resolution → all active claims unchanged
+                continue
+            winner = next((c for c in group if c["claim_id"] == res["winning_claim_id"]), None)
+            if winner is None:
+                # winner not currently grounded/queryable (its span was GC'd) → surface the
+                # group unchanged rather than hide everything (fail-safe visibility).
+                out.extend(group)
+                continue
+            alternates = [self._claim_summary(c) for c in group
+                          if c["claim_id"] != winner["claim_id"]]
+            w = {**winner, "is_resolved": True, "alternates": alternates,
+                 "winner_authority_tier": int(res["winner_authority_tier"]),
+                 "rationale": res["rationale"]}
+            out.append(w)
+        return out
+
+    async def _fetch_resolutions(self, subject_id: str, predicates: Sequence[str] | None,
+                                 tenant_id: str) -> dict:
+        """This subject's `rs_claim_resolution` rows (optionally predicate-filtered), keyed by
+        `(predicate, valid_bucket)`. Split out so the winner-preferred assembly in
+        `resolved_entity_claims` is testable offline (a fake subclass overrides this)."""
+        args: list[Any] = [tenant_id, subject_id]
+        pred_clause = ""
+        if predicates:
+            args.append(list(predicates))
+            pred_clause = f"AND predicate = ANY(${len(args)})"
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            res_rows = await conn.fetch(
+                f"""SELECT predicate, valid_bucket, winning_claim_id, winner_authority_tier,
+                           rationale
+                    FROM rs_claim_resolution
+                    WHERE tenant_id = $1 AND subject_id = $2 {pred_clause}""",
+                *args)
+        return {(r["predicate"], r["valid_bucket"]): dict(r) for r in res_rows}
+
+    @staticmethod
+    def _claim_summary(c: dict) -> dict:
+        """Compact loser summary attached as an `alternate` (kept visible, never dropped)."""
+        return {
+            "claim_id": c["claim_id"], "object_kind": c["object_kind"],
+            "object_value": c["object_value"], "object_entity_id": c["object_entity_id"],
+            "object_norm": c["object_norm"], "confidence": c["confidence"],
+            "evidence": c.get("evidence"),
+        }
 
     # ---- aggregation reads (population → market map, Task 3) ---------------- #
     async def distinct_categories(self, *, tenant_id: str = "demo",
