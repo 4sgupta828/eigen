@@ -35,6 +35,8 @@ def main() -> int:
     ap.add_argument("--max-usd", type=float, default=5.0)
     ap.add_argument("--price-per-call-usd", type=float, default=0.01)
     ap.add_argument("--model", default=None)
+    ap.add_argument("--diligence", action="store_true",
+                    help="extract the slice-2 DILIGENCE predicates too (default: slice-1 only)")
     a = ap.parse_args()
 
     dsn = os.environ.get("EIGEN_CORPUS_DSN")
@@ -51,11 +53,17 @@ def main() -> int:
 
     # Imported here (after arg-parse) so `--help` never needs the app import path.
     from api.claim_extract_job import run_claim_extraction
+    from eigen_vertical_tech.claim_predicates import active_predicates
+
+    predicates = active_predicates(include_diligence=a.diligence)
+    print(f"predicates={'slice1+diligence' if a.diligence else 'slice1'} "
+          f"({len(predicates)} active)")
 
     summary = asyncio.run(run_claim_extraction(
         dsn=dsn, source_keys=source_keys, tenant_id=a.tenant, limit=a.limit,
         dry_run=dry_run, max_blocks=a.max_blocks, max_llm_calls=a.max_llm_calls,
-        max_usd=a.max_usd, price_per_call_usd=a.price_per_call_usd, model=a.model))
+        max_usd=a.max_usd, price_per_call_usd=a.price_per_call_usd, model=a.model,
+        predicates=predicates))
     print(json.dumps(summary, indent=2))
     return 0
 

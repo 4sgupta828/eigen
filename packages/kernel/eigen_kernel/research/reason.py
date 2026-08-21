@@ -212,12 +212,18 @@ async def _prioritize(question: str, claims: list[DerivedClaim], llm, *, cap: in
 
 
 async def derive(question: str, findings: list, llm, *, generate_ideas: bool = False,
-                 judge_llm=None, max_tokens: int = 2000, max_out: int = 5) -> list[DerivedClaim]:
+                 judge_llm=None, max_tokens: int = 2000, judge_max_tokens: int = 4000,
+                 max_out: int = 5) -> list[DerivedClaim]:
     """Verified findings → gated, labeled derivations. Never adds a fact; only reasons over findings.
 
     Two LLM calls: (1) propose candidates, (2) validity-judge them (via `judge_llm` if given, ideally a
     different model family). All gating between/after is deterministic code. Returns only SURVIVING
     derivations (inference/hypothesis/speculation); arbitrary/ungrounded leaps are dropped.
+
+    `judge_max_tokens` caps the validity-judge response (default 4000 ≥ the former hardcoded 1200): with
+    many findings the judge emits one verdict per candidate, so too small a cap truncates the verdict
+    list and every missing verdict conservatively demotes — a real inference silently becomes a
+    hypothesis. Raising the default only improves existing callers.
     """
     if not findings:
         return []
@@ -254,7 +260,7 @@ async def derive(question: str, findings: list, llm, *, generate_ideas: bool = F
         j = await (judge_llm or llm).complete(
             system="You are a strict, impartial validity checker.",
             messages=[{"role": "user", "content": _judge_prompt(question, findings, gated)}],
-            response_format=_Verdicts, max_tokens=1200)
+            response_format=_Verdicts, max_tokens=judge_max_tokens)
         for v in getattr(j.parsed, "verdicts", []) or []:
             if isinstance(v.index, int) and 1 <= v.index <= len(gated):
                 verdicts[v.index] = (v.verdict or "").strip().lower()

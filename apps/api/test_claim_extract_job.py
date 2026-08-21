@@ -39,12 +39,32 @@ from api.claim_extract_job import (
     project_cost,
     run_claim_extraction,
 )
+from api.claim_extract_job import _entity_kind_by_predicate  # data-driven object router
 from api.claimgraph import ClaimGraphStore, normalize_name
+from eigen_vertical_tech.claim_predicates import active_predicates
 
 
 # --------------------------------------------------------------------------- #
 # OFFLINE UNIT — cost/cap math + pure helpers (no DB, no network)             #
 # --------------------------------------------------------------------------- #
+def test_entity_kind_router_is_data_driven_from_object_entity_kind() -> None:
+    # The router maps ENTITY predicates → their configured object_entity_kind (Rule 18:
+    # config, not a keyword guess); value predicates never appear in the map.
+    both = active_predicates(include_diligence=True)
+    kbp = _entity_kind_by_predicate(both)
+    assert kbp["operates_in_category"] == "category"
+    assert kbp["compared_to"] == "company"
+    assert kbp["has_founder"] == "person"
+    assert kbp["has_investor"] == "investor"
+    # a value predicate is not routed as an entity
+    assert "offers_product" not in kbp
+    assert "raised_funding" not in kbp
+    # slice-1-only default excludes the diligence entity predicates
+    kbp_s1 = _entity_kind_by_predicate(active_predicates())
+    assert "has_founder" not in kbp_s1 and "operates_in_category" in kbp_s1
+
+
+
 def test_project_cost_one_call_per_block() -> None:
     # this extractor is ONE call per block → projected_calls == blocks_considered exactly.
     p = project_cost(120, max_blocks=500, max_llm_calls=200, max_usd=5.0,
@@ -285,6 +305,126 @@ def test_cap_abort_writes_nothing(monkeypatch) -> None:
                     "SELECT status FROM rs_extraction_run WHERE run_id=$1", res["run_id"])
             assert n_claims == 0 and n_ent == 0          # nothing written on abort
             assert ledger["status"] == "aborted"
+        finally:
+            await store.close()
+    asyncio.run(body())
+
+
+# --------------------------------------------------------------------------- #
+# DSN-GATED INTEGRATION — data-driven object routing (slice-2 diligence)      #
+# --------------------------------------------------------------------------- #
+# rs_entity.entity_id is a GLOBAL primary key (no tenant in the key) and
+# upsert_entity's ON CONFLICT keeps the FIRST writer's tenant_id (cross-tenant
+# dedup is the store's intended design). So deterministic object nodes must use
+# per-run UNIQUE names here, or they collide with another test's identical node
+# (e.g. the slice-1 "Developer Tools" category) and this run's tenant-filtered
+# assertion would miss the row the earlier run owns.
+def _fake_diligence_extractor(calls: list[str], names: dict):
+    """Canned extractor returning the four ENTITY-object predicates whose routing must be
+    data-driven: has_founder→person, has_investor→investor, operates_in_category→category,
+    compared_to→company. Object names are per-run unique (passed in `names`). No network."""
+    async def fake_extract(*, block_text, subject_name, predicates, client=None, model=None):
+        calls.append(subject_name)
+        if subject_name == "Delta":
+            return [
+                {"predicate": "has_founder", "object_kind": "entity", "object_value": "",
+                 "object_entity_name": names["founder"], "quote": "founded by"},
+                {"predicate": "has_investor", "object_kind": "entity", "object_value": "",
+                 "object_entity_name": names["investor"], "quote": "backed by"},
+                {"predicate": "operates_in_category", "object_kind": "entity", "object_value": "",
+                 "object_entity_name": names["category"], "quote": "operates in"},
+                {"predicate": "compared_to", "object_kind": "entity", "object_value": "",
+                 "object_entity_name": names["company"], "quote": "compared to"},
+            ]
+        return []
+    return fake_extract
+
+
+async def _seed_delta_block(tenant: str) -> None:
+    from eigen_kernel.retrieval.postgres import PostgresRetrievalSource
+    src = PostgresRetrievalSource(DSN)
+    try:
+        await src.ensure_schema()
+        facets = {"source_kind": "reference", "entity_type": "company"}
+        # The job trusts the (monkeypatched) extractor's output verbatim — it does NOT
+        # re-verify spans — so the block text need not match the canned quotes.
+        await src.upsert_block(
+            tenant_id=tenant, document_id="yc:delta", block_id="b1",
+            text="# Delta\nDelta profile block.",
+            facets=facets, document_title="Delta", content_type="text", source_key="yc")
+    finally:
+        await src.close()
+
+
+@integration
+def test_diligence_entity_objects_route_by_configured_kind(monkeypatch) -> None:
+    async def body():
+        tenant = "t_" + uuid.uuid4().hex[:12]
+        uniq = uuid.uuid4().hex[:10]
+        names = {
+            "founder": f"Jane Founder {uniq}",
+            "investor": f"Sequoia {uniq}",
+            "category": f"DevTools {uniq}",
+            "company": f"Widgets {uniq}",
+        }
+        await _seed_delta_block(tenant)
+        calls: list[str] = []
+        import eigen_vertical_tech.claim_extract as ce
+        monkeypatch.setattr(ce, "extract_typed_claims", _fake_diligence_extractor(calls, names))
+
+        # A DILIGENCE run: the caller opts into the slice-2 vocabulary. Without this the
+        # has_founder/has_investor predicates are not active and the extractor's output
+        # would never be reached — so pass the include_diligence set explicitly.
+        res = await run_claim_extraction(
+            dsn=DSN, source_keys=["yc"], tenant_id=tenant, dry_run=False,
+            predicates=active_predicates(include_diligence=True))
+
+        assert res["status"] == "done"
+        assert res["claims_emitted"] == 4
+        assert calls == ["Delta"]
+
+        person_id = "person:" + normalize_name(names["founder"])
+        investor_id = "investor:" + normalize_name(names["investor"])
+        cat_id = "category:" + normalize_name(names["category"])
+        company_id = "__unresolved:" + normalize_name(names["company"])
+
+        store = ClaimGraphStore(DSN)
+        try:
+            pool = await store._get_pool()
+            async with pool.acquire() as conn:
+                async def ent(eid):
+                    return await conn.fetchrow(
+                        "SELECT kind, name FROM rs_entity WHERE entity_id=$1 AND tenant_id=$2",
+                        eid, tenant)
+                # has_founder → PERSON node (kind='person', id 'person:<norm>')
+                person = await ent(person_id)
+                # has_investor → INVESTOR node (kind='investor', id 'investor:<norm>')
+                investor = await ent(investor_id)
+                # operates_in_category → CATEGORY node (unchanged slice-1 routing)
+                cat = await ent(cat_id)
+                # compared_to → COMPANY node via __unresolved: (unchanged slice-1 routing)
+                company = await ent(company_id)
+
+                async def obj_of(pred):
+                    return await conn.fetchval(
+                        "SELECT object_entity_id FROM rs_claim WHERE tenant_id=$1 "
+                        "AND subject_id='yc:delta' AND predicate=$2", tenant, pred)
+                founder_obj = await obj_of("has_founder")
+                investor_obj = await obj_of("has_investor")
+                cat_obj = await obj_of("operates_in_category")
+                company_obj = await obj_of("compared_to")
+
+            assert person is not None and person["kind"] == "person"
+            assert person["name"] == names["founder"]
+            assert investor is not None and investor["kind"] == "investor"
+            assert investor["name"] == names["investor"]
+            assert cat is not None and cat["kind"] == "category"
+            assert company is not None and company["kind"] == "company"
+            # every claim's object_entity_id points at the correctly-kinded minted node
+            assert founder_obj == person_id
+            assert investor_obj == investor_id
+            assert cat_obj == cat_id
+            assert company_obj == company_id
         finally:
             await store.close()
     asyncio.run(body())

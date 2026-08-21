@@ -144,6 +144,45 @@ def test_prioritize_caps_and_orders_by_ranker():
     assert "smaller entrant" in out[0].conclusion and "accelerating" in out[1].conclusion
 
 
+class _MaxTokenRecorder:
+    """Fake LLM that records the max_tokens passed on EACH call, keyed by response_format,
+    so a test can assert the judge call got the judge_max_tokens value (not the gen value)."""
+    def __init__(self):
+        self.seen: dict = {}
+
+    async def complete(self, *, system, messages, response_format, max_tokens):
+        self.seen[response_format] = max_tokens
+        if response_format is DeriveCandidates:
+            parsed = DeriveCandidates(derivations=[
+                DeriveCandidate(conclusion="A has a higher margin than C.", basis=[1, 3],
+                                kind="comparative", warrant="40% > 25%")])
+        elif response_format is _Ranking:
+            parsed = _Ranking(order=[])
+        else:
+            parsed = _Verdicts(verdicts=[_Verdict(index=1, verdict="valid")])
+        return type("R", (), {"parsed": parsed, "output_tokens": 0})()
+
+
+def test_derive_passes_judge_max_tokens_through_to_the_judge_call():
+    # The validity-judge call must receive the caller's judge_max_tokens (default 4000 ≥ the
+    # former hardcoded 1200), while candidate generation still uses max_tokens — proving a
+    # truncated verdict list can be fixed by the caller without touching the kernel.
+    rec = _MaxTokenRecorder()
+    out = asyncio.run(derive("Which company is most efficient?", _FINDINGS, rec,
+                             max_tokens=2000, judge_max_tokens=7777))
+    assert len(out) == 1 and out[0].label == "inference"
+    assert rec.seen[_Verdicts] == 7777          # judge got the passed value
+    assert rec.seen[DeriveCandidates] == 2000   # generation untouched
+
+
+def test_derive_judge_max_tokens_defaults_to_at_least_1200():
+    # Default must not regress below the old hardcoded 1200 (callers only improve).
+    rec = _MaxTokenRecorder()
+    asyncio.run(derive("Which company is most efficient?", _FINDINGS, rec))
+    assert rec.seen[_Verdicts] >= 1200
+    assert rec.seen[_Verdicts] == 4000
+
+
 def test_judge_failure_demotes_does_not_upgrade():
     # no verdict returned for the candidate → conservative "plausible" → hypothesis (needs falsifier),
     # NEVER inference. Proves a judge outage can't mint a confident inference.

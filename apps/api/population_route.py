@@ -169,7 +169,8 @@ async def answer_from_population(*, question: str, tenant_id: str, dsn: str, llm
                           f"— {c.get('predicate') or ''}: {c.get('object') or ''}").strip(),
                     quote=c.get("quote") or "")
                 for c in citations]
-            ds = await derive(question, findings, llm, judge_llm=judge_llm, max_tokens=4000)
+            ds = await derive(question, findings, llm, judge_llm=judge_llm,
+                              max_tokens=4000, judge_max_tokens=4000)
             section = _render_derivations(ds)
             if section:
                 derivations_rendered = section

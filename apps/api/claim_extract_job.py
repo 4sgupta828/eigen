@@ -27,6 +27,7 @@ calls this automatically.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from typing import Any
 
@@ -37,8 +38,10 @@ from api.claimgraph import ClaimGraphStore, normalize_name
 # attribute — keeping every test offline (no network / no live LLM call).
 from eigen_vertical_tech import claim_extract
 from eigen_vertical_tech.authority import TechAuthorityPolicy
-from eigen_vertical_tech.claim_predicates import SLICE1_PREDICATES
+from eigen_vertical_tech.claim_predicates import active_predicates
 from eigen_vertical_tech.evidence_kind import classify as classify_evidence_kind
+
+_log = logging.getLogger(__name__)
 
 # Stamped on every claim this job writes so a re-extraction under a newer extractor is
 # distinguishable in the ledger / claim rows.
@@ -49,12 +52,26 @@ EXTRACTOR_VERSION = "tech-slice1-claim-extract-v1"
 # score of its own; a survivor is a high-confidence grounded claim by construction.
 GATED_CLAIM_CONFIDENCE = 0.9
 
-# Entity predicates whose OBJECT is a market CATEGORY (a soft category node), vs. a company
-# (resolved / soft-noded). Declared as data (part of the slice-1 vocabulary), not inferred —
-# a structural per-predicate mapping, not a semantic heuristic (Rule 18).
-_CATEGORY_OBJECT_PREDICATES = frozenset({"operates_in_category"})
+# object_entity_kind values this job knows how to MINT a deterministic node for. Any entity
+# predicate whose configured kind is outside this set falls back to the company path (safe
+# default) with a warning. This is a STRUCTURAL routing table, not a semantic heuristic
+# (Rule 18): the kind is CONFIG on the predicate (from the vertical registry), the LLM still
+# owns which predicate a span asserts.
+_MINTABLE_ENTITY_KINDS = frozenset({"category", "person", "investor", "company"})
 
 _AUTHORITY = TechAuthorityPolicy()
+
+
+def _entity_kind_by_predicate(active: list[dict]) -> dict[str, str]:
+    """Data-driven object router: map each ENTITY predicate name → the rs_entity.kind to mint
+    for its object, read from the predicate's `object_entity_kind` config (defaults to
+    'company' when unset). Structural (Rule 18) — a per-predicate lookup built from the
+    registry, never a keyword guess."""
+    return {
+        p["name"]: (p.get("object_entity_kind") or "company")
+        for p in active
+        if p.get("object_kind") == "entity"
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -129,10 +146,12 @@ def project_cost(
 
 
 def _active_predicates(predicates: list[dict] | None) -> list[dict]:
-    """The predicates to constrain extraction to — the caller's list, else the vertical's
-    slice-1 registry filtered to status='active'."""
-    src = predicates if predicates is not None else SLICE1_PREDICATES
-    return [p for p in src if p.get("status", "active") == "active"]
+    """The predicates to constrain extraction to — the caller's list (filtered to active),
+    else the vertical's default active registry (slice-1 only; a caller wanting the diligence
+    vocabulary passes `active_predicates(include_diligence=True)`)."""
+    if predicates is None:
+        return active_predicates()
+    return [p for p in predicates if p.get("status", "active") == "active"]
 
 
 # --------------------------------------------------------------------------- #
@@ -203,6 +222,7 @@ async def run_claim_extraction(
     run_id = "run:" + uuid.uuid4().hex
     source_keys_str = ",".join(source_keys)
     active = _active_predicates(predicates)
+    kind_by_predicate = _entity_kind_by_predicate(active)  # data-driven object router
     try:
         await store.ensure_schema()
 
@@ -291,14 +311,20 @@ async def run_claim_extraction(
                     obj_name = c["object_entity_name"]
                     object_value = ""
                     object_norm = normalize_name(obj_name)
-                    if predicate in _CATEGORY_OBJECT_PREDICATES:
-                        # object is a market CATEGORY → deterministic soft category node.
-                        object_entity_id = "category:" + object_norm
-                        await store.upsert_entity(object_entity_id, kind="category",
-                                                  name=obj_name, tenant_id=tenant_id)
-                    else:
-                        # object is a COMPANY → exact-alias resolve, else a soft
-                        # `__unresolved:` node (NO fuzzy merge — slice-1 ER policy).
+                    # DATA-DRIVEN routing (Rule 18): the entity KIND to mint is CONFIG on the
+                    # predicate (`object_entity_kind`), never inferred from the object text.
+                    ekind = kind_by_predicate.get(predicate)
+                    if ekind not in _MINTABLE_ENTITY_KINDS:
+                        # unknown/missing kind → safe default (company path), but surface it:
+                        # a predicate mis-declared its object kind, not a silent mis-model.
+                        _log.warning(
+                            "claim_extract_job: predicate %r has no known object_entity_kind "
+                            "(%r) — routing object to the company path", predicate, ekind)
+                        ekind = "company"
+
+                    if ekind == "company":
+                        # COMPANY → exact-alias resolve, else a soft `__unresolved:` node
+                        # (NO fuzzy merge — slice-1 ER policy).
                         resolved = await store.resolve_alias(obj_name)
                         if resolved:
                             object_entity_id = resolved
@@ -306,6 +332,12 @@ async def run_claim_extraction(
                             object_entity_id = "__unresolved:" + object_norm
                             await store.upsert_entity(object_entity_id, kind="company",
                                                       name=obj_name, tenant_id=tenant_id)
+                    else:
+                        # category / person / investor → deterministic soft `<kind>:<norm>`
+                        # node of the configured kind (no alias resolution — minted fresh).
+                        object_entity_id = f"{ekind}:{object_norm}"
+                        await store.upsert_entity(object_entity_id, kind=ekind,
+                                                  name=obj_name, tenant_id=tenant_id)
 
                 claim_id = await store.upsert_claim(
                     subject_id=subject_id, predicate=predicate, object_kind=object_kind,
