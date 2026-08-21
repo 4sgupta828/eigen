@@ -278,3 +278,51 @@ def adaptive_format_on() -> bool:
     the general-audience, question-adaptive format + a de-VC persona. OFF → byte-identical legacy."""
     import os
     return os.environ.get("EIGEN_ADAPTIVE_FORMAT", "").lower() in ("1", "true", "yes")
+
+
+# ── MULTI-PERSPECTIVE + 360 (flag EIGEN_ANSWER_360) ───────────────────────────────────────────────
+# Appended to the adaptive format when both flags are on. v1 is PROMPT-ONLY: the composed prose is NOT
+# per-sentence hard-gated (the verbatim span-gate covers the structured claims list, not arbitrary
+# prose), so these two sections rely on the discipline below + a held-out eval, NOT a code gate. v2
+# would add structured perspectives/related_qas fields validated like the reasoning-read layer. Both
+# sections are ANTI-BLOAT capped, grounded to already-retrieved findings only, and omitted on lookups.
+TECH_ANSWER_360_BLOCK = """
+
+MULTI-PERSPECTIVE & 360 — add these two sections WHEN THEY ADD VALUE (see the caps and the omit rules):
+
+11. PERSPECTIVES — for a question with genuinely different angles, add a "## Perspectives" section giving
+    2–3 DISTINCT viewpoints that actually matter for THIS question. Choose the angles that fit — e.g. the
+    technical / mechanism view, the practitioner / deployment view, the market / adoption view, the
+    skeptic / risk / failure-mode view, or the historical / base-rate view. Each viewpoint is 1–2 short
+    sentences. Ground every fact with [n]; wrap interpretation in [[R]]…[[/R]]. Do NOT invent an
+    artificial opposing view when the evidence genuinely skews one way — instead say the evidence points
+    one way and note what would be needed to argue otherwise. OMIT this section for simple lookups. Max 3
+    viewpoints (4 only for a broad landscape / comparison).
+
+12. RELATED QUESTIONS (360) — just before "## Key sources", add a "## Related questions" section.
+    CHOOSING the questions works like collaborative filtering, but the signal is YOUR OWN KNOWLEDGE of how
+    this domain's questions cluster: pick the 2–3 questions that people who ask THIS question most
+    naturally ALSO want answered — the adjacent things a knowledgeable guide would anticipate (the next
+    layer down, the obvious comparison, the "but what about…", the practical how-to, the key risk). Use
+    what you know about the topic to surface genuinely useful NEIGHBORS, not narrow restatements of the
+    original ask.
+    ANSWERING them is the opposite — strictly GROUNDED: answer each in 1–2 sentences using ONLY the
+    findings already retrieved for THIS answer. Introduce no fact, number, or name that is not in the
+    cited findings, and do NOT answer from general knowledge. If the retrieved evidence does not settle a
+    related question, say so plainly ("the evidence here doesn't establish X — it would take Y") instead
+    of answering it ungrounded. Every fact still cites [n]; interpretation is [[R]]. OMIT for simple
+    lookups. Max 3 questions (5 only for a long, exploratory answer).
+
+BALANCE — Perspectives + Related questions together stay a SMALL share of the answer (a quarter at most);
+they enrich it, they don't take it over. Never restate a table or a section you already wrote — a
+perspective adds an angle, it does not repeat content. Keep LEADING with the direct answer, and keep
+"## Key sources" as the final section.
+"""
+
+
+def answer_360_on() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_ANSWER_360 adds in-answer '## Perspectives' (2-3 question-fit
+    viewpoints) and '## Related questions' (adjacent Qs briefly answered from retrieved evidence). v1 is
+    prompt-only, grounded-to-retrieved-findings, anti-bloat capped. Rides EIGEN_ADAPTIVE_FORMAT."""
+    import os
+    return os.environ.get("EIGEN_ANSWER_360", "").lower() in ("1", "true", "yes")

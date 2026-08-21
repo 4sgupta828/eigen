@@ -26,9 +26,9 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
 from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT
 from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
-                       TECH_REASONED_ANSWER_FORMAT, TECH_REASONED_SCAFFOLD_PROMPT,
+                       TECH_ANSWER_360_BLOCK, TECH_REASONED_ANSWER_FORMAT, TECH_REASONED_SCAFFOLD_PROMPT,
                        TECH_UNDERSTANDING_ANSWER_FORMAT, TECH_UNDERSTANDING_QUERY_HINT,
-                       adaptive_format_on)
+                       adaptive_format_on, answer_360_on)
 from .eval_gold import GOLD
 from .freshness import TECH_FRESHNESS_POLICY
 from .fixtures import sample_filings, sample_papers
@@ -118,8 +118,11 @@ def build_manifest() -> VerticalManifest:
         # legacy (byte-identical). Read at manifest-build (process start), so flip = redeploy.
         reasoned_scaffold_prompt=(TECH_ADAPTIVE_SCAFFOLD_PROMPT if adaptive_format_on()
                                   else TECH_REASONED_SCAFFOLD_PROMPT),
-        reasoned_answer_format=(TECH_ADAPTIVE_ANSWER_FORMAT if adaptive_format_on()
-                                else TECH_REASONED_ANSWER_FORMAT),
+        # FLAG EIGEN_ANSWER_360 (rides adaptive): append the multi-perspective '## Perspectives' +
+        # '## Related questions' sections to the ONE integrated answer. OFF → plain adaptive format.
+        reasoned_answer_format=(
+            (TECH_ADAPTIVE_ANSWER_FORMAT + (TECH_ANSWER_360_BLOCK if answer_360_on() else ""))
+            if adaptive_format_on() else TECH_REASONED_ANSWER_FORMAT),
         understanding_answer_format=TECH_UNDERSTANDING_ANSWER_FORMAT,
         understanding_query_hint=TECH_UNDERSTANDING_QUERY_HINT,
         # Sub-vertical seam: sectors as a per-question subject scope (AI seeded), NOT separate verticals.
