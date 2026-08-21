@@ -594,6 +594,16 @@ def startup_population_enabled() -> bool:
     return os.environ.get("EIGEN_STARTUP_POPULATION", "").lower() in ("1", "true", "yes")
 
 
+def diligence_depth_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_DILIGENCE_DEPTH. When ON, the single-company
+    diligence route is exposed at POST /research/diligence — read ONE company's grounded
+    claims from the graph, organize them BY DIMENSION (Team/Funding/Traction/Product/
+    Market/Moat/Profile), and compose a grounded brief (every cell cited or
+    `not_collected`) + grounded assessment. SEPARATE from `_do_research` and
+    `/research/population`. OFF → the endpoint 404s (a true no-op, byte-identical)."""
+    return os.environ.get("EIGEN_DILIGENCE_DEPTH", "").lower() in ("1", "true", "yes")
+
+
 def answer_mode_routing_enabled() -> bool:
     """Flag (default OFF, Rule 20 — Evidence Contract stage 4) via EIGEN_ANSWER_MODE_ROUTING:
     when ON, an ENUMERATIVE question routes to an enumerative compose framing — the kernel APPENDS
@@ -701,6 +711,7 @@ class ResearchIn(BaseModel):
     effort: float = Field(default=1.0, ge=1.0, le=2.5)   # effort multiplier; ignored unless flag on
     audience: str = "clinician"           # "clinician" (default) | "patient"; ignored unless flag on
     mode: str = ""                        # analytical lens, e.g. "acquirer" (M&A); "" = default investor lens
+    company: str = ""                     # single-company DILIGENCE subject (name / entity_id); used only by /research/diligence
 
 
 class PanelIn(BaseModel):
@@ -1545,6 +1556,62 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                         kind="population",
                         extra={"population_stats": result.get("stats") or {},
                                "coverage_basis": cb,
+                               "n_uncited_dropped": result.get("n_uncited_dropped", 0)})
+                except Exception:
+                    session_id = None
+        result["session_id"] = session_id
+        return result
+
+    @app.post("/research/diligence")
+    async def research_diligence(body: ResearchIn,
+                                 x_eigen_token: str = Header(default="")) -> dict:
+        """Task D3 route (flag-gated, Rule 20). When EIGEN_DILIGENCE_DEPTH is ON, produce a
+        GROUNDED single-company diligence brief organized BY DIMENSION by reading that one
+        company's grounded claims from the graph (resolve → entity_claims → dimension-grouped
+        compose + citation gate + derive). The subject company is `body.company` (name or
+        entity_id). SEPARATE from `_do_research` and `/research/population` — the OFF path is
+        byte-identical (404 when the flag is off, so this endpoint is a true no-op)."""
+        if not diligence_depth_enabled():
+            raise HTTPException(status_code=404, detail="diligence depth route not enabled")
+        company = (body.company or "").strip()
+        if not company:
+            raise HTTPException(status_code=422, detail="company is required for diligence")
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            raise HTTPException(status_code=503, detail="EIGEN_CORPUS_DSN not configured")
+        if app.state.service is None:
+            app.state.service = build_default_service()
+        llm = app.state.service.llm
+        from api.diligence_route import answer_diligence
+        try:
+            result = await answer_diligence(
+                company=company, tenant_id=body.tenant_id, dsn=dsn, llm=llm)
+        except CassetteMiss as e:
+            raise HTTPException(status_code=503, detail=(
+                "No model available in replay mode. Set EIGEN_PROVIDER_MODE=live "
+                "with ANTHROPIC_API_KEY + OPENAI_API_KEY to answer live, or record "
+                "cassettes first.")) from e
+        except Exception as e:   # provider errors (auth, credits, rate limit, timeout)
+            raise HTTPException(status_code=502, detail=f"provider error: {e}") from e
+        # Best-effort session persist (so the answer shows in /sessions). Never breaks
+        # the response — a store/DB hiccup leaves session_id None and returns the answer.
+        session_id = None
+        if not result.get("error") and result.get("answer"):
+            store = _store()
+            if store is not None:
+                try:
+                    cb = result.get("coverage_basis") or {}
+                    session_id = await store.save(
+                        tenant_id=body.tenant_id, workspace_id=body.workspace_id,
+                        question=f"Diligence: {company}", answer=result["answer"],
+                        grounded=not result.get("empty", False),
+                        claims=[], source_stats={},
+                        coverage_gaps=[], rejected=0, sources=body.sources,
+                        user_name=body.user_name, user_email=body.user_email,
+                        kind="diligence",
+                        extra={"diligence_stats": result.get("stats") or {},
+                               "coverage_basis": cb,
+                               "subject_id": result.get("subject_id"),
                                "n_uncited_dropped": result.get("n_uncited_dropped", 0)})
                 except Exception:
                     session_id = None

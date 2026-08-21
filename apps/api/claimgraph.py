@@ -335,6 +335,42 @@ class ClaimGraphStore:
                 "SELECT entity_id FROM rs_entity_alias WHERE alias_norm = $1 LIMIT 1",
                 alias_norm)
 
+    async def get_entity(self, entity_id: str, *, tenant_id: str = "demo") -> dict | None:
+        """Fetch one ACTIVE entity's resolution row (id/name/kind) by strong id. Returns
+        `{entity_id, name, kind}` or None. Used by the diligence route to get a resolved
+        subject's display name (`entity_claims` returns claims, not the entity name)."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            r = await conn.fetchrow(
+                "SELECT entity_id, name, kind FROM rs_entity "
+                "WHERE entity_id = $1 AND tenant_id = $2 AND status = 'active'",
+                entity_id, tenant_id)
+        return None if r is None else {
+            "entity_id": r["entity_id"], "name": r["name"], "kind": r["kind"]}
+
+    async def find_company(self, name: str, *, tenant_id: str = "demo") -> dict | None:
+        """Resolve a company by EXACT NORMALIZED-NAME match (Rule 18: computable string
+        normalization, NOT fuzzy ER). Compares `normalize_name(query)` against the
+        `normalize_name` of each active company's name; returns the first match's
+        `{entity_id, name, kind}` (deterministic id order) or None. Company-kind only, so
+        a person/investor/category never shadows a company diligence request."""
+        await self.ensure_schema()
+        target = normalize_name(name)
+        if not target:
+            return None
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT entity_id, name, kind FROM rs_entity "
+                "WHERE tenant_id = $1 AND status = 'active' AND kind = 'company' "
+                "ORDER BY entity_id",
+                tenant_id)
+        for r in rows:
+            if normalize_name(r["name"]) == target:
+                return {"entity_id": r["entity_id"], "name": r["name"], "kind": r["kind"]}
+        return None
+
     # ---- claims & evidence ------------------------------------------------- #
     async def upsert_claim(self, *, subject_id: str, predicate: str, object_kind: str,
                            object_value: str = "", object_entity_id: str = "",
