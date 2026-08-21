@@ -30,7 +30,7 @@ _COMPOSE_BACKOFF_S = 1.5          # base backoff between compose retries (tests 
 # gets TRUNCATED mid-answer → the partial dict fails ComposedAnswer validation on EVERY retry (the
 # deterministic 'couldn't be generated' bug). Only actually-generated tokens are billed, so a high
 # ceiling adds no cost, only headroom.
-_COMPOSE_MAX_TOKENS = 8000
+_COMPOSE_MAX_TOKENS = 16000   # claude-sonnet-5 supports far more than the old ~8192 assumption; at 8000 the
 # The ReAct step (AgentStep) emits an `action` plus, on the answer step, a list of claims (each with
 # text + atom_id + a verbatim quote). On a broad, evidence-rich question the agent can emit MANY claims
 # in one step, and at the 2048 default the emit tool-call TRUNCATES mid-JSON → a hard provider error

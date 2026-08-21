@@ -323,6 +323,43 @@ def answer_360_on() -> bool:
     return os.environ.get("EIGEN_ANSWER_360", "").lower() in ("1", "true", "yes")
 
 
+# ── REQUIRED CLOSING (flag EIGEN_ANSWER_CLOSE) ───────────────────────────────────────────────────
+# Root cause of "answers feel cut short / end without a satisfying conclusion" (3-panel verdict): every
+# shipping answer contract terminates on an audit trail — '## Key sources', '## Question coverage',
+# '## Where the model breaks', '## Not addressed' — never a conclusion. This appends a required LANDING
+# (a fitted synthesis + 2-4 sharp grounded next questions) as the final thing the reader sees. Grounded
+# (no new facts), concise (no bloat), question-adaptive, and it supersedes the end-on-sources + the 360
+# no-follow-ups rules by prompt precedence (appended last). Append-only → OFF is byte-identical.
+TECH_CLOSING_BLOCK = """
+
+## Closing — the answer must LAND, not just stop
+End with a real conclusion, placed AFTER any "## Key sources" / coverage / gaps / "## Related questions"
+sections — this is the final thing the reader sees, and it SUPERSEDES any earlier instruction to end on a
+sources list or to omit follow-up questions. Two short sections, tight (no recap of the body, no bloat):
+
+- A closing synthesis under a "## " heading named to fit the question — `## Bottom line` for a
+  decision/recommendation ask · `## What this means` for an understanding/why/how ask · `## Where to go next`
+  for a landscape/trend/lookup ask. 1-3 sentences: pull the answer together, then give the clearest direction
+  the evidence supports — state the condition plainly if it is conditional, or the key implication if the user
+  only asked to understand (do NOT advise action they did not ask for). Reason ONLY over the cited findings
+  (wrap any inference in [[R]]…[[/R]]); introduce NO new fact — a factual closing sentence cites the same
+  finding(s) used above.
+
+- "## What to explore next": exactly 2-4 SHARP, specific follow-up questions this answer surfaced but did not
+  fully resolve — grounded in the tensions, gaps, comparisons, or implications actually in the answer above
+  (e.g. "How does X's async layer handle a network split?", never a generic "How does X work?"). Name only
+  entities / mechanisms / gaps already in the question or the cited answer."""
+
+
+def answer_close_on() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_ANSWER_CLOSE appends a REQUIRED closing (a fitted synthesis +
+    2-4 grounded 'what to explore next' questions) so a deep answer LANDS instead of stopping on a sources
+    list / gaps line. Prompt-only, grounded (no new facts), append-only (OFF = byte-identical). Applies to
+    the base + reasoned/adaptive + understanding answer formats. Read at manifest-build → flip = redeploy."""
+    import os
+    return os.environ.get("EIGEN_ANSWER_CLOSE", "").lower() in ("1", "true", "yes")
+
+
 # ── LANDSCAPE COVERAGE COMPOSE (flag EIGEN_LANDSCAPE_COVERAGE) ─────────────────────────────────────
 # Appended to the answer directive for a landscape/population question. Turns the broad per-category
 # retrieval (the enumerative legs the landscape contract triggers) into a clustered, grounded MARKET MAP

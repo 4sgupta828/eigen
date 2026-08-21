@@ -26,7 +26,8 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
 from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_LANDSCAPE_CONTRACT_PROMPT
 from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
-                       TECH_ANSWER_360_BLOCK, TECH_LANDSCAPE_COMPOSE_BLOCK, TECH_REASONED_ANSWER_FORMAT,
+                       TECH_ANSWER_360_BLOCK, TECH_CLOSING_BLOCK, TECH_LANDSCAPE_COMPOSE_BLOCK,
+                       answer_close_on, TECH_REASONED_ANSWER_FORMAT,
                        TECH_REASONED_SCAFFOLD_PROMPT, TECH_UNDERSTANDING_ANSWER_FORMAT,
                        TECH_UNDERSTANDING_QUERY_HINT, adaptive_format_on, answer_360_on,
                        landscape_coverage_on)
@@ -91,7 +92,9 @@ def build_manifest() -> VerticalManifest:
         # evidence per what the user is doing. Selected via the request `mode`.
         answer_modes={"acquirer": MA_DIRECTIVE, **USE_CASE_LENSES},
         ui=TechUI(),
-        answer_format=TECH_ANSWER_FORMAT,
+        # FLAG EIGEN_ANSWER_CLOSE: append a required LANDING (fitted synthesis + 2-4 grounded next
+        # questions) so an answer concludes instead of stopping on a sources/gaps line. OFF → byte-identical.
+        answer_format=(TECH_ANSWER_FORMAT + (TECH_CLOSING_BLOCK if answer_close_on() else "")),
         # Enhanced A/B synthesis variant (reuses the kernel's enhanced-answer slot; same section set).
         clinical_answer_format=TECH_DILIGENCE_SYNTHESIS_FORMAT,
         # Concept/term glossary + grounded conceptual VISUALS (diagrams) + inline visual/chart/reasoning
@@ -130,11 +133,13 @@ def build_manifest() -> VerticalManifest:
         # FLAG EIGEN_LANDSCAPE_COVERAGE (rides adaptive): also append the market-map compose block so a
         # landscape answer is a clustered, grounded map with a "## Coverage basis" honesty section.
         reasoned_answer_format=(
-            (TECH_ADAPTIVE_ANSWER_FORMAT
-             + (TECH_ANSWER_360_BLOCK if answer_360_on() else "")
-             + (TECH_LANDSCAPE_COMPOSE_BLOCK if landscape_coverage_on() else ""))
-            if adaptive_format_on() else TECH_REASONED_ANSWER_FORMAT),
-        understanding_answer_format=TECH_UNDERSTANDING_ANSWER_FORMAT,
+            ((TECH_ADAPTIVE_ANSWER_FORMAT
+              + (TECH_ANSWER_360_BLOCK if answer_360_on() else "")
+              + (TECH_LANDSCAPE_COMPOSE_BLOCK if landscape_coverage_on() else ""))
+             if adaptive_format_on() else TECH_REASONED_ANSWER_FORMAT)
+            + (TECH_CLOSING_BLOCK if answer_close_on() else "")),
+        understanding_answer_format=(TECH_UNDERSTANDING_ANSWER_FORMAT
+                                     + (TECH_CLOSING_BLOCK if answer_close_on() else "")),
         understanding_query_hint=TECH_UNDERSTANDING_QUERY_HINT,
         # Sub-vertical seam: sectors as a per-question subject scope (AI seeded), NOT separate verticals.
         sector_profiles=SECTOR_PROFILES,
