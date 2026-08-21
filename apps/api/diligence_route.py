@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 
 from api.claimgraph import ClaimGraphStore
+from api.claimgraph_tech import make_tech_claim_store
 # Reuse the population route's gate + finding + response shape VERBATIM (do not reinvent).
 from api.population_route import _Finding, _PopulationAnswer, _validate_citations
 from eigen_kernel.research.reason import derive
@@ -103,7 +104,7 @@ async def answer_diligence(*, company: str, tenant_id: str, dsn: str, llm,
     unrecoverable error returns {error, answer:"", ...} — never a fabricated answer.
     See module docstring for the pipeline + grounding contract (mirrors
     `answer_from_population`)."""
-    store = ClaimGraphStore(dsn)
+    store = make_tech_claim_store(dsn)
     try:
         # 1) RESOLVE company → subject_id (strong id / alias / exact normalized name).
         subject_id, name = await _resolve_subject(store, company, tenant_id)

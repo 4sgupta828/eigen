@@ -110,16 +110,39 @@ async def extract_typed_claims(
         (3) entailed: the quote SUPPORTS "<subject> — <predicate>: <object>" (via entail_claims).
     Fail-safe → [] (no client, malformed output, or any gate failure drops the claim — never
     laundered). Grounding is the moat: a claim with no verbatim supporting quote is DROPPED.
-    """
+
+    Back-compat wrapper over `extract_typed_claims_counted` — the return contract is
+    UNCHANGED (list only). A caller that needs the entail-call count for cost accounting
+    uses `extract_typed_claims_counted` instead."""
+    out, _n_entail = await extract_typed_claims_counted(
+        block_text=block_text, subject_name=subject_name,
+        predicates=predicates, client=client, model=model)
+    return out
+
+
+async def extract_typed_claims_counted(
+    *,
+    block_text: str,
+    subject_name: str,
+    predicates: list[dict],
+    client=None,
+    model: str | None = None,
+) -> tuple[list[dict], int]:
+    """Same as `extract_typed_claims` but ALSO returns the number of entailment-judge
+    calls made: `(claims, n_entail_calls)`. This extractor batches ALL of a block's span-
+    verified survivors into a SINGLE `entail_claims` call, so `n_entail_calls` is 0 (no
+    survivor reached the judge) or 1 (the batched judge call was made, even if it then
+    raised or dropped every claim). Cost accounting (the extraction job's ledger) needs
+    this because the entail call is a real LLM spend the outer extract-call count misses."""
     block_text = block_text or ""
     subject_name = (subject_name or "").strip()
     active = _active(predicates)
     if not block_text.strip() or not subject_name or not active:
-        return []
+        return [], 0
 
     cl = _client(client)
     if cl is None:                       # no injected client and no key → fail-safe
-        return []
+        return [], 0
 
     mdl = model or EXTRACT_MODEL
     system = _extract_system(active, subject_name)
@@ -129,7 +152,7 @@ async def extract_typed_claims(
     try:
         raw = await _json(cl, mdl, system, user)
     except Exception:                    # noqa: BLE001 — malformed / API error → fail-safe
-        return []
+        return [], 0
     items = (raw.get("claims") if isinstance(raw, dict) else None) or []
 
     # --- Gates 1 & 2 (structural + span), code-owned, fail-closed --------------------------- #
@@ -158,17 +181,18 @@ async def extract_typed_claims(
         })
 
     if not survivors:
-        return []
+        return [], 0
 
     # --- Gate 3 (entail), REUSED batched judge, fail-closed (False/None → drop) -------------- #
     to_judge = [
         {"text": _claim_text(subject_name, s["predicate"], s["object"]), "quote": s["quote"]}
         for s in survivors
     ]
+    n_entail = 1                         # the batched judge call is made (spent) now
     try:
         verdicts = await entail_claims(claims=to_judge, client=cl)
     except Exception:                    # noqa: BLE001 — judge error → drop all (never launder)
-        return []
+        return [], n_entail
 
     out: list[dict] = []
     for s, v in zip(survivors, verdicts):
@@ -183,4 +207,4 @@ async def extract_typed_claims(
             "object_entity_name": obj if is_entity else "",
             "quote": s["quote"],
         })
-    return out
+    return out, n_entail

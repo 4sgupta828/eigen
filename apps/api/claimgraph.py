@@ -10,8 +10,13 @@ split.
 App-level (NOT kernel) Postgres module, same DSN `EIGEN_CORPUS_DSN` and same style
 as `apps/api/glossary.py` / `apps/api/gap_queue.py` (asyncpg pool, module-level
 `_DDL`, lazy `_ensure()`). The store MECHANICS are domain-neutral; the vocabulary
-(predicate names, entity kinds) arrives as DATA seeded from the vertical registry
-`eigen_vertical_tech.claim_predicates.SLICE1_PREDICATES`.
+(predicate seed list, the placement predicate that PLACES a subject, the subject
+entity-kind, and the mintable object entity-kinds) arrives as DATA **injected via the
+constructor** (`seed_predicates` / `placement_predicate` / `subject_kind` /
+`mintable_entity_kinds`), mirroring `eigen_kernel.graph.store.GraphStore(relations=…)`.
+This module imports NOTHING from any vertical — a second vertical (legal/medical)
+constructs the same store with its own vocabulary. The tech-configured store is built
+by the wiring helper `api.claimgraph_tech.make_tech_claim_store`.
 
 WRITE ETHOS (mirrors `packages/kernel/eigen_kernel/people/store.py`):
   * append-only — a claim is written once; conflicting/newer facts are NEW claims.
@@ -162,6 +167,11 @@ CREATE INDEX IF NOT EXISTS ix_rs_claim_pred_oent ON rs_claim (predicate, object_
 -- "current" fast-path: non-retracted, non-superseded
 CREATE INDEX IF NOT EXISTS ix_rs_claim_current ON rs_claim (tenant_id, subject_id, predicate)
     WHERE retracted_at IS NULL AND superseded_at IS NULL;
+-- Category-rollup covering index (design-improvement.md §2): covers
+-- `distinct_categories`' `count(DISTINCT subject_id) GROUP BY object_norm` predicate-first
+-- aggregate (the subject-leading "current" index above does NOT help a predicate-first scan).
+CREATE INDEX IF NOT EXISTS ix_rs_claim_cat_rollup
+    ON rs_claim (tenant_id, predicate, object_norm, subject_id);
 
 -- Per-claim provenance, 1..N per claim. Each row is span-gate-ready (carries block_id + quote).
 CREATE TABLE IF NOT EXISTS rs_claim_evidence (
@@ -182,6 +192,14 @@ CREATE TABLE IF NOT EXISTS rs_claim_evidence (
 );
 CREATE INDEX IF NOT EXISTS ix_rs_claim_ev_doc   ON rs_claim_evidence (document_id);
 CREATE INDEX IF NOT EXISTS ix_rs_claim_ev_block ON rs_claim_evidence (block_id);
+-- Winning-evidence lateral join (design-improvement.md §2): a PARTIAL index on the
+-- active-evidence subset keyed by claim_id serves the `WHERE claim_id=… AND
+-- evidence_status='active' ORDER BY authority_tier DESC, retrieved_at` sub-select. Key
+-- carries authority_tier/retrieved_at so the ORDER BY is index-ordered (portable form —
+-- no INCLUDE, which older PG lacks on partials).
+CREATE INDEX IF NOT EXISTS ix_rs_claim_ev_active
+    ON rs_claim_evidence (claim_id, authority_tier DESC, retrieved_at)
+    WHERE evidence_status = 'active';
 
 -- Winner per (subject, predicate, valid-bucket); losers stay queryable in rs_claim.
 CREATE TABLE IF NOT EXISTS rs_claim_resolution (
@@ -202,12 +220,17 @@ CREATE TABLE IF NOT EXISTS rs_predicate (
     name            text PRIMARY KEY,
     status          text NOT NULL DEFAULT 'candidate',  -- active|candidate|retired
     object_kind     text NOT NULL DEFAULT 'value',      -- value|entity|either
+    object_entity_kind text NOT NULL DEFAULT '',        -- (entity predicates) rs_entity.kind to MINT for the object
     cardinality     text NOT NULL DEFAULT 'multi',      -- single|multi
     unit_hint       text NOT NULL DEFAULT '',
     temporal_policy text NOT NULL DEFAULT 'static',     -- point|interval|static
     description     text NOT NULL DEFAULT '',
     added_at        timestamptz NOT NULL DEFAULT now()
 );
+-- ALTER-ensure: CREATE TABLE IF NOT EXISTS never migrates an EXISTING prod rs_predicate,
+-- so add the registry-authoritative column idempotently (mirrors the kernel GraphStore
+-- ADD COLUMN IF NOT EXISTS pattern). No-op on a fresh DB (column already present above).
+ALTER TABLE rs_predicate ADD COLUMN IF NOT EXISTS object_entity_kind text NOT NULL DEFAULT '';
 
 -- Extraction-run audit + cost ledger.
 CREATE TABLE IF NOT EXISTS rs_extraction_run (
@@ -240,10 +263,47 @@ class ClaimGraphStore:
     """Async Postgres-backed grounded claim graph. Schema + predicate seed ensured
     lazily via `ensure_schema()`; all writes are deterministic-id idempotent."""
 
-    def __init__(self, dsn: str):
+    def __init__(self, dsn: str, *,
+                 seed_predicates: "list[dict] | None" = None,
+                 placement_predicate: str = "operates_in_category",
+                 subject_kind: str = "company",
+                 mintable_entity_kinds: "tuple[str, ...]" = (
+                     "category", "person", "investor", "company")):
+        """Injected vocabulary (mirrors `GraphStore(relations=…)`), backward-compatible
+        defaults so a bare `ClaimGraphStore(dsn)` keeps the tech reads/mint literals:
+          * `seed_predicates`  — predicate dicts seeded into `rs_predicate` by
+            `ensure_schema()`; None seeds nothing (the caller injects the registry).
+          * `placement_predicate` — the predicate that PLACES a subject in a category
+            (drives `distinct_categories` / `population_claims` scope); tech default
+            'operates_in_category'.
+          * `subject_kind` — the primary subject entity-kind for reads/mint; tech 'company'.
+          * `mintable_entity_kinds` — object entity-kinds the extraction job may mint a
+            deterministic node for."""
         self._dsn = dsn
         self._pool = None
         self._ready = False
+        self._seed_predicates = list(seed_predicates) if seed_predicates is not None else None
+        self._placement_predicate = placement_predicate
+        self._subject_kind = subject_kind
+        self._mintable_entity_kinds = tuple(mintable_entity_kinds)
+
+    # Injected vocabulary — read-only accessors the extraction job reads (so a new vertical
+    # entity-kind / subject-kind needs no store or job code edit, only different wiring).
+    @property
+    def placement_predicate(self) -> str:
+        return self._placement_predicate
+
+    @property
+    def subject_kind(self) -> str:
+        return self._subject_kind
+
+    @property
+    def mintable_entity_kinds(self) -> "tuple[str, ...]":
+        return self._mintable_entity_kinds
+
+    @property
+    def seed_predicates(self) -> "list[dict] | None":
+        return self._seed_predicates
 
     async def _get_pool(self):
         if self._pool is None:
@@ -258,30 +318,57 @@ class ClaimGraphStore:
             self._ready = False
 
     async def ensure_schema(self) -> None:
-        """Create the 7 tables (idempotent) THEN seed the vertical predicate registry.
-        Predicates seed `ON CONFLICT (name) DO NOTHING` so a later status change (e.g.
-        active→retired) is never clobbered by a re-seed."""
+        """Create the 7 tables (idempotent) THEN seed the INJECTED predicate registry
+        (`self._seed_predicates`; None → seed nothing, the caller injects). The store
+        imports no vertical vocabulary — it seeds exactly what it was constructed with.
+
+        Re-seed makes `rs_predicate` the authoritative config: `ON CONFLICT (name) DO
+        UPDATE` refreshes the DESCRIPTIVE columns (object_kind/object_entity_kind/
+        cardinality/unit_hint/temporal_policy/description) so a predicate's config can
+        evolve — but NEVER resurrects a manually-retired predicate (status is only
+        updated when the stored status is not already 'retired'), preserving the
+        append/never-resurrect ethos."""
         if self._ready:
             return
         pool = await self._get_pool()
-        # Vertical-owned vocabulary arrives as DATA. Lazy import so (a) the store has
-        # no import-time dependency on the vertical, and (b) under pytest the worktree
-        # copy on sys.path wins over any editable install elsewhere.
-        from eigen_vertical_tech.claim_predicates import SLICE1_PREDICATES
         async with pool.acquire() as conn:
             await conn.execute(_DDL)
-            for p in SLICE1_PREDICATES:
+            for p in (self._seed_predicates or []):
                 await conn.execute(
                     """INSERT INTO rs_predicate
-                         (name, status, object_kind, cardinality, unit_hint,
-                          temporal_policy, description)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7)
-                       ON CONFLICT (name) DO NOTHING""",
+                         (name, status, object_kind, object_entity_kind, cardinality,
+                          unit_hint, temporal_policy, description)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                       ON CONFLICT (name) DO UPDATE SET
+                         object_kind        = EXCLUDED.object_kind,
+                         object_entity_kind = EXCLUDED.object_entity_kind,
+                         cardinality        = EXCLUDED.cardinality,
+                         unit_hint          = EXCLUDED.unit_hint,
+                         temporal_policy    = EXCLUDED.temporal_policy,
+                         description        = EXCLUDED.description,
+                         -- never un-retire a manually-retired predicate (never-resurrect)
+                         status = CASE WHEN rs_predicate.status = 'retired'
+                                       THEN rs_predicate.status ELSE EXCLUDED.status END""",
                     p["name"], p.get("status", "candidate"),
-                    p.get("object_kind", "value"), p.get("cardinality", "multi"),
-                    p.get("unit_hint", ""), p.get("temporal_policy", "static"),
-                    p.get("description", ""))
+                    p.get("object_kind", "value"), p.get("object_entity_kind", ""),
+                    p.get("cardinality", "multi"), p.get("unit_hint", ""),
+                    p.get("temporal_policy", "static"), p.get("description", ""))
         self._ready = True
+
+    async def active_predicate_names(self) -> list[dict]:
+        """The AUTHORITATIVE active-predicate read: the `status='active'` rows of
+        `rs_predicate`, each as a dict carrying the config the extraction job needs
+        (name/status/object_kind/object_entity_kind/cardinality/temporal_policy/
+        unit_hint/description). Tenant-agnostic (`rs_predicate` is global). Empty when
+        the registry has not been seeded yet (first run)."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT name, status, object_kind, object_entity_kind, cardinality, "
+                "temporal_policy, unit_hint, description FROM rs_predicate "
+                "WHERE status = 'active' ORDER BY name")
+        return [dict(r) for r in rows]
 
     # ---- entities & aliases ------------------------------------------------ #
     async def upsert_entity(self, entity_id: str, kind: str, name: str, *,
@@ -353,8 +440,9 @@ class ClaimGraphStore:
         """Resolve a company by EXACT NORMALIZED-NAME match (Rule 18: computable string
         normalization, NOT fuzzy ER). Compares `normalize_name(query)` against the
         `normalize_name` of each active company's name; returns the first match's
-        `{entity_id, name, kind}` (deterministic id order) or None. Company-kind only, so
-        a person/investor/category never shadows a company diligence request."""
+        `{entity_id, name, kind}` (deterministic id order) or None. Restricted to the
+        store's `subject_kind` (tech default 'company'), so a person/investor/category
+        never shadows a company diligence request."""
         await self.ensure_schema()
         target = normalize_name(name)
         if not target:
@@ -363,9 +451,9 @@ class ClaimGraphStore:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT entity_id, name, kind FROM rs_entity "
-                "WHERE tenant_id = $1 AND status = 'active' AND kind = 'company' "
+                "WHERE tenant_id = $1 AND status = 'active' AND kind = $2 "
                 "ORDER BY entity_id",
-                tenant_id)
+                tenant_id, self._subject_kind)
         for r in rows:
             if normalize_name(r["name"]) == target:
                 return {"entity_id": r["entity_id"], "name": r["name"], "kind": r["kind"]}
@@ -563,8 +651,8 @@ class ClaimGraphStore:
     # ---- aggregation reads (population → market map, Task 3) ---------------- #
     async def distinct_categories(self, *, tenant_id: str = "demo",
                                   min_members: int = 1) -> list[dict]:
-        """DISTINCT market categories from ACTIVE, grounded `operates_in_category`
-        claims, each with a distinct-member (company) count. Returns
+        """DISTINCT market categories from ACTIVE, grounded placement-predicate claims
+        (`self._placement_predicate`), each with a distinct-member (subject) count. Returns
         `[{object_norm, name, members}]` ordered by members DESC (name tie-break).
 
         Grounding-exclusion (same discipline as `population`): a claim is counted
@@ -582,7 +670,7 @@ class ClaimGraphStore:
                    FROM rs_claim c
                    JOIN rs_entity e ON e.entity_id = c.subject_id AND e.status = 'active'
                    LEFT JOIN rs_entity cat ON cat.entity_id = c.object_entity_id
-                   WHERE c.tenant_id = $1 AND c.predicate = 'operates_in_category'
+                   WHERE c.tenant_id = $1 AND c.predicate = $3
                      AND c.retracted_at IS NULL AND c.superseded_at IS NULL
                      AND EXISTS (            -- grounding+GC: only claims with ACTIVE evidence
                          SELECT 1 FROM rs_claim_evidence ev
@@ -591,21 +679,24 @@ class ClaimGraphStore:
                    GROUP BY c.object_norm
                    HAVING count(DISTINCT c.subject_id) >= $2
                    ORDER BY members DESC, name, object_norm""",
-                tenant_id, min_members)
+                tenant_id, min_members, self._placement_predicate)
         return [{"object_norm": r["object_norm"], "name": r["name"],
                  "members": int(r["members"])} for r in rows]
 
     async def population_claims(self, *, tenant_id: str = "demo",
                                category_norms: Sequence[str] | None = None,
                                company_cap: int = 400,
-                               claims_per_company_cap: int = 40) -> dict:
-        """Grounded population read the market map is built from: COMPANY rows, each
-        with its ACTIVE grounded claims across ALL slice predicates, every claim
-        carrying its winning (highest-authority active) evidence.
+                               claims_per_company_cap: int = 40,
+                               predicates: Sequence[str] | None = None) -> dict:
+        """Grounded population read the market map is built from: SUBJECT rows
+        (`self._subject_kind`, tech 'company'), each with its ACTIVE grounded claims —
+        restricted to `predicates` when given, else ALL active grounded claims — every
+        claim carrying its winning (highest-authority active) evidence.
 
-        Scope: companies with ≥1 active grounded `operates_in_category` claim whose
-        `object_norm` ∈ `category_norms` (when given); otherwise the whole grounded
-        company population (any active grounded claim). Companies are capped at
+        Scope: subjects with ≥1 active grounded placement-predicate
+        (`self._placement_predicate`) claim whose `object_norm` ∈ `category_norms` (when
+        given); otherwise the whole grounded subject population (any active grounded
+        claim). Companies are capped at
         `company_cap` (ordered by name) and each company's claims at
         `claims_per_company_cap`. NO silent truncation — the returned `meta` carries
         `companies_truncated` / `claims_truncated` (+ the clipped company ids) so a
@@ -619,39 +710,39 @@ class ClaimGraphStore:
         object_value, object_entity_id, object_norm, confidence,
         evidence:{document_id, block_id, quote, authority_tier}}]}`."""
         await self.ensure_schema()
-        # ALL slice predicates arrive as DATA from the vertical (kernel/vertical split).
-        from eigen_vertical_tech.claim_predicates import SLICE1_PREDICATES
-        slice_preds = [p["name"] for p in SLICE1_PREDICATES]
+        # Vocabulary is INJECTED (no vertical import): the subject kind, the placement
+        # predicate that defines category scope, and the optional per-claim predicate set.
+        subject_kind = self._subject_kind
+        placement = self._placement_predicate
+        pred_names = list(predicates) if predicates else None
 
         norms = list(category_norms) if category_norms else None
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            # 1) The company set — active companies grounded into scope. Fetch cap+1
+            # 1) The subject set — active subjects grounded into scope. Fetch cap+1
             #    so a clip is DETECTABLE (no separate count query, no silent drop).
             if norms is not None:
-                scope_exists = (
-                    "AND c.predicate = 'operates_in_category' "
-                    "AND c.object_norm = ANY($2::text[]) ")
                 comp_rows = await conn.fetch(
-                    f"""SELECT e.entity_id, e.name, e.kind, e.primary_domain
+                    """SELECT e.entity_id, e.name, e.kind, e.primary_domain
                         FROM rs_entity e
-                        WHERE e.tenant_id = $1 AND e.status = 'active' AND e.kind = 'company'
+                        WHERE e.tenant_id = $1 AND e.status = 'active' AND e.kind = $4
                           AND EXISTS (
                               SELECT 1 FROM rs_claim c
                               WHERE c.tenant_id = $1 AND c.subject_id = e.entity_id
-                                {scope_exists}
+                                AND c.predicate = $5
+                                AND c.object_norm = ANY($2::text[])
                                 AND c.retracted_at IS NULL AND c.superseded_at IS NULL
                                 AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
                                             WHERE ev.claim_id = c.claim_id
                                               AND ev.evidence_status = 'active'))
                         ORDER BY e.name, e.entity_id
                         LIMIT $3""",
-                    tenant_id, norms, company_cap + 1)
+                    tenant_id, norms, company_cap + 1, subject_kind, placement)
             else:
                 comp_rows = await conn.fetch(
                     """SELECT e.entity_id, e.name, e.kind, e.primary_domain
                        FROM rs_entity e
-                       WHERE e.tenant_id = $1 AND e.status = 'active' AND e.kind = 'company'
+                       WHERE e.tenant_id = $1 AND e.status = 'active' AND e.kind = $3
                          AND EXISTS (
                              SELECT 1 FROM rs_claim c
                              WHERE c.tenant_id = $1 AND c.subject_id = e.entity_id
@@ -661,7 +752,7 @@ class ClaimGraphStore:
                                              AND ev.evidence_status = 'active'))
                        ORDER BY e.name, e.entity_id
                        LIMIT $2""",
-                    tenant_id, company_cap + 1)
+                    tenant_id, company_cap + 1, subject_kind)
 
             companies_truncated = len(comp_rows) > company_cap
             comp_rows = comp_rows[:company_cap]
@@ -675,11 +766,20 @@ class ClaimGraphStore:
 
             claim_rows: list = []
             if company_ids:
-                # 2) One query for ALL their claims + winning evidence. INNER lateral
-                #    join => grounding-exclusion; window ranks + caps per company and
-                #    exposes the pre-cap total so a per-company clip is reportable.
+                # 2) One query for their claims + winning evidence. INNER lateral join =>
+                #    grounding-exclusion; window ranks + caps per subject and exposes the
+                #    pre-cap total so a per-subject clip is reportable. The per-claim
+                #    predicate filter is applied ONLY when `predicates` was given (else all
+                #    active grounded claims are returned — vocabulary-neutral default).
+                claim_args: list[Any] = [tenant_id, company_ids]   # $1, $2
+                pred_clause = ""
+                if pred_names:
+                    claim_args.append(pred_names)
+                    pred_clause = f"AND c.predicate = ANY(${len(claim_args)}::text[])"
+                claim_args.append(claims_per_company_cap)
+                cap_param = f"${len(claim_args)}"
                 claim_rows = await conn.fetch(
-                    """SELECT t.entity_id, t.predicate, t.object_kind, t.object_value,
+                    f"""SELECT t.entity_id, t.predicate, t.object_kind, t.object_value,
                               t.object_norm, t.object_entity_id, t.confidence,
                               t.document_id, t.block_id, t.quote, t.authority_tier,
                               t.total_claims
@@ -702,12 +802,12 @@ class ClaimGraphStore:
                                LIMIT 1
                            ) ev ON true
                            WHERE c.tenant_id = $1 AND c.subject_id = ANY($2::text[])
-                             AND c.predicate = ANY($3::text[])
+                             {pred_clause}
                              AND c.retracted_at IS NULL AND c.superseded_at IS NULL
                        ) t
-                       WHERE t.rn <= $4
+                       WHERE t.rn <= {cap_param}
                        ORDER BY t.entity_id, t.predicate, t.object_norm""",
-                    tenant_id, company_ids, slice_preds, claims_per_company_cap)
+                    *claim_args)
 
         clipped_company_ids: list[str] = []
         for r in claim_rows:

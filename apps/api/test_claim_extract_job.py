@@ -123,9 +123,10 @@ _CAT_NAME = "Developer Tools"
 _CAT_NORM = normalize_name(_CAT_NAME)            # 'developer tools'
 
 
-def _fake_extractor(calls: list[str]):
-    """Return an async stand-in for `extract_typed_claims` that records each call's subject
-    and returns canned typed claims (already in the extractor's OUTPUT shape). No network."""
+def _fake_extractor(calls: list[str], *, n_entail: int = 0):
+    """Return an async stand-in for `extract_typed_claims_counted` that records each call's
+    subject and returns `(canned typed claims, n_entail)` (the counted API's shape). No
+    network — a stub makes no real entail call, so `n_entail` defaults to 0."""
     async def fake_extract(*, block_text, subject_name, predicates, client=None, model=None):
         calls.append(subject_name)
         if subject_name == "Acme":
@@ -139,14 +140,14 @@ def _fake_extractor(calls: list[str]):
                 {"predicate": "compared_to", "object_kind": "entity",
                  "object_value": "", "object_entity_name": "Widgets Inc",
                  "quote": "Acme is often compared to Widgets Inc"},
-            ]
+            ], n_entail
         if subject_name == "Beta":
             return [
                 {"predicate": "operates_in_category", "object_kind": "entity",
                  "object_value": "", "object_entity_name": "Fintech",
                  "quote": "Beta operates in Fintech"},
-            ]
-        return []
+            ], n_entail
+        return [], 0
     return fake_extract
 
 
@@ -181,7 +182,7 @@ def test_dry_run_writes_nothing_and_makes_no_llm_call(monkeypatch) -> None:
         await _seed_yc_blocks(tenant)
         calls: list[str] = []
         import eigen_vertical_tech.claim_extract as ce
-        monkeypatch.setattr(ce, "extract_typed_claims", _fake_extractor(calls))
+        monkeypatch.setattr(ce, "extract_typed_claims_counted", _fake_extractor(calls))
 
         res = await run_claim_extraction(
             dsn=DSN, source_keys=["yc"], tenant_id=tenant, dry_run=True)
@@ -219,7 +220,7 @@ def test_live_writes_entities_claims_evidence_and_population(monkeypatch) -> Non
         await _seed_yc_blocks(tenant)
         calls: list[str] = []
         import eigen_vertical_tech.claim_extract as ce
-        monkeypatch.setattr(ce, "extract_typed_claims", _fake_extractor(calls))
+        monkeypatch.setattr(ce, "extract_typed_claims_counted", _fake_extractor(calls))
 
         res = await run_claim_extraction(
             dsn=DSN, source_keys=["yc"], tenant_id=tenant, dry_run=False)
@@ -281,7 +282,7 @@ def test_cap_abort_writes_nothing(monkeypatch) -> None:
         await _seed_yc_blocks(tenant)
         calls: list[str] = []
         import eigen_vertical_tech.claim_extract as ce
-        monkeypatch.setattr(ce, "extract_typed_claims", _fake_extractor(calls))
+        monkeypatch.setattr(ce, "extract_typed_claims_counted", _fake_extractor(calls))
 
         # 2 eligible blocks > max_blocks=1 → abort BEFORE any spend, even in live mode.
         res = await run_claim_extraction(
@@ -335,8 +336,8 @@ def _fake_diligence_extractor(calls: list[str], names: dict):
                  "object_entity_name": names["category"], "quote": "operates in"},
                 {"predicate": "compared_to", "object_kind": "entity", "object_value": "",
                  "object_entity_name": names["company"], "quote": "compared to"},
-            ]
-        return []
+            ], 0
+        return [], 0
     return fake_extract
 
 
@@ -370,7 +371,7 @@ def test_diligence_entity_objects_route_by_configured_kind(monkeypatch) -> None:
         await _seed_delta_block(tenant)
         calls: list[str] = []
         import eigen_vertical_tech.claim_extract as ce
-        monkeypatch.setattr(ce, "extract_typed_claims", _fake_diligence_extractor(calls, names))
+        monkeypatch.setattr(ce, "extract_typed_claims_counted", _fake_diligence_extractor(calls, names))
 
         # A DILIGENCE run: the caller opts into the slice-2 vocabulary. Without this the
         # has_founder/has_investor predicates are not active and the extractor's output
@@ -427,4 +428,107 @@ def test_diligence_entity_objects_route_by_configured_kind(monkeypatch) -> None:
             assert company_obj == company_id
         finally:
             await store.close()
+    asyncio.run(body())
+
+
+# --------------------------------------------------------------------------- #
+# DSN-GATED INTEGRATION — H1: entail-call cost tally + registry-authoritative  #
+# --------------------------------------------------------------------------- #
+@integration
+def test_entail_calls_tallied_into_ledger(monkeypatch) -> None:
+    # §C: each block's batched entail-judge call is tallied and folded into est_cost_usd.
+    async def body():
+        tenant = "t_" + uuid.uuid4().hex[:12]
+        await _seed_yc_blocks(tenant)
+        calls: list[str] = []
+        import eigen_vertical_tech.claim_extract as ce
+        # stub reports ONE entail call per block (the real extractor's per-block batched call)
+        monkeypatch.setattr(ce, "extract_typed_claims_counted",
+                            _fake_extractor(calls, n_entail=1))
+
+        res = await run_claim_extraction(
+            dsn=DSN, source_keys=["yc"], tenant_id=tenant, dry_run=False,
+            price_per_call_usd=0.01)
+
+        assert res["status"] == "done"
+        assert res["extract_calls"] == 2
+        assert res["entail_calls"] == 2                  # one per block, tallied
+        # cost now folds in the entail spend: (2 extract + 2 entail) * 0.01 = 0.04
+        assert res["est_cost_usd"] == 0.04
+
+        store = ClaimGraphStore(DSN)
+        try:
+            pool = await store._get_pool()
+            async with pool.acquire() as conn:
+                ledger = await conn.fetchrow(
+                    "SELECT extract_calls, entail_calls, est_cost_usd "
+                    "FROM rs_extraction_run WHERE run_id=$1", res["run_id"])
+            assert ledger["extract_calls"] == 2
+            assert ledger["entail_calls"] == 2           # persisted to the ledger column
+            assert float(ledger["est_cost_usd"]) == 0.04
+        finally:
+            await store.close()
+    asyncio.run(body())
+
+
+def test_project_cost_surfaces_entail_projection() -> None:
+    # §C: project_cost now surfaces the entail-inclusive figures (no longer undercounts),
+    # while the extract-only caps/fields stay back-compatible.
+    p = project_cost(120, max_blocks=500, max_llm_calls=200, max_usd=5.0,
+                     price_per_call_usd=0.01)
+    assert p["projected_calls"] == 120 and p["est_usd"] == 1.2   # unchanged (extract-only)
+    assert p["est_entail_calls"] == 120                          # ≤1 batched entail call/block
+    assert p["est_total_calls"] == 240
+    assert p["est_total_usd"] == 2.4                             # entail-inclusive spend
+    assert p["over_caps"] == []                                  # caps still extract-only
+
+
+def _recording_extractor(seen: dict):
+    """Counted-API stub that records the predicate NAMES it was handed (so a test can prove
+    the job passed the registry-derived active set, not a hardcoded default)."""
+    async def fake(*, block_text, subject_name, predicates, client=None, model=None):
+        seen["names"] = {p["name"] for p in predicates}
+        return [], 0
+    return fake
+
+
+@integration
+def test_job_reads_active_predicates_from_registry_when_none_passed(monkeypatch) -> None:
+    # §A: with predicates=None the job constrains extraction to the LIVE rs_predicate active
+    # set (authoritative), not the old slice-1 python default — and honors a retired row.
+    async def body():
+        tenant = "t_" + uuid.uuid4().hex[:12]
+        await _seed_yc_blocks(tenant)
+        seen: dict = {}
+        import eigen_vertical_tech.claim_extract as ce
+        monkeypatch.setattr(ce, "extract_typed_claims_counted", _recording_extractor(seen))
+
+        # Seed the registry (18 tech predicates), then RETIRE one in the DB.
+        store = ClaimGraphStore(DSN)
+        try:
+            await store.ensure_schema()   # tables exist (bare store, seeds nothing)
+        finally:
+            await store.close()
+        from api.claimgraph_tech import make_tech_claim_store
+        seed_store = make_tech_claim_store(DSN)
+        try:
+            await seed_store.ensure_schema()   # seeds all 18
+            pool = await seed_store._get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE rs_predicate SET status='retired' WHERE name='go_to_market'")
+            try:
+                await run_claim_extraction(
+                    dsn=DSN, source_keys=["yc"], tenant_id=tenant, dry_run=False)
+                # the job read the LIVE registry: diligence predicates present (proving it is
+                # NOT the old slice-1 default), and the retired one EXCLUDED.
+                assert "has_founder" in seen["names"]        # registry-driven (>6 predicates)
+                assert "operates_in_category" in seen["names"]
+                assert "go_to_market" not in seen["names"]   # retired → excluded
+            finally:
+                async with pool.acquire() as conn:           # restore the shared registry
+                    await conn.execute(
+                        "UPDATE rs_predicate SET status='active' WHERE name='go_to_market'")
+        finally:
+            await seed_store.close()
     asyncio.run(body())

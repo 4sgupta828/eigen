@@ -19,6 +19,8 @@ import uuid
 import pytest
 
 from api.claimgraph import ClaimGraphStore, normalize_name
+from api.claimgraph_tech import make_tech_claim_store
+from eigen_vertical_tech.claim_predicates import active_predicates
 
 DSN = os.environ.get("EIGEN_CORPUS_DSN")
 pytestmark = [
@@ -30,6 +32,8 @@ _ALL_TABLES = ["rs_entity", "rs_entity_alias", "rs_claim", "rs_claim_evidence",
                "rs_claim_resolution", "rs_predicate", "rs_extraction_run"]
 _SEED_PREDICATES = ["operates_in_category", "offers_product", "targets_customer",
                     "uses_technology", "claims_differentiator", "compared_to"]
+# All 18 tech predicates (SLICE1 6 + DILIGENCE 12) now seed into rs_predicate via the wiring.
+_ALL_18 = {p["name"] for p in active_predicates(include_diligence=True)}
 
 
 def _uid(prefix: str) -> str:
@@ -37,8 +41,10 @@ def _uid(prefix: str) -> str:
 
 
 def test_ensure_schema_creates_tables_and_seeds_predicates() -> None:
+    # Post-decouple (§D): the STORE seeds nothing on its own — the tech WIRING injects the
+    # predicate registry. So the seed assertion is expressed via `make_tech_claim_store`.
     async def body():
-        store = ClaimGraphStore(DSN)
+        store = make_tech_claim_store(DSN)
         try:
             await store.ensure_schema()
             await store.ensure_schema()   # idempotent second call
@@ -50,6 +56,153 @@ def test_ensure_schema_creates_tables_and_seeds_predicates() -> None:
                 active = {r["name"] for r in await conn.fetch(
                     "SELECT name FROM rs_predicate WHERE status='active'")}
             assert set(_SEED_PREDICATES) <= active
+        finally:
+            await store.close()
+    asyncio.run(body())
+
+
+def test_bare_store_seeds_nothing_and_imports_no_vertical() -> None:
+    # §D: a bare ClaimGraphStore is vocabulary-neutral — it seeds NO predicates of its own
+    # (the caller injects them) and its module imports nothing from the tech vertical.
+    import api.claimgraph as cg_mod
+    src = open(cg_mod.__file__, encoding="utf-8").read()
+    assert "eigen_vertical_tech" not in src, "store module must not import the vertical"
+
+    async def body():
+        store = ClaimGraphStore(DSN)          # no seed_predicates → seeds nothing
+        try:
+            await store.ensure_schema()
+            assert store.seed_predicates is None
+            assert store.placement_predicate == "operates_in_category"   # back-compat default
+            assert store.subject_kind == "company"
+            assert await store.active_predicate_names() != None  # read works (may be non-empty
+            #                                                       from sibling tech seeds — global)
+        finally:
+            await store.close()
+    asyncio.run(body())
+
+
+def test_tech_store_seeds_all_18_predicates_with_object_entity_kind() -> None:
+    # §A: the DB registry is authoritative — all 18 tech predicates seed WITH object_entity_kind.
+    async def body():
+        store = make_tech_claim_store(DSN)
+        try:
+            await store.ensure_schema()
+            pool = await store._get_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT name, object_kind, object_entity_kind FROM rs_predicate "
+                    "WHERE status='active'")
+            by = {r["name"]: r for r in rows}
+            assert _ALL_18 <= set(by), "all 18 active tech predicates must be seeded"
+            # the 12 diligence predicates now appear in rs_predicate
+            assert "has_founder" in by and "raised_funding" in by and "risk_factor" in by
+            # object_entity_kind persisted for entity predicates; '' for value predicates
+            assert by["operates_in_category"]["object_entity_kind"] == "category"
+            assert by["compared_to"]["object_entity_kind"] == "company"
+            assert by["has_founder"]["object_entity_kind"] == "person"
+            assert by["has_investor"]["object_entity_kind"] == "investor"
+            assert by["offers_product"]["object_entity_kind"] == ""      # value predicate
+            assert by["raised_funding"]["object_entity_kind"] == ""
+        finally:
+            await store.close()
+    asyncio.run(body())
+
+
+def test_active_predicate_names_returns_registry_config() -> None:
+    # §A: active_predicate_names() is the authoritative active read (name + routing config).
+    async def body():
+        store = make_tech_claim_store(DSN)
+        try:
+            rows = await store.active_predicate_names()
+            by = {r["name"]: r for r in rows}
+            assert _ALL_18 <= set(by)
+            r = by["has_founder"]
+            assert r["object_kind"] == "entity" and r["object_entity_kind"] == "person"
+            assert r["status"] == "active"
+            assert "description" in r      # carries the gloss the extractor prompt needs
+        finally:
+            await store.close()
+    asyncio.run(body())
+
+
+def test_covering_indexes_exist() -> None:
+    # §B: the two covering indexes are created by ensure_schema (idempotent).
+    async def body():
+        store = make_tech_claim_store(DSN)
+        try:
+            await store.ensure_schema()
+            pool = await store._get_pool()
+            async with pool.acquire() as conn:
+                names = {r["indexname"] for r in await conn.fetch(
+                    "SELECT indexname FROM pg_indexes "
+                    "WHERE indexname IN ('ix_rs_claim_cat_rollup', 'ix_rs_claim_ev_active')")}
+            assert "ix_rs_claim_cat_rollup" in names
+            assert "ix_rs_claim_ev_active" in names
+        finally:
+            await store.close()
+    asyncio.run(body())
+
+
+def test_retired_predicate_not_resurrected_by_reseed() -> None:
+    # §A: re-seed updates descriptive columns but NEVER un-retires a manually-retired predicate.
+    async def body():
+        store = make_tech_claim_store(DSN)
+        try:
+            await store.ensure_schema()
+            pool = await store._get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE rs_predicate SET status='retired' WHERE name='compared_to'")
+            store._ready = False                       # force a re-seed pass
+            await store.ensure_schema()
+            async with pool.acquire() as conn:
+                st = await conn.fetchval(
+                    "SELECT status FROM rs_predicate WHERE name='compared_to'")
+            assert st == "retired"                     # never resurrected
+        finally:
+            # restore for sibling tests sharing this (global) registry
+            pool = await store._get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE rs_predicate SET status='active' WHERE name='compared_to'")
+            await store.close()
+    asyncio.run(body())
+
+
+def test_custom_config_store_is_vocabulary_neutral() -> None:
+    # §D: a store built with a NOVEL placement predicate + subject kind uses them in its
+    # reads — proving the tech vocabulary is injected config, not baked into the store.
+    async def body():
+        store = ClaimGraphStore(
+            DSN, placement_predicate="cites", subject_kind="case",
+            mintable_entity_kinds=("statute", "court"))
+        try:
+            case_id = _uid("case")
+            await store.upsert_entity(case_id, "case", "Roe v. Wade")
+            statute_norm = "stat-" + uuid.uuid4().hex[:10]
+            statute_id = "statute:" + statute_norm
+            await store.upsert_entity(statute_id, "statute", "Title VII")
+            cl = await store.upsert_claim(
+                subject_id=case_id, predicate="cites", object_kind="entity",
+                object_entity_id=statute_id, object_norm=statute_norm, confidence=0.9)
+            await store.add_evidence(cl, _uid("doc"), "b1", "the court cites Title VII",
+                                     authority_tier=3)
+
+            # find_company resolves by the injected subject_kind ('case'), not 'company'
+            found = await store.find_company("Roe v. Wade")
+            assert found is not None and found["entity_id"] == case_id
+            assert found["kind"] == "case"
+
+            # distinct_categories groups by the injected placement predicate ('cites')
+            cats = await store.distinct_categories()
+            mine = [c for c in cats if c["object_norm"] == statute_norm]
+            assert len(mine) == 1 and mine[0]["members"] == 1
+
+            # population_claims scopes subjects by the injected subject kind + placement pred
+            pop = await store.population_claims(category_norms=[statute_norm])
+            ids = {c["entity_id"] for c in pop["companies"]}
+            assert case_id in ids
         finally:
             await store.close()
     asyncio.run(body())

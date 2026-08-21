@@ -31,7 +31,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from api.claimgraph import ClaimGraphStore
+from api.claimgraph_tech import TECH_POPULATION_PREDICATES, make_tech_claim_store
 from eigen_kernel.research.reason import derive
 from eigen_kernel.runtime.research import _render_derivations
 from eigen_vertical_tech.population_compose import (
@@ -97,13 +97,16 @@ async def answer_from_population(*, question: str, tenant_id: str, dsn: str, llm
     The compose derives the market SEGMENTS itself from the FLAT grounded population
     (the stored `operates_in_category` labels are too fragmented to cluster on) — so the
     whole population is passed, not a top-N-categories slice."""
-    store = ClaimGraphStore(dsn)
+    store = make_tech_claim_store(dsn)
     try:
         # 1) POPULATION — the WHOLE grounded company population (not scoped to noisy
         #    top-N categories, which dropped most companies). The compose LLM clusters.
+        #    Restricted to the SLICE1 landscape predicates (the map's cells) — the tech
+        #    wiring supplies that vocabulary, keeping the map byte-identical post-decouple.
         cats = await store.distinct_categories(tenant_id=tenant_id)
         pop = await store.population_claims(
-            tenant_id=tenant_id, category_norms=None, company_cap=company_cap)
+            tenant_id=tenant_id, category_norms=None, company_cap=company_cap,
+            predicates=TECH_POPULATION_PREDICATES)
 
         # 2) Render FLAT (company → cited cells) + the citation panel the LLM cites against.
         rendered_map, citations = render_population_flat(pop["companies"])

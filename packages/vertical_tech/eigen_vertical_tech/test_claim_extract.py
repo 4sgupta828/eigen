@@ -14,7 +14,10 @@ from __future__ import annotations
 import asyncio
 
 import eigen_vertical_tech.claim_extract as ce
-from eigen_vertical_tech.claim_extract import extract_typed_claims
+from eigen_vertical_tech.claim_extract import (
+    extract_typed_claims,
+    extract_typed_claims_counted,
+)
 from eigen_vertical_tech.claim_predicates import SLICE1_PREDICATES
 
 # A YC-style block. Every fixture quote below is a genuine contiguous substring of this text.
@@ -217,6 +220,60 @@ def test_empty_object_or_quote_dropped(monkeypatch):
     ]}
     out = _run(payload, monkeypatch=monkeypatch)
     assert len(out) == 1 and out[0]["object_value"] == "AI coding assistant"
+
+
+# ------------------------------------------------ entail-call count (H1 §C cost accounting) - #
+def test_counted_reports_one_entail_call_when_survivors(monkeypatch):
+    # A block with ≥1 span-verified survivor makes exactly ONE batched entail call.
+    payload = {"claims": [
+        {"predicate": "uses_technology", "object": "large language models",
+         "quote": "on top of large language models"},
+        {"predicate": "compared_to", "object": "GitHub Copilot",
+         "quote": "more accurate than GitHub Copilot"},
+    ]}
+    monkeypatch.setattr(ce, "entail_claims", _entail_all())
+    out, n_entail = asyncio.run(extract_typed_claims_counted(
+        block_text=BLOCK, subject_name=SUBJECT, predicates=SLICE1_PREDICATES,
+        client=_FakeJson(payload)))
+    assert len(out) == 2
+    assert n_entail == 1                      # one batched judge call for the whole block
+
+
+def test_counted_reports_zero_entail_calls_when_no_survivors(monkeypatch):
+    # No span-verified survivor → the judge is never called → zero entail spend.
+    payload = {"claims": [
+        {"predicate": "offers_product", "object": "a database product",
+         "quote": "Acme also ships a managed vector database"},   # NOT in the block → dropped
+    ]}
+    monkeypatch.setattr(ce, "entail_claims", _entail_all())
+    out, n_entail = asyncio.run(extract_typed_claims_counted(
+        block_text=BLOCK, subject_name=SUBJECT, predicates=SLICE1_PREDICATES,
+        client=_FakeJson(payload)))
+    assert out == [] and n_entail == 0
+
+
+def test_counted_counts_the_entail_call_even_when_all_dropped(monkeypatch):
+    # Survivors reach the judge (1 call spent) but all get a False verdict → [] with n_entail=1.
+    payload = {"claims": [
+        {"predicate": "uses_technology", "object": "large language models",
+         "quote": "on top of large language models"},
+    ]}
+    monkeypatch.setattr(ce, "entail_claims",
+                        _entail_all({"large language models": False}))
+    out, n_entail = asyncio.run(extract_typed_claims_counted(
+        block_text=BLOCK, subject_name=SUBJECT, predicates=SLICE1_PREDICATES,
+        client=_FakeJson(payload)))
+    assert out == [] and n_entail == 1        # the batched call was made (spent) then dropped
+
+
+def test_plain_wrapper_unchanged_return_contract(monkeypatch):
+    # The plain extract_typed_claims still returns a bare list (back-compat).
+    payload = {"claims": [
+        {"predicate": "uses_technology", "object": "large language models",
+         "quote": "on top of large language models"},
+    ]}
+    out = _run(payload, monkeypatch=monkeypatch)
+    assert isinstance(out, list) and len(out) == 1
 
 
 def test_prompt_is_rendered_from_passed_predicates(monkeypatch):

@@ -31,14 +31,14 @@ import logging
 import uuid
 from typing import Any
 
-from api.claimgraph import ClaimGraphStore, normalize_name
+from api.claimgraph import normalize_name
+from api.claimgraph_tech import make_tech_claim_store
 
 # The extractor is imported as a MODULE (not the bound function) so a test can monkeypatch
-# `eigen_vertical_tech.claim_extract.extract_typed_claims` and this job picks up the patched
-# attribute — keeping every test offline (no network / no live LLM call).
+# `eigen_vertical_tech.claim_extract.extract_typed_claims_counted` and this job picks up the
+# patched attribute — keeping every test offline (no network / no live LLM call).
 from eigen_vertical_tech import claim_extract
 from eigen_vertical_tech.authority import TechAuthorityPolicy
-from eigen_vertical_tech.claim_predicates import active_predicates
 from eigen_vertical_tech.evidence_kind import classify as classify_evidence_kind
 
 _log = logging.getLogger(__name__)
@@ -52,12 +52,12 @@ EXTRACTOR_VERSION = "tech-slice1-claim-extract-v1"
 # score of its own; a survivor is a high-confidence grounded claim by construction.
 GATED_CLAIM_CONFIDENCE = 0.9
 
-# object_entity_kind values this job knows how to MINT a deterministic node for. Any entity
-# predicate whose configured kind is outside this set falls back to the company path (safe
-# default) with a warning. This is a STRUCTURAL routing table, not a semantic heuristic
-# (Rule 18): the kind is CONFIG on the predicate (from the vertical registry), the LLM still
-# owns which predicate a span asserts.
-_MINTABLE_ENTITY_KINDS = frozenset({"category", "person", "investor", "company"})
+# The set of object entity-kinds this job may MINT a deterministic node for is INJECTED on
+# the store (`store.mintable_entity_kinds`) — vocabulary lives in the wiring, not the job, so
+# adding a vertical entity-kind needs no code edit here. Any entity predicate whose configured
+# kind is outside the store's set falls back to the store's subject-kind path (safe default)
+# with a warning. STRUCTURAL routing (Rule 18): the kind is CONFIG on the predicate/store, the
+# LLM still owns which predicate a span asserts.
 
 _AUTHORITY = TechAuthorityPolicy()
 
@@ -121,14 +121,28 @@ def project_cost(
     """Project the LLM cost of extracting `blocks_considered` blocks and evaluate the caps —
     PURE, no side effects, so the cap math is unit-testable with no DB.
 
-    This extractor is ONE call PER BLOCK (it is not the 10-atom batcher), so
-    projected_calls == blocks_considered exactly (ceil(n/1)). `est_usd` counts only the
-    outer extract calls; the entailment gate's internal calls happen inside the extractor
-    and are not separately projected here. Returns the projection plus a list of cap
-    violations (`over_caps`) — non-empty means the run must ABORT before any spend.
+    This extractor is ONE extract call PER BLOCK (it is not the 10-atom batcher), so
+    `projected_calls == blocks_considered` exactly (ceil(n/1)). It ALSO makes up to ONE
+    batched ENTAILMENT-judge call per block (all a block's span-verified survivors are
+    judged in a single `entail_claims` call), so the entail spend that the old projection
+    ignored is bounded by `blocks_considered` too. `est_entail_calls` uses that ceiling
+    (assumption: ≥1 groundable claim per block → one entail call), `est_total_calls`/
+    `est_total_usd` fold it in so the projection no longer UNDERCOUNTS the true LLM spend.
+
+    Back-compat: `projected_calls`, `est_usd`, `over_caps`, and `caps` are UNCHANGED (still
+    extract-call-only) — the abort caps are evaluated against the outer extract calls exactly
+    as before; the entail figures are additional, informational fields. Returns the
+    projection plus a list of cap violations (`over_caps`) — non-empty means the run must
+    ABORT before any spend.
     """
     projected_calls = blocks_considered  # one extract call per block
     est_usd = round(projected_calls * price_per_call_usd, 6)
+    # Entail projection (ceiling: ≤1 batched entail call per block). Informational — folded
+    # into est_total_* but NOT into the extract-only caps (back-compat), so an existing run's
+    # abort behavior is unchanged while the true spend is now visible.
+    est_entail_calls = blocks_considered
+    est_total_calls = projected_calls + est_entail_calls
+    est_total_usd = round(est_total_calls * price_per_call_usd, 6)
     over: list[str] = []
     if blocks_considered > max_blocks:
         over.append(f"blocks_considered {blocks_considered} > max_blocks {max_blocks}")
@@ -140,18 +154,32 @@ def project_cost(
         "blocks_considered": blocks_considered,
         "projected_calls": projected_calls,
         "est_usd": est_usd,
+        "est_entail_calls": est_entail_calls,
+        "est_total_calls": est_total_calls,
+        "est_total_usd": est_total_usd,
         "over_caps": over,
         "caps": {"max_blocks": max_blocks, "max_llm_calls": max_llm_calls, "max_usd": max_usd},
     }
 
 
-def _active_predicates(predicates: list[dict] | None) -> list[dict]:
-    """The predicates to constrain extraction to — the caller's list (filtered to active),
-    else the vertical's default active registry (slice-1 only; a caller wanting the diligence
-    vocabulary passes `active_predicates(include_diligence=True)`)."""
-    if predicates is None:
-        return active_predicates()
+def _only_active(predicates: list[dict]) -> list[dict]:
+    """Filter a predicate-dict list to status=='active' (missing status → active)."""
     return [p for p in predicates if p.get("status", "active") == "active"]
+
+
+async def _resolve_active_predicates(store, predicates: list[dict] | None) -> list[dict]:
+    """The predicates to constrain extraction to. When the caller passes an explicit list
+    (as the diligence route does), use it. When it passes None, the DB registry
+    (`rs_predicate`) is the AUTHORITATIVE source of truth — read the active rows from the
+    store; only if the registry is still empty (a first run before any seed) fall back to
+    the store's INJECTED seed list. Net effect: the registry becomes the default, explicit
+    callers still override (H1 §A)."""
+    if predicates is not None:
+        return _only_active(predicates)
+    registry = await store.active_predicate_names()
+    if registry:
+        return registry
+    return _only_active(store.seed_predicates or [])
 
 
 # --------------------------------------------------------------------------- #
@@ -210,6 +238,7 @@ async def run_claim_extraction(
     client=None,
     model: str | None = None,
     predicates: list[dict] | None = None,
+    store=None,
 ) -> dict:
     """Scan `rs_block` for `source_keys`, extract typed grounded claims PER BLOCK, resolve
     entities by strong id, and upsert them into the claim graph. Returns a run-summary dict.
@@ -218,13 +247,20 @@ async def run_claim_extraction(
     the full selection + cost projection and records the run, but makes NO LLM call and
     writes NO entities/claims/evidence. Caps ABORT before any spend (see `project_cost`).
     """
-    store = ClaimGraphStore(dsn)
+    # Default: the tech-configured store (§D wiring). A caller (e.g. a second vertical, or a
+    # vocabulary-neutrality test) may inject a differently-configured store; existing callers
+    # pass nothing and get the tech store unchanged.
+    store = store if store is not None else make_tech_claim_store(dsn)
     run_id = "run:" + uuid.uuid4().hex
     source_keys_str = ",".join(source_keys)
-    active = _active_predicates(predicates)
-    kind_by_predicate = _entity_kind_by_predicate(active)  # data-driven object router
     try:
         await store.ensure_schema()
+        # Predicate set: explicit caller list, else the AUTHORITATIVE DB registry (§A).
+        active = await _resolve_active_predicates(store, predicates)
+        kind_by_predicate = _entity_kind_by_predicate(active)  # data-driven object router
+        # Injected vocabulary (§D): subject kind + the mintable object entity-kinds.
+        subject_kind = store.subject_kind
+        mintable = frozenset(store.mintable_entity_kinds)
 
         # 1) Select eligible (non-empty) blocks — source_key IS the relevance gate (slice 1).
         blocks = await _select_blocks(dsn, source_keys=source_keys, tenant_id=tenant_id, limit=limit)
@@ -240,6 +276,9 @@ async def run_claim_extraction(
             "source_keys": source_keys, "tenant_id": tenant_id, "limit": limit,
             "dry_run": dry_run, "price_per_call_usd": price_per_call_usd,
             "projected_calls": proj["projected_calls"], "est_usd": proj["est_usd"],
+            # entail-inclusive projection (§C) recorded for prod cost observability
+            "est_entail_calls": proj["est_entail_calls"],
+            "est_total_calls": proj["est_total_calls"], "est_total_usd": proj["est_total_usd"],
             "caps": proj["caps"],
         }
 
@@ -277,6 +316,7 @@ async def run_claim_extraction(
         await store.record_run(run_id, source_keys=source_keys_str, status="running",
                                params=base_params, tenant_id=tenant_id)
         extract_calls = 0
+        entail_calls = 0
         claims_emitted = 0
         for b in blocks:
             document_id = b["document_id"]
@@ -286,14 +326,17 @@ async def run_claim_extraction(
             subject_id = document_id  # STRONG id: `yc:<slug>` — no fuzzy ER
             subject_name = _subject_name(b["document_title"], b["text"], slug)
 
-            await store.upsert_entity(subject_id, kind="company", name=subject_name,
+            await store.upsert_entity(subject_id, kind=subject_kind, name=subject_name,
                                       facets=facets, first_run_id=run_id, tenant_id=tenant_id)
             await store.add_alias(subject_name, subject_id, source=source_key)
 
-            claims = await claim_extract.extract_typed_claims(
+            # Counted extractor so the batched entail-judge spend is tallied into the ledger
+            # (the outer extract-call count alone undercounts — H1 §C).
+            claims, n_entail = await claim_extract.extract_typed_claims_counted(
                 block_text=b["text"], subject_name=subject_name,
                 predicates=active, client=client, model=model)
             extract_calls += 1  # ONE call per block, counted whether or not claims came back
+            entail_calls += n_entail
 
             kind = classify_evidence_kind(source_key, facets)
             tier = _AUTHORITY.rank(kind)
@@ -314,23 +357,25 @@ async def run_claim_extraction(
                     # DATA-DRIVEN routing (Rule 18): the entity KIND to mint is CONFIG on the
                     # predicate (`object_entity_kind`), never inferred from the object text.
                     ekind = kind_by_predicate.get(predicate)
-                    if ekind not in _MINTABLE_ENTITY_KINDS:
-                        # unknown/missing kind → safe default (company path), but surface it:
-                        # a predicate mis-declared its object kind, not a silent mis-model.
+                    if ekind not in mintable:
+                        # unknown/missing kind → safe default (subject-kind path), but
+                        # surface it: a predicate mis-declared its object kind, not a silent
+                        # mis-model.
                         _log.warning(
                             "claim_extract_job: predicate %r has no known object_entity_kind "
-                            "(%r) — routing object to the company path", predicate, ekind)
-                        ekind = "company"
+                            "(%r) — routing object to the %r (subject-kind) path",
+                            predicate, ekind, subject_kind)
+                        ekind = subject_kind
 
-                    if ekind == "company":
-                        # COMPANY → exact-alias resolve, else a soft `__unresolved:` node
-                        # (NO fuzzy merge — slice-1 ER policy).
+                    if ekind == subject_kind:
+                        # SUBJECT-KIND object (tech: company) → exact-alias resolve, else a
+                        # soft `__unresolved:` node (NO fuzzy merge — slice-1 ER policy).
                         resolved = await store.resolve_alias(obj_name)
                         if resolved:
                             object_entity_id = resolved
                         else:
                             object_entity_id = "__unresolved:" + object_norm
-                            await store.upsert_entity(object_entity_id, kind="company",
+                            await store.upsert_entity(object_entity_id, kind=subject_kind,
                                                       name=obj_name, tenant_id=tenant_id)
                     else:
                         # category / person / investor → deterministic soft `<kind>:<norm>`
@@ -349,17 +394,21 @@ async def run_claim_extraction(
                     authority_tier=tier, evidence_kind=kind, tenant_id=tenant_id)
                 claims_emitted += 1
 
-        est_cost_usd = round(extract_calls * price_per_call_usd, 6)
+        # Cost = extract calls + tallied entail-judge calls (§C: the entail spend the old
+        # count ignored). `entail_calls` is a whitelisted ledger counter.
+        total_calls = extract_calls + entail_calls
+        est_cost_usd = round(total_calls * price_per_call_usd, 6)
         await store.finish_run(
             run_id, status="done",
             blocks_considered=blocks_considered, blocks_relevant=blocks_considered,
-            extract_calls=extract_calls, claims_emitted=claims_emitted,
-            est_cost_usd=est_cost_usd)
+            extract_calls=extract_calls, entail_calls=entail_calls,
+            claims_emitted=claims_emitted, est_cost_usd=est_cost_usd)
         return {
             "run_id": run_id, "status": "done", "dry_run": False,
             "blocks_considered": blocks_considered,
             "projected_calls": proj["projected_calls"],
-            "extract_calls": extract_calls, "claims_emitted": claims_emitted,
+            "extract_calls": extract_calls, "entail_calls": entail_calls,
+            "claims_emitted": claims_emitted,
             "est_cost_usd": est_cost_usd,
         }
     finally:
