@@ -151,7 +151,7 @@ async def answer_from_population(*, question: str, tenant_id: str, dsn: str, llm
         comp = await llm.complete(
             system=TECH_POPULATION_COMPOSE_PROMPT,
             messages=[{"role": "user", "content": user}],
-            response_format=_PopulationAnswer, max_tokens=4000)
+            response_format=_PopulationAnswer, max_tokens=8000)
         answer = (comp.parsed.text or "").strip()
 
         # 5) CITATION VALIDATION GATE (code) — drop any hallucinated `[cN]`.

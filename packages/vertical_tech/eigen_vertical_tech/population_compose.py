@@ -67,6 +67,12 @@ STRUCTURE:
 - Within each segment, compare the companies on the dimensions present (product /
   customer / technology / differentiator). Where a dimension is absent for a company, say
   `not_collected` — never guess.
+- SCALE TO THE POPULATION — do NOT write a paragraph for every single company when the
+  population is large. For each segment, state its company COUNT, then profile the few
+  most representative / most-documented companies (cited), and list the remaining members
+  by name with their single most salient cited fact. A scannable market map, not an
+  exhaustive roster. Every company still appears somewhere (in a profile or the member
+  list), each with at least one `[citation_id]`.
 - General-audience prose — clear and scannable, NOT a VC memo. A compact table per
   segment is fine when it reads cleanly; put the `[citation_id]` in the cell.
 - END with a `## Coverage basis` section. Build it from the COVERAGE FACTS the user
