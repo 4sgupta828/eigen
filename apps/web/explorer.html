@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Eigen · Interactive Explorer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --ground:#0a0d16; --ground-2:#0e1220; --panel:#111627; --panel-2:#0c101c;
+    --line:#212a41; --line-soft:#1a2136;
+    --ink:#e8edf9; --ink-mute:#909bb8; --ink-faint:#5c6688;
+    --company:#ffcf6b; --person:#57d9c4; --category:#b79bff; --investor:#ff8fb3;
+    --accent:#ffcf6b;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+    --display:"Sora","IBM Plex Sans",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0; background:var(--ground); color:var(--ink); font-family:var(--sans);
+    font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased; overflow:hidden;}
+  a{color:inherit}
+  .app{display:grid; grid-template-columns:270px 1fr 340px; height:100vh; width:100vw}
+
+  .rail{background:linear-gradient(180deg,var(--ground-2),var(--ground)); border-right:1px solid var(--line);
+    padding:24px 22px; display:flex; flex-direction:column; gap:22px; overflow-y:auto}
+  .back{font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; color:var(--ink-mute); text-decoration:none;
+    display:inline-flex; align-items:center; gap:6px; width:max-content}
+  .back:hover{color:var(--accent)}
+  .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); font-weight:500}
+  h1{font-family:var(--display); font-weight:700; font-size:24px; line-height:1.12; margin:8px 0 0; letter-spacing:-.01em; text-wrap:balance}
+  .thesis{color:var(--ink-mute); font-size:13.5px; margin-top:10px}
+  .thesis b{color:var(--ink); font-weight:600}
+  .stats{display:flex; gap:10px}
+  .stat{flex:1; background:var(--panel); border:1px solid var(--line-soft); border-radius:11px; padding:11px 12px}
+  .stat .n{font-family:var(--display); font-weight:600; font-size:21px; font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+  .stat .l{font-size:10.5px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.09em; margin-top:2px}
+  .sec-label{font-family:var(--mono); font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:2px}
+  .legend{display:flex; flex-direction:column; gap:9px}
+  .lg{display:flex; align-items:center; gap:11px; cursor:pointer; padding:5px 7px; margin:-5px -7px; border-radius:8px; transition:background .15s}
+  .lg:hover{background:var(--panel)}
+  .lg.off{opacity:.32}
+  .dot{width:11px; height:11px; border-radius:50%; flex:none; box-shadow:0 0 10px currentColor}
+  .lg .nm{font-size:13.5px}
+  .lg .ct{margin-left:auto; font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); font-variant-numeric:tabular-nums}
+  .hint{font-size:12px; color:var(--ink-faint); border-top:1px solid var(--line-soft); padding-top:16px; margin-top:auto}
+  .hint kbd{font-family:var(--mono); font-size:11px; background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:1px 6px; color:var(--ink-mute)}
+
+  .stage{position:relative; overflow:hidden; background:var(--ground)}
+  canvas{display:block; cursor:grab}
+  canvas.grabbing{cursor:grabbing}
+  .stage-tag{position:absolute; left:20px; bottom:16px; font-family:var(--mono); font-size:11px; color:var(--ink-faint); letter-spacing:.04em; pointer-events:none}
+  .reset{position:absolute; right:18px; top:18px; font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:var(--ink-mute);
+    background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:7px 12px; cursor:pointer; transition:border-color .15s,color .15s}
+  .reset:hover{border-color:var(--accent); color:var(--accent)}
+  .reset:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .loading{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; z-index:5}
+  .load-msg{font-family:var(--mono); font-size:13px; color:var(--ink-mute); text-align:center; letter-spacing:.03em}
+  .load-msg span{color:var(--ink-faint); font-size:11px}
+  .load-msg .spin{width:22px;height:22px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;margin:0 auto 14px;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .evidence{background:linear-gradient(180deg,var(--panel-2),var(--ground)); border-left:1px solid var(--line);
+    padding:24px 22px; overflow-y:auto; display:flex; flex-direction:column; gap:16px}
+  .ev-empty{color:var(--ink-faint); font-size:13.5px; margin-top:8px}
+  .ev-empty .big{font-family:var(--display); color:var(--ink-mute); font-size:16px; font-weight:600; display:block; margin-bottom:8px}
+  .ev-kind{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; font-weight:500}
+  .ev-name{font-family:var(--display); font-weight:600; font-size:22px; line-height:1.15; letter-spacing:-.01em; text-wrap:balance; margin-top:3px}
+  .ev-id{font-family:var(--mono); font-size:11px; color:var(--ink-faint); margin-top:4px; word-break:break-all}
+  .grp{display:flex; flex-direction:column; gap:9px}
+  .grp>.sec-label{margin-top:6px}
+  .claim{background:var(--panel); border:1px solid var(--line-soft); border-left:2px solid var(--edge-c,var(--line)); border-radius:9px; padding:10px 12px}
+  .claim .pred{font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; color:var(--ink-faint); text-transform:uppercase}
+  .claim .obj{font-size:14px; margin-top:2px; color:var(--ink)}
+  .claim .q{font-size:12px; color:var(--ink-mute); margin-top:7px; padding-left:10px; border-left:2px solid var(--line); font-style:italic; line-height:1.45}
+  .claim .q::before{content:"\201C"} .claim .q::after{content:"\201D"}
+  .link-pill{display:inline-flex; align-items:center; gap:7px; background:var(--panel); border:1px solid var(--line-soft); border-radius:20px; padding:5px 11px 5px 9px; font-size:13px; cursor:pointer; transition:border-color .15s}
+  .link-pill:hover{border-color:var(--accent)}
+  .link-wrap{display:flex; flex-wrap:wrap; gap:7px}
+  .prov-note{font-size:11.5px; color:var(--ink-faint); border-top:1px solid var(--line-soft); padding-top:13px; margin-top:4px}
+  .prov-note b{color:var(--person); font-weight:600}
+
+  @media (max-width:1080px){
+    body{overflow:auto}
+    .app{grid-template-columns:1fr; height:auto; min-height:100vh}
+    .rail{border-right:none; border-bottom:1px solid var(--line)}
+    .stage{height:64vh; min-height:420px}
+    .evidence{border-left:none; border-top:1px solid var(--line)}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <a class="back" href="/">&larr; Eigen</a>
+    <div>
+      <div class="eyebrow">Interactive Explorer</div>
+      <h1>Grounded Startup Graph</h1>
+      <p class="thesis">Every node and edge here was <b>extracted from a source and span-verified</b> &mdash;
+        select anything to read the <b>verbatim quote</b> it rests on. Nothing is from memory.</p>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n" id="s-ent">&ndash;</div><div class="l">Entities</div></div>
+      <div class="stat"><div class="n" id="s-edge">&ndash;</div><div class="l">Edges</div></div>
+      <div class="stat"><div class="n" id="s-claim">&ndash;</div><div class="l">Cited facts</div></div>
+    </div>
+    <div>
+      <div class="sec-label">Entity kinds &mdash; click to filter</div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="hint"><b style="color:var(--ink-mute)">Drag</b> to pan &middot; <kbd>scroll</kbd> to zoom &middot;
+      drag a node to move it &middot; click a node for its grounded evidence.</div>
+  </aside>
+
+  <div class="stage">
+    <canvas id="cv"></canvas>
+    <button class="reset" id="reset">recenter</button>
+    <div class="stage-tag" id="tag">live from the production claim graph</div>
+    <div class="loading" id="loading"><div class="load-msg"><div class="spin"></div>Loading the graph&hellip;</div></div>
+  </div>
+
+  <aside class="evidence" id="ev">
+    <div class="ev-empty" id="ev-empty">
+      <span class="big">Read the evidence.</span>
+      Pick a company, founder, category, or investor. Its claims appear here &mdash; each with the exact quote
+      from the source document that grounds it.
+    </div>
+  </aside>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const KIND = {
+    company:{c:"#ffcf6b", label:"Companies"}, person:{c:"#57d9c4", label:"Founders"},
+    category:{c:"#b79bff", label:"Categories"}, investor:{c:"#ff8fb3", label:"Investors"},
+  };
+  const PRED_LABEL = {
+    operates_in_category:"operates in", has_founder:"founded by", has_investor:"backed by",
+    compared_to:"compared to", offers_product:"product", uses_technology:"technology",
+    targets_customer:"customer", claims_differentiator:"differentiator", raised_funding:"funding",
+    traction_metric:"traction", headcount:"headcount", company_location:"location",
+    company_status:"status", business_model:"business model", moat_claim:"moat",
+    customer_evidence:"customer", go_to_market:"go-to-market", risk_factor:"risk",
+  };
+
+  function boot(RAW){
+    const nodeById = new Map();
+    function ensure(id, name, kind, claims){
+      let n = nodeById.get(id);
+      if(!n){ n = {id, name:name||id, kind, claims:claims||0, deg:0}; nodeById.set(id,n); }
+      if(name) n.name = name; if(claims) n.claims = claims; return n;
+    }
+    RAW.companies.forEach(c=>ensure(c.id, c.name, "company", c.claims));
+    const links=[];
+    RAW.edges.forEach(e=>{
+      const s=ensure(e.s, e.sname, "company");
+      const kind = KIND[e.okind] ? e.okind : "category";
+      const o=ensure(e.o, e.oname, kind);
+      s.deg++; o.deg++; links.push({s, o, p:e.p});
+    });
+    const values = new Map();
+    RAW.values.forEach(v=>{ if(!values.has(v.s)) values.set(v.s,[]); values.get(v.s).push(v); });
+    const nodes=[...nodeById.values()];
+    nodes.forEach(n=>{ n.r = n.kind==="company" ? 6 + Math.sqrt(Math.max(n.claims,1))*2.1 : 3.4 + Math.min(n.deg,6)*1.15; });
+
+    document.getElementById("s-ent").textContent = nodes.length;
+    document.getElementById("s-edge").textContent = links.length;
+    let nc=0; values.forEach(a=>nc+=a.length); nc += links.length;
+    document.getElementById("s-claim").textContent = nc;
+
+    const legendEl=document.getElementById("legend");
+    const counts={}; nodes.forEach(n=>counts[n.kind]=(counts[n.kind]||0)+1);
+    const hidden=new Set();
+    Object.keys(KIND).forEach(k=>{
+      const row=document.createElement("div"); row.className="lg"; row.dataset.k=k;
+      row.innerHTML='<span class="dot" style="background:'+KIND[k].c+';color:'+KIND[k].c+'"></span>'+
+        '<span class="nm">'+KIND[k].label+'</span><span class="ct">'+(counts[k]||0)+'</span>';
+      row.onclick=function(){ if(hidden.has(k)){hidden.delete(k);row.classList.remove("off");} else {hidden.add(k);row.classList.add("off");} reheat(.3); };
+      legendEl.appendChild(row);
+    });
+
+    const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+    const stage=cv.parentElement;
+    let W=0,H=0; const DPR=Math.min(window.devicePixelRatio||1,2);
+    let view={x:0,y:0,k:1}; let alpha=1;
+    const reduce = matchMedia("(prefers-reduced-motion:reduce)").matches;
+
+    function size(){ W=stage.clientWidth; H=stage.clientHeight; cv.width=W*DPR; cv.height=H*DPR;
+      cv.style.width=W+"px"; cv.style.height=H+"px"; ctx.setTransform(DPR,0,0,DPR,0,0); }
+    nodes.forEach((n,i)=>{ const a=i*2.399963, rad=40+Math.sqrt(i)*24; n.x=Math.cos(a)*rad; n.y=Math.sin(a)*rad; n.vx=0; n.vy=0; });
+
+    let hover=null, selected=null, dragNode=null;
+    function visible(n){ return !hidden.has(n.kind); }
+    function neighbors(n){ const s=new Set([n]); links.forEach(l=>{ if(l.s===n)s.add(l.o); if(l.o===n)s.add(l.s); }); return s; }
+
+    function tick(){
+      const rep=1400, spring=.015, springLen=64, center=.008, damp=.86;
+      for(let i=0;i<nodes.length;i++){ const a=nodes[i];
+        for(let j=i+1;j<nodes.length;j++){ const b=nodes[j]; let dx=a.x-b.x, dy=a.y-b.y; let d2=dx*dx+dy*dy||1;
+          if(d2<40000){ const f=rep/d2, d=Math.sqrt(d2), ux=dx/d, uy=dy/d;
+            a.vx+=ux*f*alpha; a.vy+=uy*f*alpha; b.vx-=ux*f*alpha; b.vy-=uy*f*alpha; } } }
+      links.forEach(l=>{ const a=l.s,b=l.o; let dx=b.x-a.x, dy=b.y-a.y; let d=Math.sqrt(dx*dx+dy*dy)||1;
+        const f=(d-springLen)*spring, ux=dx/d, uy=dy/d;
+        a.vx+=ux*f*alpha; a.vy+=uy*f*alpha; b.vx-=ux*f*alpha; b.vy-=uy*f*alpha; });
+      nodes.forEach(n=>{ n.vx-=n.x*center*alpha; n.vy-=n.y*center*alpha;
+        if(n!==dragNode){ n.vx*=damp; n.vy*=damp; n.x+=n.vx; n.y+=n.vy; } });
+      alpha*=0.985; if(alpha<0.02) alpha=0.02;
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,W,H); ctx.save();
+      ctx.translate(W/2+view.x, H/2+view.y); ctx.scale(view.k,view.k);
+      const focus = hover||selected; const nb = focus ? neighbors(focus) : null;
+      links.forEach(l=>{ if(!visible(l.s)||!visible(l.o)) return;
+        const on = !focus || (nb.has(l.s)&&nb.has(l.o));
+        ctx.beginPath(); ctx.moveTo(l.s.x,l.s.y); ctx.lineTo(l.o.x,l.o.y);
+        if(on && focus){ ctx.strokeStyle="rgba(200,214,244,.42)"; ctx.lineWidth=1.1/view.k; }
+        else if(focus){ ctx.strokeStyle="rgba(150,168,210,.05)"; ctx.lineWidth=.8/view.k; }
+        else { ctx.strokeStyle="rgba(150,168,210,.16)"; ctx.lineWidth=.9/view.k; }
+        ctx.stroke(); });
+      nodes.forEach(n=>{ if(!visible(n)) return;
+        const dim = focus && !nb.has(n); const col = KIND[n.kind].c;
+        ctx.globalAlpha = dim?0.18:1;
+        if(n.kind==="company" || n===focus){ ctx.beginPath(); ctx.arc(n.x,n.y,n.r+(n===focus?7:4),0,7);
+          const g=ctx.createRadialGradient(n.x,n.y,n.r*.4,n.x,n.y,n.r+8);
+          g.addColorStop(0, col+"55"); g.addColorStop(1, col+"00"); ctx.fillStyle=g; ctx.fill(); }
+        ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,7); ctx.fillStyle=col; ctx.fill();
+        if(n===selected){ ctx.lineWidth=2/view.k; ctx.strokeStyle="#fff"; ctx.stroke(); }
+        ctx.globalAlpha=1;
+        const showLabel = (n.kind==="company" && view.k>0.75) || (focus && nb.has(n)) || n===focus;
+        if(showLabel){ ctx.globalAlpha = dim?0.25:1;
+          ctx.font = (n===focus?600:500)+' 11px "IBM Plex Sans",sans-serif';
+          ctx.fillStyle = n.kind==="company" ? "#e8edf9" : col; ctx.textAlign="center"; ctx.textBaseline="top";
+          const t=n.name.length>26?n.name.slice(0,25)+"…":n.name;
+          ctx.save(); ctx.translate(n.x,n.y); ctx.scale(1/view.k,1/view.k); ctx.fillText(t, 0, n.r*view.k+3); ctx.restore();
+          ctx.globalAlpha=1; }
+      });
+      ctx.restore();
+    }
+    function loop(){ tick(); draw(); requestAnimationFrame(loop); }
+    function reheat(a){ alpha=Math.max(alpha,a==null?.6:a); }
+
+    function toWorld(px,py){ return { x:(px-W/2-view.x)/view.k, y:(py-H/2-view.y)/view.k }; }
+    function pick(px,py){ const w=toWorld(px,py); let best=null,bd=1e9;
+      nodes.forEach(n=>{ if(!visible(n))return; const dx=n.x-w.x,dy=n.y-w.y,d=dx*dx+dy*dy, rr=(n.r+6)*(n.r+6);
+        if(d<rr && d<bd){bd=d;best=n;} }); return best; }
+
+    let dragging=false, lastX=0,lastY=0, moved=false;
+    cv.addEventListener("pointerdown",e=>{ cv.setPointerCapture(e.pointerId); lastX=e.offsetX; lastY=e.offsetY; moved=false;
+      const n=pick(e.offsetX,e.offsetY); if(n){ dragNode=n; } else { dragging=true; cv.classList.add("grabbing"); } });
+    cv.addEventListener("pointermove",e=>{
+      if(dragNode){ const w=toWorld(e.offsetX,e.offsetY); dragNode.x=w.x; dragNode.y=w.y; dragNode.vx=0; dragNode.vy=0; reheat(.4); moved=true; return; }
+      if(dragging){ view.x+=e.offsetX-lastX; view.y+=e.offsetY-lastY; lastX=e.offsetX; lastY=e.offsetY; moved=true; return; }
+      const n=pick(e.offsetX,e.offsetY); if(n!==hover){ hover=n; cv.style.cursor=n?"pointer":"grab"; } });
+    cv.addEventListener("pointerup",e=>{ if(dragNode && !moved) select(dragNode); else if(dragging && !moved) select(null);
+      dragNode=null; dragging=false; cv.classList.remove("grabbing"); });
+    cv.addEventListener("wheel",e=>{ e.preventDefault(); const f=Math.exp(-e.deltaY*0.0012);
+      const nk=Math.min(3.2,Math.max(0.35,view.k*f));
+      const wx=(e.offsetX-W/2-view.x)/view.k, wy=(e.offsetY-H/2-view.y)/view.k;
+      view.k=nk; view.x=e.offsetX-W/2-wx*view.k; view.y=e.offsetY-H/2-wy*view.k; },{passive:false});
+    document.getElementById("reset").onclick=function(){ view={x:0,y:0,k:1}; reheat(.5); };
+
+    const ev=document.getElementById("ev");
+    function esc(s){ return (s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+    function select(n){
+      selected=n;
+      if(!n){ ev.innerHTML=document.getElementById("ev-empty").outerHTML; return; }
+      const col=KIND[n.kind].c;
+      let html='<div><div class="ev-kind" style="color:'+col+'">'+esc(n.kind)+'</div>'+
+        '<div class="ev-name">'+esc(n.name)+'</div><div class="ev-id">'+esc(n.id)+'</div></div>';
+      if(n.kind==="company"){
+        const attrs=(values.get(n.id)||[]);
+        const founders=links.filter(l=>l.s===n&&l.o.kind==="person").map(l=>l.o);
+        const cats=links.filter(l=>l.s===n&&l.o.kind==="category").map(l=>l.o);
+        const invs=links.filter(l=>l.s===n&&l.o.kind==="investor").map(l=>l.o);
+        function pills(arr,color){ return '<div class="link-wrap">'+arr.map(o=>
+          '<span class="link-pill" data-id="'+esc(o.id)+'"><span class="dot" style="width:8px;height:8px;background:'+color+';color:'+color+'"></span>'+esc(o.name)+'</span>').join("")+'</div>'; }
+        if(founders.length){ html+='<div class="grp"><div class="sec-label">Founders</div>'+pills(founders,KIND.person.c)+'</div>'; }
+        if(cats.length){ html+='<div class="grp"><div class="sec-label">Category</div>'+pills(cats,KIND.category.c)+'</div>'; }
+        if(invs.length){ html+='<div class="grp"><div class="sec-label">Investors</div>'+pills(invs,KIND.investor.c)+'</div>'; }
+        if(attrs.length){ html+='<div class="grp"><div class="sec-label">Grounded facts</div>';
+          attrs.forEach(a=>{ html+='<div class="claim" style="--edge-c:'+col+'"><div class="pred">'+esc(PRED_LABEL[a.p]||a.p)+'</div>'+
+            '<div class="obj">'+esc(a.v)+'</div>'+(a.q?'<div class="q">'+esc(a.q)+'</div>':"")+'</div>'; });
+          html+='</div>'; }
+      } else {
+        const back=links.filter(l=>l.o===n).map(l=>l.s);
+        const rel = n.kind==="person"?"Founder of":n.kind==="investor"?"Backs":"Companies in this category";
+        html+='<div class="grp"><div class="sec-label">'+rel+'</div><div class="link-wrap">'+
+          back.map(s=>'<span class="link-pill" data-id="'+esc(s.id)+'"><span class="dot" style="width:8px;height:8px;background:'+KIND.company.c+';color:'+KIND.company.c+'"></span>'+esc(s.name)+'</span>').join("")+'</div></div>';
+      }
+      html+='<div class="prov-note">Every fact above is <b>span-verified</b> to a quote in a source document. This is a live slice of Eigen’s production claim graph.</div>';
+      ev.innerHTML=html;
+      ev.querySelectorAll(".link-pill").forEach(p=>p.onclick=function(){ const t=nodeById.get(p.dataset.id); if(t){ select(t); reheat(.25); }});
+      ev.scrollTop=0;
+    }
+
+    window.addEventListener("resize",size);
+    size(); reheat(1);
+    if(reduce){ for(let i=0;i<260;i++) tick(); alpha=0.02; }
+    loop();
+  }
+
+  const load=document.getElementById("loading");
+  fetch("/graph/explore").then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+    .then(function(d){ if(load) load.remove(); boot(d); })
+    .catch(function(e){ if(load) load.innerHTML='<div class="load-msg">Could not load the graph.<br><span>'+e+'</span></div>'; });
+})();
+</script>
+</body>
+</html>

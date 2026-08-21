@@ -1485,6 +1485,69 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         """Admin corpus explorer — pure-retrieval source inspection (token entered client-side)."""
         return _html_response("corpus.html", accept_encoding)
 
+    @app.get("/explorer", response_class=HTMLResponse)
+    def interactive_explorer(accept_encoding: str = Header(default="")):
+        """Interactive Explorer — a live, navigable slice of the grounded claim graph
+        (entities + relationship edges + span-verified facts). Data via GET /graph/explore."""
+        return _html_response("explorer.html", accept_encoding)
+
+    @app.get("/graph/explore")
+    async def graph_explore(tenant_id: str = "demo", limit: int = 24):
+        """Live data for the Interactive Explorer: the richest companies + their entity edges
+        (founders/categories/investors) + grounded value-attributes with their verbatim quotes.
+        Read-only over the claim graph; returns empty (never errors the page) if unavailable."""
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            return {"companies": [], "edges": [], "values": []}
+        cap = max(4, min(int(limit or 24), 60))
+        import asyncpg
+        try:
+            conn = await asyncpg.connect(dsn)
+        except Exception:   # noqa: BLE001
+            return {"companies": [], "edges": [], "values": []}
+        try:
+            top = await conn.fetch(
+                """SELECT e.entity_id, e.name, count(*) n FROM rs_claim cl
+                   JOIN rs_entity e ON e.entity_id = cl.subject_id AND e.kind = 'company'
+                   WHERE cl.tenant_id = $1
+                     AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                 WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')
+                   GROUP BY e.entity_id, e.name ORDER BY n DESC LIMIT $2""",
+                tenant_id, cap)
+            subj = [r["entity_id"] for r in top]
+            if not subj:
+                return {"companies": [], "edges": [], "values": []}
+            edge_rows = await conn.fetch(
+                """SELECT cl.subject_id, s.name sname, cl.predicate,
+                          cl.object_entity_id, o.name oname, o.kind okind
+                   FROM rs_claim cl JOIN rs_entity s ON s.entity_id = cl.subject_id
+                   LEFT JOIN rs_entity o ON o.entity_id = cl.object_entity_id
+                   WHERE cl.object_kind = 'entity' AND cl.subject_id = ANY($1) AND cl.tenant_id = $2
+                     AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                 WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')""",
+                subj, tenant_id)
+            val_rows = await conn.fetch(
+                """SELECT cl.subject_id, cl.predicate, cl.object_value,
+                          (SELECT ev.quote FROM rs_claim_evidence ev
+                           WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active'
+                           ORDER BY ev.authority_tier DESC LIMIT 1) quote
+                   FROM rs_claim cl
+                   WHERE cl.object_kind = 'value' AND cl.subject_id = ANY($1) AND cl.tenant_id = $2
+                     AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                 WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')""",
+                subj, tenant_id)
+        finally:
+            await conn.close()
+        return {
+            "companies": [{"id": r["entity_id"], "name": r["name"], "claims": r["n"]} for r in top],
+            "edges": [{"s": r["subject_id"], "sname": r["sname"], "p": r["predicate"],
+                       "o": r["object_entity_id"], "oname": r["oname"] or r["object_entity_id"],
+                       "okind": r["okind"] or "unknown"}
+                      for r in edge_rows if r["object_entity_id"]],
+            "values": [{"s": r["subject_id"], "p": r["predicate"], "v": r["object_value"],
+                        "q": (r["quote"] or "")[:180]} for r in val_rows],
+        }
+
     @app.get("/{name}.png")
     def web_png(name: str):
         """Serve a PNG asset from apps/web (logo, brand mark). Basename-only + .png
