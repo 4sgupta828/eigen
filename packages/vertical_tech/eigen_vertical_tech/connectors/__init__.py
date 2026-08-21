@@ -27,6 +27,7 @@ from .expert_feed import ExpertFeedConnector
 from .uspto import UsptoConnector
 from .wikidata import WikidataConnector
 from .wikipedia import WikipediaConnector
+from .yc import YcConnector
 
 __all__ = ["ArxivConnector", "CompaniesHouseConnector", "CrossrefConnector", "EdgarConnector",
            "EngBlogConnector",
@@ -35,4 +36,4 @@ __all__ = ["ArxivConnector", "CompaniesHouseConnector", "CrossrefConnector", "Ed
            "OpenAlexConnector",
            "OpenReviewConnector", "PatentsViewConnector", "PodcastConnector", "RedditConnector",
            "SemanticScholarConnector", "StackExchangeConnector", "UsptoConnector", "WikidataConnector",
-           "WikipediaConnector"]
+           "WikipediaConnector", "YcConnector"]

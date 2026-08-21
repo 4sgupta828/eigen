@@ -22,13 +22,14 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
                          OpenAlexConnector,
                          OpenReviewConnector, PatentsViewConnector, PodcastConnector, RedditConnector,
                          SemanticScholarConnector, StackExchangeConnector, UsptoConnector,
-                         WikidataConnector, WikipediaConnector)
+                         WikidataConnector, WikipediaConnector, YcConnector)
 from .use_case_lenses import USE_CASE_LENSES
-from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT
+from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_LANDSCAPE_CONTRACT_PROMPT
 from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
-                       TECH_ANSWER_360_BLOCK, TECH_REASONED_ANSWER_FORMAT, TECH_REASONED_SCAFFOLD_PROMPT,
-                       TECH_UNDERSTANDING_ANSWER_FORMAT, TECH_UNDERSTANDING_QUERY_HINT,
-                       adaptive_format_on, answer_360_on)
+                       TECH_ANSWER_360_BLOCK, TECH_LANDSCAPE_COMPOSE_BLOCK, TECH_REASONED_ANSWER_FORMAT,
+                       TECH_REASONED_SCAFFOLD_PROMPT, TECH_UNDERSTANDING_ANSWER_FORMAT,
+                       TECH_UNDERSTANDING_QUERY_HINT, adaptive_format_on, answer_360_on,
+                       landscape_coverage_on)
 from .eval_gold import GOLD
 from .freshness import TECH_FRESHNESS_POLICY
 from .fixtures import sample_filings, sample_papers
@@ -75,6 +76,8 @@ def build_manifest() -> VerticalManifest:
             "github": GithubConnector(),
             "patentsview": PatentsViewConnector(),
             "gdelt": GdeltConnector(),
+            # YC company directory — the startup POPULATION seed (name/batch/founders/desc), public Algolia.
+            "yc": YcConnector(),
         },
         retrieval_sources={"corpus": TechRetrievalSource()},
         gating_policy=TechGatingPolicy(),
@@ -107,6 +110,10 @@ def build_manifest() -> VerticalManifest:
         # Question-driven evidence regime (flag EIGEN_ANSWER_CONTRACT): one classification →
         # current/established/balanced → customizes retrieval+ranking+compose per question.
         contract_prompt=TECH_CONTRACT_PROMPT,
+        # FLAG EIGEN_LANDSCAPE_COVERAGE: the app swaps to this enumerative-categories contract (+ forces
+        # question_contract="steer") so a "map the landscape / examine all X" ask fans retrieval out per
+        # category instead of a few narrow searches. Off → not used (byte-identical).
+        landscape_contract_prompt=TECH_LANDSCAPE_CONTRACT_PROMPT,
         answer_profiles=ANSWER_PROFILES,
         # REASONED engine (flag EIGEN_REASONED_DEFAULT, default OFF — the noesis clinical-decision mode
         # re-homed to diligence): one scaffold call classifies the question (decision/lookup/understanding)
@@ -120,8 +127,12 @@ def build_manifest() -> VerticalManifest:
                                   else TECH_REASONED_SCAFFOLD_PROMPT),
         # FLAG EIGEN_ANSWER_360 (rides adaptive): append the multi-perspective '## Perspectives' +
         # '## Related questions' sections to the ONE integrated answer. OFF → plain adaptive format.
+        # FLAG EIGEN_LANDSCAPE_COVERAGE (rides adaptive): also append the market-map compose block so a
+        # landscape answer is a clustered, grounded map with a "## Coverage basis" honesty section.
         reasoned_answer_format=(
-            (TECH_ADAPTIVE_ANSWER_FORMAT + (TECH_ANSWER_360_BLOCK if answer_360_on() else ""))
+            (TECH_ADAPTIVE_ANSWER_FORMAT
+             + (TECH_ANSWER_360_BLOCK if answer_360_on() else "")
+             + (TECH_LANDSCAPE_COMPOSE_BLOCK if landscape_coverage_on() else ""))
             if adaptive_format_on() else TECH_REASONED_ANSWER_FORMAT),
         understanding_answer_format=TECH_UNDERSTANDING_ANSWER_FORMAT,
         understanding_query_hint=TECH_UNDERSTANDING_QUERY_HINT,

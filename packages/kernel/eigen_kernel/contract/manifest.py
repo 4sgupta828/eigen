@@ -244,6 +244,12 @@ class VerticalManifest:
     # lives HERE; the kernel derives, expands to retrieval legs, and slot-matches generically.
     # None → no contract is ever derived (the flag is a safe no-op for this vertical).
     contract_prompt: str | None = None
+    # LANDSCAPE-COVERAGE derivation prompt (flag EIGEN_LANDSCAPE_COVERAGE). Same one-call contract, but
+    # it is ALLOWED to return mode="enumerative" with the conceptual CATEGORIES as `entities` for a
+    # "map the landscape / examine all X / cluster" ask — so the kernel fans retrieval out per category
+    # (entity×axis legs) instead of a few narrow searches. The app swaps `contract_prompt` to this and
+    # forces question_contract="steer" only when the flag is on. None → not offered (byte-identical).
+    landscape_contract_prompt: str | None = None
     # Optional ENUMERATIVE-COMPOSE addendum (Evidence Contract stage 4, flag
     # EIGEN_ANSWER_MODE_ROUTING): APPENDED by the kernel to the active compose directive ONLY when
     # the derived QuestionContract says enumerative AND ≥2 contract entities hold slot-matched

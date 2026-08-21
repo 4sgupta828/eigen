@@ -321,3 +321,39 @@ def answer_360_on() -> bool:
     prompt-only, grounded-to-retrieved-findings, anti-bloat capped. Rides EIGEN_ADAPTIVE_FORMAT."""
     import os
     return os.environ.get("EIGEN_ANSWER_360", "").lower() in ("1", "true", "yes")
+
+
+# ── LANDSCAPE COVERAGE COMPOSE (flag EIGEN_LANDSCAPE_COVERAGE) ─────────────────────────────────────
+# Appended to the answer directive for a landscape/population question. Turns the broad per-category
+# retrieval (the enumerative legs the landscape contract triggers) into a clustered, grounded MARKET MAP
+# instead of a synthesis of a few documents. Grounding is unchanged: every company/founder/figure comes
+# from a cited finding; categories with no grounded companies are reported as gaps, never fabricated.
+TECH_LANDSCAPE_COMPOSE_BLOCK = """
+
+LANDSCAPE / POPULATION MODE — this is a "map the whole space" answer. Build a MARKET MAP, not a synthesis
+of a few documents:
+- ORGANIZE the answer by the CATEGORIES the space breaks into (one clear segment per group). Cover the
+  segments the evidence supports; a segment the retrieval found nothing grounded for is a GAP, not an
+  invitation to fill it from general knowledge.
+- Within each category, list the companies/entities the FINDINGS support, ideally as a TABLE with a row
+  per entity and the dimensions the question asked (e.g. Company · Founders · Funding/Stage · Customer
+  segment · Moat · Differentiation). Put the citation [n] in the cell. A cell with no cited evidence is
+  left blank or "—", NEVER guessed.
+- HARD grounding rule for breadth: do NOT name a company, founder, funding figure, or stage that is not
+  in a cited finding. It is fine to be BROAD only to the extent the retrieved evidence is broad. Never
+  add well-known companies from memory to look more complete.
+- END with a "## Coverage basis" section: name the categories that are well-covered vs THIN/EMPTY in the
+  retrieved evidence, and say plainly that the map reflects what was retrieved, not the entire market —
+  this is the honest coverage statement, and it is REQUIRED for a landscape answer.
+- Still lead with a short synthesis of the market's structure (the few conclusions that matter), then the
+  category map, then the coverage basis.
+"""
+
+
+def landscape_coverage_on() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_LANDSCAPE_COVERAGE turns a "map the landscape / examine all X"
+    question into a coverage-driven answer — the contract derives the conceptual CATEGORIES, the kernel
+    fans retrieval out per category (enumerative legs + steer), and compose builds a grounded, clustered
+    market map with an honest coverage basis. Companies/facts stay strictly grounded. OFF → byte-identical."""
+    import os
+    return os.environ.get("EIGEN_LANDSCAPE_COVERAGE", "").lower() in ("1", "true", "yes")

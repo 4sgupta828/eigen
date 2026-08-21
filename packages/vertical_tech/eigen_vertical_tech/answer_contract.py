@@ -83,3 +83,34 @@ ANSWER_PROFILES: dict = {
     # "balanced" is intentionally absent → no profile matches → the kernel keeps today's behavior. Kept
     # here as documentation; an explicit no-op entry would behave identically.
 }
+
+
+# LANDSCAPE-COVERAGE contract (flag EIGEN_LANDSCAPE_COVERAGE). Same one-call contract, but for a
+# "map the landscape / examine ALL X / cluster companies / who is building" question it returns
+# mode="enumerative" with the conceptual CATEGORIES as `entities` — so the kernel fans retrieval out
+# per category (entity×axis legs) instead of a few narrow searches. GUARDRAIL (Rule 18 + grounding):
+# the categories are a conceptual FRAME derived from knowledge (safe — a frame is not a fact); the
+# companies, founders, funding, and stage are NEVER emitted here and must be extracted from retrieved
+# evidence downstream. Non-landscape questions stay exploratory (identical to TECH_CONTRACT_PROMPT).
+TECH_LANDSCAPE_CONTRACT_PROMPT = """You classify a TECH-RESEARCH question and, for LANDSCAPE/POPULATION
+questions, plan its coverage. Output JSON with `mode`, `entities`, `axes`, `stance`.
+
+FIRST decide `mode`:
+- "enumerative" — the question asks to MAP A LANDSCAPE or examine a POPULATION: "examine all X",
+  "map the landscape", "cluster the companies/startups", "who is building X", "the whole market for X",
+  "list the players in X" — especially when it asks for many entities across several dimensions. For
+  these, set `entities` to the 6-10 CONCEPTUAL CATEGORIES the landscape breaks into (the economic
+  segments / sub-fields a knowledgeable analyst would use to partition it — NOT company names). These
+  categories are a search frame, not an answer: name the SEGMENTS, never specific companies/founders/
+  funding here. Set `axes` to the DIMENSIONS the question asks to compare across (e.g. moat,
+  differentiation, customer segment, funding, stage, founders) — 3-6 short phrases.
+- "exploratory" — anything else (a normal question, a single-entity ask, a how/why, a lookup). Leave
+  `entities` empty.
+
+THEN `stance`: "current" (latest/newest/who-leads-now/recent funding) | "established" (proven/
+benchmarked/how-it-works/foundational) | "balanced" (mixed/unsure). Decide from INTENT, not keywords.
+
+Output ONLY the JSON object. For an enumerative landscape question the categories must be genuine
+distinct segments (e.g. for "AI startups": frontier models, coding agents, horizontal enterprise agents,
+vertical AI, AI search/knowledge, voice/multimodal, AI infrastructure, physical AI/robotics, defense/
+industrial AI, generative media) — pick the ones that actually fit the specific question's scope."""

@@ -35,7 +35,9 @@ def classify(source_key: str, facets: dict[str, str] | None, title: str = "", te
         return "verified_structured" if reviewed in ("true", "1", "yes") else "technical_signal"
     # Curated structured reference (Wikidata: founder/inception/ownership/ticker) — structured facts a
     # source published about itself, above press but below a filing. Previously UNMAPPED → silently rank 0.
-    if src_kind == "reference" or sk == "wikidata":
+    # YC company directory joins this tier: a curated public startup-directory profile (population
+    # seed + founders) is structured reference — above press, below a filing — same as Wikidata.
+    if src_kind == "reference" or sk in ("wikidata", "yc"):
         return "verified_structured"
 
     # 3) TECHNICAL SIGNAL — preprints, open-source + model-hub traction.

@@ -574,6 +574,16 @@ def explore_legs_enabled() -> bool:
     return os.environ.get("EIGEN_EXPLORE_LEGS", "").lower() in ("1", "true", "yes")
 
 
+def landscape_coverage_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_LANDSCAPE_COVERAGE. A "map the landscape / examine all X /
+    cluster companies" ask becomes coverage-driven: the app swaps the contract to the vertical's
+    enumerative-categories `landscape_contract_prompt`, forces question_contract="steer" + explore_legs
+    so the kernel fans retrieval out PER CATEGORY (entity×axis legs) instead of a few narrow searches,
+    and appends the market-map compose block. Companies/facts stay strictly grounded; empty categories
+    are reported as gaps. OFF → byte-identical (contract stays stance-only exploratory)."""
+    return os.environ.get("EIGEN_LANDSCAPE_COVERAGE", "").lower() in ("1", "true", "yes")
+
+
 def answer_mode_routing_enabled() -> bool:
     """Flag (default OFF, Rule 20 — Evidence Contract stage 4) via EIGEN_ANSWER_MODE_ROUTING:
     when ON, an ENUMERATIVE question routes to an enumerative compose framing — the kernel APPENDS
@@ -989,9 +999,13 @@ def build_default_service() -> ResearchService:
         answer_profiles=(getattr(manifest, "answer_profiles", None) or None) if answer_contract_enabled() else None,
         evidence_identity=evidence_identity_enabled(),
         claim_congruence=claim_congruence_enabled(),
-        question_contract=question_contract_mode(),
-        contract_prompt=getattr(manifest, "contract_prompt", None),
-        explore_legs=explore_legs_enabled(),
+        # LANDSCAPE COVERAGE (flag): force contract steer + the enumerative-categories landscape prompt +
+        # explore legs so a "map the landscape" ask fans retrieval out per category. Else the normal knobs.
+        question_contract=("steer" if landscape_coverage_enabled() else question_contract_mode()),
+        contract_prompt=(getattr(manifest, "landscape_contract_prompt", None)
+                         if landscape_coverage_enabled()
+                         else getattr(manifest, "contract_prompt", None)),
+        explore_legs=(True if landscape_coverage_enabled() else explore_legs_enabled()),
         answer_mode_routing=answer_mode_routing_enabled(),
         enumerative_compose_addendum=getattr(manifest, "enumerative_compose_addendum", None),
         panel_specialists=getattr(manifest, "panel_specialists", ()),

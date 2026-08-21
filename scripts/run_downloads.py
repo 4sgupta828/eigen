@@ -7,7 +7,7 @@ paces the queue serially. We do NOT block on unavailable sources (see docs/downl
 
 Usage:
   EIGEN_ADMIN_TOKEN=... python scripts/run_downloads.py <tranche> [--limit N] [--dry]
-  tranches: depth | formd | openalex | arxiv | s2 | crossref | wikidata | hn | github | recent | all
+  tranches: depth | formd | openalex | arxiv | s2 | crossref | wikidata | yc | hn | github | recent | all
   --dry prints the jobs without enqueuing.
 """
 from __future__ import annotations
@@ -207,6 +207,14 @@ CH_QUERIES = [
     "DeepMind","Stability AI","Synthesia","Wayve","PolyAI","ElevenLabs","Graphcore","Darktrace",
     "Faculty AI","Tractable","Speechmatics","Builder.ai","Improbable","Quantexa","Cohere UK",
 ]
+# --- YC company directory: the startup POPULATION seed (source_kind=reference → verified_structured).
+# The AI slice — a text query over AI subfields + an explicit `industry`/`tag` facet filter — pulls
+# the ~1500 AI-relevant YC companies with founders. Deep per-query limits page the Algolia index. ---
+YC_QUERIES = [
+    "AI","machine learning","large language models","AI agents","generative AI","computer vision",
+    "natural language processing","AI infrastructure","robotics","AI developer tools","LLM",
+    "AI healthcare","AI security","voice AI","data infrastructure",
+]
 # --- USPTO patents (primary_filing granted / technical_signal application); needs EIGEN_USPTO_KEY ---
 USPTO_QUERIES = [
     "large language model","transformer neural network","attention mechanism","retrieval augmented generation",
@@ -288,6 +296,12 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     if tranche in ("companies_house","all"):
         for qy in CH_QUERIES:
             jobs.append({"connector":"companies_house","query":qy,"limit":limit or 10})
+    if tranche in ("yc","all"):
+        # AI slice of the YC startup population + one industry-filtered pass for breadth.
+        for qy in YC_QUERIES:
+            jobs.append({"connector":"yc","query":qy,"limit":limit or 100,"facets":{"sector":"ai"}})
+        jobs.append({"connector":"yc","query":"","tag":"Artificial Intelligence",
+                     "limit":limit or 500,"facets":{"sector":"ai"}})
     # DEEP-TECH BREADTH: fan the cross-domain topics across the research connectors so the corpus
     # covers the whole frontier (robotics/semi/quantum/bio/climate/space/materials/security/…), not
     # just AI. NOT in "all" (it's a large, deliberate breadth pass) — run explicitly: `deeptech`.
@@ -363,7 +377,7 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","uspto","wikipedia","nsf","nih","expert","podcast","eng_blog","seminal","fulltext","github","recent","deeptech","all"])
+    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","yc","uspto","wikipedia","nsf","nih","expert","podcast","eng_blog","seminal","fulltext","github","recent","deeptech","all"])
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--priority", type=int, default=0,
                     help="claim priority (higher = jumps the FIFO backlog; e.g. 500 for strategic sources)")
