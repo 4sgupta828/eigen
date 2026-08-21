@@ -524,6 +524,188 @@ class ClaimGraphStore:
             out.append(d)
         return out
 
+    # ---- aggregation reads (population → market map, Task 3) ---------------- #
+    async def distinct_categories(self, *, tenant_id: str = "demo",
+                                  min_members: int = 1) -> list[dict]:
+        """DISTINCT market categories from ACTIVE, grounded `operates_in_category`
+        claims, each with a distinct-member (company) count. Returns
+        `[{object_norm, name, members}]` ordered by members DESC (name tie-break).
+
+        Grounding-exclusion (same discipline as `population`): a claim is counted
+        only when it has an ACTIVE evidence row — a company placed by a claim whose
+        span was GC'd/stale never inflates a category. `name` is the category
+        entity's `name` (join `rs_entity` on `object_entity_id`) or `object_norm`
+        when no entity row exists. `members >= min_members` filters small clusters."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT c.object_norm AS object_norm,
+                          COALESCE(NULLIF(max(cat.name), ''), c.object_norm) AS name,
+                          count(DISTINCT c.subject_id) AS members
+                   FROM rs_claim c
+                   JOIN rs_entity e ON e.entity_id = c.subject_id AND e.status = 'active'
+                   LEFT JOIN rs_entity cat ON cat.entity_id = c.object_entity_id
+                   WHERE c.tenant_id = $1 AND c.predicate = 'operates_in_category'
+                     AND c.retracted_at IS NULL AND c.superseded_at IS NULL
+                     AND EXISTS (            -- grounding+GC: only claims with ACTIVE evidence
+                         SELECT 1 FROM rs_claim_evidence ev
+                         WHERE ev.claim_id = c.claim_id
+                           AND ev.evidence_status = 'active')
+                   GROUP BY c.object_norm
+                   HAVING count(DISTINCT c.subject_id) >= $2
+                   ORDER BY members DESC, name, object_norm""",
+                tenant_id, min_members)
+        return [{"object_norm": r["object_norm"], "name": r["name"],
+                 "members": int(r["members"])} for r in rows]
+
+    async def population_claims(self, *, tenant_id: str = "demo",
+                               category_norms: Sequence[str] | None = None,
+                               company_cap: int = 400,
+                               claims_per_company_cap: int = 40) -> dict:
+        """Grounded population read the market map is built from: COMPANY rows, each
+        with its ACTIVE grounded claims across ALL slice predicates, every claim
+        carrying its winning (highest-authority active) evidence.
+
+        Scope: companies with ≥1 active grounded `operates_in_category` claim whose
+        `object_norm` ∈ `category_norms` (when given); otherwise the whole grounded
+        company population (any active grounded claim). Companies are capped at
+        `company_cap` (ordered by name) and each company's claims at
+        `claims_per_company_cap`. NO silent truncation — the returned `meta` carries
+        `companies_truncated` / `claims_truncated` (+ the clipped company ids) so a
+        clip is always surfaced.
+
+        Grounding-exclusion: an INNER lateral join on ACTIVE evidence means a claim
+        with no active evidence row is never returned (same rule as `population`).
+
+        Returns `{"companies": [...], "meta": {...}}` where each company is
+        `{entity_id, name, kind, primary_domain, claims:[{predicate, object_kind,
+        object_value, object_entity_id, object_norm, confidence,
+        evidence:{document_id, block_id, quote, authority_tier}}]}`."""
+        await self.ensure_schema()
+        # ALL slice predicates arrive as DATA from the vertical (kernel/vertical split).
+        from eigen_vertical_tech.claim_predicates import SLICE1_PREDICATES
+        slice_preds = [p["name"] for p in SLICE1_PREDICATES]
+
+        norms = list(category_norms) if category_norms else None
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            # 1) The company set — active companies grounded into scope. Fetch cap+1
+            #    so a clip is DETECTABLE (no separate count query, no silent drop).
+            if norms is not None:
+                scope_exists = (
+                    "AND c.predicate = 'operates_in_category' "
+                    "AND c.object_norm = ANY($2::text[]) ")
+                comp_rows = await conn.fetch(
+                    f"""SELECT e.entity_id, e.name, e.kind, e.primary_domain
+                        FROM rs_entity e
+                        WHERE e.tenant_id = $1 AND e.status = 'active' AND e.kind = 'company'
+                          AND EXISTS (
+                              SELECT 1 FROM rs_claim c
+                              WHERE c.tenant_id = $1 AND c.subject_id = e.entity_id
+                                {scope_exists}
+                                AND c.retracted_at IS NULL AND c.superseded_at IS NULL
+                                AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                            WHERE ev.claim_id = c.claim_id
+                                              AND ev.evidence_status = 'active'))
+                        ORDER BY e.name, e.entity_id
+                        LIMIT $3""",
+                    tenant_id, norms, company_cap + 1)
+            else:
+                comp_rows = await conn.fetch(
+                    """SELECT e.entity_id, e.name, e.kind, e.primary_domain
+                       FROM rs_entity e
+                       WHERE e.tenant_id = $1 AND e.status = 'active' AND e.kind = 'company'
+                         AND EXISTS (
+                             SELECT 1 FROM rs_claim c
+                             WHERE c.tenant_id = $1 AND c.subject_id = e.entity_id
+                               AND c.retracted_at IS NULL AND c.superseded_at IS NULL
+                               AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                           WHERE ev.claim_id = c.claim_id
+                                             AND ev.evidence_status = 'active'))
+                       ORDER BY e.name, e.entity_id
+                       LIMIT $2""",
+                    tenant_id, company_cap + 1)
+
+            companies_truncated = len(comp_rows) > company_cap
+            comp_rows = comp_rows[:company_cap]
+            company_ids = [r["entity_id"] for r in comp_rows]
+
+            companies: list[dict] = [{
+                "entity_id": r["entity_id"], "name": r["name"], "kind": r["kind"],
+                "primary_domain": r["primary_domain"], "claims": [],
+            } for r in comp_rows]
+            by_id = {c["entity_id"]: c for c in companies}
+
+            claim_rows: list = []
+            if company_ids:
+                # 2) One query for ALL their claims + winning evidence. INNER lateral
+                #    join => grounding-exclusion; window ranks + caps per company and
+                #    exposes the pre-cap total so a per-company clip is reportable.
+                claim_rows = await conn.fetch(
+                    """SELECT t.entity_id, t.predicate, t.object_kind, t.object_value,
+                              t.object_norm, t.object_entity_id, t.confidence,
+                              t.document_id, t.block_id, t.quote, t.authority_tier,
+                              t.total_claims
+                       FROM (
+                           SELECT c.subject_id AS entity_id, c.predicate,
+                                  c.object_kind, c.object_value, c.object_norm,
+                                  c.object_entity_id, c.confidence,
+                                  ev.document_id, ev.block_id, ev.quote, ev.authority_tier,
+                                  row_number() OVER (
+                                      PARTITION BY c.subject_id
+                                      ORDER BY c.predicate, c.object_norm, c.claim_id) AS rn,
+                                  count(*) OVER (PARTITION BY c.subject_id) AS total_claims
+                           FROM rs_claim c
+                           JOIN LATERAL (
+                               SELECT document_id, block_id, quote, authority_tier
+                               FROM rs_claim_evidence ev
+                               WHERE ev.claim_id = c.claim_id
+                                 AND ev.evidence_status = 'active'
+                               ORDER BY ev.authority_tier DESC, ev.retrieved_at
+                               LIMIT 1
+                           ) ev ON true
+                           WHERE c.tenant_id = $1 AND c.subject_id = ANY($2::text[])
+                             AND c.predicate = ANY($3::text[])
+                             AND c.retracted_at IS NULL AND c.superseded_at IS NULL
+                       ) t
+                       WHERE t.rn <= $4
+                       ORDER BY t.entity_id, t.predicate, t.object_norm""",
+                    tenant_id, company_ids, slice_preds, claims_per_company_cap)
+
+        clipped_company_ids: list[str] = []
+        for r in claim_rows:
+            comp = by_id.get(r["entity_id"])
+            if comp is None:
+                continue
+            comp["claims"].append({
+                "predicate": r["predicate"],
+                "object_kind": r["object_kind"],
+                "object_value": r["object_value"],
+                "object_entity_id": r["object_entity_id"],
+                "object_norm": r["object_norm"],
+                "confidence": float(r["confidence"]) if r["confidence"] is not None else 0.0,
+                "evidence": {
+                    "document_id": r["document_id"],
+                    "block_id": r["block_id"],
+                    "quote": r["quote"],
+                    "authority_tier": r["authority_tier"],
+                },
+            })
+            if r["total_claims"] > claims_per_company_cap:
+                if r["entity_id"] not in clipped_company_ids:
+                    clipped_company_ids.append(r["entity_id"])
+
+        meta = {
+            "company_count": len(companies),
+            "companies_truncated": companies_truncated,
+            "company_cap": company_cap,
+            "claims_truncated": bool(clipped_company_ids),
+            "claims_per_company_cap": claims_per_company_cap,
+            "clipped_company_ids": clipped_company_ids,
+        }
+        return {"companies": companies, "meta": meta}
+
     @staticmethod
     def _row_to_claim_dict(r) -> dict:
         return {

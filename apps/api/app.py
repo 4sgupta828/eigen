@@ -584,6 +584,16 @@ def landscape_coverage_enabled() -> bool:
     return os.environ.get("EIGEN_LANDSCAPE_COVERAGE", "").lower() in ("1", "true", "yes")
 
 
+def startup_population_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_STARTUP_POPULATION. When ON, a landscape ask
+    is answered by AGGREGATING the grounded claim graph — group the company population
+    by category in SQL and compose from the compact, per-cell-cited market map
+    (`build_market_map` over `ClaimGraphStore.population_claims`) instead of feeding
+    raw blocks through the ~30-finding compose cap. Wired into NO route yet (Task 4
+    does the compose). OFF → byte-identical to today (no aggregation path taken)."""
+    return os.environ.get("EIGEN_STARTUP_POPULATION", "").lower() in ("1", "true", "yes")
+
+
 def answer_mode_routing_enabled() -> bool:
     """Flag (default OFF, Rule 20 — Evidence Contract stage 4) via EIGEN_ANSWER_MODE_ROUTING:
     when ON, an ENUMERATIVE question routes to an enumerative compose framing — the kernel APPENDS
