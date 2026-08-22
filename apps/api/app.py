@@ -1522,6 +1522,16 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         (entities + relationship edges + span-verified facts). Data via GET /graph/explore."""
         return _html_response("explorer.html", accept_encoding)
 
+    @app.get("/crossviews", response_class=HTMLResponse)
+    def crossviews_designer(accept_encoding: str = Header(default="")):
+        """Task CV3 (flag-gated, Rule 20). CROSSVIEWS — the split-pane grounded-table
+        designer (row-axis + visualizer chat + column picker → live table with every
+        non-empty cell click-to-source). Data via the CV2 /crossviews/* endpoints. OFF →
+        404 (true no-op), matching the CV1/CV2 data endpoints."""
+        if not crossviews_enabled():
+            raise HTTPException(status_code=404, detail="crossviews not enabled")
+        return _html_response("crossviews.html", accept_encoding)
+
     @app.get("/graph/explore")
     async def graph_explore(tenant_id: str = "demo", limit: int = 24):
         """Live data for the Interactive Explorer: the richest companies + their entity edges
