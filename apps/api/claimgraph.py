@@ -1026,6 +1026,157 @@ class ClaimGraphStore:
         }
         return {"companies": companies, "meta": meta}
 
+    # ---- CROSSVIEWS reads (Task CV1 — grid data layer) --------------------- #
+    async def predicate_coverage(self, *, subject_kind: str | None = None,
+                                 category_norm: str | None = None,
+                                 tenant_id: str = "demo") -> list[dict]:
+        """Coverage read — "which columns have data + how many rows each fills".
+        For active subjects of `subject_kind` (default `self._subject_kind`), returns
+        `[{predicate, rows_covered}]` where `rows_covered = count(DISTINCT subject_id)`
+        of that predicate's ACTIVE-evidence claims, ordered by rows_covered DESC
+        (predicate tie-break). Optional `category_norm` restricts to subjects with an
+        active grounded `self._placement_predicate`=norm placement claim.
+
+        Same grounding-exclusion discipline as `distinct_categories`: a claim is
+        counted only when it has an ACTIVE evidence row (a GC'd/stale span never
+        inflates coverage). Vocabulary-neutral — `subject_kind`/`placement_predicate`
+        come from the instance, never a vertical import."""
+        await self.ensure_schema()
+        kind = subject_kind or self._subject_kind
+        args: list[Any] = [tenant_id, kind]          # $1, $2
+        placement_clause = ""
+        if category_norm:
+            args.append(self._placement_predicate)   # $3
+            args.append(category_norm)                # $4
+            placement_clause = """
+                     AND EXISTS (
+                         SELECT 1 FROM rs_claim pc
+                         WHERE pc.tenant_id = $1 AND pc.subject_id = c.subject_id
+                           AND pc.predicate = $3 AND pc.object_norm = $4
+                           AND pc.retracted_at IS NULL AND pc.superseded_at IS NULL
+                           AND EXISTS (SELECT 1 FROM rs_claim_evidence ev2
+                                       WHERE ev2.claim_id = pc.claim_id
+                                         AND ev2.evidence_status = 'active'))"""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""SELECT c.predicate AS predicate,
+                          count(DISTINCT c.subject_id) AS rows_covered
+                   FROM rs_claim c
+                   JOIN rs_entity e ON e.entity_id = c.subject_id
+                        AND e.status = 'active' AND e.kind = $2
+                   WHERE c.tenant_id = $1
+                     AND c.retracted_at IS NULL AND c.superseded_at IS NULL
+                     AND EXISTS (         -- grounding+GC: only claims with ACTIVE evidence
+                         SELECT 1 FROM rs_claim_evidence ev
+                         WHERE ev.claim_id = c.claim_id
+                           AND ev.evidence_status = 'active')
+                     {placement_clause}
+                   GROUP BY c.predicate
+                   ORDER BY rows_covered DESC, c.predicate""",
+                *args)
+        return [{"predicate": r["predicate"], "rows_covered": int(r["rows_covered"])}
+                for r in rows]
+
+    async def founder_rows(self, *, founder_predicate: str = "has_founder",
+                           tenant_id: str = "demo", cap: int = 400) -> list[dict]:
+        """The REVERSE edge (founders are OBJECTS of the founder predicate): person
+        entities that are the `object_entity_id` of an active-evidence
+        `founder_predicate` claim, each with the companies they founded. Returns
+        `[{person_id, name, companies:[{company_id, company_name, quote, document_id,
+        block_id, authority_tier}]}]`, persons ordered by name (capped at `cap`).
+
+        `founder_predicate` is a PARAMETER (default 'has_founder'), never hardcoded in
+        the store SQL — so the store stays vocabulary-neutral (a second vertical passes
+        its own reverse-edge predicate). Grounding-exclusion: an INNER lateral join on
+        ACTIVE evidence means a founder edge with no active span never surfaces, and the
+        per-company citation is that claim's winning (highest-authority) evidence."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT c.object_entity_id AS person_id,
+                          COALESCE(NULLIF(p.name, ''), c.object_entity_id) AS person_name,
+                          c.subject_id AS company_id,
+                          COALESCE(NULLIF(comp.name, ''), c.subject_id) AS company_name,
+                          ev.document_id, ev.block_id, ev.quote, ev.authority_tier
+                   FROM rs_claim c
+                   JOIN rs_entity comp ON comp.entity_id = c.subject_id
+                        AND comp.status = 'active'
+                   LEFT JOIN rs_entity p ON p.entity_id = c.object_entity_id
+                   JOIN LATERAL (          -- INNER => grounding-exclusion (active evidence only)
+                       SELECT document_id, block_id, quote, authority_tier
+                       FROM rs_claim_evidence ev
+                       WHERE ev.claim_id = c.claim_id AND ev.evidence_status = 'active'
+                       ORDER BY ev.authority_tier DESC, ev.retrieved_at
+                       LIMIT 1
+                   ) ev ON true
+                   WHERE c.tenant_id = $1 AND c.predicate = $2
+                     AND c.object_kind = 'entity' AND c.object_entity_id <> ''
+                     AND c.retracted_at IS NULL AND c.superseded_at IS NULL
+                   ORDER BY person_name, c.object_entity_id, company_name, c.subject_id""",
+                tenant_id, founder_predicate)
+        by_person: dict[str, dict] = {}
+        order: list[str] = []
+        for r in rows:
+            pid = r["person_id"]
+            person = by_person.get(pid)
+            if person is None:
+                if len(order) >= cap:
+                    continue          # person cap reached — deterministic name order
+                person = {"person_id": pid, "name": r["person_name"], "companies": []}
+                by_person[pid] = person
+                order.append(pid)
+            person["companies"].append({
+                "company_id": r["company_id"],
+                "company_name": r["company_name"],
+                "quote": r["quote"],
+                "document_id": r["document_id"],
+                "block_id": r["block_id"],
+                "authority_tier": r["authority_tier"],
+            })
+        return [by_person[pid] for pid in order]
+
+    async def category_member_companies(self, *, category_norm: str,
+                                        tenant_id: str = "demo",
+                                        cap: int = 8) -> list[dict]:
+        """Representative (exemplar) companies for a domain row: subjects of active
+        grounded `self._placement_predicate`=`category_norm` claims. Returns
+        `[{company_id, name, quote, document_id, block_id, authority_tier}]` (name
+        order, capped at `cap`); the evidence is the placement claim's winning span so
+        an aggregate cell that lists these companies can still cite each one.
+        `distinct_categories` already gives the member COUNT — this gives the exemplars.
+
+        Grounding-exclusion is identical to `distinct_categories`/`population_claims`
+        (INNER lateral join on active evidence)."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT c.subject_id AS company_id,
+                          COALESCE(NULLIF(e.name, ''), c.subject_id) AS name,
+                          ev.document_id, ev.block_id, ev.quote, ev.authority_tier
+                   FROM rs_claim c
+                   JOIN rs_entity e ON e.entity_id = c.subject_id
+                        AND e.status = 'active' AND e.kind = $3
+                   JOIN LATERAL (          -- INNER => grounding-exclusion
+                       SELECT document_id, block_id, quote, authority_tier
+                       FROM rs_claim_evidence ev
+                       WHERE ev.claim_id = c.claim_id AND ev.evidence_status = 'active'
+                       ORDER BY ev.authority_tier DESC, ev.retrieved_at
+                       LIMIT 1
+                   ) ev ON true
+                   WHERE c.tenant_id = $1 AND c.predicate = $4 AND c.object_norm = $2
+                     AND c.retracted_at IS NULL AND c.superseded_at IS NULL
+                   ORDER BY name, c.subject_id
+                   LIMIT $5""",
+                tenant_id, category_norm, self._subject_kind,
+                self._placement_predicate, cap)
+        return [{"company_id": r["company_id"], "name": r["name"],
+                 "quote": r["quote"], "document_id": r["document_id"],
+                 "block_id": r["block_id"], "authority_tier": r["authority_tier"]}
+                for r in rows]
+
     @staticmethod
     def _row_to_claim_dict(r) -> dict:
         return {
