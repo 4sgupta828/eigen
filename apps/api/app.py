@@ -604,6 +604,14 @@ def diligence_depth_enabled() -> bool:
     return os.environ.get("EIGEN_DILIGENCE_DEPTH", "").lower() in ("1", "true", "yes")
 
 
+def crossviews_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_CROSSVIEWS. When ON, the CROSSVIEWS surface is
+    exposed — the grounded dynamic-table endpoints (`/crossviews/options`,
+    `/crossviews/agent`, `/crossviews/build`, `/crossviews/save`). OFF → every one of
+    those endpoints 404s (a true no-op; no other path changes)."""
+    return os.environ.get("EIGEN_CROSSVIEWS", "").lower() in ("1", "true", "yes")
+
+
 def answer_mode_routing_enabled() -> bool:
     """Flag (default OFF, Rule 20 — Evidence Contract stage 4) via EIGEN_ANSWER_MODE_ROUTING:
     when ON, an ENUMERATIVE question routes to an enumerative compose framing — the kernel APPENDS
@@ -724,6 +732,29 @@ class PanelIn(BaseModel):
     session_id: str | None = None          # the panel thread this turn continues (echoed back)
     rationales: dict | None = None         # {specialist_id: why-selected} from triage, shown per specialist
     attachments: list[Attachment] | None = None   # images/PDF/DICOM/pasted text → shared panel context
+
+
+class CrossviewAgentIn(BaseModel):
+    row_kind: str = "company"                 # company | person | category
+    goal: str = ""                            # what the user wants the table to show
+    current_columns: list[str] | None = None  # columns already picked (ids)
+    message: str | None = None                # follow-up chat message
+    category_norm: str | None = None          # optional company-population filter
+    tenant_id: str = "demo"
+
+
+class CrossviewBuildIn(BaseModel):
+    spec: dict                                # a CrossviewSpec-dict (row_kind/columns/filters/…)
+    tenant_id: str = "demo"
+
+
+class CrossviewSaveIn(BaseModel):
+    spec: dict                                # the source-of-truth spec
+    grid: dict | None = None                  # a snapshot grid (fallback on reopen)
+    transcript: list[dict] | None = None      # the design conversation
+    title: str | None = None
+    tenant_id: str = "demo"
+    workspace_id: str | None = None
 
 
 class SuggestIn(BaseModel):
@@ -1680,6 +1711,120 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                     session_id = None
         result["session_id"] = session_id
         return result
+
+    @app.get("/crossviews/options")
+    async def crossviews_options(row_kind: str = "company",
+                                 category_norm: str = "",
+                                 tenant_id: str = "demo") -> dict:
+        """Task CV2 (flag-gated, Rule 20). The GROUNDED column catalog + filter options for
+        the CROSSVIEWS designer: the allowed columns for `row_kind` (real active
+        predicates / CV1 edge-aggregate set with coverage>0) plus the distinct grounded
+        categories. OFF → 404 (true no-op)."""
+        if not crossviews_enabled():
+            raise HTTPException(status_code=404, detail="crossviews not enabled")
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            raise HTTPException(status_code=503, detail="EIGEN_CORPUS_DSN not configured")
+        from api.claimgraph_tech import make_tech_claim_store
+        from api.crossviews import VALID_ROW_KINDS as VALID_CROSSVIEW_ROW_KINDS
+        from api.crossviews_agent import build_column_catalog, _public_columns
+        store = make_tech_claim_store(dsn)
+        try:
+            cat = category_norm or None
+            columns = await build_column_catalog(
+                store, row_kind=row_kind, tenant_id=tenant_id, category_norm=cat)
+            categories = await store.distinct_categories(tenant_id=tenant_id, min_members=1)
+        except Exception as e:   # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"crossviews options error: {e}") from e
+        finally:
+            await store.close()
+        return {
+            "row_kinds": list(VALID_CROSSVIEW_ROW_KINDS),
+            "columns": _public_columns(columns),
+            "categories": [{"object_norm": c["object_norm"], "name": c["name"],
+                            "members": c["members"]} for c in categories],
+        }
+
+    @app.post("/crossviews/agent")
+    async def crossviews_agent(body: CrossviewAgentIn) -> dict:
+        """Task CV2 (flag-gated). ONE goal-first, server-validated turn of the column-design
+        conversation (`crossview_turn`): the LLM proposes columns ONLY from the grounded
+        catalog; the server re-validation gate drops anything uncovered. OFF → 404."""
+        if not crossviews_enabled():
+            raise HTTPException(status_code=404, detail="crossviews not enabled")
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            raise HTTPException(status_code=503, detail="EIGEN_CORPUS_DSN not configured")
+        if app.state.service is None:
+            app.state.service = build_default_service()
+        llm = app.state.service.llm
+        from api.claimgraph_tech import make_tech_claim_store
+        from api.crossviews_agent import crossview_turn
+        store = make_tech_claim_store(dsn)
+        try:
+            return await crossview_turn(
+                store=store, llm=llm, row_kind=body.row_kind, goal=body.goal,
+                current_columns=body.current_columns, message=body.message,
+                tenant_id=body.tenant_id, category_norm=body.category_norm)
+        except CassetteMiss as e:
+            raise HTTPException(status_code=503, detail=(
+                "No model available in replay mode. Set EIGEN_PROVIDER_MODE=live "
+                "with ANTHROPIC_API_KEY + OPENAI_API_KEY to answer live, or record "
+                "cassettes first.")) from e
+        except Exception as e:   # provider errors (auth, credits, rate limit, timeout)
+            raise HTTPException(status_code=502, detail=f"provider error: {e}") from e
+        finally:
+            await store.close()
+
+    @app.post("/crossviews/build")
+    async def crossviews_build(body: CrossviewBuildIn) -> dict:
+        """Task CV2 (flag-gated). Build the grounded grid for a spec (`build_grid`).
+        Read-only — every non-empty cell carries a citation or is `not_collected`. OFF → 404."""
+        if not crossviews_enabled():
+            raise HTTPException(status_code=404, detail="crossviews not enabled")
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            raise HTTPException(status_code=503, detail="EIGEN_CORPUS_DSN not configured")
+        from api.claimgraph_tech import make_tech_claim_store
+        from api.crossviews import CrossviewSpec, build_grid
+        store = make_tech_claim_store(dsn)
+        try:
+            return await build_grid(
+                store, CrossviewSpec.coerce(body.spec), tenant_id=body.tenant_id)
+        except Exception as e:   # noqa: BLE001 (build_grid is itself fail-safe; this guards store setup)
+            raise HTTPException(status_code=502, detail=f"crossviews build error: {e}") from e
+        finally:
+            await store.close()
+
+    @app.post("/crossviews/save")
+    async def crossviews_save(body: CrossviewSaveIn) -> dict:
+        """Task CV2 (flag-gated). Persist ONE crossview as a `kind='crossview'` session
+        (spec + optional grid snapshot + transcript ride the JSONB thread turn). The spec
+        is the source of truth; reopen re-queries live via /crossviews/build. Best-effort —
+        a store hiccup returns `session_id: None`, never crashes. OFF → 404."""
+        if not crossviews_enabled():
+            raise HTTPException(status_code=404, detail="crossviews not enabled")
+        store = _store()
+        session_id = None
+        if store is not None:
+            spec = body.spec or {}
+            cols = spec.get("columns") if isinstance(spec, dict) else None
+            n_cols = len(cols) if isinstance(cols, list) else 0
+            rk = spec.get("row_kind") if isinstance(spec, dict) else ""
+            summary = f"Crossview: {rk or 'table'} — {n_cols} column(s)"
+            try:
+                session_id = await store.save(
+                    tenant_id=body.tenant_id, workspace_id=body.workspace_id,
+                    question=body.title or f"Crossview ({rk or 'table'})",
+                    answer=summary, grounded=True, claims=[], source_stats={},
+                    coverage_gaps=[], rejected=0, sources=[],
+                    kind="crossview",
+                    extra={"crossview_spec": spec,
+                           "crossview_grid": body.grid or {},
+                           "crossview_transcript": body.transcript or []})
+            except Exception:   # noqa: BLE001 — best-effort persistence
+                session_id = None
+        return {"session_id": session_id}
 
     @app.post("/panel/plan")
     async def panel_plan(body: PanelIn) -> dict:
@@ -3487,7 +3632,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         if store is None:
             return {"sessions": []}
         aud = audience if (patient_mode_enabled() and audience in ("clinician", "patient")) else None
-        knd = kind if kind in ("panel", "research") else None
+        knd = kind if kind in ("panel", "research", "crossview") else None
         try:
             return {"sessions": await store.list(tenant_id=tenant_id, limit=min(limit, 300),
                                                  q=q or None, audience=aud, kind=knd)}

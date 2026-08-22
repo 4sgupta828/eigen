@@ -246,6 +246,8 @@ class SessionStore:
         # discussions; "research" isolates plain Q&A (kind is NULL in the DB for those).
         if kind == "panel":
             where += " AND thread->0->>'kind' = 'panel'"
+        elif kind == "crossview":
+            where += " AND thread->0->>'kind' = 'crossview'"
         elif kind == "research":
             where += " AND (thread->0->>'kind' IS NULL OR thread->0->>'kind' = 'research')"
         params.append(limit)
