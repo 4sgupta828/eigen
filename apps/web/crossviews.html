@@ -220,6 +220,14 @@
       <div class="picker" id="picker"><div class="picker-empty">Loading grounded columns&hellip;</div></div>
     </div>
 
+    <div id="sortwrap">
+      <div class="sec-label">Order rows by</div>
+      <div class="axis" id="sortsel" role="group" aria-label="Row order">
+        <button type="button" data-sort="density" class="on">Most data<span class="ax-sub">densest first</span></button>
+        <button type="button" data-sort="az">A&ndash;Z<span class="ax-sub">by name</span></button>
+      </div>
+    </div>
+
     <div class="actions">
       <button type="button" class="btn primary" id="buildbtn" disabled>Build table</button>
       <button type="button" class="btn ghost" id="savebtn" disabled>Save</button>
@@ -275,6 +283,7 @@
     checked: new Set(),
     transcript: [],       // [{role, text} | {gaps:[...]}]
     goal: "",             // first user turn = the goal
+    sortMode: "density",  // company rows: 'density' (most data first) | 'az' (by name)
     grid: null,
     lastSpec: null,
     built: false
@@ -300,6 +309,22 @@
     toastT = setTimeout(function(){ t.classList.remove("show"); }, 4200);
   }
 
+  // ---------------- row order (density vs A–Z; company only) ----------------
+  function syncSortUI(){
+    // the sort control only applies to company rows (per-company columns); person /
+    // category grids keep their natural order.
+    $("sortwrap").hidden = (state.rowKind !== "company");
+    Array.prototype.forEach.call($("sortsel").children, function(c){
+      c.classList.toggle("on", c.dataset.sort === state.sortMode); });
+  }
+  $("sortsel").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-sort]"); if(!b) return;
+    var mode = b.dataset.sort; if(mode === state.sortMode) return;
+    state.sortMode = mode;
+    syncSortUI();
+    if(state.built && state.checked.size) buildTable();   // re-order live
+  });
+
   // ---------------- row-axis selector ----------------
   $("axis").addEventListener("click", function(e){
     var b = e.target.closest("button[data-rk]"); if(!b) return;
@@ -310,7 +335,8 @@
     // switching axis = a fresh design
     state.categoryNorm = ""; state.checked = new Set();
     state.transcript = []; state.goal = ""; state.grid = null; state.built = false;
-    renderTranscript(); syncButtons(); clearGrid();
+    state.sortMode = "density";
+    renderTranscript(); syncButtons(); clearGrid(); syncSortUI();
     $("catwrap").hidden = (rk !== "company");
     loadOptions();
   });
@@ -492,7 +518,13 @@
       .map(function(c){ return {id:c.id, kind:buildKind(c), label:c.label}; });
     var filters = {};
     if(state.rowKind === "company" && state.categoryNorm) filters.category_norm = state.categoryNorm;
-    return {row_kind: state.rowKind, filters: filters, columns: cols, cap: MAX_ROWS_CAP};
+    var spec = {row_kind: state.rowKind, filters: filters, columns: cols, cap: MAX_ROWS_CAP};
+    // company rows can be ranked by data density (most-populated first); A–Z is the
+    // store's natural name order (no sort). person/category ignore this.
+    if(state.rowKind === "company" && state.sortMode === "density"){
+      spec.sort = {by: "density", direction: "desc"};
+    }
+    return spec;
   }
 
   $("buildbtn").addEventListener("click", function(){ buildTable(); });
@@ -723,6 +755,8 @@
       Array.prototype.forEach.call($("axis").children, function(c){
         c.classList.toggle("on", c.dataset.rk === state.rowKind); });
       $("catwrap").hidden = (state.rowKind !== "company");
+      state.sortMode = (spec.sort && String(spec.sort.by).toLowerCase() === "density") ? "density" : "az";
+      syncSortUI();
       state.categoryNorm = (spec.filters && spec.filters.category_norm) || "";
       var wantIds = (spec.columns || []).map(function(c){ return c.id; }).filter(Boolean);
       // restore transcript if present
@@ -737,6 +771,7 @@
         // build the spec straight from the saved (typed) columns for a faithful live rebuild
         state.lastSpec = {row_kind: spec.row_kind, filters: spec.filters || {},
           columns: spec.columns || [], cap: spec.cap || MAX_ROWS_CAP};
+        if(spec.sort) state.lastSpec.sort = spec.sort;   // preserve density/name ordering
         return liveRebuild(state.lastSpec);
       });
     }).catch(function(e){
@@ -760,6 +795,7 @@
   }
 
   // ---------------- boot ----------------
+  syncSortUI();
   var params = new URLSearchParams(location.search);
   var sid = params.get("session");
   if(sid){

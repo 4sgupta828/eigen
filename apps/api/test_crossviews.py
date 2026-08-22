@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 
-from api.crossviews import CrossviewSpec, build_grid
+from api.crossviews import _DENSITY_POOL_CAP, CrossviewSpec, build_grid
 
 
 def _ev(doc: str, block: str, quote: str, tier: int = 3) -> dict:
@@ -272,3 +272,74 @@ def test_dict_spec_coercion() -> None:
     }))
     assert grid["meta"]["row_count"] == 1
     assert grid["rows"][0]["cells"]["offers_product"]["value"] == "AcmeWidget"
+
+
+# --------------------------------------------------------------------------- #
+# density sort — the "most data first" ordering (fetch pool, rank, THEN cap)   #
+# --------------------------------------------------------------------------- #
+def _varied_density_population() -> dict:
+    """3 companies of increasing density but DECREASING alphabetical rank, so a
+    cap-before-rank bug would keep the sparse alphabetically-first one."""
+    def _c(name, preds):
+        return {
+            "entity_id": f"domain:{name.lower()}.com", "name": name, "kind": "company",
+            "primary_domain": f"{name.lower()}.com",
+            "claims": [
+                {"predicate": p, "object_kind": "value", "object_value": f"{name}-{p}",
+                 "object_norm": f"{name}-{p}".lower(), "object_entity_id": "",
+                 "confidence": 0.9, "evidence": _ev("d", "b", f"{name} {p}")}
+                for p in preds
+            ],
+        }
+    return {
+        "companies": [
+            _c("Aardvark", ["has_founder"]),                                 # density 1
+            _c("Middle", ["has_founder", "offers_product"]),                 # density 2
+            _c("Zeta", ["has_founder", "offers_product", "headcount"]),      # density 3
+        ],
+        "meta": {"company_count": 3, "companies_truncated": False,
+                 "company_cap": _DENSITY_POOL_CAP, "claims_truncated": False},
+    }
+
+
+def test_density_sort_keeps_the_densest_not_the_alphabetical() -> None:
+    store = FakeStore(population=_varied_density_population())
+    grid = _run(build_grid(store, {
+        "row_kind": "company",
+        "columns": [{"id": "has_founder", "kind": "predicate"},
+                    {"id": "offers_product", "kind": "predicate"},
+                    {"id": "headcount", "kind": "predicate"}],
+        "sort": {"by": "density"},
+        "cap": 2,
+    }))
+    # the 2 densest survive the cap, densest-first — Aardvark (alphabetical-first,
+    # sparsest) is DROPPED, which the old cap-by-name behaviour would have kept.
+    assert [r["name"] for r in grid["rows"]] == ["Zeta", "Middle"]
+    assert grid["meta"]["truncated"] is True
+    assert any("data density" in n for n in grid["meta"]["notes"])
+    # and it fetched a POOL (not just `cap`) before ranking, or the cap couldn't have
+    # reached past the alphabetically-first rows.
+    assert store.calls["population_claims"]["company_cap"] >= _DENSITY_POOL_CAP
+
+
+def test_density_ties_break_by_name_deterministically() -> None:
+    store = FakeStore(population={
+        "companies": [
+            {"entity_id": "e:b", "name": "Bravo", "kind": "company", "primary_domain": "",
+             "claims": [{"predicate": "has_founder", "object_kind": "value",
+                         "object_value": "x", "object_norm": "x", "object_entity_id": "",
+                         "confidence": 0.9, "evidence": _ev("d", "b", "Bravo x")}]},
+            {"entity_id": "e:a", "name": "Alpha", "kind": "company", "primary_domain": "",
+             "claims": [{"predicate": "has_founder", "object_kind": "value",
+                         "object_value": "y", "object_norm": "y", "object_entity_id": "",
+                         "confidence": 0.9, "evidence": _ev("d", "b", "Alpha y")}]},
+        ],
+        "meta": {"companies_truncated": False, "claims_truncated": False},
+    })
+    grid = _run(build_grid(store, {
+        "row_kind": "company",
+        "columns": [{"id": "has_founder", "kind": "predicate"}],
+        "sort": {"by": "density"},
+    }))
+    # equal density (1 each) → stable ascending name tie-break
+    assert [r["name"] for r in grid["rows"]] == ["Alpha", "Bravo"]

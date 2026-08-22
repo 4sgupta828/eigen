@@ -41,6 +41,13 @@ except Exception:  # noqa: BLE001  pragma: no cover
 
 VALID_ROW_KINDS = ("company", "person", "category")
 
+# When a company grid is sorted by DENSITY ("most data first"), the store caps the
+# population by NAME order, so we must fetch a larger pool, rank it by how many of the
+# spec's columns are populated, and only THEN slice to the display cap — otherwise the
+# cap would keep the alphabetically-first companies (often sparse shells) instead of the
+# richest ones. This ceiling bounds that pool fetch.
+_DENSITY_POOL_CAP = 1000
+
 # The fixed, documented column sets for the non-pivot row kinds. A person/category spec
 # may name a SUBSET of these ids; unknown ids are ignored (noted), and an empty/omitted
 # column list falls back to the full set.
@@ -59,8 +66,9 @@ CATEGORY_COLUMNS: list[dict] = [
 class CrossviewSpec:
     """A CROSSVIEWS request. `row_kind` picks the row source; `columns` are the
     projected dimensions (`kind` ∈ {'predicate','edge','aggregate'}); `filters` narrows
-    the population (`category_norm`, `source_key`, `has_predicate`); `sort` orders rows
-    by a column; `cap` bounds the row count."""
+    the population (`category_norm`, `source_key`, `has_predicate`); `sort` orders rows —
+    either by a column (`{"column_id","direction"}`) or by DATA DENSITY, most-populated
+    first (`{"by":"density"}`, company grids); `cap` bounds the row count."""
 
     row_kind: str = ""
     columns: list[dict] = field(default_factory=list)
@@ -145,6 +153,19 @@ def _sort_rows(rows: list[dict], sort: dict | None, columns: list[dict]) -> None
         rows.sort(key=lambda r: 0 if (r["cells"].get(col_id) or {}).get("collected") else 1)
 
 
+def _is_density_sort(sort: dict | None) -> bool:
+    """True when the spec asks rows ordered by DATA DENSITY (most populated cells first)
+    rather than by a column value. Signalled by `sort={"by":"density"}`."""
+    return bool(sort) and str(sort.get("by", "")).lower() == "density"
+
+
+def _row_density(row: dict, col_ids: list[str]) -> int:
+    """How many of the given columns are grounded (collected) for this row — the rank key
+    for density sort. Ties are broken by name for determinism at the call site."""
+    cells = row.get("cells") or {}
+    return sum(1 for cid in col_ids if (cells.get(cid) or {}).get("collected"))
+
+
 def _empty_grid(row_kind: str, columns: list[dict], notes: list[str]) -> dict:
     return {
         "row_kind": row_kind,
@@ -216,11 +237,17 @@ async def _build_company_grid(store, sp: CrossviewSpec, tenant_id: str,
         return _empty_grid("company", [], notes)
     col_ids = [c["id"] for c in pred_cols]
     category_norm = sp.filters.get("category_norm")
-    company_cap = sp.cap or 400
+    display_cap = sp.cap or 400
+    density_mode = _is_density_sort(sp.sort)
+    # Density sort ranks the WHOLE population by how many columns each company fills, so
+    # fetch a larger pool before capping (the store caps by name order — capping first
+    # would keep the alphabetically-first, often-sparse companies). Column/name sort keeps
+    # the store's name-ordered cap unchanged.
+    fetch_cap = max(display_cap, _DENSITY_POOL_CAP) if density_mode else display_cap
     pop = await store.population_claims(
         tenant_id=tenant_id,
         category_norms=[category_norm] if category_norm else None,
-        company_cap=company_cap,
+        company_cap=fetch_cap,
         claims_per_company_cap=200,       # raise the per-company cap for a wide grid
         predicates=col_ids,
     )
@@ -247,9 +274,23 @@ async def _build_company_grid(store, sp: CrossviewSpec, tenant_id: str,
             cells[cid] = _cell(value, citations)
         rows.append({"id": comp.get("entity_id"), "name": comp.get("name"), "cells": cells})
 
-    _sort_rows(rows, sp.sort, pred_cols)
-    truncated = bool(meta_src.get("companies_truncated") or meta_src.get("claims_truncated"))
-    if meta_src.get("companies_truncated"):
+    density_truncated = False
+    if density_mode:
+        # rank densest-first over the SELECTED columns; break ties by name for a stable,
+        # deterministic order (asc), then slice the richest `display_cap` off the pool.
+        rows.sort(key=lambda r: (-_row_density(r, col_ids), (r.get("name") or "").lower()))
+        density_truncated = len(rows) > display_cap
+        rows = rows[:display_cap]
+        notes.append("rows ordered by data density (most populated columns first)")
+        if density_truncated:
+            notes.append(f"showing the {display_cap} densest of the matched population")
+    else:
+        _sort_rows(rows, sp.sort, pred_cols)
+
+    pool_truncated = bool(meta_src.get("companies_truncated"))
+    truncated = bool(pool_truncated or meta_src.get("claims_truncated") or density_truncated)
+    if pool_truncated:
+        # in density mode this is the _DENSITY_POOL_CAP ceiling; otherwise the display cap
         notes.append(f"company population truncated at cap {meta_src.get('company_cap')}")
     if meta_src.get("claims_truncated"):
         notes.append("some companies had claims clipped at the per-company cap")
