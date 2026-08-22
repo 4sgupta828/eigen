@@ -103,7 +103,11 @@
   .stage-head{padding:20px 26px 14px; border-bottom:1px solid var(--line-soft); display:flex; align-items:baseline; gap:14px; flex-wrap:wrap}
   .stage-head .st-title{font-family:var(--display); font-weight:600; font-size:16px}
   .stage-head .st-sub{font-family:var(--mono); font-size:11px; color:var(--ink-faint); letter-spacing:.03em}
-  .tablewrap{flex:1; overflow:auto; padding:6px 0}
+  /* stage-body must be a flex:1 min-height:0 column so the table area can SHRINK below its
+     content height — without min-height:0 the flex item stays content-tall and only
+     horizontal overflow scrolls (the vertical-scroll bug). */
+  #stage-body{flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden}
+  .tablewrap{flex:1; min-height:0; overflow:auto; padding:6px 0}
   table{border-collapse:separate; border-spacing:0; min-width:100%; font-size:13.5px}
   thead th{position:sticky; top:0; z-index:2; background:var(--ground-2); text-align:left; padding:12px 16px;
     font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-mute);
@@ -162,6 +166,34 @@
   .prov-note{font-size:11.5px; color:var(--ink-faint); border-top:1px solid var(--line-soft); padding-top:13px; margin-top:4px}
   .prov-note b{color:var(--person); font-weight:600}
 
+  /* PastViews trigger + panel */
+  .railtop{display:flex; align-items:center; justify-content:space-between; gap:10px}
+  .pvbtn{background:var(--panel); border:1px solid var(--line); border-radius:8px; color:var(--ink-mute);
+    font-family:var(--mono); font-size:11px; letter-spacing:.04em; padding:6px 11px; cursor:pointer;
+    transition:border-color .15s,color .15s}
+  .pvbtn:hover{border-color:var(--accent); color:var(--accent)}
+  .pvbtn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .pvpanel{position:fixed; top:0; left:0; height:100vh; width:380px; max-width:92vw; z-index:41;
+    background:linear-gradient(180deg,var(--panel-2),var(--ground)); border-right:1px solid var(--line);
+    transform:translateX(-100%); transition:transform .22s ease; display:flex; flex-direction:column}
+  .pvpanel.open{transform:translateX(0)}
+  .pv-head{padding:22px 22px 16px; border-bottom:1px solid var(--line-soft); display:flex; align-items:flex-start; gap:12px}
+  .pv-title{font-family:var(--display); font-weight:600; font-size:20px; line-height:1.15; margin-top:3px}
+  .pv-sub{font-size:12px; color:var(--ink-mute); margin-top:5px}
+  .pv-body{padding:14px 16px 26px; overflow-y:auto; display:flex; flex-direction:column; gap:8px}
+  .pv-item{display:flex; flex-direction:column; gap:5px; text-align:left; width:100%;
+    background:var(--panel); border:1px solid var(--line-soft); border-left:2px solid var(--accent);
+    border-radius:9px; padding:11px 13px; cursor:pointer; transition:border-color .15s,background .15s}
+  .pv-item:hover{border-color:var(--accent); background:var(--ground-2)}
+  .pv-item:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .pv-item .pv-q{font-family:var(--display); font-weight:600; font-size:14px; color:var(--ink); line-height:1.25}
+  .pv-item .pv-meta{font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); letter-spacing:.03em;
+    display:flex; flex-wrap:wrap; gap:5px 10px; align-items:center}
+  .pv-item .pv-rk{color:var(--accent); text-transform:uppercase; letter-spacing:.08em}
+  .pv-current{border-left-color:var(--person)}
+  .pv-current .pv-rk{color:var(--person)}
+  .pv-empty{color:var(--ink-faint); font-size:12.5px; padding:8px 4px; line-height:1.5}
+
   /* toast */
   .toast{position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); z-index:50;
     background:var(--panel); border:1px solid var(--accent); border-radius:10px; padding:12px 18px; font-size:13px; color:var(--ink);
@@ -175,13 +207,17 @@
     .stage{min-height:70vh}
     .actions{margin-top:16px}
     .drawer{width:100%; max-width:100%}
+    .pvpanel{width:100%; max-width:100%}
   }
 </style>
 </head>
 <body>
 <div class="app">
   <aside class="rail">
-    <a class="back" href="/">&larr; Eigen</a>
+    <div class="railtop">
+      <a class="back" href="/">&larr; Eigen</a>
+      <button type="button" class="pvbtn" id="pvopen" title="Your saved crossviews">&#9720; PastViews</button>
+    </div>
     <div>
       <div class="eyebrow">Crossviews</div>
       <h1>Design a grounded table</h1>
@@ -253,6 +289,19 @@
 </div>
 
 <div class="backdrop" id="backdrop"></div>
+
+<aside class="pvpanel" id="pvpanel" role="dialog" aria-modal="true" aria-labelledby="pv-title" tabindex="-1">
+  <div class="pv-head">
+    <div>
+      <div class="ev-kind">Your library</div>
+      <div class="pv-title" id="pv-title">PastViews</div>
+      <div class="pv-sub">saved crossviews &mdash; reopen live against the current graph</div>
+    </div>
+    <button type="button" class="drawer-close" id="pv-close" aria-label="Close PastViews">&times;</button>
+  </div>
+  <div class="pv-body" id="pv-list"></div>
+</aside>
+
 <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dw-name" tabindex="-1">
   <div class="drawer-head">
     <div class="dh-body">
@@ -697,6 +746,7 @@
       'This is a live slice of Eigen’s production claim graph.</div>';
     body.innerHTML = html; body.scrollTop = 0;
 
+    $("pvpanel").classList.remove("open");   // only one side-panel at a time
     $("backdrop").classList.add("open");
     var dw = $("drawer"); dw.classList.add("open");
     dw.focus();
@@ -707,10 +757,77 @@
     if(lastFocus && lastFocus.focus){ lastFocus.focus(); }
   }
   $("dw-close").addEventListener("click", closeDrawer);
-  $("backdrop").addEventListener("click", closeDrawer);
+
+  // ---------------- PastViews (saved crossviews library) ----------------
+  function closeOverlays(){
+    $("backdrop").classList.remove("open");
+    $("drawer").classList.remove("open");
+    $("pvpanel").classList.remove("open");
+    if(lastFocus && lastFocus.focus){ lastFocus.focus(); }
+  }
+  $("backdrop").addEventListener("click", closeOverlays);
   document.addEventListener("keydown", function(e){
-    if(e.key === "Escape" && $("drawer").classList.contains("open")) closeDrawer();
+    if(e.key === "Escape" && ($("drawer").classList.contains("open") || $("pvpanel").classList.contains("open")))
+      closeOverlays();
   });
+
+  function fmtDate(iso){
+    try{ var d = new Date(iso);
+      return d.toLocaleDateString(undefined,{month:"short",day:"numeric"}) + " " +
+             d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+    }catch(e){ return ""; }
+  }
+  var RK_ROWWORD = {company:"Startups", person:"Founders", category:"Domains"};
+
+  function openPastViews(){
+    lastFocus = document.activeElement;
+    $("backdrop").classList.add("open");
+    $("pvpanel").classList.add("open");
+    $("pvpanel").focus();
+    loadPastViews();
+  }
+  function loadPastViews(){
+    var list = $("pv-list");
+    list.innerHTML = '<div class="pv-empty">Loading your saved crossviews&hellip;</div>';
+    var curSid = new URLSearchParams(location.search).get("session");
+    fetch("/sessions?kind=crossview&limit=100").then(function(r){
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function(d){
+      var rows = (d && d.sessions) || [];
+      if(!rows.length){
+        list.innerHTML = '<div class="pv-empty">No saved crossviews yet. Build a table and hit ' +
+          '<b>Save</b> — it will appear here.</div>';
+        return;
+      }
+      list.innerHTML = "";
+      rows.forEach(function(s){
+        // the saved title starts with the row-word ("Startups — …"); derive a row chip
+        var rk = "company";
+        var q = s.question || "Untitled crossview";
+        for(var k in RK_ROWWORD){ if(q.indexOf(RK_ROWWORD[k]) === 0){ rk = k; break; } }
+        var isCur = curSid && s.id === curSid;
+        var it = document.createElement("button");
+        it.type = "button";
+        it.className = "pv-item" + (isCur ? " pv-current" : "");
+        it.innerHTML = '<span class="pv-q">' + esc(q) + '</span>' +
+          '<span class="pv-meta"><span class="pv-rk">' + esc(RK_ROWWORD[rk] || rk) + '</span>' +
+          '<span>' + esc(fmtDate(s.created_at)) + '</span>' +
+          (isCur ? '<span>· open now</span>' : '') + '</span>';
+        it.addEventListener("click", function(){ openPastView(s.id); });
+        list.appendChild(it);
+      });
+    }).catch(function(e){
+      list.innerHTML = '<div class="pv-empty">Could not load PastViews &mdash; ' + esc(e.message||e) + '</div>';
+    });
+  }
+  function openPastView(sid){
+    closeOverlays();
+    try{ history.replaceState(null, "", "/crossviews?session=" + encodeURIComponent(sid)); }catch(e){}
+    reopenSession(sid);
+  }
+  $("pvopen").addEventListener("click", openPastViews);
+  $("pv-close").addEventListener("click", closeOverlays);
 
   // ---------------- save ----------------
   $("savebtn").addEventListener("click", function(){
@@ -728,8 +845,9 @@
       return r.json();
     }).then(function(d){
       if(d.session_id){
-        toast("Saved — find it in Past Sessions");
+        toast("Saved — reopen it any time from PastViews ⌖");
         try{ history.replaceState(null, "", "/crossviews?session=" + encodeURIComponent(d.session_id)); }catch(e){}
+        if($("pvpanel").classList.contains("open")) loadPastViews();
       } else {
         toast("Saved (no session id returned)");
       }
