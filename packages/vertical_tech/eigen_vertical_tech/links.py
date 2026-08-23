@@ -32,10 +32,16 @@ def source_url(document_id: str, quote: str | None = None, facets: dict | None =
         if native.isdigit():                          # a bare CIK → the company's filing list
             return f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={native}"
         acc = native.replace("-", "")
-        cik = str(f.get("cik", "")).lstrip("0")
-        if cik:                                       # precise filing-index page
+        # An accession is {10-digit filer CIK}-{YY}-{sequence}; its LEADING digits ARE the
+        # filer's CIK and name the canonical Archives directory the filing lives in — so
+        # derive the CIK from the accession itself (authoritative, needs no facet). A
+        # facet cik is only a fallback when the accession isn't parseable. NEVER emit a
+        # `filenum=<accession>` URL: EDGAR soft-errors it ("No matching file number.").
+        head = native.split("-", 1)[0]
+        cik = head.lstrip("0") if head.isdigit() else str(f.get("cik", "")).lstrip("0")
+        if cik:                                       # precise, resolvable filing-index page
             return f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc}/{native}-index.html"
-        return f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&filenum={native}"
+        return None                                   # no clean page > a known-broken link
     if src == "arxiv":                                # native = arXiv id
         return f"https://arxiv.org/abs/{native}{frag}"
     if src == "openalex":                             # native = OpenAlex work id (W…)
