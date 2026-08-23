@@ -1519,9 +1519,38 @@
     padding:.3rem .62rem;border-radius:999px;white-space:nowrap;line-height:1;}
   #seltip button:hover{background:var(--panel2);color:var(--gold);}
   #seltip .stsep{width:1px;height:15px;background:var(--hair);}
+  #seltip #seltip-deeper,#seltip #seltip-rethink{color:var(--gold);}
   @media (prefers-reduced-motion:reduce){#seltip{animation:none;}}
+  /* focus (go-deeper / rethink) inline expansion card, inserted under the selected paragraph */
+  .focus-mark{background:color-mix(in srgb,var(--gold) 22%,transparent);border-radius:3px;
+    box-shadow:0 0 0 1px color-mix(in srgb,var(--gold) 40%,transparent);}
+  .focus-exp{margin:.7rem 0 .9rem;border:1px solid var(--hair);border-left:3px solid var(--gold);
+    border-radius:.6rem;background:var(--panel);padding:.75rem .9rem;font-family:var(--sans);
+    animation:seltipin .16s ease;}
+  .focus-exp .fx-head{display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.5rem;}
+  .focus-exp .fx-kind{font-family:var(--mono,monospace);font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--gold);font-weight:600;white-space:nowrap;padding-top:.12rem;}
+  .focus-exp .fx-span{flex:1;font-size:.8rem;color:var(--muted,#8a90a6);font-style:italic;line-height:1.35;min-width:0;}
+  .focus-exp .fx-x{background:transparent;border:0;color:var(--muted,#8a90a6);cursor:pointer;font-size:1rem;line-height:1;padding:0 .1rem;flex:none;}
+  .focus-exp .fx-x:hover{color:var(--gold);}
+  .focus-exp .fx-body{font-size:.92rem;line-height:1.55;color:var(--ink);}
+  .focus-exp .fx-body p{margin:.4rem 0;}
+  .focus-exp .fx-load{display:flex;align-items:center;gap:.5rem;color:var(--muted,#8a90a6);font-size:.84rem;}
+  .focus-exp .fx-spin{width:13px;height:13px;border:2px solid var(--hair);border-top-color:var(--gold);
+    border-radius:50%;animation:fxspin .8s linear infinite;flex:none;}
+  @keyframes fxspin{to{transform:rotate(360deg);}}
+  .focus-exp .fx-cites{margin-top:.6rem;padding-top:.55rem;border-top:1px solid var(--hair);
+    display:flex;flex-wrap:wrap;gap:.35rem .6rem;}
+  .focus-exp .fx-cite{font-size:.72rem;color:var(--muted,#8a90a6);text-decoration:none;
+    border:1px solid var(--hair);border-radius:999px;padding:.12rem .5rem;}
+  .focus-exp .fx-cite:hover{color:var(--gold);border-color:var(--gold);}
+  .focus-exp .fx-note{font-size:.74rem;color:var(--muted,#8a90a6);margin-top:.5rem;}
+  .focus-exp.err{border-left-color:#e06;}
 </style>
-<div id="seltip" role="menu" aria-label="Learn more about the selection">
+<div id="seltip" role="menu" aria-label="Focus or learn more about the selection">
+  <button type="button" data-act="deeper" id="seltip-deeper" hidden title="Go deeper — expand this specific point with fresh grounded evidence">✦ Go deeper</button>
+  <button type="button" data-act="rethink" id="seltip-rethink" hidden title="Rethink — critically re-examine this claim against the sources">⟲ Rethink</button>
+  <span class="stsep" id="seltip-fsep" hidden></span>
   <button type="button" data-act="explain" id="seltip-explain" hidden title="Explain this in Eigen — grounded definition">✦ Explain</button>
   <span class="stsep" id="seltip-sep" hidden></span>
   <button type="button" data-act="google" title="Deep-dive on Google (free, opens a new tab)">🔍 Learn more</button>
@@ -1585,6 +1614,7 @@ let _autoVisualsArm = false;      // armed only around a FRESH panel render so r
 let VOICE_TTS_NEURAL = false;     // server neural voiceover (/voice/tts); browser voice is the fallback
 let GAP_ENABLED = false;    // self-healing: suggest + queue sources to fill evidence gaps
 let CONV_ENABLED = false;   // multi-turn conversation (follow-ups carry context)
+let FOCUS_ENABLED = false;  // select a span of an answer → Go deeper / Rethink (POST /research/focus)
 let SUGGEST_ENABLED = false;// suggested follow-up questions after each answer
 let STREAM_ENABLED = false; // live agent trace via SSE (/research/stream)
 let EFFORT_ENABLED = false; // effort multiplier available (scales turns/results/depth/budget)
@@ -1658,6 +1688,7 @@ async function loadConfig(){
     maybeShowVoice();
     GAP_ENABLED = !!c.gap_healing_enabled;
     CONV_ENABLED = !!c.conversation_enabled;
+    FOCUS_ENABLED = !!c.focus_deepen_enabled;
     SUGGEST_ENABLED = !!c.suggest_enabled;
     STREAM_ENABLED = !!c.stream_enabled;
     EFFORT_ENABLED = !!c.effort_scale_enabled;
@@ -5732,19 +5763,32 @@ window.addEventListener("hashchange", ()=>{
   // only offer it inside readable answer/term/diagram content — never over the composer or controls
   const CONTENT = ".answer,.md,.plain-b,.termcard,.term-plain,.term-row,.tgt-refined,.tgt-understood,.tgt-msg,.spec,.panel-delib,.vzcard,.vzcap,.wn-follow,#out,#sdetail,#termspage,#pulsepage";
   let selText = "";
+  let selAnswer = null;   // the .answer element the selection sits in (focus targets answers only)
   function inContent(sel){
     if(!sel.rangeCount) return false;
     let n = sel.getRangeAt(0).commonAncestorContainer;
     if(n && n.nodeType === 3) n = n.parentElement;
     if(!n || !n.closest) return false;
-    if(n.closest("input,textarea,button,select,#seltip,form#ask")) return false;
+    if(n.closest("input,textarea,button,select,#seltip,form#ask,.focus-exp")) return false;
     return !!n.closest(CONTENT);
+  }
+  function answerOf(sel){
+    if(!sel.rangeCount) return null;
+    let n = sel.getRangeAt(0).commonAncestorContainer;
+    if(n && n.nodeType === 3) n = n.parentElement;
+    return (n && n.closest) ? n.closest(".answer") : null;
   }
   function place(){
     const sel = window.getSelection();
     const txt = (sel && sel.toString() || "").replace(/\s+/g, " ").trim();
     if(txt.length < 3 || txt.length > 400 || !inContent(sel)){ tip.classList.remove("on"); return; }
     selText = txt;
+    selAnswer = answerOf(sel);
+    // ✦ Go deeper / ⟲ Rethink — only inside an actual answer, on a real phrase, when the flag is on
+    const canFocus = (typeof FOCUS_ENABLED !== "undefined" && FOCUS_ENABLED) && !!selAnswer && txt.length >= 8;
+    const db = document.getElementById("seltip-deeper"), rb = document.getElementById("seltip-rethink"),
+          fsep = document.getElementById("seltip-fsep");
+    if(db) db.hidden = !canFocus; if(rb) rb.hidden = !canFocus; if(fsep) fsep.hidden = !canFocus;
     // ✦ Explain (our grounded glossary) only for a short, term-like selection, and only when enabled
     const canExplain = txt.length <= 60 && (typeof TERMS_ENABLED !== "undefined" && TERMS_ENABLED) && typeof openTermsPage === "function";
     const ex = document.getElementById("seltip-explain"), sp = document.getElementById("seltip-sep");
@@ -5764,10 +5808,84 @@ window.addEventListener("hashchange", ()=>{
   tip.addEventListener("mousedown", e => e.preventDefault());   // keep the text selection alive on click
   tip.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
     const act = b.dataset.act;
+    if(act === "deeper" || act === "rethink"){ startFocus(act); tip.classList.remove("on"); return; }
     tip.classList.remove("on");
     if(act === "explain" && typeof openTermsPage === "function"){ openTermsPage(selText); return; }
     window.open((openers[act] || openers.google)(selText), "_blank", "noopener,noreferrer");
   }));
+
+  // ---- focus: Go deeper / Rethink — a grounded, span-scoped mini-answer inserted INLINE under the
+  // selected paragraph (ephemeral; not persisted). POSTs /research/focus (flag-gated; 404 when off).
+  function questionForNode(el){
+    const turn = el && el.closest ? el.closest(".turn") : null;
+    if(turn){ const qt = turn.querySelector(".turn-qtext"); if(qt && qt.textContent.trim()) return qt.textContent.trim(); }
+    try{ if(typeof THREAD !== "undefined" && THREAD.turns && THREAD.turns.length){
+      const q = THREAD.turns[THREAD.turns.length-1].question; if(q) return q; } }catch(e){}
+    const qin = document.getElementById("q"); return qin ? (qin.value||"").trim() : "";
+  }
+  function blockFor(range, answerEl){
+    let el = range.commonAncestorContainer;
+    if(el && el.nodeType === 3) el = el.parentElement;
+    const BLOCKS = {P:1,LI:1,UL:1,OL:1,H1:1,H2:1,H3:1,H4:1,H5:1,BLOCKQUOTE:1,TABLE:1,PRE:1};
+    let b = el;
+    while(b && b !== answerEl && !BLOCKS[b.tagName]) b = b.parentElement;
+    return (b && b !== answerEl) ? b : answerEl;
+  }
+  function fxHead(mode, span){
+    const kind = mode === "rethink" ? "Rethink" : "Deeper";
+    const s = span.length > 140 ? span.slice(0,140) + "…" : span;
+    return '<div class="fx-head"><span class="fx-kind">'+kind+'</span>'+
+      '<span class="fx-span">“'+esc(s)+'”</span>'+
+      '<button type="button" class="fx-x" title="Dismiss">✕</button></div>';
+  }
+  function startFocus(mode){
+    const span = selText, answerEl = selAnswer;
+    if(!span || !answerEl) return;
+    const sel = window.getSelection();
+    if(!sel || !sel.rangeCount) return;
+    const block = blockFor(sel.getRangeAt(0), answerEl);
+    const question = questionForNode(answerEl);
+    sel.removeAllRanges();
+    runFocus(mode, span, question, block);
+  }
+  function runFocus(mode, span, question, block){
+    const card = document.createElement("div");
+    card.className = "focus-exp";
+    card.innerHTML = fxHead(mode, span) +
+      '<div class="fx-load"><span class="fx-spin"></span>'+
+      (mode === "rethink" ? "Re-examining this against the sources…" : "Digging deeper into the sources…")+'</div>';
+    block.insertAdjacentElement("afterend", card);
+    card.querySelector(".fx-x").addEventListener("click", () => card.remove());
+    try{ card.scrollIntoView({behavior:"smooth", block:"nearest"}); }catch(e){}
+    fetch("/research/focus", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({question: question, span: span, mode: mode, tenant_id: "demo"})})
+     .then(r => r.ok ? r.json()
+       : r.json().catch(() => ({})).then(j => { throw new Error(j.detail || ("HTTP "+r.status)); }))
+     .then(d => renderFocusCard(card, mode, span, d))
+     .catch(e => {
+       card.classList.add("err");
+       const load = card.querySelector(".fx-load");
+       const msg = '<div class="fx-note">Could not '+(mode==="rethink"?"re-examine":"deepen")+
+         ' this — '+esc(e.message || String(e))+'</div>';
+       if(load) load.outerHTML = msg; else card.insertAdjacentHTML("beforeend", msg);
+     });
+  }
+  function renderFocusCard(card, mode, span, d){
+    const ans = (d && d.answer || "").trim();
+    const claims = (d && d.claims) || [];
+    let html = fxHead(mode, span);
+    if(ans){ html += '<div class="fx-body">'+ (typeof mdToHtml === "function" ? mdToHtml(ans) : esc(ans)) +'</div>'; }
+    else { html += '<div class="fx-note">No additional grounded detail was found in the corpus for this specific point.</div>'; }
+    if(claims.length){
+      html += '<div class="fx-cites">'+ claims.map((c,i) => {
+        const label = "["+(i+1)+"] " + esc(c.title || c.source || "source");
+        return c.url ? '<a class="fx-cite" href="'+esc(c.url)+'" target="_blank" rel="noopener noreferrer">'+label+' ↗</a>'
+                     : '<span class="fx-cite">'+label+'</span>';
+      }).join('') +'</div>';
+    } else if(ans){ html += '<div class="fx-note">No grounded citations remained after the span-check gate.</div>'; }
+    card.innerHTML = html;
+    card.querySelector(".fx-x").addEventListener("click", () => card.remove());
+  }
 })();
 </script>
 </body>

@@ -697,6 +697,14 @@ def conversation_enabled() -> bool:
     return os.environ.get("EIGEN_CONVERSATION", "").lower() in ("1", "true", "yes")
 
 
+def focus_deepen_enabled() -> bool:
+    """Flag (default OFF, Rule 20): when ON, the FE lets a user select a span of an answer and
+    push focus onto it — 'Go deeper' (expand that specific area with fresh focused retrieval) or
+    'Rethink' (critically re-examine that claim with grounded counter-evidence/caveats). Served by
+    POST /research/focus, which 404s when OFF. OFF → no endpoint, no FE popover (byte-identical)."""
+    return os.environ.get("EIGEN_FOCUS_DEEPEN", "").lower() in ("1", "true", "yes")
+
+
 class Attachment(BaseModel):
     data: str                              # base64-encoded file bytes
     media_type: str = ""                   # e.g. image/png, application/pdf, application/dicom
@@ -720,6 +728,17 @@ class ResearchIn(BaseModel):
     audience: str = "clinician"           # "clinician" (default) | "patient"; ignored unless flag on
     mode: str = ""                        # analytical lens, e.g. "acquirer" (M&A); "" = default investor lens
     company: str = ""                     # single-company DILIGENCE subject (name / entity_id); used only by /research/diligence
+
+
+class FocusIn(BaseModel):
+    """A 'push focus onto a selected span' request (POST /research/focus, flag-gated). The user
+    highlighted `span` inside a prior answer to `question` and wants it deepened or re-examined."""
+    question: str                          # the ORIGINAL question that produced the answer (context)
+    span: str                              # the highlighted answer text to focus on
+    mode: str = "deeper"                   # "deeper" (expand w/ fresh retrieval) | "rethink" (critically re-examine)
+    tenant_id: str = "demo"
+    workspace_id: str | None = None
+    sources: list[str] | None = None       # optional source-key subset; None = all
 
 
 class PanelIn(BaseModel):
@@ -1369,6 +1388,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "layman_enabled": bool(getattr(svc, "layman_prompt", None)),
             "gap_healing_enabled": gap_healing_enabled() and bool(getattr(svc, "gap_prompt", None)),
             "conversation_enabled": conversation_enabled(),
+            "focus_deepen_enabled": focus_deepen_enabled(),
             "suggest_enabled": conversation_enabled() and bool(getattr(svc, "suggest_prompt", None)),
             "term_glossary_enabled": term_glossary_enabled() and bool(getattr(svc, "terms_prompt", None)),
             "visual_augment_enabled": visual_augment_enabled() and bool(getattr(svc, "visuals_prompt", None)),
@@ -1614,6 +1634,85 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 "cassettes first.")) from e
         except Exception as e:   # provider errors (auth, credits, rate limit, timeout)
             raise HTTPException(status_code=502, detail=f"provider error: {e}") from e
+
+    @app.post("/research/focus")
+    async def research_focus(body: FocusIn, x_eigen_token: str = Header(default="")) -> dict:
+        """Push focus onto a SELECTED SPAN of a prior answer (flag-gated, Rule 20; 404 when off).
+        'deeper' expands that specific point with FRESH focused retrieval; 'rethink' critically
+        re-examines it with grounded counter-evidence/caveats. Both stay grounded (the same react
+        span-check gate runs — every new claim is verbatim-cited or dropped).
+
+        Design (judge-panel-reviewed): call `service.ask()` DIRECTLY — never `_do_research` (which
+        re-derives engine/mode/history and could force the reasoned scaffold, structurally wrong for
+        a single-span dive). history=None deliberately BYPASSES the follow-up resolver (so a 'rethink'
+        can't be misrouted to operate-on-prior's no-retrieval reshape). The span rides in `question`
+        (the only text that steers retrieval); the mode rides in `answer_format_override` (a compact
+        directive that skips the diligence memo + closing block). `graph_question` carries the PRISTINE
+        original question so the graph expander anchors on the real subject, not the span blob.
+        Ephemeral — NOT persisted (span-anchoring on reopen is a known trap)."""
+        if not focus_deepen_enabled():
+            raise HTTPException(status_code=404, detail="focus/deepen not enabled")
+        span = (body.span or "").strip()[:600]
+        if not span:
+            raise HTTPException(status_code=400, detail="span is required")
+        mode = body.mode if body.mode in ("deeper", "rethink") else "deeper"
+        q = (body.question or "").strip()
+        if app.state.service is None:
+            app.state.service = build_default_service()
+
+        if mode == "rethink":
+            frame = ('[The reader highlighted this specific claim from the analysis and wants it '
+                     'CRITICALLY RE-EXAMINED — focus narrowly on it, in the context of the question above:]')
+            directive = (
+                "Write a TIGHT, GROUNDED critical re-examination of ONLY the highlighted claim — 2 to 4 "
+                "short paragraphs. Surface counter-evidence, caveats, limitations, hidden assumptions, or "
+                "alternative interpretations that the SOURCES actually support, and state whether the claim "
+                "is well-supported, overstated, or uncertain. Every point MUST cite a retrieved finding [n]; "
+                "do NOT manufacture a counterpoint — if the evidence does not contradict or qualify the "
+                "claim, say so plainly (a well-supported claim is a valid conclusion). Do NOT restate the "
+                "broader answer and do NOT add a closing section.")
+        else:
+            frame = ('[The reader highlighted this specific point from the analysis and wants it explored '
+                     'in GREATER DEPTH — focus narrowly on it, in the context of the question above:]')
+            directive = (
+                "Write a TIGHT, FOCUSED deepening of ONLY the highlighted point — 2 to 4 short paragraphs "
+                "or a few bullets. Add NEW, concrete, specific grounded detail the broader answer did not "
+                "spell out: mechanisms, figures, named entities, dates, evidence, examples. Every sentence "
+                "that states a fact MUST carry a citation [n]. Do NOT restate the broader answer, do NOT add "
+                "a conclusion / summary / 'next steps' section, and do NOT drift to adjacent topics. If the "
+                "corpus holds no deeper grounded detail on this specific point, say so plainly in one line "
+                "rather than padding.")
+
+        effective_q = (f"{q}\n\n{frame}\n\"{span}\"" if q else f"{frame}\n\"{span}\"")
+        qc = (f"This deepens a prior analysis answering the question: {q}" if q else None)
+        try:
+            res = await app.state.service.ask(
+                question=effective_q, tenant_id=body.tenant_id, workspace_id=body.workspace_id,
+                source_keys=body.sources, history=None,
+                answer_focus=True, clarify=False,
+                answer_format_override=directive,
+                graph_question=(q or span),   # pristine subject → correct graph-expander anchor (R2)
+                question_context=qc)
+        except CassetteMiss as e:
+            raise HTTPException(status_code=503, detail=(
+                "No model available in replay mode. Set EIGEN_PROVIDER_MODE=live with "
+                "ANTHROPIC_API_KEY + OPENAI_API_KEY to answer live.")) from e
+        except Exception as e:   # provider errors (auth, credits, rate limit, timeout)
+            raise HTTPException(status_code=502, detail=f"provider error: {e}") from e
+
+        ui = getattr(app.state.service, "ui", None)
+        def _url(c):
+            fn = getattr(ui, "source_url", None)
+            try:
+                return fn(c.document_id, c.quote) if fn and c.document_id else None
+            except Exception:
+                return None
+        claims = [{"text": c.text, "quote": c.quote, "source": c.source_key,
+                   "title": c.document_title, "url": _url(c), "document_id": c.document_id}
+                  for c in res.verified_claims]
+        return {"span": span, "mode": mode, "grounded": res.grounded,
+                "answer": res.composed_answer, "claims": claims,
+                "rejected": len(res.rejected_claims)}
 
     @app.post("/research/population")
     async def research_population(body: ResearchIn,
