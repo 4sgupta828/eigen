@@ -5915,7 +5915,16 @@ window.addEventListener("hashchange", ()=>{
   function cancel(){ if(hideT){ clearTimeout(hideT); hideT = null; } }
   function show(ref){
     const n = ref.getAttribute("data-n"); if(!n) return;
-    const ev = document.getElementById("f" + n); if(!ev) return;
+    // Resolve #f{n} within the ref's OWN turn — card ids ("f1", "f2"…) repeat across turns, so a
+    // global getElementById would grab another turn's (or session's) card (the wrong-citation bug).
+    let scope = ref.parentElement, ev = null;
+    while(scope && scope !== document.body){
+      ev = scope.querySelector("#f" + n);
+      if(ev) break;
+      scope = scope.parentElement;
+    }
+    if(!ev) ev = document.getElementById("f" + n);
+    if(!ev) return;
     const ctext = ev.querySelector(".ctext"), cq = ev.querySelector(".cquote"),
           src = ev.querySelector(".srclink, .src");
     let h = "";
