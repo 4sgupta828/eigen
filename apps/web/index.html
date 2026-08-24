@@ -5878,18 +5878,28 @@ window.addEventListener("hashchange", ()=>{
   }
   function answerOf(sel){
     if(!sel.rangeCount) return null;
-    let n = sel.getRangeAt(0).commonAncestorContainer;
-    if(n && n.nodeType === 3) n = n.parentElement;
-    return (n && n.closest) ? n.closest(".answer") : null;
+    // Robust to multi-block drags: commonAncestorContainer can climb ABOVE .answer (its .closest then
+    // misses it), so also try where the selection STARTED (anchor) and ENDED (focus) — a leaf inside
+    // the answer. Any candidate that resolves to an .answer wins, so a highlight spanning paragraphs,
+    // a list, or a table still offers Go deeper / Rethink.
+    const cands = [sel.getRangeAt(0).commonAncestorContainer, sel.anchorNode, sel.focusNode];
+    for(let n of cands){
+      if(n && n.nodeType === 3) n = n.parentElement;
+      const a = (n && n.closest) ? n.closest(".answer") : null;
+      if(a) return a;
+    }
+    return null;
   }
   function place(){
     const sel = window.getSelection();
     const txt = (sel && sel.toString() || "").replace(/\s+/g, " ").trim();
-    if(txt.length < 3 || txt.length > 400 || !inContent(sel)){ tip.classList.remove("on"); return; }
+    if(txt.length < 3 || txt.length > 1000 || !inContent(sel)){ tip.classList.remove("on"); return; }
     selText = txt;
     selAnswer = answerOf(sel);
-    // ✦ Go deeper / ⟲ Rethink — only inside an actual answer, on a real phrase, when the flag is on
-    const canFocus = (typeof FOCUS_ENABLED !== "undefined" && FOCUS_ENABLED) && !!selAnswer && txt.length >= 8;
+    // ✦ Go deeper / ⟲ Rethink — show on ANY real selection inside an answer when the flag is on. (No
+    // extra length floor beyond the tip's own 3-char minimum: a highlighted word or phrase is a valid
+    // focus span, so a "random" selection reliably offers it — not just long ones.)
+    const canFocus = (typeof FOCUS_ENABLED !== "undefined" && FOCUS_ENABLED) && !!selAnswer;
     const db = document.getElementById("seltip-deeper"), rb = document.getElementById("seltip-rethink"),
           fsep = document.getElementById("seltip-fsep");
     if(db) db.hidden = !canFocus; if(rb) rb.hidden = !canFocus; if(fsep) fsep.hidden = !canFocus;
