@@ -27,6 +27,10 @@ def source_url(document_id: str, quote: str | None = None, facets: dict | None =
     src, _, native = document_id.partition(":")
     if not native:
         return None
+    # Some sources use the article/permalink URL itself as the native id (RSS/Atom feeds:
+    # eng_blog, expert_feed, podcast, news…). If native IS a URL, that URL is the source.
+    if native.startswith("http://") or native.startswith("https://"):
+        return native + frag
 
     if src in ("edgar", "sec"):                       # native = accession (or CIK)
         if native.isdigit():                          # a bare CIK → the company's filing list
@@ -60,4 +64,22 @@ def source_url(document_id: str, quote: str | None = None, facets: dict | None =
         return f"https://news.ycombinator.com/item?id={native}"
     if src == "gdelt":                                # native IS the article url
         return native + frag if native.startswith("http") else None
+    if src == "yc":                                   # native = YC slug → the company's YC directory page
+        return f"https://www.ycombinator.com/companies/{native}"
+    if src == "companies_house":                      # native = UK company number → the official register
+        return f"https://find-and-update.company-information.service.gov.uk/company/{native}"
+    if src == "wikipedia":                            # native = pageid (digits) or article title
+        if native.isdigit():
+            return f"https://en.wikipedia.org/?curid={native}"
+        return "https://en.wikipedia.org/wiki/" + urllib.parse.quote(native.replace(" ", "_"))
+    if src == "stackoverflow":                        # native = question id
+        return f"https://stackoverflow.com/q/{native}"
+    if src == "lobsters":                             # native = story id
+        return f"https://lobste.rs/s/{native}"
+    if src == "openreview":                           # native = note/forum id
+        return f"https://openreview.net/forum?id={native}"
+    if src == "nsf":                                  # native = award id
+        return f"https://www.nsf.gov/awardsearch/showAward?AWD_ID={native}"
+    if src == "nih_reporter":                         # native = project id
+        return f"https://reporter.nih.gov/project-details/{native}"
     return None

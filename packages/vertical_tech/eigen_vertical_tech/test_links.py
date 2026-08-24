@@ -70,6 +70,31 @@ def test_arxiv_openalex_doi_github() -> None:
     assert source_url("github:owner/repo") == "https://github.com/owner/repo"
 
 
+def test_company_directory_sources_resolve() -> None:
+    # YC / Companies House / Wikipedia now resolve to their public canonical pages (were None)
+    assert source_url("yc:stripe") == "https://www.ycombinator.com/companies/stripe"
+    assert source_url("companies_house:12345678") == (
+        "https://find-and-update.company-information.service.gov.uk/company/12345678")
+    assert source_url("wikipedia:12345") == "https://en.wikipedia.org/?curid=12345"
+    assert source_url("wikipedia:Anthropic") == "https://en.wikipedia.org/wiki/Anthropic"
+    assert source_url("wikipedia:Sam Altman") == "https://en.wikipedia.org/wiki/Sam_Altman"
+
+
+def test_url_native_sources_use_the_embedded_url() -> None:
+    # RSS/feed sources store the permalink URL as the native id → that URL is the link
+    assert source_url("eng_blog:https://blog.example.com/post") == "https://blog.example.com/post"
+    assert source_url("podcast:https://pod.example.com/ep/12", quote="x").startswith(
+        "https://pod.example.com/ep/12#:~:text=")
+
+
+def test_more_public_directory_sources_resolve() -> None:
+    assert source_url("stackoverflow:98765") == "https://stackoverflow.com/q/98765"
+    assert source_url("lobsters:abcd12") == "https://lobste.rs/s/abcd12"
+    assert source_url("openreview:xY12z") == "https://openreview.net/forum?id=xY12z"
+    assert source_url("nsf:2312345") == "https://www.nsf.gov/awardsearch/showAward?AWD_ID=2312345"
+    assert source_url("nih_reporter:5R01AB").startswith("https://reporter.nih.gov/project-details/")
+
+
 def test_unknown_source_and_empty_native_return_none() -> None:
     assert source_url("mystery:123") is None
     assert source_url("edgar:") is None
