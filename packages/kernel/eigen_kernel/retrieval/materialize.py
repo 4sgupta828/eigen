@@ -12,6 +12,24 @@ from eigen_kernel.corpus.repository import CorpusRepository
 from eigen_kernel.retrieval.memory import IndexedBlock, InMemoryRetrievalSource
 
 
+def _pg_safe(s):
+    """Make a string safe for a Postgres `text` column: strip NUL bytes (Postgres text cannot hold
+    \\x00) and drop any invalid/half-surrogate UTF-8 that would raise 'invalid byte sequence for
+    encoding UTF8' on INSERT — which otherwise fails the WHOLE batch and loses every doc in the job
+    (seen on some arXiv/source docs). Non-strings pass through unchanged."""
+    if not isinstance(s, str):
+        return s
+    if "\x00" in s:
+        s = s.replace("\x00", "")
+    # round-trip through UTF-8 dropping anything Postgres would reject (lone surrogates, etc.)
+    return s.encode("utf-8", "ignore").decode("utf-8", "ignore")
+
+
+def _safe_facets(facets: dict) -> dict:
+    """Sanitize facet keys+values (they land in a jsonb text column too)."""
+    return {_pg_safe(k): _pg_safe(v) for k, v in (facets or {}).items()}
+
+
 def materialize(repo: CorpusRepository, source: InMemoryRetrievalSource) -> int:
     """Load all embedded blocks from `repo` into `source`. Returns count added."""
     added = 0
@@ -62,9 +80,9 @@ async def materialize_to_postgres(repo: CorpusRepository, pg_source, *, batch_si
             doc_keys.setdefault((doc.tenant_id, doc.id), set()).add(block.content_key)
             rows.append(dict(
                 tenant_id=doc.tenant_id, document_id=doc.id, block_id=block.content_key,
-                text=block.text, embedding=list(bc.embedding) if (bc and bc.embedding) else None,
-                facets={**doc.facets, **block.facets, **ov}, workspace_id=doc.workspace_id,
-                document_title=doc.title, content_type=doc.content_type, source_key=doc.source_key,
+                text=_pg_safe(block.text), embedding=list(bc.embedding) if (bc and bc.embedding) else None,
+                facets=_safe_facets({**doc.facets, **block.facets, **ov}), workspace_id=doc.workspace_id,
+                document_title=_pg_safe(doc.title), content_type=doc.content_type, source_key=doc.source_key,
             ))
             if len(rows) >= batch_size:
                 await pg_source.upsert_blocks(rows)
