@@ -735,6 +735,9 @@
   .rr-title{font-family:var(--serif,Georgia,serif);font-size:1rem;line-height:1.35;color:var(--ink);
     text-decoration:none;font-weight:600;overflow-wrap:anywhere;display:block;}
   a.rr-title:hover{color:var(--person,#57d9c4);text-decoration:underline;}
+  .rr-why{font-size:.82rem;line-height:1.45;color:var(--ink);opacity:.9;margin:.1rem 0 .1rem;}
+  .rr-why .rr-why-k{font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--person,#57d9c4);font-weight:600;margin-right:.35rem;}
   .rr-meta{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .6rem;font-size:.74rem;color:var(--muted);}
   .rr-badge{font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;
     border:1px solid var(--hair);border-radius:999px;padding:.08rem .5rem;color:var(--muted);}
@@ -1911,7 +1914,7 @@ function linkFirstCompany(root, co){
   if(after) frag.appendChild(document.createTextNode(after));
   node.parentNode.replaceChild(frag, node);
 }
-const _RRKIND = {paper:"Paper", preprint:"Preprint", filing:"Filing"};
+const _RRKIND = {paper:"Paper", preprint:"Preprint", news:"Article", essay:"Essay", corp_eng:"Blog"};
 // A plausible research title (mirrors the server _ok_title guard) — so a mis-ingested doc PERSISTED
 // before the server fix can't dump a multi-thousand-char LLM answer into the UI as a "title".
 const _RR_BAD_PREFIX = /^(based on|here('| i)|i have|i've|to answer|the following|in summary|sure,|certainly)/i;
@@ -1932,10 +1935,12 @@ function relatedResearchMarkup(data){
     if(it.citations) meta.push(esc(it.citations) + " cites");
     const badges = (it.peer_reviewed ? `<span class="rr-badge rr-peer">peer-reviewed</span>` : ``) +
       `<span class="rr-badge">${esc(_RRKIND[it.kind] || it.kind || "research")}</span>`;
-    return `<li class="rr-item">${linked}<div class="rr-meta">${badges}${meta.length?`<span class="rr-m">${meta.join(" · ")}</span>`:``}</div></li>`;
+    const why = (it.why || "").trim()
+      ? `<div class="rr-why"><span class="rr-why-k">Why</span> ${esc(_rrTrim(it.why, 220))}</div>` : ``;
+    return `<li class="rr-item">${linked}${why}<div class="rr-meta">${badges}${meta.length?`<span class="rr-m">${meta.join(" · ")}</span>`:``}</div></li>`;
   }).join("");
   return `<details class="rrblock" open><summary><h4 class="rrhead">Top related public research (${items.length})<span class="evtoggle"></span></h4>
-    <div class="evhint">High-quality papers, preprints, and filings related to your question — not necessarily cited in the answer above.</div></summary>
+    <div class="evhint">Papers, preprints, and articles related to your question, each with why it's relevant — not necessarily cited in the answer above.</div></summary>
     <ul class="rr-list">${rows}</ul></details>`;
 }
 const _RLEVEL = {high:"High", moderate:"Moderate", low:"Low", unknown:"Unknown"};

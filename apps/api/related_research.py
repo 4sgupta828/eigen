@@ -22,8 +22,16 @@ from __future__ import annotations
 
 from typing import Any
 
-# authoritative research/report kinds (verified emitted: paper, preprint, filing). No "report" kind.
-RESEARCH_KINDS: tuple[str, ...] = ("paper", "preprint", "filing")
+from pydantic import BaseModel
+
+# HUMAN-READABLE research only — papers, preprints, articles/news, essays & engineering blogs.
+# Deliberately EXCLUDES SEC filings (10-K/10-Q forms), patents, code, benchmarks, raw datasets:
+# those are records/forms, not something a person reads as "related research".
+RESEARCH_KINDS: tuple[str, ...] = ("paper", "preprint", "news", "essay", "corp_eng")
+
+# Kinds that carry comparable CITATION metrics (peer-review + cited_by_count). Everything else
+# (preprints, news, essays, blogs) ranks by recency + relevance — citations don't compare across.
+_CITED_KINDS: frozenset[str] = frozenset({"paper"})
 
 
 def _int(v: Any) -> int:
@@ -52,10 +60,10 @@ def _ok_title(title: str | None) -> bool:
 def _rank_within_kind(kind: str, hit) -> tuple:
     """The per-kind quality key (descending). Citation counts / peer-review only compare WITHIN a kind."""
     f = hit.facets or {}
-    if kind == "paper":
+    if kind in _CITED_KINDS:
         return (1 if f.get("is_peer_reviewed") == "true" else 0, _int(f.get("cited_by_count")),
                 _int(f.get("year")), hit.score)
-    # preprint / filing: no comparable citation metric → recency, then relevance
+    # preprints / news / essays / blogs: no comparable citation metric → recency, then relevance
     return (_int(f.get("year")), hit.score)
 
 
@@ -128,5 +136,47 @@ async def find_related_research(service, *, question: str, tenant_id: str,
             "year": f.get("year", ""),
             "citations": _int(f.get("cited_by_count")) or None,
             "peer_reviewed": f.get("is_peer_reviewed") == "true",
+            "_snippet": (h.text or "")[:500],   # for the rationale LLM; stripped before returning
         })
+    await _add_rationales(service, q, out)
+    for it in out:
+        it.pop("_snippet", None)
     return out
+
+
+class _Rationale(BaseModel):
+    i: int
+    why: str = ""
+
+
+class _Rationales(BaseModel):
+    items: list[_Rationale] = []
+
+
+_RATIONALE_SYSTEM = (
+    "For each numbered research item, write ONE short sentence (max ~20 words) on WHY it is relevant "
+    "to the user's QUESTION — connect the item's topic to what the user asked. Base it ONLY on the "
+    "given title/snippet; be specific and honest — if an item is only loosely related, say so plainly. "
+    "Do NOT claim findings or results you cannot see in the snippet. Return one `why` per item index.")
+
+
+async def _add_rationales(service, question: str, items: list[dict]) -> None:
+    """Attach a one-line 'why relevant to your question' rationale to each item (LLM, one batch call).
+    Best-effort: any failure leaves items without a `why` (the FE just omits the line)."""
+    llm = getattr(service, "llm", None)
+    if not items or llm is None:
+        return
+    lines = []
+    for idx, it in enumerate(items):
+        meta = " · ".join(x for x in [it.get("kind"), str(it.get("year") or "")] if x)
+        lines.append(f"[{idx}] {it.get('title','')} ({meta})\n    {(it.get('_snippet') or '')[:300]}")
+    user = f"QUESTION: {question[:500]}\n\nRESEARCH ITEMS:\n" + "\n".join(lines)
+    try:
+        comp = await llm.complete(system=_RATIONALE_SYSTEM,
+                                  messages=[{"role": "user", "content": user}],
+                                  response_format=_Rationales, max_tokens=500)
+        for r in getattr(comp.parsed, "items", []) or []:
+            if isinstance(r.i, int) and 0 <= r.i < len(items) and (r.why or "").strip():
+                items[r.i]["why"] = r.why.strip()
+    except Exception:  # noqa: BLE001 — rationale is a nicety; never break the section
+        return

@@ -50,8 +50,9 @@ def test_dedup_by_document_keeps_best_block() -> None:
     out = _run(find_related_research(svc, question="q", tenant_id="demo", ui=svc.ui))
     assert len(out) == 1 and out[0]["title"] == "Paper One"
     assert out[0]["url"] == "https://src/openalex:W1"
-    # asked the corpus for research kinds only
-    assert svc.captured["facets"]["source_kind"] == ("paper", "preprint", "filing")
+    # asked the corpus for HUMAN-READABLE research kinds only (no SEC filings/forms)
+    assert svc.captured["facets"]["source_kind"] == ("paper", "preprint", "news", "essay", "corp_eng")
+    assert "filing" not in svc.captured["facets"]["source_kind"]
 
 
 def test_relevance_floor_omits_weak_matches() -> None:
@@ -97,13 +98,38 @@ def test_never_raises_on_search_error() -> None:
     assert _run(find_related_research(_Boom(), question="q", tenant_id="demo")) == []
 
 
-def test_mixed_kinds_all_representable() -> None:
+def test_mixed_readable_kinds_all_representable() -> None:
     svc = _Svc([
         _hit("openalex:W1", 0.90, "paper", title="P", peer=True, cites=30, year=2023),
         _hit("arxiv:2401.1", 0.85, "preprint", title="Pre", year=2024),
-        _hit("edgar:acc", 0.80, "filing", title="Fil", year=2024),
+        _hit("news:x", 0.80, "news", title="Art", year=2024),
+        _hit("essay:y", 0.78, "essay", title="Ess", year=2024),
     ])
     out = _run(find_related_research(svc, question="q", tenant_id="demo", ui=svc.ui))
     kinds = {o["kind"] for o in out}
-    assert kinds == {"paper", "preprint", "filing"}
+    assert kinds == {"paper", "preprint", "news", "essay"}
     assert out[0]["kind"] == "paper"   # highest relevance leads
+
+
+def test_filing_kind_is_excluded() -> None:
+    # even if a filing hit is returned, it isn't in the human-readable lanes → dropped
+    svc = _Svc([
+        _hit("edgar:acc", 0.95, "filing", title="10-K", year=2024),
+        _hit("openalex:W1", 0.80, "paper", title="Real Paper", peer=True, cites=5, year=2023),
+    ])
+    out = _run(find_related_research(svc, question="q", tenant_id="demo", ui=svc.ui))
+    assert [o["kind"] for o in out] == ["paper"]
+
+
+def test_rationale_attached_when_llm_present() -> None:
+    from types import SimpleNamespace
+
+    class _LLM:
+        async def complete(self, **kw):
+            return SimpleNamespace(parsed=SimpleNamespace(
+                items=[SimpleNamespace(i=0, why="Directly studies the method the question asks about.")]))
+    svc = _Svc([_hit("openalex:W1", 0.9, "paper", title="P", peer=True, cites=1, year=2024)])
+    svc.llm = _LLM()
+    out = _run(find_related_research(svc, question="q", tenant_id="demo", ui=svc.ui))
+    assert out[0]["why"].startswith("Directly studies")
+    assert "_snippet" not in out[0]   # internal field stripped before returning
