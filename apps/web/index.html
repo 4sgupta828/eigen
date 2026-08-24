@@ -733,7 +733,7 @@
   .rr-item{display:flex;flex-direction:column;gap:.28rem;padding:.6rem .75rem;border:1px solid var(--hair);
     border-radius:9px;background:var(--panel);}
   .rr-title{font-family:var(--serif,Georgia,serif);font-size:1rem;line-height:1.35;color:var(--ink);
-    text-decoration:none;font-weight:600;}
+    text-decoration:none;font-weight:600;overflow-wrap:anywhere;display:block;}
   a.rr-title:hover{color:var(--person,#57d9c4);text-decoration:underline;}
   .rr-meta{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .6rem;font-size:.74rem;color:var(--muted);}
   .rr-badge{font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;
@@ -1912,17 +1912,22 @@ function linkFirstCompany(root, co){
   node.parentNode.replaceChild(frag, node);
 }
 const _RRKIND = {paper:"Paper", preprint:"Preprint", filing:"Filing"};
+// A plausible research title (mirrors the server _ok_title guard) — so a mis-ingested doc PERSISTED
+// before the server fix can't dump a multi-thousand-char LLM answer into the UI as a "title".
+const _RR_BAD_PREFIX = /^(based on|here('| i)|i have|i've|to answer|the following|in summary|sure,|certainly)/i;
+function _rrOkTitle(t){ t = (t || "").trim(); return !!t && t.length <= 200 && !_RR_BAD_PREFIX.test(t); }
+function _rrTrim(t, n){ t = (t || "").trim(); return t.length > n ? t.slice(0, n - 1).trimEnd() + "…" : t; }
 function relatedResearchMarkup(data){
   if(typeof RELATED_ENABLED !== "undefined" && !RELATED_ENABLED) return "";
-  const items = (data && data.related_research) || [];
+  const items = ((data && data.related_research) || []).filter(it => it && _rrOkTitle(it.title));
   if(!items.length) return "";
   const rows = items.map(it => {
-    const title = esc(it.title || "Untitled");
+    const title = esc(_rrTrim(it.title, 140));
     const linked = it.url
       ? `<a class="rr-title" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${title} ↗</a>`
       : `<span class="rr-title">${title}</span>`;
     const meta = [];
-    if(it.venue) meta.push(esc(it.venue));
+    if(it.venue) meta.push(esc(_rrTrim(String(it.venue), 60)));
     if(it.year) meta.push(esc(it.year));
     if(it.citations) meta.push(esc(it.citations) + " cites");
     const badges = (it.peer_reviewed ? `<span class="rr-badge rr-peer">peer-reviewed</span>` : ``) +
