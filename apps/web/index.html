@@ -5196,7 +5196,12 @@ function renderThread(){
   const lt = THREAD.turns[THREAD.turns.length-1];
   if(lt && !lt._pending && !lt.clarification && !lt.derived_from_prior){
     const act = document.createElement("div"); act.innerHTML = convoActionsMarkup(lt);
-    if(act.firstChild){ out.appendChild(act); wireConvo(act, lt); }
+    if(act.firstChild){ out.appendChild(act); wireConvo(act, lt);
+      // Auto-visuals in CONVERSATION mode: the #visualsgo affordance lives in this conversation-level
+      // actions row (each per-turn render passes noConvo, so render()'s own maybeAutoVisuals finds no
+      // button and never fires). Trigger it here for the last turn so visuals generate + PERSIST on a
+      // fresh threaded answer (the #sdetail guard still skips reopened sessions).
+      maybeAutoVisuals(act, lt); }
     const wm = whereNextMarkup(lt);
     if(wm){ const wr = document.createElement("div"); wr.innerHTML = wm;
       out.appendChild(wr); wireEngineHops(wr, lt); }
