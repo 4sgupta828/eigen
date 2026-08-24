@@ -377,7 +377,7 @@ def _validate_interpretation(items: list["InterpretationItem"],
     out: list[dict] = []
     for it in items or []:
         kind = (it.kind or "").strip()
-        text = (it.text or "").strip()
+        text = strip_control_tags((it.text or "").strip())   # a bled control-tag serialization → truncate
         if kind not in allowed or not text:
             continue
         basis = [b for b in (it.basis_findings or []) if isinstance(b, int) and 1 <= b <= n]
@@ -1892,8 +1892,15 @@ async def run_react(
                 _all_tokens = extract_hard_tokens(
                     " ".join((vc.text + " " + vc.quote) for vc in result.verified_claims)
                     + " " + _REF_MARK_RE.sub(" ", result.composed_answer or ""))
-                result.reasoning_purpose = _frame_grounded(getattr(parsed, "reasoning_purpose", ""), _all_tokens)
-                result.reasoning_conclusion = _frame_grounded(getattr(parsed, "reasoning_conclusion", ""), _all_tokens)
+                # strip_control_tags FIRST: a completion can bleed its own serialization into a frame
+                # field value (e.g. "…pivot.</reasoning_conclusion> <parameter name=\"confidence\">{…}"),
+                # and _frame_grounded only checks hard-token grounding — so a leaked blob whose tokens all
+                # happen to appear in the answer would survive into the "Informed judgment" UI. Truncate at
+                # the first control tag, THEN ground the clean text.
+                result.reasoning_purpose = _frame_grounded(
+                    strip_control_tags(getattr(parsed, "reasoning_purpose", "")), _all_tokens)
+                result.reasoning_conclusion = _frame_grounded(
+                    strip_control_tags(getattr(parsed, "reasoning_conclusion", "")), _all_tokens)
                 # REPAIR (once): when the guard blanks a frame the model DID write (it stated a figure
                 # outside the allowance), the judgment itself is usually valid — only the number is
                 # unlicensed. One small call restates the frame QUALITATIVELY (no figures), then the
@@ -1928,10 +1935,10 @@ async def run_react(
                         fp = fix.parsed
                         if "reasoning_purpose" in _blank:
                             result.reasoning_purpose = _frame_grounded(
-                                getattr(fp, "reasoning_purpose", ""), _all_tokens)
+                                strip_control_tags(getattr(fp, "reasoning_purpose", "")), _all_tokens)
                         if "reasoning_conclusion" in _blank:
                             result.reasoning_conclusion = _frame_grounded(
-                                getattr(fp, "reasoning_conclusion", ""), _all_tokens)
+                                strip_control_tags(getattr(fp, "reasoning_conclusion", "")), _all_tokens)
                     except Exception as _e:   # noqa: BLE001 — best-effort; guard outcome stands
                         _log.warning("reasoning frame repair failed: %r", _e)
             # Honesty signal → coverage gap: a "grounded-on-analogues" answer still flags the gap,

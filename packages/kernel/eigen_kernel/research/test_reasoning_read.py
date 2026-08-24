@@ -128,3 +128,30 @@ def test_extract_hard_tokens_ignores_letter_adjacent_digits():
     assert toks == set(), toks
     # a real figure next to a name is still caught
     assert "40" in extract_hard_tokens("PCSK9 inhibitors cut LDL by 40%")
+
+
+# --- control-tag bleed regression (the "Informed judgment" UI leak) ---
+from eigen_kernel.research.react import strip_control_tags
+
+
+def test_strip_control_tags_truncates_bled_serialization():
+    # a completion bled its structured-output serialization into the frame value
+    dirty = ('The evidence supports two strategic camps of VCs.'
+             '</reasoning_conclusion> <parameter name="confidence">{"factual":{"level":"moderate"}}')
+    assert strip_control_tags(dirty) == 'The evidence supports two strategic camps of VCs.'
+
+
+def test_frame_grounded_after_strip_keeps_clean_text():
+    # clean prefix is grounded (tokens subset of allowed) → survives; the bled tail is gone
+    allowed = extract_hard_tokens("two camps of VCs pivot to AI in 2026")
+    dirty = ('Top VCs form two camps, with AI as a shared pivot in 2026.'
+             '</reasoning_conclusion> <parameter name="confidence">{"x":1}')
+    assert _frame_grounded(strip_control_tags(dirty), allowed).endswith("2026.")
+    assert "confidence" not in _frame_grounded(strip_control_tags(dirty), allowed)
+
+
+def test_validate_interpretation_strips_bled_tag_in_item_text():
+    items = [_item(text=('The two figures conflict</interpretation> <parameter name="charts">[]'),
+                   kind="tension", basis_findings=[1, 2])]
+    out = _validate_interpretation(items, V)
+    assert len(out) == 1 and out[0]["text"] == "The two figures conflict"
