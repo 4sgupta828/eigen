@@ -677,6 +677,11 @@
   .rconf-gloss{font-size:.74rem;color:var(--muted);font-style:italic;}
   .rconf-why{font-size:.82rem;color:var(--muted);line-height:1.55;margin-top:.3rem;}
   .answer.md .ref{color:var(--gold);font-weight:640;cursor:pointer;font-size:.68em;padding:0 .06em;vertical-align:super;}
+  /* grounded company hyperlinks in answer prose */
+  .answer .colink{color:var(--ink);text-decoration:none;border-bottom:1px solid rgba(var(--gold-rgb,255,207,107),.45);font-weight:600;}
+  .answer .colink:hover{color:var(--gold);border-bottom-color:var(--gold);}
+  .answer .coeigen{color:var(--person,#57d9c4);text-decoration:none;font-size:.72em;margin-left:.12em;vertical-align:super;opacity:.8;}
+  .answer .coeigen:hover{opacity:1;}
   /* color highlights are OFF by default — a <mark> reads as plain text until the reader toggles
      them on (adds .hl-on to the answer). */
   .answer.md mark.hl{color:inherit;background:transparent;border-radius:0;padding:0;
@@ -1635,6 +1640,7 @@ let GAP_ENABLED = false;    // self-healing: suggest + queue sources to fill evi
 let CONV_ENABLED = false;   // multi-turn conversation (follow-ups carry context)
 let FOCUS_ENABLED = false;  // select a span of an answer → Go deeper / Rethink (POST /research/focus)
 let RELATED_ENABLED = false;// "Top related public research" section attached to answers
+let COMPANY_LINKS_ENABLED = false; // hyperlink grounded company mentions in the answer prose
 let SUGGEST_ENABLED = false;// suggested follow-up questions after each answer
 let STREAM_ENABLED = false; // live agent trace via SSE (/research/stream)
 let EFFORT_ENABLED = false; // effort multiplier available (scales turns/results/depth/budget)
@@ -1710,6 +1716,7 @@ async function loadConfig(){
     CONV_ENABLED = !!c.conversation_enabled;
     FOCUS_ENABLED = !!c.focus_deepen_enabled;
     RELATED_ENABLED = !!c.related_research_enabled;
+    COMPANY_LINKS_ENABLED = !!c.company_links_enabled;
     SUGGEST_ENABLED = !!c.suggest_enabled;
     STREAM_ENABLED = !!c.stream_enabled;
     EFFORT_ENABLED = !!c.effort_scale_enabled;
@@ -1834,6 +1841,56 @@ const _RKIND = {
   assumption:{c:"k-assumption",l:"Assumption"}, implication:{c:"k-implication",l:"Implication"},
   what_would_change_this:{c:"k-change",l:"What would change this"},
 };
+// Company hyperlinks: after an answer renders, link the FIRST exact mention of each company the
+// answer is GROUNDED on (server-supplied data.companies) — name → its canonical page, plus a ◉ to
+// Eigen's grounded entity view. Operates on rendered TEXT NODES (never markdown), skipping existing
+// links / citation refs / code, so it can't corrupt the [n] refs. Precision-safe: only known entities.
+function linkCompanies(target, companies){
+  if(typeof COMPANY_LINKS_ENABLED !== "undefined" && !COMPANY_LINKS_ENABLED) return;
+  if(!companies || !companies.length || !target) return;
+  const ans = target.querySelector(".answer");
+  if(!ans) return;
+  companies.slice().filter(c => c && c.name)
+    .sort((a,b) => b.name.length - a.name.length)   // longest first: "Acme Bio" before "Acme"
+    .forEach(co => linkFirstCompany(ans, co));
+}
+function linkFirstCompany(root, co){
+  const name = co.name;
+  let re; try{ re = new RegExp("(?:^|\\b)" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:\\b|$)"); }
+  catch(e){ return; }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(n){
+      if(!n.nodeValue || n.nodeValue.indexOf(name) < 0) return NodeFilter.FILTER_REJECT;
+      let p = n.parentElement;
+      while(p && p !== root){
+        const t = p.tagName;
+        if(t === "A" || t === "SUP" || t === "CODE") return NodeFilter.FILTER_REJECT;
+        p = p.parentElement;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const node = walker.nextNode();
+  if(!node) return;
+  const idx = node.nodeValue.indexOf(name);
+  if(idx < 0) return;
+  const before = node.nodeValue.slice(0, idx), after = node.nodeValue.slice(idx + name.length);
+  const frag = document.createDocumentFragment();
+  if(before) frag.appendChild(document.createTextNode(before));
+  const a = document.createElement("a");
+  a.className = "colink"; a.textContent = name;
+  if(co.url){ a.href = co.url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = "Open " + name + " ↗"; }
+  else if(co.eigen_url){ a.href = co.eigen_url; a.title = "Eigen's grounded view of " + name; }
+  frag.appendChild(a);
+  if(co.eigen_url){
+    const g = document.createElement("a");
+    g.className = "coeigen"; g.href = co.eigen_url; g.textContent = "◉";
+    g.title = "Eigen's grounded view of " + name; g.setAttribute("aria-label", "Eigen grounded view of " + name);
+    frag.appendChild(g);
+  }
+  if(after) frag.appendChild(document.createTextNode(after));
+  node.parentNode.replaceChild(frag, node);
+}
 const _RRKIND = {paper:"Paper", preprint:"Preprint", filing:"Filing"};
 function relatedResearchMarkup(data){
   if(typeof RELATED_ENABLED !== "undefined" && !RELATED_ENABLED) return "";
@@ -2322,6 +2379,7 @@ function render(data, target, opts){
   // per-answer responsibility footnote — only under a real answer (skips pending/clarification turns)
   if(data.answer && DISCLAIMER.answer) parts.push(`<div class="ansdisc">${esc(DISCLAIMER.answer)}</div>`);
   target.innerHTML = parts.join("");
+  linkCompanies(target, data.companies);   // hyperlink grounded company mentions (flag-gated)
   wireFeedback(target, data);
   checkAnswerIntegrity(target, data);   // async, structural: banners answers citing changed sources
   // dossier tabs: Backing evidence ⇄ Coverage gaps/Strengthen

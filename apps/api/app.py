@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import urllib.parse
 import re
 import time
 import uuid
@@ -713,6 +714,21 @@ def related_research_enabled() -> bool:
     return os.environ.get("EIGEN_RELATED_RESEARCH", "").lower() in ("1", "true", "yes")
 
 
+def company_links_enabled() -> bool:
+    """Flag (default OFF, Rule 20): when ON, an answer carries a `companies` map of the companies
+    it is GROUNDED on (subjects of its own company-source claims) → their canonical page + Eigen
+    entity page, and the FE hyperlinks the first exact mention of each in the prose. Precision-safe
+    (Rule 18): only companies with a known entity are linked — never arbitrary name matching. Also
+    ungates GET /entity/{id}. OFF → empty map, no links, no entity page (byte-identical)."""
+    return os.environ.get("EIGEN_COMPANY_LINKS", "").lower() in ("1", "true", "yes")
+
+
+# Corpus sources whose documents ARE a single company and whose document_title IS that company's
+# name (structural — Rule 18: no semantic guess). EDGAR is excluded: its title is a filing, not a
+# clean company name.
+_COMPANY_SOURCES = ("yc", "wikidata", "companies_house")
+
+
 class Attachment(BaseModel):
     data: str                              # base64-encoded file bytes
     media_type: str = ""                   # e.g. image/png, application/pdf, application/dicom
@@ -975,6 +991,8 @@ class ResearchOut(BaseModel):
     #                                       (None unless the freshness-ranking flag is on)
     related_research: list = []           # top related public research [{title,url,kind,venue,year,
     #                                       citations,peer_reviewed}] (empty unless the flag is on)
+    companies: list = []                  # companies this answer is grounded on [{name,entity_id,url,
+    #                                       eigen_url}] for prose hyperlinking (empty unless flag on)
 
 
 def build_default_service() -> ResearchService:
@@ -1400,6 +1418,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "conversation_enabled": conversation_enabled(),
             "focus_deepen_enabled": focus_deepen_enabled(),
             "related_research_enabled": related_research_enabled(),
+            "company_links_enabled": company_links_enabled(),
             "suggest_enabled": conversation_enabled() and bool(getattr(svc, "suggest_prompt", None)),
             "term_glossary_enabled": term_glossary_enabled() and bool(getattr(svc, "terms_prompt", None)),
             "visual_augment_enabled": visual_augment_enabled() and bool(getattr(svc, "visuals_prompt", None)),
@@ -1552,6 +1571,89 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         """Interactive Explorer — a live, navigable slice of the grounded claim graph
         (entities + relationship edges + span-verified facts). Data via GET /graph/explore."""
         return _html_response("explorer.html", accept_encoding)
+
+    @app.get("/entity/{entity_id:path}", response_class=HTMLResponse)
+    async def entity_page(entity_id: str) -> HTMLResponse:
+        """Grounded entity page (flag-gated with company links, 404 when off): everything Eigen
+        has span-verified about one company — its claims grouped by dimension, each with the exact
+        source quote + a link. The ◉ target of a company hyperlink. Read-only, no LLM."""
+        if not company_links_enabled():
+            raise HTTPException(status_code=404, detail="entity pages not enabled")
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            raise HTTPException(status_code=503, detail="EIGEN_CORPUS_DSN not configured")
+        from html import escape as _e
+        from api.claimgraph_tech import make_tech_claim_store
+        store = make_tech_claim_store(dsn)
+        ent = await store.get_entity(entity_id)
+        claims = await store.entity_claims(entity_id)
+        ui = getattr(app.state.service, "ui", None) if app.state.service else None
+        name = (ent or {}).get("name") or entity_id
+        src_page = None
+        try:
+            src_page = ui.source_url(entity_id) if ui else None
+        except Exception:
+            src_page = None
+
+        def _label(pred: str) -> str:
+            return pred.replace("_", " ").strip().capitalize()
+
+        rows_html = ""
+        if claims:
+            by_pred: dict[str, list] = {}
+            for cl in claims:
+                by_pred.setdefault(cl.get("predicate", ""), []).append(cl)
+            for pred, cls in by_pred.items():
+                items = ""
+                for cl in cls:
+                    val = (cl.get("object_value") or cl.get("object_norm")
+                           or cl.get("object_entity_id") or "")
+                    ev = cl.get("evidence") or {}
+                    quote = ev.get("quote") or ""
+                    try:
+                        curl = ui.source_url(ev.get("document_id", ""), quote) if ui and ev.get("document_id") else None
+                    except Exception:
+                        curl = None
+                    cite = (f'<a class="cite" href="{_e(curl, quote=True)}" target="_blank" rel="noopener noreferrer">source ↗</a>'
+                            if curl else '')
+                    q = f'<div class="q">“{_e(quote[:280])}”</div>' if quote else ''
+                    items += f'<li><div class="v">{_e(str(val))}</div>{q}{cite}</li>'
+                rows_html += f'<section class="grp"><h2>{_e(_label(pred))}</h2><ul>{items}</ul></section>'
+        else:
+            rows_html = '<p class="empty">No grounded claims for this entity yet.</p>'
+
+        src_link = (f'<a class="ext" href="{_e(src_page, quote=True)}" target="_blank" rel="noopener noreferrer">Canonical page ↗</a>'
+                    if src_page else '')
+        html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>{_e(name)} · Eigen</title><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{{--ground:#0a0d16;--panel:#111627;--line:#212a41;--line-soft:#1a2136;--ink:#e8edf9;--mute:#909bb8;--faint:#5c6688;--gold:#ffcf6b;
+--sans:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;--display:"Sora",var(--sans);}}
+*{{box-sizing:border-box}}body{{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);line-height:1.55;}}
+.wrap{{max-width:760px;margin:0 auto;padding:40px 22px 80px;}}
+a{{color:inherit}}.back{{font-family:var(--mono);font-size:12px;color:var(--mute);text-decoration:none}}.back:hover{{color:var(--gold)}}
+.eyebrow{{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-top:26px}}
+h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1rem;letter-spacing:-.01em}}
+.head-meta{{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:8px}}
+.ext,.eid{{font-family:var(--mono);font-size:12px;color:var(--mute);text-decoration:none}}.ext:hover{{color:var(--gold)}}
+.grp{{margin-top:26px;border-top:1px solid var(--line-soft);padding-top:14px}}
+.grp h2{{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);font-weight:500;margin:0 0 10px}}
+.grp ul{{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}}
+.grp li{{background:var(--panel);border:1px solid var(--line-soft);border-left:2px solid var(--gold);border-radius:9px;padding:10px 13px}}
+.v{{font-size:15px;font-weight:500}}.q{{font-size:13px;color:var(--mute);font-style:italic;margin:6px 0 4px;padding-left:10px;border-left:2px solid var(--line)}}
+.cite{{font-family:var(--mono);font-size:11px;color:var(--faint);text-decoration:none}}.cite:hover{{color:var(--gold)}}
+.empty{{color:var(--faint);margin-top:30px}}.note{{font-size:12px;color:var(--faint);margin-top:34px;border-top:1px solid var(--line-soft);padding-top:14px}}
+</style></head><body><div class="wrap">
+<a class="back" href="/">&larr; Eigen</a>
+<div class="eyebrow">Grounded entity</div>
+<h1>{_e(name)}</h1>
+<div class="head-meta">{src_link}<span class="eid">{_e(entity_id)}</span></div>
+{rows_html}
+<div class="note">Every value here is span-verified to a quote in a source document — a live slice of Eigen's claim graph.</div>
+</div></body></html>"""
+        return HTMLResponse(html)
 
     @app.get("/crossviews", response_class=HTMLResponse)
     def crossviews_designer(accept_encoding: str = Header(default="")):
@@ -2278,6 +2380,27 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                     workspace_id=body.workspace_id, ui=getattr(app.state.service, "ui", None))
             except Exception:
                 related = []
+        # Company hyperlinks (flag-gated): the companies this answer is GROUNDED on — the subjects of
+        # its own company-source claims. Precision-safe (Rule 18): only real entities, deduped by name,
+        # so the FE links the first exact mention. name → canonical page (source_url of the entity id),
+        # ◉ → the in-product grounded entity view.
+        companies = []
+        if company_links_enabled():
+            ui2 = getattr(app.state.service, "ui", None)
+            _seen_co: set = set()
+            for c in claims:
+                if c.source and c.source in _COMPANY_SOURCES and c.title and c.document_id:
+                    nm = c.title.strip()
+                    key = nm.lower()
+                    if not nm or key in _seen_co:
+                        continue
+                    _seen_co.add(key)
+                    try:
+                        page = ui2.source_url(c.document_id) if ui2 else None
+                    except Exception:
+                        page = None
+                    companies.append({"name": nm, "entity_id": c.document_id, "url": page,
+                                      "eigen_url": "/entity/" + urllib.parse.quote(c.document_id, safe="")})
         return ResearchOut(
             grounded=res.grounded, answer=res.composed_answer, claims=claims,
             coverage_gaps=res.coverage_gaps, rejected=len(res.rejected_claims),
@@ -2300,6 +2423,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             diagnostics=(getattr(res, "diagnostics", None) if diag_trace_enabled() else None),
             freshness=(getattr(res, "freshness", None) if freshness_ranking_enabled() else None),
             related_research=related,
+            companies=companies,
         )
 
     @app.post("/research/stream")
