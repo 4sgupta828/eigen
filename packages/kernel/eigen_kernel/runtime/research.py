@@ -127,7 +127,8 @@ class ResearchService:
     reasoning_read: bool = False            # surface the validated interpretation + confidence layer (flag)
     readable_prose: bool = False            # EIGEN_READABLE_PROSE: plain-language style over compose (flag)
     axis_complete: bool = False             # EIGEN_ANSWER_AXES: compose addresses each asked aspect + synthesizes
-    derive: bool = False                    # EIGEN_DERIVE: gated, labeled derivations over verified claims
+    tech_synthesis: bool = False            # EIGEN_TECH_SYNTHESIS: add a strategic 'how it works' technical synthesis
+    derive: bool = False                   # EIGEN_DERIVE: gated, labeled derivations over verified claims
     derive_ideas: bool = False              # EIGEN_DERIVE_IDEAS: also generate grounded 'opportunity' ideas
     derive_judge_llm: object | None = None  # optional cross-family validity judge (else reuses self.llm)
     collect_diagnostics: bool = False       # capture a troubleshooting trace (turns/tools/retries/failures) (flag)
@@ -509,7 +510,7 @@ class ResearchService:
             compose_claim_cap=sc.compose_claim_cap, extract_collect=sc.extract_collect,
             answer_focus=answer_focus, reasoning_read=self.reasoning_read,
             readable_prose=self.readable_prose, country_boost=country_boost,
-            axis_complete=self.axis_complete,
+            axis_complete=self.axis_complete, tech_synthesis=self.tech_synthesis,
             collect_diagnostics=self.collect_diagnostics,
             classify_evidence=self.classify_evidence,
             evidence_fitness=self.evidence_fitness, evidence_ranker=self.evidence_ranker,

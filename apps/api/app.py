@@ -661,6 +661,15 @@ def axis_complete_enabled() -> bool:
     return os.environ.get("EIGEN_ANSWER_AXES", "").lower() in ("1", "true", "yes")
 
 
+def tech_synthesis_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_TECH_SYNTHESIS adds a strategic 'How it works' TECHNICAL
+    SYNTHESIS to the answer when the subject is a product/technology/tech company — the core technical
+    building blocks (disclosed → cited [n]), the end-to-end user flow, and the LIKELY design where the
+    findings don't disclose it (clearly labeled, wrapped [[R]]...[[/R]], no invented proprietary specifics),
+    tied to strategy/moat. The addendum self-skips for a non-technical subject; OFF → byte-identical."""
+    return os.environ.get("EIGEN_TECH_SYNTHESIS", "").lower() in ("1", "true", "yes")
+
+
 def derive_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_DERIVE runs the grounded-reasoning GATE — after the fact gate,
     derive labeled conclusions (inference/hypothesis/speculation) FROM the verified findings, each with a
@@ -1107,6 +1116,7 @@ def build_default_service() -> ResearchService:
         reasoning_read=reasoning_read_enabled(),
         readable_prose=readable_prose_enabled(),
         axis_complete=axis_complete_enabled(),
+        tech_synthesis=tech_synthesis_enabled(),
         derive=derive_enabled(),
         derive_ideas=derive_ideas_enabled(),
         collect_diagnostics=diag_trace_enabled(),

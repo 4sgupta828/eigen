@@ -87,6 +87,28 @@ _AXIS_COMPLETE_ADDENDUM = (
     "brief '(sources vary: ...)' note — do NOT build a reconciliation table or repeat the caveat. Keep "
     "any 'not covered' notes to a single tight line, never a long list.]")
 
+# Technical-synthesis addendum (flag `tech_synthesis`): a STRATEGIC synthesis, FROM the evidence, of
+# how the product's technology works end-to-end. Grounding-careful: disclosed → cited; the likely
+# architecture → clearly-labeled grounded inference ([[R]]), no invented proprietary specifics.
+_TECH_SYNTHESIS_ADDENDUM = (
+    "[How it works — a STRATEGIC TECHNICAL SYNTHESIS from the evidence. When the subject is a product / "
+    "technology / tech company, SYNTHESIZE from the findings how the technology actually works and how "
+    "it comes together END-TO-END for users:\n"
+    "- the core technical building blocks the product is built on (the models, data, systems, or methods "
+    "it relies on) — cite [n] where the findings disclose them;\n"
+    "- the end-to-end flow: how a user's input becomes the product's output, and what each part "
+    "contributes;\n"
+    "- where the findings do NOT disclose the architecture, SYNTHESIZE the LIKELY design by reasoning "
+    "from the disclosed capabilities and how such systems are generally built — clearly labeled "
+    "('likely', 'typically', 'expected') and wrapped in [[R]]...[[/R]]. NEVER present an inferred "
+    "mechanism as a disclosed fact, and never invent a specific proprietary detail (a named model, "
+    "benchmark, or patent) that is not in the findings;\n"
+    "- tie it to STRATEGY: why each part matters, where the technical difficulty or defensibility lies, "
+    "and what the design implies for the product and its moat.\n"
+    "Concrete and technical — a sharp engineer's read synthesized from the evidence, not marketing and "
+    "not ungrounded speculation. Separate DISCLOSED from LIKELY throughout. Skip this entirely if the "
+    "subject has no technical product.]")
+
 from pydantic import BaseModel, Field, field_validator
 
 from eigen_kernel.contract.dto import RetrievalRequest
@@ -668,6 +690,9 @@ async def run_react(
     #                                           (aspect the reader asked about) + lead with a synthesized
     #                                           take, instead of surveying only what was found. Needs a
     #                                           derived question_contract with axes; otherwise a no-op.
+    tech_synthesis: bool = False,             # flag: add a strategic 'how it works' TECHNICAL SYNTHESIS
+    #                                           from the evidence (disclosed cited + labeled likely-design
+    #                                           inference). Compose skips it for non-technical subjects.
     evidence_ranker=None,                     # vertical hook: evidence_kind -> int rank (the authority pyramid)
     evidence_identity: bool = False,          # Evidence Contract stage 1: render each atom's document
     #                                           identity ⟨title — source⟩ on every LLM-visible surface
@@ -1703,6 +1728,14 @@ async def run_react(
             if _axes:
                 _axd = _AXIS_COMPLETE_ADDENDUM.replace("<AXES>", ", ".join(_axes[:10]))
                 _compose_directive = (_compose_directive + "\n\n" + _axd) if _compose_directive else _axd
+        # TECH SYNTHESIS (flag): add a strategic 'how it works' technical synthesis from the evidence
+        # (disclosed → cited; likely-design → labeled [[R]] inference). The addendum self-skips for a
+        # subject with no technical product, so the append is unconditional when the flag is on.
+        if tech_synthesis:
+            _compose_directive = (
+                (_compose_directive + "\n\n" + _TECH_SYNTHESIS_ADDENDUM)
+                if _compose_directive else _TECH_SYNTHESIS_ADDENDUM
+            )
 
         async def _compose(directive: str | None) -> ComposedAnswer:
             # Base ANSWER instruction kept identical to the original (directive-free path stays a
