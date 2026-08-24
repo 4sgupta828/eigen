@@ -706,6 +706,15 @@ def focus_deepen_enabled() -> bool:
     return os.environ.get("EIGEN_FOCUS_DEEPEN", "").lower() in ("1", "true", "yes")
 
 
+def query_expansion_enabled() -> bool:
+    """Flag (default OFF, Rule 20): when ON, a terse question is EXPANDED before retrieval — one LLM
+    call adds a coverage brief (key aspects + search keywords) to the query so retrieval covers what a
+    complete answer needs, regardless of how tersely the user phrased it. Steers planner + embedding,
+    never adds facts (grounding gate unchanged); the pristine question stays as graph_question. OFF →
+    byte-identical (no expansion call, raw question)."""
+    return os.environ.get("EIGEN_QUERY_EXPANSION", "").lower() in ("1", "true", "yes")
+
+
 def related_research_enabled() -> bool:
     """Flag (default OFF, Rule 20): when ON, an answer carries a 'Top related public research'
     section — a SEPARATE facet-filtered semantic search over papers/preprints/filings, dedup'd,
@@ -2280,11 +2289,29 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                 _mode_suppress = bool(_mode_val.get("suppress_authority"))
             if _mode_dir:
                 _extra = (_extra + "\n\n" + _mode_dir) if _extra else _mode_dir
+        # QUERY EXPANSION (flag): enrich a terse question with a coverage brief (aspects + keywords) so
+        # retrieval covers what a COMPLETE answer needs, regardless of phrasing. Augments the query text
+        # only (steers planner + embedding, adds no facts); the PRISTINE question rides graph_question so
+        # the graph expander still anchors on the asked subject. Best-effort — never blocks the answer.
+        _graph_q = None
+        if query_expansion_enabled() and body.question.strip():
+            try:
+                from api.query_expansion import expand_query, brief_text
+                _exp = await expand_query(app.state.service.llm, body.question)
+                if _exp:
+                    _q = _q + brief_text(_exp)
+                    _graph_q = body.question
+                    if on_event is not None:
+                        await on_event({"type": "query_expanded",
+                                        "aspects": len(_exp.get("aspects") or []),
+                                        "keywords": len(_exp.get("keywords") or [])})
+            except Exception:
+                _graph_q = None
         res = await _ask(
             question=_q, tenant_id=body.tenant_id,
             workspace_id=body.workspace_id, source_keys=body.sources,
             images=images, documents=docs, pdf_docs=pdfs, history=history, on_event=on_event,
-            effort=effort, audience=audience,
+            effort=effort, audience=audience, graph_question=_graph_q,
             answer_focus=focus, clarify=followup_clarify_enabled(), extra_directive=_extra,
             suppress_authority=_mode_suppress)
         # Ambiguous follow-up → return the clarifying question; no research ran, nothing to persist.
