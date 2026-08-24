@@ -1000,6 +1000,8 @@ class Citation(BaseModel):
     title: str = ""
     url: str | None = None           # canonical source page (opens in a new tab)
     document_id: str = ""
+    source_kind: str = ""            # structural source_kind facet (filing/paper/news/code/…) — FE quality badge
+    tier: str = ""                   # classified evidence tier (evidence_kind) — colors the FE quality badge
 
 
 class ResearchOut(BaseModel):
@@ -1881,7 +1883,9 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             except Exception:
                 return None
         claims = [{"text": c.text, "quote": c.quote, "source": c.source_key,
-                   "title": c.document_title, "url": _url(c), "document_id": c.document_id}
+                   "title": c.document_title, "url": _url(c), "document_id": c.document_id,
+                   "source_kind": ((c.facets or {}).get("source_kind") or ""),
+                   "tier": (c.evidence_kind or "")}
                   for c in res.verified_claims]
         return {"span": span, "mode": mode, "grounded": res.grounded,
                 "answer": res.composed_answer, "claims": claims,
@@ -2365,7 +2369,9 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                 return None
         claims = [Citation(text=c.text, quote=c.quote, atom_id=c.atom_id,
                            source=c.source_key, title=c.document_title,
-                           url=_url(c), document_id=c.document_id)
+                           url=_url(c), document_id=c.document_id,
+                           source_kind=((c.facets or {}).get("source_kind") or ""),
+                           tier=(c.evidence_kind or ""))
                   for c in res.verified_claims]
         # Answer add-ons (flag-gated, best-effort) — computed BEFORE persistence so a reopened
         # session shows them (they ride the thread turn, not just the live response):

@@ -572,7 +572,8 @@ async def run_panel(*, question, specialists, llm, embedder, make_retrievers, te
 def _vc_dict(vc) -> dict:
     return {"text": vc.text, "quote": vc.quote, "atom_id": vc.atom_id, "source": vc.source_key,
             "title": vc.document_title, "document_id": vc.document_id,
-            "evidence_kind": getattr(vc, "evidence_kind", "")}
+            "evidence_kind": getattr(vc, "evidence_kind", ""),
+            "source_kind": ((getattr(vc, "facets", None) or {}).get("source_kind") or "")}
 
 
 def _pooled_tokens(verified) -> set:

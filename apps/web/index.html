@@ -1127,6 +1127,15 @@
   .cfoot{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;padding-top:.7rem;border-top:1px solid var(--hair);}
   .verified{display:inline-flex;align-items:center;gap:.32rem;color:var(--verified);font-size:.66rem;
     font-weight:700;text-transform:uppercase;letter-spacing:.09em;}
+  /* source-type quality badge (pill), colored by classified evidence tier — theme-aware via existing vars */
+  .srcbadge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:.6rem;font-weight:700;
+    text-transform:uppercase;letter-spacing:.06em;line-height:1;padding:.2rem .48rem;border-radius:999px;
+    border:1px solid var(--tc,var(--muted));color:var(--tc,var(--muted));background:var(--hair-soft);white-space:nowrap;}
+  .srcbadge.t-primary{--tc:var(--verified);}   /* green — authoritative primary source */
+  .srcbadge.t-analysis{--tc:var(--gold);}      /* blue  — reputable analysis/press */
+  .srcbadge.t-signal{--tc:var(--gap);}         /* amber — preprint / code signal */
+  .srcbadge.t-social{--tc:var(--muted);}       /* grey  — perception / social */
+  .srcbadge.t-unknown{--tc:var(--muted);opacity:.7;}  /* faint — unclassified */
   .src{font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-left:auto;
     overflow-wrap:anywhere;min-width:0;}
   a.srclink{text-decoration:none;color:var(--verified);border-bottom:1px dotted var(--verified);}
@@ -2245,6 +2254,37 @@ function mdToHtml(raw){
   return out.join("");
 }
 
+// ---- source-type quality badge: a small pill on each evidence/citation card + its hover popover, saying
+// WHAT KIND of source backs the claim (paper / SEC filing / news / eng blog / social / code…) COLORED by
+// its classified quality tier — so the reader calibrates source quality at a glance. Pure display of
+// already-present provenance (Citation.source_kind = structural facet, Citation.tier = evidence_kind);
+// no answer behavior. Human labels + colors live HERE (the API/kernel stay presentation-free).
+const SRC_LABELS = {filing:"SEC filing", patent:"Patent", paper:"Peer-reviewed", preprint:"Preprint",
+  benchmark:"Benchmark", model:"Model", code:"Code/repo", corp_eng:"Eng blog", news:"News",
+  social:"LinkedIn / social", reference:"Reference"};
+// classified evidence tier → pill color class
+function tierClass(tier){
+  switch(tier){
+    case "primary_filing": case "verified_structured": return "t-primary";   // green — authoritative
+    case "analysis":            return "t-analysis";   // blue  — reputable analysis/press
+    case "technical_signal":    return "t-signal";     // amber — preprint / code signal
+    case "sentiment_signal":    return "t-social";     // grey  — perception / social
+    default:                    return "t-unknown";    // faint — unclassified
+  }
+}
+const TIER_TIP = {"t-primary":"Primary source (filing/patent)", "t-analysis":"Reputable analysis/press",
+  "t-signal":"Preprint / code signal", "t-social":"Perception / social signal — not authoritative",
+  "t-unknown":"Source type"};
+// A claim carries source_kind + tier (Citation) or source_kind + evidence_kind (panel/span dicts) — accept both.
+function srcBadge(c){
+  const kind = (c && c.source_kind) || "";
+  const tier = (c && (c.tier || c.evidence_kind)) || "";
+  if(!kind && !tier) return "";
+  const cls = tierClass(tier);
+  const label = SRC_LABELS[kind] || kind || "web";
+  return `<span class="srcbadge ${cls}" title="${esc(TIER_TIP[cls])}">${esc(label)}</span>`;
+}
+
 function render(data, target, opts){
   target = target || out;
   opts = opts || {};
@@ -2370,7 +2410,7 @@ function render(data, target, opts){
       return `<article class="claim" id="f${idx+1}">
         <div class="chead"><span class="fnum">${idx+1}</span><div class="ctext">${esc(c.text)}</div></div>
         <blockquote class="cquote">${esc(c.quote)}</blockquote>
-        <div class="cfoot"><span class="verified" title="A verbatim quote from this source was located and matched — this is a provenance check, not a judgment of source quality, currency, or applicability.">✓ Quote found in source</span>${src}</div>
+        <div class="cfoot"><span class="verified" title="A verbatim quote from this source was located and matched — this is a provenance check, not a judgment of source quality, currency, or applicability.">✓ Quote found in source</span>${srcBadge(c)}${src}</div>
       </article>`;
     }).join("");
     const ngaps = (data.coverage_gaps||[]).length;
@@ -4180,7 +4220,7 @@ function panelTakeHtml(t){
     return c.url ? `<a class="srclink" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer" title="Open source in a new tab">${lbl} ↗</a>`
                  : (c.source ? `<span class="spec-cs">${lbl}</span>` : ""); };
   const ev = cl.length ? `<div class="spec-ev"><div class="spec-ev-h">Evidence · ${cl.length}</div>
-    <ol class="spec-ev-l">${cl.map((c,i)=>`<li data-ev="${i+1}"><span class="spec-cq">${esc(c.quote||c.text||"")}</span> ${cite(c)}</li>`).join("")}</ol></div>` : "";
+    <ol class="spec-ev-l">${cl.map((c,i)=>`<li data-ev="${i+1}"><span class="spec-cq">${esc(c.quote||c.text||"")}</span> ${srcBadge(c)}${cite(c)}</li>`).join("")}</ol></div>` : "";
   const why = t.rationale ? `<div class="spec-why"><span class="spec-why-l">Convened for</span> ${esc(t.rationale)}</div>` : "";
   return `<details class="spec"><summary class="spec-h"><span class="spec-name">${esc(t.specialty)}</span>${badge}<span class="spec-toggle"></span></summary>
     <div class="spec-b">${why}<div class="answer md">${bodyHtml}</div>${ev}</div></details>`;
@@ -5931,11 +5971,11 @@ window.addEventListener("hashchange", ()=>{
     if(!ev) ev = document.getElementById("f" + n);
     if(!ev) return;
     const ctext = ev.querySelector(".ctext"), cq = ev.querySelector(".cquote"),
-          src = ev.querySelector(".srclink, .src");
+          src = ev.querySelector(".srclink, .src"), badge = ev.querySelector(".srcbadge");
     let h = "";
     if(ctext) h += '<div class="ch-claim">' + ctext.innerHTML + '</div>';
     if(cq) h += '<blockquote class="ch-quote">' + cq.innerHTML + '</blockquote>';
-    if(src) h += '<div class="ch-src">' + src.outerHTML + '</div>';
+    if(badge || src) h += '<div class="ch-src">' + (badge ? badge.outerHTML : "") + (src ? src.outerHTML : "") + '</div>';
     if(!h) return;
     card.innerHTML = h; card.classList.add("on"); card.setAttribute("aria-hidden","false");
     const r = ref.getBoundingClientRect(), cw = card.offsetWidth, chh = card.offsetHeight;
