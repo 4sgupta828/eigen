@@ -1265,6 +1265,19 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 app.state.session_store = None
         return app.state.session_store
 
+    def _claim_store_cached():
+        """The tech claim-graph store, built ONCE and cached (its asyncpg pool is reused across
+        requests) so company-link resolution doesn't spin a new pool per answer. None when no
+        corpus DSN is configured."""
+        if getattr(app.state, "claim_store", "unset") == "unset":
+            dsn = os.environ.get("EIGEN_CORPUS_DSN")
+            if dsn:
+                from api.claimgraph_tech import make_tech_claim_store
+                app.state.claim_store = make_tech_claim_store(dsn)
+            else:
+                app.state.claim_store = None
+        return app.state.claim_store
+
     def _glossary():
         """Vertical-isolated glossary store (the accumulating term web). Built once when a
         corpus DSN is configured; None (no persistence) against the fixture corpus."""
@@ -2289,6 +2302,28 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                            source=c.source_key, title=c.document_title,
                            url=_url(c), document_id=c.document_id)
                   for c in res.verified_claims]
+        # Answer add-ons (flag-gated, best-effort) — computed BEFORE persistence so a reopened
+        # session shows them (they ride the thread turn, not just the live response):
+        #  · related_research: a SEPARATE facet-filtered search over papers/preprints/filings.
+        #  · companies: LLM-detected company mentions → grounded page (known) or web search (unknown).
+        related = []
+        if related_research_enabled() and res.grounded and body.question:
+            try:
+                from api.related_research import find_related_research
+                related = await find_related_research(
+                    app.state.service, question=body.question, tenant_id=body.tenant_id,
+                    workspace_id=body.workspace_id, ui=getattr(app.state.service, "ui", None))
+            except Exception:
+                related = []
+        companies = []
+        if company_links_enabled() and res.grounded and res.composed_answer:
+            try:
+                from api.company_links import detect_and_resolve_companies
+                companies = await detect_and_resolve_companies(
+                    app.state.service, _claim_store_cached(), answer=res.composed_answer,
+                    ui=getattr(app.state.service, "ui", None), tenant_id=body.tenant_id)
+            except Exception:
+                companies = []
         # Persist the Q&A (best-effort). Conversation follow-up (session_id + flag) APPENDS a turn.
         session_id = None
         store = _store()
@@ -2328,6 +2363,10 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                 _extra["intake_transcript"] = [
                     {"role": (m.get("role") or "")[:12], "text": (m.get("text") or "")[:2000]}
                     for m in (body.intake_transcript or [])[:40] if isinstance(m, dict) and m.get("text")]
+            if related:                       # persist so a reopened session shows the section
+                _extra["related_research"] = related
+            if companies:                     # persist so a reopened session re-links the prose
+                _extra["companies"] = companies
             turn.update(_extra)
             try:
                 # Audience-guarded append: only continue a thread whose audience MATCHES this turn's
@@ -2369,38 +2408,6 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                         audience=audience))
                 except Exception:
                     pass
-        # 'Top related public research' (flag-gated): a SEPARATE facet-filtered search over
-        # papers/preprints/filings, quality-ranked + honest-omit. Best-effort — never breaks the answer.
-        related = []
-        if related_research_enabled() and res.grounded and body.question:
-            try:
-                from api.related_research import find_related_research
-                related = await find_related_research(
-                    app.state.service, question=body.question, tenant_id=body.tenant_id,
-                    workspace_id=body.workspace_id, ui=getattr(app.state.service, "ui", None))
-            except Exception:
-                related = []
-        # Company hyperlinks (flag-gated): the companies this answer is GROUNDED on — the subjects of
-        # its own company-source claims. Precision-safe (Rule 18): only real entities, deduped by name,
-        # so the FE links the first exact mention. name → canonical page (source_url of the entity id),
-        # ◉ → the in-product grounded entity view.
-        companies = []
-        if company_links_enabled():
-            ui2 = getattr(app.state.service, "ui", None)
-            _seen_co: set = set()
-            for c in claims:
-                if c.source and c.source in _COMPANY_SOURCES and c.title and c.document_id:
-                    nm = c.title.strip()
-                    key = nm.lower()
-                    if not nm or key in _seen_co:
-                        continue
-                    _seen_co.add(key)
-                    try:
-                        page = ui2.source_url(c.document_id) if ui2 else None
-                    except Exception:
-                        page = None
-                    companies.append({"name": nm, "entity_id": c.document_id, "url": page,
-                                      "eigen_url": "/entity/" + urllib.parse.quote(c.document_id, safe="")})
         return ResearchOut(
             grounded=res.grounded, answer=res.composed_answer, claims=claims,
             coverage_gaps=res.coverage_gaps, rejected=len(res.rejected_claims),

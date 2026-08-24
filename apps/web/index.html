@@ -682,6 +682,20 @@
   .answer .colink:hover{color:var(--gold);border-bottom-color:var(--gold);}
   .answer .coeigen{color:var(--person,#57d9c4);text-decoration:none;font-size:.72em;margin-left:.12em;vertical-align:super;opacity:.8;}
   .answer .coeigen:hover{opacity:1;}
+  /* unknown company (no graph entity) → links to a web search: dotted underline, muted */
+  .answer .colink.colink-search{border-bottom:1px dotted var(--faint,#5c6688);font-weight:600;}
+  .answer .colink.colink-search:hover{color:var(--gold);border-bottom-color:var(--gold);}
+  /* citation hover card — a quick non-truncated depth view of the [n] evidence */
+  #citehover{position:fixed;z-index:1300;max-width:min(440px,92vw);display:none;background:var(--panel);
+    border:1px solid var(--hair);border-left:3px solid var(--gold);border-radius:10px;padding:11px 13px;
+    box-shadow:0 12px 34px rgba(0,0,0,.32);font-family:var(--sans);animation:seltipin .12s ease;}
+  #citehover.on{display:block;}
+  #citehover .ch-claim{font-size:.86rem;color:var(--ink);line-height:1.5;margin-bottom:.5rem;font-weight:500;}
+  #citehover .ch-quote{margin:0;font-size:.82rem;color:var(--mute);font-style:italic;line-height:1.5;
+    padding-left:10px;border-left:2px solid var(--line-soft,#1a2136);max-height:11rem;overflow:auto;}
+  #citehover .ch-src{margin-top:.55rem;font-size:.72rem;}
+  #citehover .ch-src a,#citehover .ch-src .src{font-family:var(--mono);color:var(--faint);text-decoration:none;}
+  #citehover .ch-src a:hover{color:var(--gold);}
   /* color highlights are OFF by default — a <mark> reads as plain text until the reader toggles
      them on (adds .hl-on to the answer). */
   .answer.md mark.hl{color:inherit;background:transparent;border-radius:0;padding:0;
@@ -1571,6 +1585,7 @@
   .focus-exp .fx-note{font-size:.74rem;color:var(--muted,#8a90a6);margin-top:.5rem;}
   .focus-exp.err{border-left-color:#e06;}
 </style>
+<div id="citehover" role="tooltip" aria-hidden="true"></div>
 <div id="seltip" role="menu" aria-label="Focus or learn more about the selection">
   <button type="button" data-act="deeper" id="seltip-deeper" hidden title="Go deeper — expand this specific point with fresh grounded evidence">✦ Go deeper</button>
   <button type="button" data-act="rethink" id="seltip-rethink" hidden title="Rethink — critically re-examine this claim against the sources">⟲ Rethink</button>
@@ -1877,12 +1892,15 @@ function linkFirstCompany(root, co){
   const before = node.nodeValue.slice(0, idx), after = node.nodeValue.slice(idx + name.length);
   const frag = document.createDocumentFragment();
   if(before) frag.appendChild(document.createTextNode(before));
+  const grounded = !!co.eigen_url;   // grounded companies carry an Eigen entity page
   const a = document.createElement("a");
-  a.className = "colink"; a.textContent = name;
-  if(co.url){ a.href = co.url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = "Open " + name + " ↗"; }
-  else if(co.eigen_url){ a.href = co.eigen_url; a.title = "Eigen's grounded view of " + name; }
+  a.className = grounded ? "colink" : "colink colink-search"; a.textContent = name;
+  if(co.url){
+    a.href = co.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    a.title = grounded ? ("Open " + name + " ↗") : ("Search the web for " + name + " ↗");
+  } else if(co.eigen_url){ a.href = co.eigen_url; a.title = "Eigen's grounded view of " + name; }
   frag.appendChild(a);
-  if(co.eigen_url){
+  if(grounded){
     const g = document.createElement("a");
     g.className = "coeigen"; g.href = co.eigen_url; g.textContent = "◉";
     g.title = "Eigen's grounded view of " + name; g.setAttribute("aria-label", "Eigen grounded view of " + name);
@@ -5853,6 +5871,43 @@ window.addEventListener("hashchange", ()=>{
   if(APP_MODE !== "qa") setMode("qa");
 });
 
+// ---- citation hover — a quick, non-truncated depth view of a [n] reference: the finding + its FULL
+// verbatim source quote + a source link, pulled from the already-rendered evidence card #f{n} (so it's
+// exactly the evidence backing that passage). Desktop enhancement; the ref stays click-to-scroll.
+(function(){
+  const card = document.getElementById("citehover");
+  if(!card) return;
+  let hideT = null;
+  function hide(){ card.classList.remove("on"); card.setAttribute("aria-hidden","true"); }
+  function scheduleHide(){ cancel(); hideT = setTimeout(hide, 180); }
+  function cancel(){ if(hideT){ clearTimeout(hideT); hideT = null; } }
+  function show(ref){
+    const n = ref.getAttribute("data-n"); if(!n) return;
+    const ev = document.getElementById("f" + n); if(!ev) return;
+    const ctext = ev.querySelector(".ctext"), cq = ev.querySelector(".cquote"),
+          src = ev.querySelector(".srclink, .src");
+    let h = "";
+    if(ctext) h += '<div class="ch-claim">' + ctext.innerHTML + '</div>';
+    if(cq) h += '<blockquote class="ch-quote">' + cq.innerHTML + '</blockquote>';
+    if(src) h += '<div class="ch-src">' + src.outerHTML + '</div>';
+    if(!h) return;
+    card.innerHTML = h; card.classList.add("on"); card.setAttribute("aria-hidden","false");
+    const r = ref.getBoundingClientRect(), cw = card.offsetWidth, chh = card.offsetHeight;
+    let x = Math.max(10, Math.min(r.left + r.width/2 - cw/2, window.innerWidth - cw - 10));
+    let y = r.top - chh - 8; if(y < 10) y = r.bottom + 8;
+    card.style.left = x + "px"; card.style.top = y + "px";
+  }
+  document.addEventListener("mouseover", e => {
+    const ref = e.target.closest && e.target.closest(".ref[data-n]");
+    if(ref){ cancel(); show(ref); }
+  });
+  document.addEventListener("mouseout", e => {
+    if(e.target.closest && e.target.closest(".ref[data-n]")) scheduleHide();
+  });
+  card.addEventListener("mouseenter", cancel);
+  card.addEventListener("mouseleave", scheduleHide);
+  document.addEventListener("scroll", hide, true);
+})();
 // ---- selection → "Learn more" — grounded explain (Eigen) or a free AI deep-dive (Google / Perplexity)
 // A floating popover on any highlighted text in the readable content. No backend, no cost: the external
 // options open a free web AI search in a new tab; ✦ Explain reuses our own grounded glossary lookup.

@@ -470,6 +470,24 @@ class ClaimGraphStore:
                 return {"entity_id": r["entity_id"], "name": r["name"], "kind": r["kind"]}
         return None
 
+    async def company_norm_map(self, *, tenant_id: str = "demo") -> dict[str, dict]:
+        """The whole active-company registry as `{normalize_name(name): {entity_id, name}}` in ONE
+        query — for resolving many prose mentions at once (vs find_company's per-name full scan).
+        Exact normalized match only (Rule 18: computable, non-fuzzy). First id wins on a norm clash."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT entity_id, name FROM rs_entity "
+                "WHERE tenant_id = $1 AND status = 'active' AND kind = $2 ORDER BY entity_id",
+                tenant_id, self._subject_kind)
+        out: dict[str, dict] = {}
+        for r in rows:
+            key = normalize_name(r["name"])
+            if key and key not in out:
+                out[key] = {"entity_id": r["entity_id"], "name": r["name"]}
+        return out
+
     # ---- claims & evidence ------------------------------------------------- #
     async def upsert_claim(self, *, subject_id: str, predicate: str, object_kind: str,
                            object_value: str = "", object_entity_id: str = "",
