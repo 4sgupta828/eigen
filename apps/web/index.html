@@ -742,6 +742,7 @@
   .rr-badge{font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;
     border:1px solid var(--hair);border-radius:999px;padding:.08rem .5rem;color:var(--muted);}
   .rr-badge.rr-peer{color:var(--person,#57d9c4);border-color:color-mix(in srgb,var(--person,#57d9c4) 45%,transparent);}
+  .rr-badge.rr-domain{color:var(--muted);border-style:dashed;}   /* domain context, not directly about the subject */
   .rr-m{font-variant-numeric:tabular-nums;}
   /* explicit clickable pill so it's obvious the evidence section expands */
   .evtoggle{margin-left:auto;font-family:var(--mono);font-size:.6rem;letter-spacing:.04em;white-space:nowrap;
@@ -1937,7 +1938,9 @@ function relatedResearchMarkup(data){
     if(it.venue) meta.push(esc(_rrTrim(String(it.venue), 60)));
     if(it.year) meta.push(esc(it.year));
     if(it.citations) meta.push(esc(it.citations) + " cites");
-    const badges = (it.peer_reviewed ? `<span class="rr-badge rr-peer">peer-reviewed</span>` : ``) +
+    const tierBadge = it.tier === "domain" ? `<span class="rr-badge rr-domain">related field</span>` : ``;
+    const badges = tierBadge +
+      (it.peer_reviewed ? `<span class="rr-badge rr-peer">peer-reviewed</span>` : ``) +
       `<span class="rr-badge">${esc(_RRKIND[it.kind] || it.kind || "research")}</span>`;
     const why = (it.why || "").trim()
       ? `<div class="rr-why"><span class="rr-why-k">Why</span> ${esc(_rrTrim(it.why, 220))}</div>` : ``;

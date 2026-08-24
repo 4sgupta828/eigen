@@ -2311,8 +2311,9 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             try:
                 from api.related_research import find_related_research
                 related = await find_related_research(
-                    app.state.service, question=body.question, tenant_id=body.tenant_id,
-                    workspace_id=body.workspace_id, ui=getattr(app.state.service, "ui", None))
+                    app.state.service, question=body.question, answer=res.composed_answer,
+                    tenant_id=body.tenant_id, workspace_id=body.workspace_id,
+                    ui=getattr(app.state.service, "ui", None))
             except Exception:
                 related = []
         companies = []

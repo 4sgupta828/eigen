@@ -67,19 +67,25 @@ def _rank_within_kind(kind: str, hit) -> tuple:
     return (_int(f.get("year")), hit.score)
 
 
-async def find_related_research(service, *, question: str, tenant_id: str,
+async def find_related_research(service, *, question: str, tenant_id: str, answer: str = "",
                                 workspace_id: str | None = None, ui=None,
                                 max_items: int = 5, min_score: float = 0.0,
                                 rel_floor: float = 0.55, per_kind_cap: int = 3,
                                 k: int = 40) -> list[dict]:
-    """Return up to `max_items` grounded related-research items, or [] (honest omit). Structural,
-    best-effort, never raises. `min_score` = absolute fused-score floor; `rel_floor` = keep only hits
-    scoring >= rel_floor * best_score (a relative floor is robust to score-scale drift across queries)."""
+    """Return up to `max_items` grounded related-research items, or [] (honest omit). Structural +
+    an LLM relevance gate, best-effort, never raises. `min_score` = absolute fused-score floor;
+    `rel_floor` = keep only hits scoring >= rel_floor * best_score. `answer` (optional) makes the
+    search DOMAIN-aware: blending the answer's topic into the query surfaces research about the
+    subject's FIELD (not only its name), so the domain tier of the gate has candidates to keep."""
     q = (question or "").strip()
     if not q:
         return []
+    # DOMAIN-aware query: the question names the subject; the answer describes its field/technology/
+    # market. Blending a slice of the answer biases retrieval toward domain research too, not just
+    # name-matches — the raw question alone under-retrieves for a subject-specific ask.
+    search_q = (q + "\n\n" + answer.strip()[:600]) if answer.strip() else q
     try:
-        hits = await service.search(question=q, tenant_id=tenant_id, workspace_id=workspace_id,
+        hits = await service.search(question=search_q, tenant_id=tenant_id, workspace_id=workspace_id,
                                     k=k, facets={"source_kind": RESEARCH_KINDS})
     except Exception:  # noqa: BLE001 — best-effort; a retrieval hiccup must not break the answer
         return []
@@ -149,9 +155,13 @@ async def find_related_research(service, *, question: str, tenant_id: str,
     return judged
 
 
+# Relevance TIERS: the gate keeps 'direct' + 'domain', drops 'off_topic'.
+_KEEP_TIERS = frozenset({"direct", "domain"})
+
+
 class _Rationale(BaseModel):
     i: int
-    relevant: bool = True
+    relevance: str = "direct"   # "direct" | "domain" | "off_topic"
     why: str = ""
 
 
@@ -160,19 +170,25 @@ class _Rationales(BaseModel):
 
 
 _RATIONALE_SYSTEM = (
-    "You curate a 'related research' list for a user's QUESTION. For each numbered item, decide if it "
-    "is GENUINELY relevant — it must meaningfully relate to the question's SUBJECT or TOPIC and help "
-    "inform it. Set relevant=false for tangential or off-topic items (e.g. a general-AI blog when the "
-    "question is about a specific company, or an unrelated domain). Be strict: it is better to drop a "
-    "weak item than to show something off-topic. For each item return {i, relevant, why}: `why` is ONE "
-    "short sentence (<=20 words) — when relevant, HOW it connects to the question; when not, why it "
-    "does not. Base it ONLY on the given title/snippet; never claim findings you cannot see.")
+    "You curate a 'related research' list for a user's QUESTION. Classify each numbered item into one "
+    "of three relevance tiers:\n"
+    "  • \"direct\"    — it is about the question's specific SUBJECT (the named company / technology / "
+    "topic itself).\n"
+    "  • \"domain\"    — it is not about that exact subject, but it IS about the subject's FIELD, "
+    "technology, method, or market, so it gives genuinely useful context (e.g. a paper on AI-generated "
+    "marketing content for a question about a specific AI-content startup).\n"
+    "  • \"off_topic\" — unrelated to the subject AND its domain (e.g. a cloud-infra blog or a "
+    "psychology paper for that same startup). DROP these.\n"
+    "Be generous with \"domain\" when the field genuinely matches, but STRICT with \"off_topic\": it is "
+    "better to drop a stray item than to show something unrelated. For each item return "
+    "{i, relevance, why}: `why` is ONE short sentence (<=20 words) on how it connects (or, if off_topic, "
+    "why it does not). Base it ONLY on the given title/snippet; never claim findings you cannot see.")
 
 
 async def _judge_relevance(service, question: str, items: list[dict]) -> list[dict]:
-    """LLM-judge each item's relevance to `question` (one batch call): attach a `why` line and DROP
-    the off-topic ones. Returns the kept items (may be empty → the section is omitted). Best-effort:
-    if the judge is unavailable/errors, return the items unchanged (structural floor still applied)."""
+    """LLM-judge each item into a relevance TIER (one batch call): keep 'direct'/'domain' (attaching a
+    `why` + `tier`), DROP 'off_topic'. Returns the kept items (may be empty → the section is omitted).
+    Best-effort: judge unavailable/errors → return items unchanged (structural floor still applied)."""
     llm = getattr(service, "llm", None)
     if not items or llm is None:
         return items
@@ -187,16 +203,19 @@ async def _judge_relevance(service, question: str, items: list[dict]) -> list[di
                                   response_format=_Rationales, max_tokens=600)
     except Exception:  # noqa: BLE001 — judge is best-effort; keep the structurally-floored items
         return items
-    verdicts: dict[int, tuple[bool, str]] = {}
+    verdicts: dict[int, tuple[str, str]] = {}
     for r in getattr(comp.parsed, "items", []) or []:
         if isinstance(getattr(r, "i", None), int) and 0 <= r.i < len(items):
-            verdicts[r.i] = (bool(getattr(r, "relevant", True)), (getattr(r, "why", "") or "").strip())
+            tier = (getattr(r, "relevance", "direct") or "direct").strip().lower()
+            verdicts[r.i] = (tier, (getattr(r, "why", "") or "").strip())
     kept: list[dict] = []
     for idx, it in enumerate(items):
-        rel, why = verdicts.get(idx, (True, ""))   # unjudged → keep (don't silently drop)
-        if not rel:
+        tier, why = verdicts.get(idx, ("direct", ""))   # unjudged → keep as direct (don't silently drop)
+        if tier not in _KEEP_TIERS:
             continue
+        it["tier"] = tier
         if why:
             it["why"] = why
         kept.append(it)
+    # if EVERYTHING is domain-only and there are many, keep the top few (they're context, not the answer)
     return kept

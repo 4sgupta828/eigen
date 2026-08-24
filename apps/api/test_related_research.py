@@ -121,52 +121,55 @@ def test_filing_kind_is_excluded() -> None:
     assert [o["kind"] for o in out] == ["paper"]
 
 
-def test_rationale_attached_when_llm_present() -> None:
+def _judge_llm(verdicts):
+    """Fake LLM returning the given [(i, relevance, why)] tier verdicts."""
     from types import SimpleNamespace
 
     class _LLM:
         async def complete(self, **kw):
-            return SimpleNamespace(parsed=SimpleNamespace(items=[SimpleNamespace(
-                i=0, relevant=True, why="Directly studies the method the question asks about.")]))
+            return SimpleNamespace(parsed=SimpleNamespace(items=[
+                SimpleNamespace(i=i, relevance=rel, why=why) for (i, rel, why) in verdicts]))
+    return _LLM()
+
+
+def test_rationale_attached_when_llm_present() -> None:
     svc = _Svc([_hit("openalex:W1", 0.9, "paper", title="P", peer=True, cites=1, year=2024)])
-    svc.llm = _LLM()
+    svc.llm = _judge_llm([(0, "direct", "Directly studies the method the question asks about.")])
     out = _run(find_related_research(svc, question="q", tenant_id="demo", ui=svc.ui))
-    assert out[0]["why"].startswith("Directly studies")
+    assert out[0]["why"].startswith("Directly studies") and out[0]["tier"] == "direct"
     assert "_snippet" not in out[0]   # internal field stripped before returning
 
 
-def test_relevance_gate_drops_offtopic_items() -> None:
-    from types import SimpleNamespace
-
-    class _LLM:
-        # the judge marks the two 'best of a bad lot' matches as off-topic → both dropped → omit
-        async def complete(self, **kw):
-            return SimpleNamespace(parsed=SimpleNamespace(items=[
-                SimpleNamespace(i=0, relevant=False, why="A general-AI blog, not about the asked company."),
-                SimpleNamespace(i=1, relevant=False, why="Unrelated domain."),
-            ]))
+def test_offtopic_tier_is_dropped_and_omits() -> None:
     svc = _Svc([
         _hit("essay:a", 0.62, "essay", title="Teaching Everyone to Fish for Tokens", year=2025),
         _hit("corp_eng:b", 0.60, "corp_eng", title="How AI is transforming analytics at Grab", year=2024),
     ])
-    svc.llm = _LLM()
+    svc.llm = _judge_llm([(0, "off_topic", "A general-AI blog, not about the asked company."),
+                          (1, "off_topic", "Unrelated domain.")])
     out = _run(find_related_research(svc, question="Tell me about Blazel company", tenant_id="demo", ui=svc.ui))
-    assert out == []   # nothing genuinely relevant → honest omit
+    assert out == []   # nothing on-topic or in-domain → honest omit
 
 
-def test_relevance_gate_keeps_relevant_drops_offtopic_mixed() -> None:
-    from types import SimpleNamespace
-
-    class _LLM:
-        async def complete(self, **kw):
-            return SimpleNamespace(parsed=SimpleNamespace(items=[
-                SimpleNamespace(i=0, relevant=True, why="Directly on the asked topic."),
-                SimpleNamespace(i=1, relevant=False, why="Tangential."),
-            ]))
+def test_domain_tier_is_kept() -> None:
+    # no research NAMES the subject, but one item is about its FIELD → kept as 'domain' (context)
     svc = _Svc([
-        _hit("openalex:W1", 0.90, "paper", title="On Topic", peer=True, cites=50, year=2024),
-        _hit("essay:x", 0.80, "essay", title="Off Topic", year=2024),
+        _hit("openalex:W1", 0.70, "paper", title="Quality of AI-generated marketing content", peer=True, cites=8, year=2025),
+        _hit("essay:x", 0.68, "essay", title="Kubernetes at scale", year=2024),
     ])
-    svc.llm = _LLM()
-    out = _run(find_related_research(svc, question="q", tenant_id="demo", ui=svc.ui))
-    assert [o["title"] for o in out] == ["On Topic"]
+    svc.llm = _judge_llm([(0, "domain", "About AI-generated marketing content — the startup's field."),
+                          (1, "off_topic", "Cloud infra, unrelated.")])
+    out = _run(find_related_research(svc, question="Tell me about an AI content-marketing startup",
+                                     answer="It automates AI content creation for founders.",
+                                     tenant_id="demo", ui=svc.ui))
+    assert [o["title"] for o in out] == ["Quality of AI-generated marketing content"]
+    assert out[0]["tier"] == "domain"
+
+
+def test_answer_makes_the_search_domain_aware() -> None:
+    svc = _Svc([_hit("openalex:W1", 0.9, "paper", title="P", peer=True, cites=1, year=2024)])
+    svc.llm = _judge_llm([(0, "direct", "on topic")])
+    _run(find_related_research(svc, question="About Blazel", answer="An AI content platform for founders.",
+                              tenant_id="demo", ui=svc.ui))
+    # the answer's domain text is blended into the retrieval query
+    assert "AI content platform" in svc.captured["question"]
