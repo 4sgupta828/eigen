@@ -32,6 +32,12 @@ class Contract:
     # stances in its derivation prompt and defines each one's knobs in `answer_profiles`. "" = no
     # stance emitted → the caller keeps its default regime (byte-identical).
     stance: str = ""
+    # SUBJECT KIND — an OPAQUE LLM judgment about what the question is ABOUT: "specific_entity" =
+    # diligence on ONE named company/product/project; "general" / "" = not (a landscape, how/why,
+    # comparison, or any non-single-entity ask). The kernel never interprets it; a vertical's
+    # derivation prompt (only when it asks for the field) names the classes. Domain-free (kernel
+    # litmus). "" = not emitted → callers keep their default behavior (byte-identical).
+    subject_kind: str = ""
 
 
 class _ContractOut(BaseModel):
@@ -41,6 +47,7 @@ class _ContractOut(BaseModel):
     entities: list[str] = []
     axes: list[str] = []
     stance: str = ""                            # evidence regime (vertical-defined); "" = default
+    subject_kind: str = ""                       # opaque subject judgment (vertical-defined); "" = default
 
 
 async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str | None,
@@ -69,10 +76,13 @@ async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str 
     axes = [a.strip() for a in (getattr(p, "axes", None) or [])
             if isinstance(a, str) and a.strip()]
     stance = (getattr(p, "stance", "") or "").strip().lower()   # opaque; validated by the vertical map
+    subject_kind = (getattr(p, "subject_kind", "") or "").strip().lower()   # opaque; keep only known classes
+    if subject_kind not in ("specific_entity", "general"):
+        subject_kind = ""                      # anything else (incl. hallucinated labels) → no-op default
     if mode == "enumerative" and not entities:
         mode = "exploratory"                   # nothing to enumerate → inert contract, not None,
         #                                        so the derivation verdict stays observable in diag
-    return Contract(mode=mode, entities=entities, axes=axes, stance=stance)
+    return Contract(mode=mode, entities=entities, axes=axes, stance=stance, subject_kind=subject_kind)
 
 
 def build_legs(contract: Contract | None, *, cap: int = 12,

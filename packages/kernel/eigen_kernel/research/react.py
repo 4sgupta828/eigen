@@ -118,6 +118,7 @@ from eigen_kernel.providers.llm import LLMClient
 from eigen_kernel.research.atoms import IDENTITY_INSTRUCTION, AtomStore, identity_tag
 from eigen_kernel.research.budget import BudgetExceeded, BudgetState
 from eigen_kernel.research.provenance import BlockSpanVerifier
+from eigen_kernel.research.web_quality import screen_open_web_hits
 from eigen_kernel.retrieval.dispatch import multi_query_retrieve
 
 
@@ -693,6 +694,9 @@ async def run_react(
     tech_synthesis: bool = False,             # flag: add a strategic 'how it works' TECHNICAL SYNTHESIS
     #                                           from the evidence (disclosed cited + labeled likely-design
     #                                           inference). Compose skips it for non-technical subjects.
+    entity_open_web: bool = False,            # flag: fire ONE additive open-web Exa probe on step 0 for
+                                              # single-entity questions (contract.subject_kind), quality-screened
+    web_quality_prompt: str | None = None,    # vertical-supplied judge prompt for the open-web quality screen
     evidence_ranker=None,                     # vertical hook: evidence_kind -> int rank (the authority pyramid)
     evidence_identity: bool = False,          # Evidence Contract stage 1: render each atom's document
     #                                           identity ⟨title — source⟩ on every LLM-visible surface
@@ -1165,6 +1169,11 @@ async def run_react(
     _answer_dir = (_profile.get("answer_directive") or "").strip() if _ac else ""
     _web_recency_days = _profile.get("web_recency_days") if _ac else None
     _web_open = bool(_ac and _profile.get("web_open"))   # drop the trusted-domain whitelist (open web)
+    # entity-open (flag): a single-entity diligence question earns ONE additive open-web probe.
+    # Eligibility is the LLM's subject_kind judgment (Rule 18), never a keyword match. subject_kind
+    # is only emitted when EIGEN_WEB_ENTITY_OPEN is on (contract-prompt variant), so OFF → always False.
+    _entity_open = bool(entity_open_web and _contract
+                        and getattr(_contract, "subject_kind", "") == "specific_entity")
     # the tier-boost/recency ranker argument, honoring per-question authority suppression
     _ranker_arg = None if _suppress_auth else (evidence_ranker if evidence_fitness else None)
     if _ac:
@@ -1173,8 +1182,8 @@ async def run_react(
         # spans ~15 models, not a handful). Overrides only RAISE the caller's values, never lower them.
         max_steps = max(int(max_steps), int(_profile.get("max_steps") or 0))
         compose_claim_cap = max(int(compose_claim_cap), int(_profile.get("compose_claim_cap") or 0))
-        _log.info("answer-contract stance=%s recency=%s suppress_authority=%s web_open=%s steps=%s cap=%s",
-                  _contract.stance, bool(_eff_freshness), _suppress_auth, _web_open, max_steps, compose_claim_cap)
+        _log.info("answer-contract stance=%s recency=%s suppress_authority=%s web_open=%s entity_open=%s steps=%s cap=%s",
+                  _contract.stance, bool(_eff_freshness), _suppress_auth, _web_open, _entity_open, max_steps, compose_claim_cap)
 
     stale_searches = 0          # consecutive searches that added NO new atoms (spinning detector)
     premature_answers = 0       # zero-evidence answer attempts (see the guard below)
@@ -1265,6 +1274,11 @@ async def run_react(
                 _legs.append(("corpus:routed", routed_co))
             if aux_source is not None:
                 _legs.append(("web", aux_source.search(base_req)))
+                # ADDITIVE open-web probe (flag): first step only, single-entity questions. Drops the
+                # trusted-domain whitelist (web_open=True) so the entity's OWN site/niche coverage is
+                # reachable via Exa. The whitelisted `web` leg above is untouched (authority still leads).
+                if _entity_open and step_i == 0:
+                    _legs.append(("web:entity_open", aux_source.search(replace(base_req, web_open=True))))
             if len(_legs) > 1:
                 got = await _timed("retrieval_ms", asyncio.gather(
                     *[_traced_leg(name, co) for name, co in _legs], return_exceptions=True))
@@ -1278,6 +1292,14 @@ async def run_react(
                             diag.setdefault("failures", []).append(
                                 {"stage": f"{leg}_search", "detail": f"{type(r).__name__}: {r}"[:200]})
                     else:
+                        if leg == "web:entity_open":
+                            _raw_n = len(r)
+                            r = await screen_open_web_hits(
+                                r, question=question, llm=llm, prompt=web_quality_prompt, budget=budget)
+                            await emit({"type": "retrieving", "source": "web:entity_open:kept", "hits": len(r)})
+                            if diag is not None:
+                                diag.setdefault("web_entity_open", []).append(
+                                    {"step": step_i + 1, "raw": _raw_n, "kept": len(r)})
                         hits += r
             else:
                 hits = await _timed("retrieval_ms", _traced_leg("corpus", corpus_co))

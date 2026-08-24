@@ -148,6 +148,12 @@ class VerticalManifest:
     # metadata: e.g. a guideline body's pages carry pub_type "practice guideline"), so the vertical's
     # evidence classifier and authority pyramid grade web evidence like corpus evidence. Empty → none.
     web_domain_facets: dict = field(default_factory=dict)
+    # Optional OPEN-WEB quality-screen prompt (flag EIGEN_WEB_ENTITY_OPEN): the system prompt for the
+    # ONE batched LLM judge that keeps usable/relevant open-web pages and drops junk when a leg reaches
+    # past `web_domains`. Opaque prose — ALL domain vocabulary (what "official/reputable/technical/junk"
+    # means) lives here; the kernel only threads it into `screen_open_web_hits`. None → no open-web
+    # screen is available (the entity-open leg falls closed), a safe no-op.
+    web_quality_prompt: str | None = None
     # Optional FRESHNESS policy (flag EIGEN_FRESHNESS_RANKING): how strongly recency re-orders the
     # verified-claim pool for THIS vertical. Domain-free opaque dict the kernel reads by key:
     #   {"min_rank": int, "weight": float, "horizon_years": int}

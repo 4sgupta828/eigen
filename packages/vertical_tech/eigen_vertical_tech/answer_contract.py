@@ -33,6 +33,23 @@ Decide from the QUESTION'S INTENT, not keywords. When genuinely unsure, choose "
 the JSON object."""
 
 
+# ENTITY-OPEN variant (flag EIGEN_WEB_ENTITY_OPEN). Byte-identical derivation to TECH_CONTRACT_PROMPT
+# PLUS one extra output key, `subject_kind`, so the kernel can tell an open-web probe is warranted only
+# for single-entity diligence. Built by concatenation so it stays in lockstep with the base prompt. The
+# judgment is the LLM's (Rule 18): no keyword matching — decide from the question's intent.
+TECH_CONTRACT_PROMPT_ENTITY = TECH_CONTRACT_PROMPT + """
+
+ALSO add one more key to the SAME JSON object:
+- `subject_kind`: ONE of:
+  - "specific_entity" — the question is DILIGENCE on a SINGLE NAMED company / product / project: what
+    it is, how its tech works, its moat/traction/team/funding/risks (e.g. "what is Blazel", "how does
+    X's tech work and what's its moat", "is Acme's approach defensible", "tell me about the startup Y").
+  - "general" — anything else: a landscape/population map, a comparison across many players, a how/why
+    about a concept, a trend, or any question NOT centered on one named entity.
+  Decide from the QUESTION'S INTENT, not keywords. When unsure, choose "general". Still output ONLY the
+  JSON object (now with `mode`, `stance`, `axes`, and `subject_kind`)."""
+
+
 # Per-stance policy knobs (opaque to the kernel). See eigen_kernel/contract/manifest.py::answer_profiles.
 _CURRENT_RECENCY = {"min_rank": 0, "weight": 0.5, "horizon_years": 1}   # strong, short-horizon recency
 

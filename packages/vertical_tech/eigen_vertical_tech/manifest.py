@@ -24,7 +24,8 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
                          SemanticScholarConnector, StackExchangeConnector, UsptoConnector,
                          WikidataConnector, WikipediaConnector, YcConnector)
 from .use_case_lenses import USE_CASE_LENSES
-from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_LANDSCAPE_CONTRACT_PROMPT
+from .answer_contract import (ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_CONTRACT_PROMPT_ENTITY,
+                              TECH_LANDSCAPE_CONTRACT_PROMPT)
 from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
                        TECH_ANSWER_360_BLOCK, tech_closing_block, TECH_LANDSCAPE_COMPOSE_BLOCK,
                        answer_close_on, TECH_REASONED_ANSWER_FORMAT,
@@ -45,6 +46,15 @@ from .source import TechRetrievalSource
 from .suggest import tech_suggest_prompt
 from .ui import TechUI
 from .web_domains import TRUSTED_WEB_DOMAINS, WEB_DOMAIN_FACETS
+from .web_quality import WEB_QUALITY_PROMPT
+
+
+def web_entity_open_on() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_WEB_ENTITY_OPEN gates the entity-scoped open-web probe. When
+    ON, the manifest swaps in the `subject_kind`-emitting contract prompt so the kernel can tell a
+    single-entity diligence question apart. OFF → the original TECH_CONTRACT_PROMPT (byte-identical)."""
+    import os
+    return os.environ.get("EIGEN_WEB_ENTITY_OPEN", "").lower() in ("1", "true", "yes")
 
 
 def build_manifest() -> VerticalManifest:
@@ -108,11 +118,16 @@ def build_manifest() -> VerticalManifest:
         suggest_prompt=tech_suggest_prompt(),
         web_domains=TRUSTED_WEB_DOMAINS,
         web_domain_facets=WEB_DOMAIN_FACETS,
+        # FLAG EIGEN_WEB_ENTITY_OPEN: the LLM page-quality screen prompt for the entity-scoped open-web
+        # probe. Inert data — always set; the T3 flag gates whether the kernel ever consults it.
+        web_quality_prompt=WEB_QUALITY_PROMPT,
         # Fast-moving tech: recency re-orders ALL tiers over a short horizon (flag EIGEN_FRESHNESS_RANKING).
         freshness_policy=TECH_FRESHNESS_POLICY,
         # Question-driven evidence regime (flag EIGEN_ANSWER_CONTRACT): one classification →
         # current/established/balanced → customizes retrieval+ranking+compose per question.
-        contract_prompt=TECH_CONTRACT_PROMPT,
+        # FLAG EIGEN_WEB_ENTITY_OPEN: swap in the variant that ALSO emits `subject_kind` so the kernel
+        # can gate the entity-scoped open-web probe. OFF → the original prompt (byte-identical).
+        contract_prompt=(TECH_CONTRACT_PROMPT_ENTITY if web_entity_open_on() else TECH_CONTRACT_PROMPT),
         # FLAG EIGEN_LANDSCAPE_COVERAGE: the app swaps to this enumerative-categories contract (+ forces
         # question_contract="steer") so a "map the landscape / examine all X" ask fans retrieval out per
         # category instead of a few narrow searches. Off → not used (byte-identical).

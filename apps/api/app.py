@@ -670,6 +670,13 @@ def tech_synthesis_enabled() -> bool:
     return os.environ.get("EIGEN_TECH_SYNTHESIS", "").lower() in ("1", "true", "yes")
 
 
+def entity_open_web_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_WEB_ENTITY_OPEN fires one entity-scoped, quality-screened
+    open-web Exa probe (whitelist dropped) on step 0 for single-entity diligence questions. OFF →
+    no extra Exa/LLM call, leg set byte-identical."""
+    return os.environ.get("EIGEN_WEB_ENTITY_OPEN", "").lower() in ("1", "true", "yes")
+
+
 def derive_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_DERIVE runs the grounded-reasoning GATE — after the fact gate,
     derive labeled conclusions (inference/hypothesis/speculation) FROM the verified findings, each with a
@@ -1117,6 +1124,8 @@ def build_default_service() -> ResearchService:
         readable_prose=readable_prose_enabled(),
         axis_complete=axis_complete_enabled(),
         tech_synthesis=tech_synthesis_enabled(),
+        entity_open_web=entity_open_web_enabled(),
+        web_quality_prompt=getattr(manifest, "web_quality_prompt", None),
         derive=derive_enabled(),
         derive_ideas=derive_ideas_enabled(),
         collect_diagnostics=diag_trace_enabled(),
