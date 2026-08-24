@@ -21,26 +21,47 @@ class _PlainAnswer(BaseModel):
     text: str
 
 
-_DERIVE_LABEL_UI = {"inference": "Inference", "hypothesis": "Hypothesis", "speculation": "💡 Idea"}
+
+
+# Reasoning & ideas: GROUP the derivations by epistemic kind under readable sub-headings (most-grounded
+# first) instead of a flat list that interleaves "Inference / Hypothesis / Idea" line-by-line (which read
+# as a confusing label soup). Each group's heading conveys the kind, so the per-line label is dropped.
+_DERIVE_GROUPS = (
+    ("inference", "What the evidence implies"),
+    ("hypothesis", "Plausible reads"),
+    ("speculation", "💡 Ideas worth exploring"),
+)
 
 
 def _render_derivations(ds: list) -> str:
-    """Render gated derivations as a compact, labeled 'Reasoning & ideas' section. Each line shows the
-    epistemic label, the conclusion, the finding basis (auditable), and the falsifier when present."""
-    lines = []
+    """Render gated derivations as a readable 'Reasoning & ideas' section, GROUPED by epistemic kind
+    (implications → plausible reads → ideas). Each line shows the conclusion, its finding basis
+    (auditable), and — for non-inferences — what would make it wrong."""
+    by_kind: dict[str, list] = {}
     for d in ds:
-        label = _DERIVE_LABEL_UI.get(getattr(d, "label", ""), getattr(d, "label", ""))
-        basis = ", ".join(str(b) for b in getattr(d, "basis", ()) or ())
-        tail = f"  _(from {basis})_" if basis else ""
-        fals = (getattr(d, "falsifier", "") or "").strip()
-        if fals and getattr(d, "label", "") != "inference":
-            tail += f" — wrong if: {fals}"
-        lines.append(f"- **{label}:** {getattr(d, 'conclusion', '').strip()}{tail}")
-    if not lines:
+        by_kind.setdefault((getattr(d, "label", "") or "").strip(), []).append(d)
+    blocks: list[str] = []
+    for kind, heading in _DERIVE_GROUPS:
+        items = by_kind.get(kind) or []
+        if not items:
+            continue
+        rows = []
+        for d in items:
+            basis = ", ".join(str(b) for b in getattr(d, "basis", ()) or ())
+            row = f"- {getattr(d, 'conclusion', '').strip()}"
+            if basis:
+                row += f"  _(from {basis})_"
+            fals = (getattr(d, "falsifier", "") or "").strip()
+            if fals and kind != "inference":
+                row += f" — wrong if: {fals}"
+            rows.append(row)
+        blocks.append(f"**{heading}**\n" + "\n".join(rows))
+    if not blocks:
         return ""
     return ("## Reasoning & ideas\n"
-            "_Derived from the findings above — each step is labeled by confidence, cites the findings "
-            "it rests on, and says what would make it wrong._\n\n" + "\n".join(lines))
+            "_Grounded reads derived from the findings above — what they imply, plausible interpretations, "
+            "and ideas worth exploring. Each cites the findings it rests on and, where it's a guess, what "
+            "would make it wrong._\n\n" + "\n\n".join(blocks))
 
 
 def build_history_context(history, *, answer_focus: bool = False) -> str | None:
