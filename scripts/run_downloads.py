@@ -123,38 +123,41 @@ SEMINAL_PAPERS = [
 ]
 
 # --- DEEP-TECH BREADTH: cross-domain topics beyond AI (the product is deep-tech intelligence broadly,
-# not just AI). Fanned across the research connectors (arxiv/openalex/s2/crossref/openreview) by the
-# `deeptech` tranche so the corpus covers the whole frontier, not one sector. ---
-DEEPTECH_TOPICS = [
-    # robotics & autonomy
-    "humanoid robotics control","robot manipulation learning","autonomous driving perception",
-    "SLAM simultaneous localization mapping","legged robot locomotion","drone swarm coordination",
-    # semiconductors & compute
-    "chiplet architecture interconnect","RISC-V processor design","silicon photonics computing",
-    "in-memory computing accelerator","AI inference ASIC","advanced lithography EUV",
-    # quantum
-    "quantum error correction","superconducting qubit","trapped ion quantum computing",
-    "quantum advantage algorithm",
-    # bio & health tech
-    "protein structure prediction","CRISPR gene editing","mRNA therapeutics","synthetic biology engineering",
-    "single cell RNA sequencing","AI drug discovery","brain computer interface",
-    # climate & energy
-    "solid state battery","green hydrogen electrolysis","direct air carbon capture",
-    "perovskite solar cell","nuclear fusion tokamak","grid scale energy storage","geothermal drilling",
-    # space
-    "reusable rocket propulsion","satellite constellation broadband","in-space manufacturing",
-    # materials & manufacturing
-    "2D materials graphene","metamaterials photonics","metal additive manufacturing","solid electrolyte",
-    # security & cryptography
-    "post quantum cryptography","zero knowledge proof","confidential computing enclave",
-    "homomorphic encryption",
-    # data / dev infra
-    "vector database indexing","stream processing systems","data lakehouse architecture",
-    "wasm edge computing",
-    # fintech / spatial / neuro
-    "real time payments infrastructure","decentralized finance protocol","augmented reality waveguide display",
-    "neural rendering 3D reconstruction",
-]
+# not just AI). Grouped BY SECTOR so the `deeptech` tranche stamps each ingested doc with its sector
+# (facets.sector) — making the top researched sectors DEEPLY + FINDABLY covered, not just present.
+# Fanned across the research connectors (arxiv/openalex/s2/crossref/openreview). ---
+DEEPTECH_BY_SECTOR: dict[str, list[str]] = {
+    "robotics": ["humanoid robotics control","robot manipulation learning","autonomous driving perception",
+                 "SLAM simultaneous localization mapping","legged robot locomotion","drone swarm coordination",
+                 "imitation learning robotics","visual servoing grasping","tactile sensing manipulation"],
+    "semiconductors": ["chiplet architecture interconnect","RISC-V processor design","silicon photonics computing",
+                       "in-memory computing accelerator","AI inference ASIC","advanced lithography EUV",
+                       "high bandwidth memory HBM","gallium nitride power semiconductor","3D IC packaging",
+                       "neuromorphic computing chip"],
+    "quantum": ["quantum error correction","superconducting qubit","trapped ion quantum computing",
+                "quantum advantage algorithm","photonic quantum computing","topological qubit",
+                "quantum machine learning","fault tolerant quantum computation"],
+    "biotech": ["protein structure prediction","CRISPR gene editing","mRNA therapeutics","synthetic biology engineering",
+                "single cell RNA sequencing","AI drug discovery","brain computer interface","protein language model",
+                "antibody design generative","base editing prime editing","cell therapy CAR-T","spatial transcriptomics"],
+    "climate": ["solid state battery","green hydrogen electrolysis","direct air carbon capture",
+                "perovskite solar cell","nuclear fusion tokamak","grid scale energy storage","geothermal drilling",
+                "lithium extraction recycling","sustainable aviation fuel","long duration energy storage"],
+    "space": ["reusable rocket propulsion","satellite constellation broadband","in-space manufacturing",
+              "electric propulsion satellite","lunar lander mission","space situational awareness"],
+    "materials": ["2D materials graphene","metamaterials photonics","metal additive manufacturing","solid electrolyte",
+                  "high entropy alloys","machine learning materials discovery"],
+    "security": ["post quantum cryptography","zero knowledge proof","confidential computing enclave",
+                 "homomorphic encryption","secure multiparty computation","hardware root of trust"],
+    "data_infra": ["vector database indexing","stream processing systems","data lakehouse architecture",
+                   "wasm edge computing","query optimization distributed","serverless data platform"],
+    "fintech": ["real time payments infrastructure","decentralized finance protocol","stablecoin settlement",
+                "fraud detection machine learning","open banking API"],
+    "spatial_neuro": ["augmented reality waveguide display","neural rendering 3D reconstruction",
+                      "neural interface decoding","gaussian splatting reconstruction"],
+}
+# Flattened (back-compat: e.g. the wikipedia tranche fans the first N of these).
+DEEPTECH_TOPICS = [t for topics in DEEPTECH_BY_SECTOR.values() for t in topics]
 
 # --- T2: Wikidata company profiles (KEYLESS Crunchbase fallback: founders/ownership/M&A; reference tier) ---
 WIKIDATA_NAMES = [
@@ -303,15 +306,21 @@ def build(tranche: str, limit: int | None) -> list[dict]:
         jobs.append({"connector":"yc","query":"","tag":"Artificial Intelligence",
                      "limit":limit or 500,"facets":{"sector":"ai"}})
     # DEEP-TECH BREADTH: fan the cross-domain topics across the research connectors so the corpus
-    # covers the whole frontier (robotics/semi/quantum/bio/climate/space/materials/security/…), not
-    # just AI. NOT in "all" (it's a large, deliberate breadth pass) — run explicitly: `deeptech`.
-    if tranche == "deeptech":
-        for qy in DEEPTECH_TOPICS:
-            jobs.append({"connector":"arxiv","query":qy,"limit":limit or 20})
-            jobs.append({"connector":"openalex","query":qy,"limit":limit or 20})
-            jobs.append({"connector":"semantic_scholar","query":qy,"limit":limit or 15})
-            jobs.append({"connector":"crossref","query":qy,"limit":limit or 15})
-            jobs.append({"connector":"openreview","query":qy,"limit":limit or 10})
+    # covers the whole frontier (robotics/semi/quantum/bio/climate/space/materials/security/…), DEEPLY
+    # and STAMPED with each doc's sector (facets.sector). NOT in "all" (a large, deliberate breadth
+    # pass). Run all sectors: `deeptech` — or one at a time (tranches): `deeptech:quantum`, etc.
+    if tranche == "deeptech" or tranche.startswith("deeptech:"):
+        only = tranche.split(":", 1)[1].strip() if ":" in tranche else None
+        for sector, topics in DEEPTECH_BY_SECTOR.items():
+            if only and sector != only:
+                continue
+            for qy in topics:
+                f = {"sector": sector}
+                jobs.append({"connector":"arxiv","query":qy,"limit":limit or 25,"facets":f,"priority":500})
+                jobs.append({"connector":"openalex","query":qy,"limit":limit or 25,"facets":f,"priority":500})
+                jobs.append({"connector":"semantic_scholar","query":qy,"limit":limit or 20,"facets":f,"priority":500})
+                jobs.append({"connector":"crossref","query":qy,"limit":limit or 20,"facets":f,"priority":500})
+                jobs.append({"connector":"openreview","query":qy,"limit":limit or 10,"facets":f,"priority":500})
     if tranche in ("uspto","all"):
         for qy in USPTO_QUERIES:
             jobs.append({"connector":"uspto","query":qy,"limit":limit or 25})
@@ -376,8 +385,19 @@ def build(tranche: str, limit: int | None) -> list[dict]:
     return jobs
 
 def main() -> int:
+    _TRANCHES = ["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters",
+                 "hf","stackoverflow","openreview","companies_house","yc","uspto","wikipedia","nsf","nih",
+                 "expert","podcast","eng_blog","seminal","fulltext","github","recent","deeptech","all"]
+
+    def _tranche(v: str) -> str:
+        # allow `deeptech:<sector>` (e.g. deeptech:quantum) for one-sector-at-a-time runs
+        if v in _TRANCHES or (v.startswith("deeptech:") and v.split(":", 1)[1] in DEEPTECH_BY_SECTOR):
+            return v
+        raise argparse.ArgumentTypeError(
+            f"invalid tranche {v!r}; choose from {_TRANCHES} or deeptech:<{'|'.join(DEEPTECH_BY_SECTOR)}>")
+
     ap = argparse.ArgumentParser()
-    ap.add_argument("tranche", choices=["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters","hf","stackoverflow","openreview","companies_house","yc","uspto","wikipedia","nsf","nih","expert","podcast","eng_blog","seminal","fulltext","github","recent","deeptech","all"])
+    ap.add_argument("tranche", type=_tranche)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--priority", type=int, default=0,
                     help="claim priority (higher = jumps the FIFO backlog; e.g. 500 for strategic sources)")
