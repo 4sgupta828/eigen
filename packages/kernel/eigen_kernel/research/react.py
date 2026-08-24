@@ -74,6 +74,19 @@ _READABILITY_STYLE = (
 _COMPOSE_CLAIM_CAP = 30       # max verified findings sent to compose
 _EXTRACT_COLLECT = 80         # under evidence-select, gather up to this many before ranking down
 
+# Answer-axes addendum (flag `axis_complete`): appended after the base compose directive so the answer
+# COVERS each aspect the reader asked about + synthesizes. Domain-neutral (the axes come from the
+# contract). <AXES> is replaced with the derived axis list.
+_AXIS_COMPLETE_ADDENDUM = (
+    "[Completeness + synthesis — the reader explicitly asked about these aspects: <AXES>. Your answer "
+    "MUST address EACH ONE: give it a short labeled section with the grounded evidence (cite [n]), or — "
+    "if the findings do not cover it — ONE plain line saying so under that aspect's heading. NEVER "
+    "silently skip a requested aspect. OPEN with a crisp 2-3 sentence synthesized TAKE that directly "
+    "answers the question's intent, grounded in the findings (wrap any inference in [[R]]...[[/R]]; add "
+    "no new facts). When sources CONFLICT on a figure, state the best-supported value in ONE line with a "
+    "brief '(sources vary: ...)' note — do NOT build a reconciliation table or repeat the caveat. Keep "
+    "any 'not covered' notes to a single tight line, never a long list.]")
+
 from pydantic import BaseModel, Field, field_validator
 
 from eigen_kernel.contract.dto import RetrievalRequest
@@ -651,6 +664,10 @@ async def run_react(
     collect_diagnostics: bool = False,        # capture a troubleshooting trace (turns/tools/retries/failures)
     classify_evidence=None,                   # vertical hook (source_key, facets) -> evidence_kind str (Rule 18: structural)
     evidence_fitness: bool = False,           # boost stronger evidence tiers into the compose cap (flag)
+    axis_complete: bool = False,              # flag: make compose ADDRESS EACH derived contract axis
+    #                                           (aspect the reader asked about) + lead with a synthesized
+    #                                           take, instead of surveying only what was found. Needs a
+    #                                           derived question_contract with axes; otherwise a no-op.
     evidence_ranker=None,                     # vertical hook: evidence_kind -> int rank (the authority pyramid)
     evidence_identity: bool = False,          # Evidence Contract stage 1: render each atom's document
     #                                           identity ⟨title — source⟩ on every LLM-visible surface
@@ -1678,6 +1695,14 @@ async def run_react(
         if _enum_compose:
             _ad = (enumerative_compose_addendum or "").strip()
             _compose_directive = (answer_format + "\n\n" + _ad) if answer_format else _ad
+        # ANSWER-AXES (flag): make the answer ADDRESS EVERY aspect the reader asked about (the derived
+        # contract axes) + lead with a synthesized take — so a requested aspect (e.g. 'moat') is never
+        # silently dropped and the answer synthesizes rather than surveys. No axes → a no-op.
+        if axis_complete and isinstance(result.question_contract, dict):
+            _axes = [str(a).strip() for a in (result.question_contract.get("axes") or []) if str(a).strip()]
+            if _axes:
+                _axd = _AXIS_COMPLETE_ADDENDUM.replace("<AXES>", ", ".join(_axes[:10]))
+                _compose_directive = (_compose_directive + "\n\n" + _axd) if _compose_directive else _axd
 
         async def _compose(directive: str | None) -> ComposedAnswer:
             # Base ANSWER instruction kept identical to the original (directive-free path stays a

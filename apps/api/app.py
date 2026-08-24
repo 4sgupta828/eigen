@@ -652,6 +652,15 @@ def readable_prose_enabled() -> bool:
     return os.environ.get("EIGEN_READABLE_PROSE", "").lower() in ("1", "true", "yes")
 
 
+def axis_complete_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_ANSWER_AXES makes compose ADDRESS EACH aspect the reader asked
+    about (the derived question-contract axes — product/moat/founders/…) with evidence or an explicit
+    one-line gap, and LEAD with a synthesized take (consolidating source-conflicts, trimming gap-lists),
+    instead of surveying only what was found. Needs a derived contract with axes; OFF → byte-identical
+    (compose directive unchanged). Fixes 'good findings, useless survey answer' + silently-dropped aspects."""
+    return os.environ.get("EIGEN_ANSWER_AXES", "").lower() in ("1", "true", "yes")
+
+
 def derive_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_DERIVE runs the grounded-reasoning GATE — after the fact gate,
     derive labeled conclusions (inference/hypothesis/speculation) FROM the verified findings, each with a
@@ -1097,6 +1106,7 @@ def build_default_service() -> ResearchService:
         evidence_select=evidence_select, atom_cap=atom_cap,
         reasoning_read=reasoning_read_enabled(),
         readable_prose=readable_prose_enabled(),
+        axis_complete=axis_complete_enabled(),
         derive=derive_enabled(),
         derive_ideas=derive_ideas_enabled(),
         collect_diagnostics=diag_trace_enabled(),
