@@ -1865,17 +1865,18 @@ function linkCompanies(target, companies){
   if(!companies || !companies.length || !target) return;
   const ans = target.querySelector(".answer");
   if(!ans) return;
-  companies.slice().filter(c => c && c.name)
+  companies.slice().filter(c => c && c.name && c.name.length >= 2)
     .sort((a,b) => b.name.length - a.name.length)   // longest first: "Acme Bio" before "Acme"
     .forEach(co => linkFirstCompany(ans, co));
 }
 function linkFirstCompany(root, co){
   const name = co.name;
-  let re; try{ re = new RegExp("(?:^|\\b)" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:\\b|$)"); }
-  catch(e){ return; }
+  // WORD-BOUNDARY match so a short name ("io", "Roi") never links INSIDE another word ("region").
+  let re; try{ re = new RegExp("(?<![A-Za-z0-9])" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9])"); }
+  catch(e){ try{ re = new RegExp("\\b" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b"); } catch(e2){ return; } }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(n){
-      if(!n.nodeValue || n.nodeValue.indexOf(name) < 0) return NodeFilter.FILTER_REJECT;
+      if(!n.nodeValue || !re.test(n.nodeValue)) return NodeFilter.FILTER_REJECT;
       let p = n.parentElement;
       while(p && p !== root){
         const t = p.tagName;
@@ -1887,8 +1888,9 @@ function linkFirstCompany(root, co){
   });
   const node = walker.nextNode();
   if(!node) return;
-  const idx = node.nodeValue.indexOf(name);
-  if(idx < 0) return;
+  const m = re.exec(node.nodeValue);
+  if(!m) return;
+  const idx = m.index;
   const before = node.nodeValue.slice(0, idx), after = node.nodeValue.slice(idx + name.length);
   const frag = document.createDocumentFragment();
   if(before) frag.appendChild(document.createTextNode(before));

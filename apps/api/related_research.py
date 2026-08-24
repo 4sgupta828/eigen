@@ -33,6 +33,22 @@ def _int(v: Any) -> int:
         return 0
 
 
+# Answer-preamble prefixes that mark a MIS-INGESTED doc (an LLM answer stored as a "paper" with a
+# sentence for a title) — display hygiene until corpus cleanup removes such rows. A real paper/filing
+# title never starts this way. Structural guard, not a semantic judgment.
+_BAD_TITLE_PREFIXES = ("based on ", "here ", "here's ", "i have ", "i've ", "to answer ",
+                       "the following ", "in summary", "sure,", "certainly")
+
+
+def _ok_title(title: str | None) -> bool:
+    """A plausible document title for display: non-empty, not absurdly long, and not an answer-like
+    sentence from a mis-ingested doc."""
+    t = (title or "").strip()
+    if not t or len(t) > 180:
+        return False
+    return not t.lower().startswith(_BAD_TITLE_PREFIXES)
+
+
 def _rank_within_kind(kind: str, hit) -> tuple:
     """The per-kind quality key (descending). Citation counts / peer-review only compare WITHIN a kind."""
     f = hit.facets or {}
@@ -73,7 +89,7 @@ async def find_related_research(service, *, question: str, tenant_id: str,
     # relevance floor: absolute AND relative-to-best (drop plausible-but-off matches)
     top = max(h.score for h in docs)
     floor = max(min_score, rel_floor * top) if top > 0 else min_score
-    docs = [h for h in docs if h.score >= floor]
+    docs = [h for h in docs if h.score >= floor and _ok_title(h.document_title)]
     if not docs:
         return []
 

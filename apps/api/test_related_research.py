@@ -68,6 +68,15 @@ def test_honest_omit_when_nothing_retrieved() -> None:
     assert _run(find_related_research(_Svc([]), question="q", tenant_id="demo")) == []
 
 
+def test_mis_ingested_answer_title_is_dropped() -> None:
+    svc = _Svc([
+        _hit("x:bad", 0.95, "paper", title="Based on the available search results, I have organized", peer=True, cites=9, year=2024),
+        _hit("openalex:W2", 0.90, "paper", title="A Real Paper Title", peer=True, cites=50, year=2023),
+    ])
+    out = _run(find_related_research(svc, question="q", tenant_id="demo", ui=svc.ui))
+    assert [o["title"] for o in out] == ["A Real Paper Title"]   # the answer-preamble title is filtered
+
+
 def test_peer_reviewed_high_cite_paper_outranks_within_lane() -> None:
     svc = _Svc([
         _hit("openalex:W1", 0.80, "paper", title="Reviewed-High", peer=True, cites=500, year=2020),
