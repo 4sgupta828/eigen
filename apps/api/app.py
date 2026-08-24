@@ -509,6 +509,16 @@ def evidence_fitness_enabled() -> bool:
     return os.environ.get("EIGEN_EVIDENCE_FITNESS", "").lower() in ("1", "true", "yes")
 
 
+def authority_basis_enabled() -> bool:
+    """Flag (default OFF, Rule 20): when ON, an answer's FACTUAL BASIS leans on the highest-authority
+    sources — low-basis claims (unattributed blog / social, tier rank<=1) are STABLY pushed to the back
+    of the verified-claim pool so authoritative tiers fill the compose cap first (reorder only, NEVER
+    dropped — breadth preserved), and a compose directive tells the composer to treat opinion/blog/
+    social as supplementary signal, never the sole basis for a stated fact. Reuses `_suppress_auth`
+    (opinion/foresight stances stay exempt). OFF → claim order + compose prompt byte-identical to today."""
+    return os.environ.get("EIGEN_AUTHORITY_BASIS", "").lower() in ("1", "true", "yes")
+
+
 def freshness_ranking_enabled() -> bool:
     """Flag (default OFF, Rule 20): when ON, the vertical's `freshness_policy` re-orders the verified-
     claim pool by RECENCY across all evidence tiers over a short horizon (so a 2026 paper/repo/news
@@ -1156,6 +1166,10 @@ def build_default_service() -> ResearchService:
         collect_diagnostics=diag_trace_enabled(),
         classify_evidence=getattr(manifest, "evidence_classifier", None),
         evidence_fitness=evidence_fitness_enabled(),
+        # EIGEN_AUTHORITY_BASIS (T1/T2): unconditional low-basis partition + the compose floor directive.
+        # The directive is inert vertical data (always threaded); the flag gates whether it's appended.
+        authority_basis=authority_basis_enabled(),
+        authority_basis_directive=getattr(manifest, "authority_basis_directive", None),
         evidence_ranker=getattr(getattr(manifest, "authority_policy", None), "rank", None),
         freshness=(getattr(manifest, "freshness_policy", None) or None) if freshness_ranking_enabled() else None,
         answer_profiles=(getattr(manifest, "answer_profiles", None) or None) if answer_contract_enabled() else None,
@@ -1516,6 +1530,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "reasoning_read_enabled": reasoning_read_enabled() and structured_answers(),
             "diag_trace_enabled": diag_trace_enabled(),
             "evidence_fitness_enabled": evidence_fitness_enabled(),
+            "authority_basis_enabled": authority_basis_enabled(),
             "ask_panel_enabled": live_panel,
             "panel_specialists": ([
                 {"id": getattr(s, "id", ""), "specialty": getattr(s, "specialty", ""),

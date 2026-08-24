@@ -11,7 +11,8 @@ from eigen_kernel.contract.manifest import VerticalManifest
 
 from . import discovery, entities, evidence_kind
 from .answer_format import (TECH_ANSWER_FORMAT, TECH_DILIGENCE_SYNTHESIS_FORMAT,
-                            TECH_VISUAL_GUIDANCE, TECH_CHART_GUIDANCE, TECH_REASONING_FORMAT)
+                            TECH_VISUAL_GUIDANCE, TECH_CHART_GUIDANCE, TECH_REASONING_FORMAT,
+                            TECH_AUTHORITY_BASIS_DIRECTIVE)
 from .terms import TECH_TERMS_PROMPT
 from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
@@ -175,6 +176,10 @@ def build_manifest() -> VerticalManifest:
         # second-order implications → mechanism, derivation-woven). ALWAYS set — inert data; the flag
         # (deep_synthesis) + question kind gate whether the kernel selects it (T2/T3). OFF → never used.
         deep_answer_format=TECH_DEEP_SYNTHESIS_FORMAT,
+        # FLAG EIGEN_AUTHORITY_BASIS: the compose FLOOR directive (ground facts in the highest-tier source;
+        # opinion/blog/social are supplementary signal). ALWAYS set — inert data; the flag gates whether the
+        # kernel appends it. OFF → never used (byte-identical).
+        authority_basis_directive=TECH_AUTHORITY_BASIS_DIRECTIVE,
         # Sub-vertical seam: sectors as a per-question subject scope (AI seeded), NOT separate verticals.
         sector_profiles=SECTOR_PROFILES,
         # Analytical lenses (the orthogonal axis): angles applied within the active sector.

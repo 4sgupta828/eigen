@@ -722,6 +722,21 @@ async def run_react(
                                               # web + screen ALL its hits through the denoising funnel
     web_quality_prompt: str | None = None,    # vertical-supplied judge prompt for the open-web quality screen
     evidence_ranker=None,                     # vertical hook: evidence_kind -> int rank (the authority pyramid)
+    authority_basis: bool = False,            # EIGEN_AUTHORITY_BASIS (flag): UNCONDITIONAL stable partition
+    #                                           of the verified-claim pool — low-basis claims (tier rank<=1:
+    #                                           unattributed blog / social) pushed to the BACK so authoritative
+    #                                           tiers fill the compose cap first; cosine/first-come order is
+    #                                           preserved WITHIN each bucket. Reorder ONLY (never drops — breadth
+    #                                           preserved). Runs regardless of pool-vs-cap, unlike the boost
+    #                                           ranker. Gated `authority_basis and not _suppress_auth and
+    #                                           evidence_ranker is not None`. OFF / suppress / no ranker →
+    #                                           byte-identical claim order. Also appends the authority-basis
+    #                                           compose directive (below) under the same gate.
+    authority_basis_directive: str | None = None,  # vertical compose FLOOR directive (opaque prose): ground
+    #                                           facts in the highest-tier source; opinion/blog/social are
+    #                                           supplementary signal, never the sole basis for a fact. Appended
+    #                                           to the compose directive only under the same gate. None → nothing
+    #                                           to append (byte-identical).
     evidence_identity: bool = False,          # Evidence Contract stage 1: render each atom's document
     #                                           identity ⟨title — source⟩ on every LLM-visible surface
     #                                           (planner obs, extractor, entailment, compose, fallback
@@ -1333,7 +1348,11 @@ async def run_react(
                         if _screen_this:
                             _raw_n = len(r)
                             screened = await screen_open_web_hits(
-                                r, question=question, llm=llm, prompt=web_quality_prompt, budget=budget)
+                                r, question=question, llm=llm, prompt=web_quality_prompt, budget=budget,
+                                # EIGEN_AUTHORITY_BASIS: request a coarse provenance role per kept hit and
+                                # stamp it as a generic `web_role` facet → a real tier via classify (breadth
+                                # de-risk). OFF → no role requested/stamped → byte-identical.
+                                emit_provenance=authority_basis)
                             # None = could-not-judge → fail safe to the authoritative subset;
                             # a list (even empty) = judged → respect it.
                             r = _authoritative_subset(r) if screened is None else screened
@@ -1623,6 +1642,22 @@ async def run_react(
     if claim_congruence and result.verified_claims:
         result.verified_claims.sort(key=lambda vc: vc.congruence_note == "kind_mismatch")
 
+    # AUTHORITY BASIS (flag): push low-basis claims (tier rank<=1 — unattributed blog / social) to the
+    # BACK so authoritative tiers fill the compose cap first. Stable sort preserves cosine/first-come
+    # order WITHIN each bucket (rank>=2 front, rank<=1 back). Reorder ONLY — NEVER drops (breadth
+    # preserved: low-tier still fills any remaining seats + the market-signal register). UNCONDITIONAL:
+    # runs regardless of pool-vs-cap (mirrors the kind_mismatch demote above), unlike the boost ranker
+    # which only fires when pool>cap AND evidence_fitness is on. Uses the RAW `evidence_ranker` param
+    # (NOT `_ranker_arg`) so it does NOT depend on evidence_fitness. OFF / suppress / no ranker → skipped
+    # → byte-identical claim order.
+    if authority_basis and not _suppress_auth and evidence_ranker is not None and result.verified_claims:
+        def _basis_tier(vc) -> int:
+            try:
+                return int(evidence_ranker(getattr(vc, "evidence_kind", "") or "") or 0)
+            except Exception:   # noqa: BLE001 — a bad/absent ranker never breaks the answer
+                return 0
+        result.verified_claims.sort(key=lambda vc: 0 if _basis_tier(vc) >= 2 else 1)  # stable
+
     # EVIDENCE CONTRACT stage 3 — SLOT-AWARE compose selection (steer, enumerative; panel
     # amendment A1, the loophole fix): a self-congruent OFF-SLOT claim (true facts about the
     # wrong entity, honestly attributed) must never EVICT a slot-filling claim from the compose
@@ -1849,6 +1884,14 @@ async def run_react(
                 (_compose_directive + "\n\n" + _TECH_SYNTHESIS_ADDENDUM)
                 if _compose_directive else _TECH_SYNTHESIS_ADDENDUM
             )
+        # AUTHORITY BASIS (flag): APPEND the vertical's floor directive — ground facts in the highest-tier
+        # source; opinion/blog/social/unknown are supplementary signal, never the sole basis for a stated
+        # fact. Same gate as the T1 partition (`authority_basis and not _suppress_auth`, and a directive
+        # was supplied). OFF / suppress / no directive → not appended → compose prompt byte-identical.
+        if authority_basis and not _suppress_auth and authority_basis_directive:
+            _abd = authority_basis_directive.strip()
+            if _abd:
+                _compose_directive = (_compose_directive + "\n\n" + _abd) if _compose_directive else _abd
 
         async def _compose(directive: str | None) -> ComposedAnswer:
             # Base ANSWER instruction kept identical to the original (directive-free path stays a

@@ -11,6 +11,7 @@ import pytest
 
 from eigen_kernel.research.web_quality import (
     _Verdict,
+    _VerdictP,
     _Verdicts,
     screen_open_web_hits,
 )
@@ -20,10 +21,15 @@ from eigen_kernel.research.web_quality import (
 
 @dataclass
 class _FakeHit:
-    """A BlockHit-like item carrying only the fields the screen reads."""
+    """A BlockHit-like item carrying only the fields the screen reads.
+
+    Includes a `facets` dict (like the real frozen BlockHit) so provenance stamping via
+    `dataclasses.replace(hit, facets={...})` has a field to rebuild.
+    """
     document_id: str = ""
     document_title: str = ""
     text: str = ""
+    facets: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -54,7 +60,9 @@ class _ScriptedLLM:
         self.calls += 1
         if self._raises is not None:
             raise self._raises
-        return _FakeResult(parsed=_Verdicts(verdicts=self._verdicts), output_tokens=self._output_tokens)
+        # Build the verdict container from the schema the screen actually requested (so a
+        # provenance-enabled call gets `_VerdictsP`, a plain call gets `_Verdicts`).
+        return _FakeResult(parsed=response_format(verdicts=self._verdicts), output_tokens=self._output_tokens)
 
 
 _PROMPT = "judge these pages (domain prompt injected here)"
@@ -154,6 +162,62 @@ async def test_llm_raises_returns_none():
     llm = _ScriptedLLM(raises=RuntimeError("boom"))
     out = await screen_open_web_hits(_hits(3), question="q", llm=llm, prompt=_PROMPT, budget=_FakeBudget())
     assert out is None
+
+
+@pytest.mark.asyncio
+async def test_emit_provenance_stamps_web_role_on_kept_hits():
+    # emit_provenance=True: each KEPT hit gets a generic `web_role` facet from its verdict's role.
+    hits = _hits(3)
+    llm = _ScriptedLLM([
+        _VerdictP(index=0, keep=True, provenance="official"),
+        _VerdictP(index=1, keep=False, provenance="social"),   # dropped → not in output
+        _VerdictP(index=2, keep=True, provenance="independent_analysis"),
+    ])
+    out = await screen_open_web_hits(
+        hits, question="q", llm=llm, prompt=_PROMPT, budget=_FakeBudget(), emit_provenance=True)
+    assert len(out) == 2
+    assert out[0].facets.get("web_role") == "official"
+    assert out[1].facets.get("web_role") == "independent_analysis"
+
+
+@pytest.mark.asyncio
+async def test_emit_provenance_unknown_role_leaves_web_role_unset():
+    # A missing/unknown provenance → NO web_role stamp (fail-safe), but the hit is still kept.
+    hits = _hits(2)
+    llm = _ScriptedLLM([
+        _VerdictP(index=0, keep=True, provenance=""),          # blank → no stamp
+        _VerdictP(index=1, keep=True, provenance="mystery"),   # unknown → no stamp
+    ])
+    out = await screen_open_web_hits(
+        hits, question="q", llm=llm, prompt=_PROMPT, budget=_FakeBudget(), emit_provenance=True)
+    assert len(out) == 2
+    assert "web_role" not in out[0].facets
+    assert "web_role" not in out[1].facets
+
+
+@pytest.mark.asyncio
+async def test_emit_provenance_false_leaves_hits_unstamped():
+    # OFF path (default): the plain `_Verdicts` schema is requested (no provenance field) and no
+    # web_role is stamped — byte-identical to pre-T3 behavior.
+    hits = _hits(2)
+    llm = _ScriptedLLM([
+        _Verdict(index=0, keep=True),
+        _Verdict(index=1, keep=True),
+    ])
+    out = await screen_open_web_hits(
+        hits, question="q", llm=llm, prompt=_PROMPT, budget=_FakeBudget())  # emit_provenance defaults False
+    assert out == [hits[0], hits[1]]
+    assert all("web_role" not in h.facets for h in out)
+
+
+@pytest.mark.asyncio
+async def test_provenance_preserves_existing_facets():
+    # Stamping web_role must not clobber pre-existing facets on the kept hit.
+    hits = [_FakeHit(document_id="http://a", document_title="t", text="b", facets={"lang": "en"})]
+    llm = _ScriptedLLM([_VerdictP(index=0, keep=True, provenance="expert_opinion")])
+    out = await screen_open_web_hits(
+        hits, question="q", llm=llm, prompt=_PROMPT, budget=_FakeBudget(), emit_provenance=True)
+    assert out[0].facets == {"lang": "en", "web_role": "expert_opinion"}
 
 
 @pytest.mark.asyncio

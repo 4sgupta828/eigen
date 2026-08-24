@@ -36,6 +36,15 @@ Additional discipline when synthesizing:
 - Attribute every competitive or market claim to the specific source that states it; do not aggregate \
 sentiment into an implied fact. Avoid vague momentum words ("promising", "explosive") unless quoted."""
 
+# Appended to the compose directive when the AUTHORITY-BASIS flag is ON (EIGEN_AUTHORITY_BASIS): the
+# FLOOR that keeps an answer's factual basis on the highest-authority sources while sentiment stays a
+# labeled signal. Opaque prose threaded into compose exactly like TECH_ANSWER_FORMAT. OFF → not appended.
+TECH_AUTHORITY_BASIS_DIRECTIVE = """Ground every FACTUAL sentence in the highest-tier source available. \
+Sources tagged opinion / blog / social / unknown-provenance are SUPPLEMENTARY — they may corroborate or \
+add color but are NEVER the sole basis for a stated fact; where only such a source supports a point, \
+present it as signal ('X argues…', 'coverage suggests…') in the market-signal register, not as an \
+established fact."""
+
 # Appended to the compose directive when the answer-visuals flag is ON: push toward comparison
 # tables / ranked options built STRICTLY from verified findings (never fabricated structure).
 TECH_VISUAL_GUIDANCE = """When the verified findings support it, use a COMPARISON TABLE or a RANKED \

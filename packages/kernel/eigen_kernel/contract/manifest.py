@@ -116,6 +116,12 @@ class VerticalManifest:
     # only threads into compose (via the service's deep_answer_format); ALL domain wording lives in the
     # vertical. Always safe to set as inert data — the flag + question kind gate its use. None → unavailable.
     deep_answer_format: str | None = None
+    # Optional AUTHORITY-BASIS compose directive (flag EIGEN_AUTHORITY_BASIS): a floor instruction telling
+    # the composer to ground facts in the highest-tier source and treat opinion/blog/social/unknown as
+    # supplementary signal, never the sole basis for a stated fact. Domain-free opaque slot the kernel only
+    # threads into compose (via the service's authority_basis_directive); ALL domain wording lives in the
+    # vertical. Always safe to set as inert data — the flag gates its use. None → nothing appended.
+    authority_basis_directive: str | None = None
     # Optional vertical-supplied instruction for the VISION pre-step: how to DESCRIBE a
     # user-uploaded image (color/shape/borders/texture/distribution), producing a labeled
     # visual observation — never a diagnosis. Opaque prose; the kernel only threads it into

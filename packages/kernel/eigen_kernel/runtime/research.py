@@ -160,6 +160,11 @@ class ResearchService:
     collect_diagnostics: bool = False       # capture a troubleshooting trace (turns/tools/retries/failures) (flag)
     classify_evidence: object | None = None # vertical structural evidence-tier classifier (source_key, facets) -> kind
     evidence_fitness: bool = False          # boost stronger evidence tiers into the compose cap (flag)
+    authority_basis: bool = False           # EIGEN_AUTHORITY_BASIS (flag): unconditional stable partition
+    #                                         pushing low-basis (rank<=1) claims to the back of the pool +
+    #                                         append the authority-basis compose directive. OFF → byte-identical.
+    authority_basis_directive: str | None = None  # vertical compose floor directive (opaque; inert data —
+    #                                         the flag gates whether the kernel appends it)
     evidence_ranker: object | None = None   # vertical authority pyramid: evidence_kind -> int rank
     freshness: dict | None = None           # vertical freshness policy {min_rank,weight,horizon_years}
     #                                         (flag EIGEN_FRESHNESS_RANKING): recency re-order + as-of
@@ -552,6 +557,7 @@ class ResearchService:
             collect_diagnostics=self.collect_diagnostics,
             classify_evidence=self.classify_evidence,
             evidence_fitness=self.evidence_fitness, evidence_ranker=self.evidence_ranker,
+            authority_basis=self.authority_basis, authority_basis_directive=self.authority_basis_directive,
             retrieval_source_cap=self.retrieval_source_cap, suppress_authority=suppress_authority,
             source_routing=self.source_routing,
             freshness=self.freshness, answer_profiles=self.answer_profiles,

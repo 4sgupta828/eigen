@@ -71,6 +71,25 @@ def classify(source_key: str, facets: dict[str, str] | None, title: str = "", te
     if src_kind in ("social", "sentiment") or sk in ("hackernews", "gdelt", "reddit", "stackoverflow"):
         return "sentiment_signal"
 
+    # 6) OPEN-WEB PROVENANCE FALLBACK (flag EIGEN_AUTHORITY_BASIS). A screened open-web hit carries NO
+    # source_kind (the connector never stamped one), so it would fall through to "" (rank 0) and the
+    # authority-basis partition would sink even a good non-whitelisted source. The open-web quality
+    # screen stamps a COARSE role facet `web_role` on kept hits; map it here to the SAME tier an
+    # equivalent source_kind would earn, so a real company/analysis/expert page gets a real tier while
+    # social/aggregator stay low. STRUCTURAL (Rule 18): reads a stamped role, judges nothing. Only fires
+    # when source_kind is EMPTY and `web_role` is present — so an unflagged (unstamped) hit is unchanged.
+    if not src_kind:
+        role = (f.get("web_role") or "").lower()
+        if role == "official":
+            return "technical_signal"        # company/official page → tier 2 (as corp_eng)
+        if role == "independent_analysis":
+            return "analysis"                # reputable independent coverage → tier 4 (as news)
+        if role == "expert_opinion":
+            return "expert_analysis"         # named expert essay/newsletter → tier 3 (as essay)
+        if role == "social":
+            return "sentiment_signal"        # social post → tier 1
+        # "aggregator" (or unknown) → fall through to "" (rank 0), same as an unstamped open-web hit.
+
     return ""   # unknown → rank 0 (never boosts, never demotes)
 
 
