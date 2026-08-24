@@ -342,6 +342,23 @@ not an answer — if you find yourself stating a fact or naming a pick, rewrite 
 """
 
 
+# Deep-synthesis variant (EIGEN_DEEP_SYNTHESIS): identical to the adaptive scaffold PLUS one
+# tie-breaker so an ENUMERATE-AND-COMPARE / landscape question ("the top VCs and how their strategies
+# differ", "map the X field") is classified "management" (→ the synthesis-first deep compose) instead
+# of "lookup". Without this, a "list many entities" phrasing pulls such questions to the lightweight
+# lookup engine — the exact case (top VCs) that motivated deep synthesis was landing as a lookup.
+# Append-built to stay in lockstep with the base prompt; only used when the deep flag is on.
+TECH_ADAPTIVE_SCAFFOLD_PROMPT_DEEP = TECH_ADAPTIVE_SCAFFOLD_PROMPT + """
+
+DISAMBIGUATION (tie-breaker, decide by INTENT): a question that names or enumerates MANY entities AND
+asks how they compare, differ, relate, or which lead — OR asks for "the top / leading / best X" in a
+field and what that shows — is ALWAYS "management" (it needs synthesis ACROSS the set), NEVER "lookup".
+Reserve "lookup" for a SINGLE narrow fact about ONE thing (one figure, one date, one definition). When a
+question mixes a list of entities with any comparison / strategy / "how they differ" angle, the list is
+the setup for the analysis — choose "management".
+"""
+
+
 def adaptive_format_on() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_ADAPTIVE_FORMAT swaps the ported clinical/VC decision memo for
     the general-audience, question-adaptive format + a de-VC persona. OFF → byte-identical legacy."""

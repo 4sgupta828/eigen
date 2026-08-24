@@ -27,6 +27,7 @@ from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import (ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_CONTRACT_PROMPT_ENTITY,
                               TECH_LANDSCAPE_CONTRACT_PROMPT)
 from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
+                       TECH_ADAPTIVE_SCAFFOLD_PROMPT_DEEP,
                        TECH_ANSWER_360_BLOCK, tech_closing_block, TECH_LANDSCAPE_COMPOSE_BLOCK,
                        answer_close_on, TECH_DEEP_SYNTHESIS_FORMAT, TECH_REASONED_ANSWER_FORMAT,
                        TECH_REASONED_SCAFFOLD_PROMPT, TECH_UNDERSTANDING_ANSWER_FORMAT,
@@ -151,8 +152,12 @@ def build_manifest() -> VerticalManifest:
         # FLAG EIGEN_ADAPTIVE_FORMAT: swap the ported clinical/VC decision memo for the general-audience,
         # question-adaptive format + de-VC scaffold (the persona de-VCs in lockstep, in persona.py). OFF →
         # legacy (byte-identical). Read at manifest-build (process start), so flip = redeploy.
-        reasoned_scaffold_prompt=(TECH_ADAPTIVE_SCAFFOLD_PROMPT if adaptive_format_on()
-                                  else TECH_REASONED_SCAFFOLD_PROMPT),
+        # FLAG EIGEN_DEEP_SYNTHESIS: on the adaptive path, use the scaffold variant that routes an
+        # enumerate-and-compare / landscape question to "management" (→ deep compose) instead of
+        # "lookup". OFF → the original adaptive scaffold (byte-identical classification).
+        reasoned_scaffold_prompt=(
+            ((TECH_ADAPTIVE_SCAFFOLD_PROMPT_DEEP if deep_synthesis_on() else TECH_ADAPTIVE_SCAFFOLD_PROMPT)
+             if adaptive_format_on() else TECH_REASONED_SCAFFOLD_PROMPT)),
         # FLAG EIGEN_ANSWER_360 (rides adaptive): append the multi-perspective '## Perspectives' +
         # '## Related questions' sections to the ONE integrated answer. OFF → plain adaptive format.
         # FLAG EIGEN_LANDSCAPE_COVERAGE (rides adaptive): also append the market-map compose block so a
