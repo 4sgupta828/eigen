@@ -118,6 +118,7 @@ from eigen_kernel.providers.llm import LLMClient
 from eigen_kernel.research.atoms import IDENTITY_INSTRUCTION, AtomStore, identity_tag
 from eigen_kernel.research.budget import BudgetExceeded, BudgetState
 from eigen_kernel.research.provenance import BlockSpanVerifier
+from eigen_kernel.research.web_liveness import drop_dead_urls
 from eigen_kernel.research.web_quality import screen_open_web_hits
 from eigen_kernel.retrieval.dispatch import multi_query_retrieve
 
@@ -1314,11 +1315,18 @@ async def run_react(
                             # None = could-not-judge → fail safe to the authoritative subset;
                             # a list (even empty) = judged → respect it.
                             r = _authoritative_subset(r) if screened is None else screened
+                            # LIVENESS: an open-web page can 404 in the user's browser even though its
+                            # quote was span-verified against the body Exa fetched. Drop citations whose
+                            # URL is definitively dead (404/410) so we never surface a broken evidence
+                            # link. Fail-open (bot-walls/timeouts kept). Structural (Rule 18).
+                            _kept_n = len(r)
+                            r = await drop_dead_urls(r)
                             await emit({"type": "retrieving", "source": f"{leg}:kept", "hits": len(r)})
                             if diag is not None:
                                 _dkey = "web_denoise" if leg == "web" else "web_entity_open"
                                 diag.setdefault(_dkey, []).append(
-                                    {"step": step_i + 1, "raw": _raw_n, "kept": len(r)})
+                                    {"step": step_i + 1, "raw": _raw_n, "kept": _kept_n,
+                                     "live": len(r), "dead_dropped": _kept_n - len(r)})
                         hits += r
             else:
                 hits = await _timed("retrieval_ms", _traced_leg("corpus", corpus_co))
