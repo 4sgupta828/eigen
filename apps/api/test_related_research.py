@@ -126,10 +126,47 @@ def test_rationale_attached_when_llm_present() -> None:
 
     class _LLM:
         async def complete(self, **kw):
-            return SimpleNamespace(parsed=SimpleNamespace(
-                items=[SimpleNamespace(i=0, why="Directly studies the method the question asks about.")]))
+            return SimpleNamespace(parsed=SimpleNamespace(items=[SimpleNamespace(
+                i=0, relevant=True, why="Directly studies the method the question asks about.")]))
     svc = _Svc([_hit("openalex:W1", 0.9, "paper", title="P", peer=True, cites=1, year=2024)])
     svc.llm = _LLM()
     out = _run(find_related_research(svc, question="q", tenant_id="demo", ui=svc.ui))
     assert out[0]["why"].startswith("Directly studies")
     assert "_snippet" not in out[0]   # internal field stripped before returning
+
+
+def test_relevance_gate_drops_offtopic_items() -> None:
+    from types import SimpleNamespace
+
+    class _LLM:
+        # the judge marks the two 'best of a bad lot' matches as off-topic → both dropped → omit
+        async def complete(self, **kw):
+            return SimpleNamespace(parsed=SimpleNamespace(items=[
+                SimpleNamespace(i=0, relevant=False, why="A general-AI blog, not about the asked company."),
+                SimpleNamespace(i=1, relevant=False, why="Unrelated domain."),
+            ]))
+    svc = _Svc([
+        _hit("essay:a", 0.62, "essay", title="Teaching Everyone to Fish for Tokens", year=2025),
+        _hit("corp_eng:b", 0.60, "corp_eng", title="How AI is transforming analytics at Grab", year=2024),
+    ])
+    svc.llm = _LLM()
+    out = _run(find_related_research(svc, question="Tell me about Blazel company", tenant_id="demo", ui=svc.ui))
+    assert out == []   # nothing genuinely relevant → honest omit
+
+
+def test_relevance_gate_keeps_relevant_drops_offtopic_mixed() -> None:
+    from types import SimpleNamespace
+
+    class _LLM:
+        async def complete(self, **kw):
+            return SimpleNamespace(parsed=SimpleNamespace(items=[
+                SimpleNamespace(i=0, relevant=True, why="Directly on the asked topic."),
+                SimpleNamespace(i=1, relevant=False, why="Tangential."),
+            ]))
+    svc = _Svc([
+        _hit("openalex:W1", 0.90, "paper", title="On Topic", peer=True, cites=50, year=2024),
+        _hit("essay:x", 0.80, "essay", title="Off Topic", year=2024),
+    ])
+    svc.llm = _LLM()
+    out = _run(find_related_research(svc, question="q", tenant_id="demo", ui=svc.ui))
+    assert [o["title"] for o in out] == ["On Topic"]

@@ -138,14 +138,20 @@ async def find_related_research(service, *, question: str, tenant_id: str,
             "peer_reviewed": f.get("is_peer_reviewed") == "true",
             "_snippet": (h.text or "")[:500],   # for the rationale LLM; stripped before returning
         })
-    await _add_rationales(service, q, out)
+    # RELEVANCE GATE (Rule 18 — relevance is a semantic judgment the embedding-distance floor can't
+    # make): the LLM judges each candidate against the question and DROPS off-topic ones. For a
+    # subject-specific question with no genuinely relevant research, this correctly empties the section
+    # (honest omit) instead of showing the 'best of a bad lot' the relative floor let through. If the
+    # judge is unavailable, we keep the structurally-floored items (prior behavior).
+    judged = await _judge_relevance(service, q, out)
     for it in out:
         it.pop("_snippet", None)
-    return out
+    return judged
 
 
 class _Rationale(BaseModel):
     i: int
+    relevant: bool = True
     why: str = ""
 
 
@@ -154,18 +160,22 @@ class _Rationales(BaseModel):
 
 
 _RATIONALE_SYSTEM = (
-    "For each numbered research item, write ONE short sentence (max ~20 words) on WHY it is relevant "
-    "to the user's QUESTION — connect the item's topic to what the user asked. Base it ONLY on the "
-    "given title/snippet; be specific and honest — if an item is only loosely related, say so plainly. "
-    "Do NOT claim findings or results you cannot see in the snippet. Return one `why` per item index.")
+    "You curate a 'related research' list for a user's QUESTION. For each numbered item, decide if it "
+    "is GENUINELY relevant — it must meaningfully relate to the question's SUBJECT or TOPIC and help "
+    "inform it. Set relevant=false for tangential or off-topic items (e.g. a general-AI blog when the "
+    "question is about a specific company, or an unrelated domain). Be strict: it is better to drop a "
+    "weak item than to show something off-topic. For each item return {i, relevant, why}: `why` is ONE "
+    "short sentence (<=20 words) — when relevant, HOW it connects to the question; when not, why it "
+    "does not. Base it ONLY on the given title/snippet; never claim findings you cannot see.")
 
 
-async def _add_rationales(service, question: str, items: list[dict]) -> None:
-    """Attach a one-line 'why relevant to your question' rationale to each item (LLM, one batch call).
-    Best-effort: any failure leaves items without a `why` (the FE just omits the line)."""
+async def _judge_relevance(service, question: str, items: list[dict]) -> list[dict]:
+    """LLM-judge each item's relevance to `question` (one batch call): attach a `why` line and DROP
+    the off-topic ones. Returns the kept items (may be empty → the section is omitted). Best-effort:
+    if the judge is unavailable/errors, return the items unchanged (structural floor still applied)."""
     llm = getattr(service, "llm", None)
     if not items or llm is None:
-        return
+        return items
     lines = []
     for idx, it in enumerate(items):
         meta = " · ".join(x for x in [it.get("kind"), str(it.get("year") or "")] if x)
@@ -174,9 +184,19 @@ async def _add_rationales(service, question: str, items: list[dict]) -> None:
     try:
         comp = await llm.complete(system=_RATIONALE_SYSTEM,
                                   messages=[{"role": "user", "content": user}],
-                                  response_format=_Rationales, max_tokens=500)
-        for r in getattr(comp.parsed, "items", []) or []:
-            if isinstance(r.i, int) and 0 <= r.i < len(items) and (r.why or "").strip():
-                items[r.i]["why"] = r.why.strip()
-    except Exception:  # noqa: BLE001 — rationale is a nicety; never break the section
-        return
+                                  response_format=_Rationales, max_tokens=600)
+    except Exception:  # noqa: BLE001 — judge is best-effort; keep the structurally-floored items
+        return items
+    verdicts: dict[int, tuple[bool, str]] = {}
+    for r in getattr(comp.parsed, "items", []) or []:
+        if isinstance(getattr(r, "i", None), int) and 0 <= r.i < len(items):
+            verdicts[r.i] = (bool(getattr(r, "relevant", True)), (getattr(r, "why", "") or "").strip())
+    kept: list[dict] = []
+    for idx, it in enumerate(items):
+        rel, why = verdicts.get(idx, (True, ""))   # unjudged → keep (don't silently drop)
+        if not rel:
+            continue
+        if why:
+            it["why"] = why
+        kept.append(it)
+    return kept
