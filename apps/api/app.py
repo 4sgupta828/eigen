@@ -677,6 +677,14 @@ def entity_open_web_enabled() -> bool:
     return os.environ.get("EIGEN_WEB_ENTITY_OPEN", "").lower() in ("1", "true", "yes")
 
 
+def open_web_denoise_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_WEB_OPEN_DENOISE opens the aux web (Exa) leg to the FULL web
+    (whitelist demoted to a ranking boost) for every web-eligible question and admits its hits through
+    the denoising funnel (structural + cosine floor + authority boost + LLM screen, fail-safe to the
+    authoritative subset). OFF → whitelisted Exa + DDG exactly as today (leg set + rerank byte-identical)."""
+    return os.environ.get("EIGEN_WEB_OPEN_DENOISE", "").lower() in ("1", "true", "yes")
+
+
 def derive_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_DERIVE runs the grounded-reasoning GATE — after the fact gate,
     derive labeled conclusions (inference/hypothesis/speculation) FROM the verified findings, each with a
@@ -1125,6 +1133,7 @@ def build_default_service() -> ResearchService:
         axis_complete=axis_complete_enabled(),
         tech_synthesis=tech_synthesis_enabled(),
         entity_open_web=entity_open_web_enabled(),
+        web_open_denoise=open_web_denoise_enabled(),
         web_quality_prompt=getattr(manifest, "web_quality_prompt", None),
         derive=derive_enabled(),
         derive_ideas=derive_ideas_enabled(),

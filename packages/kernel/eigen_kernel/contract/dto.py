@@ -103,6 +103,9 @@ class RetrievalRequest:
     # Corpus sources ignore them. Both default to the source's own configuration (byte-identical).
     web_open: bool = False
     web_recency_days: int | None = None
+    # flag EIGEN_WEB_OPEN_DENOISE: apply the open-web denoising gates (structural + cosine floor +
+    # authority boost) in web retrieval; corpus ignores it.
+    web_denoise: bool = False
 
 
 class Capability(str, enum.Enum):

@@ -129,6 +129,7 @@ class ResearchService:
     axis_complete: bool = False             # EIGEN_ANSWER_AXES: compose addresses each asked aspect + synthesizes
     tech_synthesis: bool = False            # EIGEN_TECH_SYNTHESIS: add a strategic 'how it works' technical synthesis
     entity_open_web: bool = False           # EIGEN_WEB_ENTITY_OPEN: entity-scoped open-web probe (screened) on step 0
+    web_open_denoise: bool = False          # EIGEN_WEB_OPEN_DENOISE: open the aux web leg to the FULL web + denoise-screen ALL hits
     web_quality_prompt: str | None = None   # vertical-supplied LLM page-quality screen prompt for the open-web leg
     derive: bool = False                   # EIGEN_DERIVE: gated, labeled derivations over verified claims
     derive_ideas: bool = False              # EIGEN_DERIVE_IDEAS: also generate grounded 'opportunity' ideas
@@ -513,7 +514,8 @@ class ResearchService:
             answer_focus=answer_focus, reasoning_read=self.reasoning_read,
             readable_prose=self.readable_prose, country_boost=country_boost,
             axis_complete=self.axis_complete, tech_synthesis=self.tech_synthesis,
-            entity_open_web=self.entity_open_web, web_quality_prompt=self.web_quality_prompt,
+            entity_open_web=self.entity_open_web, web_open_denoise=self.web_open_denoise,
+            web_quality_prompt=self.web_quality_prompt,
             collect_diagnostics=self.collect_diagnostics,
             classify_evidence=self.classify_evidence,
             evidence_fitness=self.evidence_fitness, evidence_ranker=self.evidence_ranker,

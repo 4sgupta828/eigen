@@ -8,10 +8,15 @@ the keep/drop decision is the model's, never a keyword matcher) that keeps usabl
 relevant pages and drops junk/irrelevant ones. All domain vocabulary lives in the
 injected `prompt`; this file names no domain concept.
 
-Fail-closed EVERYWHERE: with nothing to judge, no judge, no prompt, an exhausted
-budget, or ANY error, it returns `[]` — an unscreened open-web hit never leaks into
-the pool. The code does only structural work (build the candidate list, parse the
-verdicts, filter by index); the meaning is entirely the LLM's.
+Return contract (the caller distinguishes can't-judge from judged-all-drop):
+  - `None`  → COULD NOT JUDGE (no judge / blank prompt / exhausted budget / ANY
+              error). The screen never ran; the caller MUST fail safe (e.g. to the
+              authoritative subset), NOT treat this as "everything dropped".
+  - `[]`    → JUDGED, nothing kept — OR nothing to judge (empty input legitimately
+              yields empty output). Either way the judge's result is respected.
+  - `list`  → JUDGED, the kept hits.
+The code does only structural work (build the candidate list, parse the verdicts,
+filter by index); the meaning is entirely the LLM's.
 """
 from __future__ import annotations
 
@@ -41,16 +46,24 @@ def _excerpt(text: str) -> str:
     return t[:_EXCERPT_CAP]
 
 
-async def screen_open_web_hits(hits, *, question, llm, prompt, budget) -> list:
-    """Return only the open-web `hits` an LLM judge deems usable + relevant.
+async def screen_open_web_hits(hits, *, question, llm, prompt, budget) -> list | None:
+    """Screen open-web `hits` with an LLM judge, distinguishing can't-judge from judged-drop.
 
     `hits` are BlockHit-like items (document_id/document_title/text). `prompt` is the
     vertical-supplied judging system prompt (opaque; carries all domain vocabulary).
-    On empty input, missing judge/prompt, exhausted budget, or ANY error → `[]`.
+
+    Returns:
+      - `None`  → could NOT judge (llm is None / blank prompt / exhausted budget / ANY
+                  error). The caller should FAIL SAFE (e.g. authoritative subset), not
+                  treat it as an all-drop.
+      - `[]`    → judged and nothing kept, OR nothing to judge (empty input).
+      - `list`  → the kept hits.
     """
-    if not hits or llm is None or not (prompt or "").strip():
-        return []
+    if llm is None or not (prompt or "").strip():
+        return None
     if getattr(budget, "exhausted", False):
+        return None
+    if not hits:
         return []
 
     # Build a compact, indexed candidate list. Dedup obviously identical URLs cheaply
@@ -99,6 +112,6 @@ async def screen_open_web_hits(hits, *, question, llm, prompt, budget) -> list:
             if getattr(v, "keep", False) and 0 <= getattr(v, "index", -1) < len(kept_hits)
         }
         return [kept_hits[i] for i in range(len(kept_hits)) if i in kept_idxs]
-    except Exception as e:  # noqa: BLE001 — fail closed: never leak unscreened open-web hits
+    except Exception as e:  # noqa: BLE001 — could not judge → None so the caller fails safe
         _log.warning("open-web quality screen failed: %r", e)
-        return []
+        return None

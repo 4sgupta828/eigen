@@ -33,6 +33,9 @@ from eigen_kernel.providers.websearch import WebResult, WebSearchClient
 # canonical scholarly ids readable straight off a URL (structural identity, not semantics)
 _CANON_ID_RE = re.compile(r"(10\.\d{4,9}/[^\s?#]+?|PMC\d{4,9}|pubmed\.ncbi\.nlm\.nih\.gov/(\d{6,9}))(?=[/?#]|$)", re.I)
 _MAX_CHUNKS_PER_PAGE = 3          # rerank cap: no single page dominates the final k
+_DENOISE_MIN_CHARS = 80           # structural: drop boilerplate-thin chunks (never a provider highlight)
+_DENOISE_SIM_FLOOR = 0.18         # cosine: cut clearly off-topic chunks (lenient; NOT the junk defense — the LLM screen is)
+_DENOISE_AUTHORITY_BONUS = 10.0   # authority boost added to a whitelisted-venue chunk's rerank score so it leads the 3×k→k cut
 
 
 def _chunk_text(text: str, *, max_chars: int = 900) -> list[str]:
@@ -143,10 +146,20 @@ class WebRetrievalSource:
         # (a 4000-char blob is nearly unquotable). Provider HIGHLIGHTS (query-aware extracts from
         # anywhere in the page) come FIRST — they can carry a discriminator the truncated body
         # misses. Interleave breadth-first, gathering up to 3×k candidates for the reranker.
+        denoise = getattr(req, "web_denoise", False)
         per_result = []
         for r in results:
-            chunks = [h.strip() for h in (getattr(r, "highlights", ()) or ()) if h and h.strip()]
-            chunks += _chunk_text(r.body or r.snippet or "")
+            highlights = [h.strip() for h in (getattr(r, "highlights", ()) or ()) if h and h.strip()]
+            body = _chunk_text(r.body or r.snippet or "")
+            if denoise:
+                # Gate 1 (structural length floor): drop boilerplate-thin BODY chunks; never touch
+                # provider highlights (query-aware extracts). Conservative: never empty a result —
+                # if every body chunk is sub-floor and there are no highlights, keep the longest.
+                kept_body = [c for c in body if len(c) >= _DENOISE_MIN_CHARS]
+                if body and not kept_body and not highlights:
+                    kept_body = [max(body, key=len)]
+                body = kept_body
+            chunks = highlights + body
             per_result.append((r, chunks))
         candidates: list[BlockHit] = []
         budget = max(req.k * 3, req.k)
@@ -196,7 +209,25 @@ class WebRetrievalSource:
                     return num / (dq * dv) if dq and dv else 0.0
 
                 sims = [_cos(v) for v in vecs[1:]]
-                order = sorted(range(len(hits)), key=lambda i: (-sims[i], -hits[i].score))
+                if getattr(req, "web_denoise", False):
+                    # Gate 2 (cosine floor): cut clearly off-topic chunks, but ALWAYS keep ≥1 (the
+                    # top-cosine chunk) so the floor alone never empties the leg.
+                    keep = [i for i in range(len(hits)) if sims[i] >= _DENOISE_SIM_FLOOR]
+                    if not keep:
+                        keep = [max(range(len(hits)), key=lambda i: sims[i])]
+                    # Gate 3 (authority boost): a CATALOGUED-venue chunk's key gets the bonus added to
+                    # its cosine so known-venue chunks lead higher-cosine unknown-domain ones. "Catalogued"
+                    # = the domain carries a WEB_DOMAIN_FACETS stamp (source_kind) — NOT `_authority`, which
+                    # checks a `pub_type` key that WEB_DOMAIN_FACETS never sets (so it is always 0 in prod).
+                    # Facet-presence covers authoritative AND known-social venues alike (both surface above
+                    # unknown SEO domains); the evidence-tier system ranks authority vs social later, at
+                    # claim selection. The bonus lives ONLY in the sort key — the returned score is rewritten below.
+                    def _key(i):
+                        bonus = _DENOISE_AUTHORITY_BONUS if self._facets_for(hits[i].document_id) else 0.0
+                        return (-(sims[i] + bonus), -hits[i].score)
+                    order = sorted(keep, key=_key)
+                else:
+                    order = sorted(range(len(hits)), key=lambda i: (-sims[i], -hits[i].score))
             except Exception:   # noqa: BLE001 — rerank is an enhancer, never a gate
                 pass
         picked: list[BlockHit] = []

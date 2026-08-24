@@ -413,6 +413,13 @@ def strip_control_tags(text: str) -> str:
     return (text[:m.start()] if m else text).rstrip()
 
 
+def _authoritative_subset(hits: list) -> list:
+    """Fail-safe fallback when the open-web quality screen cannot judge (LLM error / budget):
+    keep only hits carrying a venue-authority facet (source_kind) — i.e. known/whitelisted
+    venues. Structural (Rule 18: not a semantic quality guess), domain-free."""
+    return [h for h in hits if (getattr(h, "facets", None) or {}).get("source_kind")]
+
+
 def _refs_valid(text: str, n_findings: int) -> bool:
     """Domain-free provenance check on a composed answer: it must cite at least one
     finding and every inline [n] must resolve to a real finding (1..n_findings).
@@ -696,6 +703,8 @@ async def run_react(
     #                                           inference). Compose skips it for non-technical subjects.
     entity_open_web: bool = False,            # flag: fire ONE additive open-web Exa probe on step 0 for
                                               # single-entity questions (contract.subject_kind), quality-screened
+    web_open_denoise: bool = False,           # flag EIGEN_WEB_OPEN_DENOISE: open the aux web leg to the FULL
+                                              # web + screen ALL its hits through the denoising funnel
     web_quality_prompt: str | None = None,    # vertical-supplied judge prompt for the open-web quality screen
     evidence_ranker=None,                     # vertical hook: evidence_kind -> int rank (the authority pyramid)
     evidence_identity: bool = False,          # Evidence Contract stage 1: render each atom's document
@@ -1173,7 +1182,10 @@ async def run_react(
     # Eligibility is the LLM's subject_kind judgment (Rule 18), never a keyword match. subject_kind
     # is only emitted when EIGEN_WEB_ENTITY_OPEN is on (contract-prompt variant), so OFF → always False.
     _entity_open = bool(entity_open_web and _contract
-                        and getattr(_contract, "subject_kind", "") == "specific_entity")
+                        and getattr(_contract, "subject_kind", "") == "specific_entity"
+                        # when the whole web leg is already open (denoise), the separate entity_open
+                        # probe is redundant — avoid the 2nd Exa call (base `web` leg already covers it)
+                        and not web_open_denoise)
     # the tier-boost/recency ranker argument, honoring per-question authority suppression
     _ranker_arg = None if _suppress_auth else (evidence_ranker if evidence_fitness else None)
     if _ac:
@@ -1182,8 +1194,8 @@ async def run_react(
         # spans ~15 models, not a handful). Overrides only RAISE the caller's values, never lower them.
         max_steps = max(int(max_steps), int(_profile.get("max_steps") or 0))
         compose_claim_cap = max(int(compose_claim_cap), int(_profile.get("compose_claim_cap") or 0))
-        _log.info("answer-contract stance=%s recency=%s suppress_authority=%s web_open=%s entity_open=%s steps=%s cap=%s",
-                  _contract.stance, bool(_eff_freshness), _suppress_auth, _web_open, _entity_open, max_steps, compose_claim_cap)
+        _log.info("answer-contract stance=%s recency=%s suppress_authority=%s web_open=%s entity_open=%s denoise=%s steps=%s cap=%s",
+                  _contract.stance, bool(_eff_freshness), _suppress_auth, _web_open, _entity_open, web_open_denoise, max_steps, compose_claim_cap)
 
     stale_searches = 0          # consecutive searches that added NO new atoms (spinning detector)
     premature_answers = 0       # zero-evidence answer attempts (see the guard below)
@@ -1235,7 +1247,9 @@ async def run_react(
                 query=q, tenant_id=tenant_id, workspace_id=workspace_id,
                 query_embedding=qvec, k=k, facets=dict(facets or {}),
                 exclude_facets=dict(exclude_facets or {}),
-                web_open=_web_open, web_recency_days=_web_recency_days,   # web leg honors; corpus ignores
+                web_open=(_web_open or web_open_denoise),
+                web_denoise=web_open_denoise,
+                web_recency_days=_web_recency_days,   # web leg honors; corpus ignores
             )
             # Corpus: agent reformulations → multi-query fusion (recall); else a single search.
             # aux (web): ONE call per step on the ORIGINAL query (no per-variant fan-out) — runs
@@ -1292,13 +1306,18 @@ async def run_react(
                             diag.setdefault("failures", []).append(
                                 {"stage": f"{leg}_search", "detail": f"{type(r).__name__}: {r}"[:200]})
                     else:
-                        if leg == "web:entity_open":
+                        _screen_this = (leg == "web:entity_open") or (leg == "web" and web_open_denoise)
+                        if _screen_this:
                             _raw_n = len(r)
-                            r = await screen_open_web_hits(
+                            screened = await screen_open_web_hits(
                                 r, question=question, llm=llm, prompt=web_quality_prompt, budget=budget)
-                            await emit({"type": "retrieving", "source": "web:entity_open:kept", "hits": len(r)})
+                            # None = could-not-judge → fail safe to the authoritative subset;
+                            # a list (even empty) = judged → respect it.
+                            r = _authoritative_subset(r) if screened is None else screened
+                            await emit({"type": "retrieving", "source": f"{leg}:kept", "hits": len(r)})
                             if diag is not None:
-                                diag.setdefault("web_entity_open", []).append(
+                                _dkey = "web_denoise" if leg == "web" else "web_entity_open"
+                                diag.setdefault(_dkey, []).append(
                                     {"step": step_i + 1, "raw": _raw_n, "kept": len(r)})
                         hits += r
             else:

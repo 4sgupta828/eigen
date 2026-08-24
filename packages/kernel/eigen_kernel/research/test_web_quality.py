@@ -1,4 +1,8 @@
-"""Unit tests for the open-web quality screen (LLM-owned, fail-closed)."""
+"""Unit tests for the open-web quality screen (LLM-owned).
+
+Contract: `None` = could-not-judge (caller fails safe); `[]` = judged-nothing-kept
+or nothing-to-judge; `list` = kept hits.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -91,6 +95,7 @@ async def test_out_of_range_indices_ignored():
 
 @pytest.mark.asyncio
 async def test_empty_hits_returns_empty():
+    # Nothing to judge is NOT a failure — empty input legitimately yields [] (not None).
     llm = _ScriptedLLM([_Verdict(index=0, keep=True)])
     budget = _FakeBudget()
     out = await screen_open_web_hits([], question="q", llm=llm, prompt=_PROMPT, budget=budget)
@@ -100,35 +105,55 @@ async def test_empty_hits_returns_empty():
 
 
 @pytest.mark.asyncio
-async def test_llm_none_returns_empty():
-    out = await screen_open_web_hits(_hits(2), question="q", llm=None, prompt=_PROMPT, budget=_FakeBudget())
+async def test_judged_all_drop_returns_empty_list():
+    # A judge that ran and dropped everything → [] (respected), NOT None (can't-judge).
+    hits = _hits(3)
+    llm = _ScriptedLLM([
+        _Verdict(index=0, keep=False),
+        _Verdict(index=1, keep=False),
+        _Verdict(index=2, keep=False),
+    ])
+    budget = _FakeBudget()
+    out = await screen_open_web_hits(hits, question="q", llm=llm, prompt=_PROMPT, budget=budget)
     assert out == []
+    assert llm.calls == 1
+    assert budget.charges == [(1, 42)]   # the judge DID run and was charged
+
+
+@pytest.mark.asyncio
+async def test_llm_none_returns_none():
+    # Could not judge (no judge) → None so the caller fails safe.
+    out = await screen_open_web_hits(_hits(2), question="q", llm=None, prompt=_PROMPT, budget=_FakeBudget())
+    assert out is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("prompt", [None, "", "   "])
-async def test_prompt_missing_returns_empty(prompt):
+async def test_prompt_missing_returns_none(prompt):
+    # Blank/missing prompt → could not judge → None.
     llm = _ScriptedLLM([_Verdict(index=0, keep=True)])
     out = await screen_open_web_hits(_hits(2), question="q", llm=llm, prompt=prompt, budget=_FakeBudget())
-    assert out == []
+    assert out is None
     assert llm.calls == 0
 
 
 @pytest.mark.asyncio
-async def test_budget_exhausted_returns_empty():
+async def test_budget_exhausted_returns_none():
+    # Exhausted budget → could not judge → None; never spent.
     llm = _ScriptedLLM([_Verdict(index=0, keep=True)])
     budget = _FakeBudget(exhausted=True)
     out = await screen_open_web_hits(_hits(2), question="q", llm=llm, prompt=_PROMPT, budget=budget)
-    assert out == []
+    assert out is None
     assert llm.calls == 0           # never spent
     assert budget.charges == []
 
 
 @pytest.mark.asyncio
-async def test_llm_raises_fails_closed():
+async def test_llm_raises_returns_none():
+    # ANY error → could not judge → None so the caller fails safe.
     llm = _ScriptedLLM(raises=RuntimeError("boom"))
     out = await screen_open_web_hits(_hits(3), question="q", llm=llm, prompt=_PROMPT, budget=_FakeBudget())
-    assert out == []                # fail closed: no unscreened hits leak
+    assert out is None
 
 
 @pytest.mark.asyncio

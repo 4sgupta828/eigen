@@ -52,4 +52,14 @@ WEB_DOMAIN_FACETS: dict[str, dict] = {
     "wsj.com": {"source_kind": "news"},
     "techcrunch.com": {"source_kind": "news"},
     "theinformation.com": {"source_kind": "news"},
+    # SOCIAL / signal tier — public posts on these are perception, NOT authoritative fact. Stamped
+    # `source_kind: social` → evidence_kind.classify → "sentiment_signal" (lowest tier, never
+    # controlling), while still a CATALOGUED venue so the open-web denoise boost surfaces them above
+    # unknown SEO domains. Reached only via the open-web leg (not in TRUSTED_WEB_DOMAINS, so the
+    # whitelisted OFF path is unchanged). LinkedIn public pages, X, Reddit, HN.
+    "linkedin.com": {"source_kind": "social"},
+    "x.com": {"source_kind": "social"},
+    "twitter.com": {"source_kind": "social"},
+    "reddit.com": {"source_kind": "social"},
+    "news.ycombinator.com": {"source_kind": "social"},
 }
