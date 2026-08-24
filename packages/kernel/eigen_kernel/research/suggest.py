@@ -13,15 +13,22 @@ from pydantic import BaseModel, Field
 from eigen_kernel.providers.llm import LLMClient
 
 
+class Suggestion(BaseModel):
+    question: str = ""
+    tag: str = Field(default="", description="optional short lens/category label, vertical-supplied")
+
+
 class Suggestions(BaseModel):
-    questions: list[str] = Field(default_factory=list, description="3–4 concise follow-up questions")
+    questions: list[Suggestion] = Field(default_factory=list, description="a few follow-up questions")
 
 
 async def suggest_followups(
     *, llm: LLMClient, suggest_prompt: str, question: str, answer: str,
-    history: str = "", max_tokens: int = 700,
-) -> list[str]:
-    """Return 3–4 follow-up questions (or [] if there's nothing useful to suggest)."""
+    history: str = "", max_tokens: int = 700, cap: int = 6,
+) -> list[dict]:
+    """Return up to `cap` follow-up questions as `[{question, tag}]` (or [] if nothing useful).
+    `tag` is an optional short lens/category label the vertical's prompt supplies (e.g. a persona);
+    the kernel is agnostic to its values. Empty tag → the caller/UI simply shows no label."""
     clean = (answer or "").strip()
     user = (
         (f"CONVERSATION SO FAR:\n{history}\n\n" if history.strip() else "")
@@ -36,7 +43,8 @@ async def suggest_followups(
         response_format=Suggestions, max_tokens=max_tokens)
     seen, out = set(), []
     for q in (res.parsed.questions or []):
-        s = (q or "").strip()
+        s = (getattr(q, "question", "") or "").strip()
         if s and s.lower() not in seen:
-            seen.add(s.lower()); out.append(s)
-    return out[:4]
+            seen.add(s.lower())
+            out.append({"question": s, "tag": (getattr(q, "tag", "") or "").strip()})
+    return out[:cap]

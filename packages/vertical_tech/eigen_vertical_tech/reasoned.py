@@ -330,12 +330,12 @@ def answer_360_on() -> bool:
 # (a fitted synthesis + 2-4 sharp grounded next questions) as the final thing the reader sees. Grounded
 # (no new facts), concise (no bloat), question-adaptive, and it supersedes the end-on-sources + the 360
 # no-follow-ups rules by prompt precedence (appended last). Append-only → OFF is byte-identical.
-TECH_CLOSING_BLOCK = """
+_TECH_CLOSING_SYNTHESIS = """
 
 ## Closing — the answer must LAND, not just stop
 End with a real conclusion, placed AFTER any "## Key sources" / coverage / gaps / "## Related questions"
 sections — this is the final thing the reader sees, and it SUPERSEDES any earlier instruction to end on a
-sources list or to omit follow-up questions. Two short sections, tight (no recap of the body, no bloat):
+sources list. Keep it tight (no recap of the body, no bloat):
 
 - A closing synthesis under a "## " heading named to fit the question — `## Bottom line` for a
   decision/recommendation ask · `## What this means` for an understanding/why/how ask · `## Where to go next`
@@ -343,12 +343,28 @@ sources list or to omit follow-up questions. Two short sections, tight (no recap
   the evidence supports — state the condition plainly if it is conditional, or the key implication if the user
   only asked to understand (do NOT advise action they did not ask for). Reason ONLY over the cited findings
   (wrap any inference in [[R]]…[[/R]]); introduce NO new fact — a factual closing sentence cites the same
-  finding(s) used above.
+  finding(s) used above."""
+
+# The in-answer follow-up questions. Dropped when EIGEN_STRATEGIC_NEXT is on (next-questions then
+# live ONLY in the bottom 'Where next' block, as the CEO/VC/CTO strategic set — one place).
+_TECH_CLOSING_QUESTIONS = """
 
 - "## What to explore next": exactly 2-4 SHARP, specific follow-up questions this answer surfaced but did not
   fully resolve — grounded in the tensions, gaps, comparisons, or implications actually in the answer above
   (e.g. "How does X's async layer handle a network split?", never a generic "How does X work?"). Name only
   entities / mechanisms / gaps already in the question or the cited answer."""
+
+
+def tech_closing_block() -> str:
+    """The required-closing directive. Includes the in-answer 'What to explore next' list UNLESS
+    EIGEN_STRATEGIC_NEXT is on — then next-questions are consolidated into the bottom 'Where next'
+    block (the CEO/VC/CTO strategic set), so they aren't duplicated in two places with two voices."""
+    from .suggest import strategic_next_on
+    return _TECH_CLOSING_SYNTHESIS if strategic_next_on() else (_TECH_CLOSING_SYNTHESIS + _TECH_CLOSING_QUESTIONS)
+
+
+# Back-compat module constant (flag-OFF text). Manifest uses tech_closing_block() so the flag applies.
+TECH_CLOSING_BLOCK = _TECH_CLOSING_SYNTHESIS + _TECH_CLOSING_QUESTIONS
 
 
 def answer_close_on() -> bool:

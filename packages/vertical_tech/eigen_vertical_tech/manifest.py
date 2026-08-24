@@ -26,7 +26,7 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
 from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_LANDSCAPE_CONTRACT_PROMPT
 from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
-                       TECH_ANSWER_360_BLOCK, TECH_CLOSING_BLOCK, TECH_LANDSCAPE_COMPOSE_BLOCK,
+                       TECH_ANSWER_360_BLOCK, tech_closing_block, TECH_LANDSCAPE_COMPOSE_BLOCK,
                        answer_close_on, TECH_REASONED_ANSWER_FORMAT,
                        TECH_REASONED_SCAFFOLD_PROMPT, TECH_UNDERSTANDING_ANSWER_FORMAT,
                        TECH_UNDERSTANDING_QUERY_HINT, adaptive_format_on, answer_360_on,
@@ -42,7 +42,7 @@ from .persona import TechPersona
 from .scope import SCOPE_DIMENSIONS
 from .sectors import SECTOR_PROFILES
 from .source import TechRetrievalSource
-from .suggest import TECH_SUGGEST_PROMPT
+from .suggest import tech_suggest_prompt
 from .ui import TechUI
 from .web_domains import TRUSTED_WEB_DOMAINS, WEB_DOMAIN_FACETS
 
@@ -94,7 +94,7 @@ def build_manifest() -> VerticalManifest:
         ui=TechUI(),
         # FLAG EIGEN_ANSWER_CLOSE: append a required LANDING (fitted synthesis + 2-4 grounded next
         # questions) so an answer concludes instead of stopping on a sources/gaps line. OFF → byte-identical.
-        answer_format=(TECH_ANSWER_FORMAT + (TECH_CLOSING_BLOCK if answer_close_on() else "")),
+        answer_format=(TECH_ANSWER_FORMAT + (tech_closing_block() if answer_close_on() else "")),
         # Enhanced A/B synthesis variant (reuses the kernel's enhanced-answer slot; same section set).
         clinical_answer_format=TECH_DILIGENCE_SYNTHESIS_FORMAT,
         # Concept/term glossary + grounded conceptual VISUALS (diagrams) + inline visual/chart/reasoning
@@ -105,7 +105,7 @@ def build_manifest() -> VerticalManifest:
         chart_guidance=TECH_CHART_GUIDANCE,
         reasoning_format=TECH_REASONING_FORMAT,
         gap_prompt=TECH_GAP_PROMPT,
-        suggest_prompt=TECH_SUGGEST_PROMPT,
+        suggest_prompt=tech_suggest_prompt(),
         web_domains=TRUSTED_WEB_DOMAINS,
         web_domain_facets=WEB_DOMAIN_FACETS,
         # Fast-moving tech: recency re-orders ALL tiers over a short horizon (flag EIGEN_FRESHNESS_RANKING).
@@ -137,9 +137,9 @@ def build_manifest() -> VerticalManifest:
               + (TECH_ANSWER_360_BLOCK if answer_360_on() else "")
               + (TECH_LANDSCAPE_COMPOSE_BLOCK if landscape_coverage_on() else ""))
              if adaptive_format_on() else TECH_REASONED_ANSWER_FORMAT)
-            + (TECH_CLOSING_BLOCK if answer_close_on() else "")),
+            + (tech_closing_block() if answer_close_on() else "")),
         understanding_answer_format=(TECH_UNDERSTANDING_ANSWER_FORMAT
-                                     + (TECH_CLOSING_BLOCK if answer_close_on() else "")),
+                                     + (tech_closing_block() if answer_close_on() else "")),
         understanding_query_hint=TECH_UNDERSTANDING_QUERY_HINT,
         # Sub-vertical seam: sectors as a per-question subject scope (AI seeded), NOT separate verticals.
         sector_profiles=SECTOR_PROFILES,

@@ -1072,6 +1072,10 @@
   .chip-q:hover{border-color:rgba(var(--gold-rgb),.45);background:rgba(var(--gold-rgb),.10);color:var(--ink);}
   .chip-q.chip-asis{color:var(--muted);font-style:italic;}   /* the "ask exactly as I wrote it" escape */
   .chip-q.chip-asis::before{content:"↩ ";font-style:normal;}
+  /* lens badge on a strategic next-question chip (CEO / VC / CTO) */
+  .chip-lens{display:inline-block;font-family:var(--mono);font-size:.6rem;font-weight:700;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--gold);background:rgba(var(--gold-rgb),.15);border-radius:5px;
+    padding:.07rem .34rem;margin-right:.45rem;vertical-align:.08em;}
 
   /* live agent trace (streaming) */
   .agenttrace{display:flex;flex-direction:column;gap:.45rem;padding:.4rem 0 .2rem;}
@@ -5197,6 +5201,21 @@ function renderThread(){
   const last = out.querySelector(".turn:last-child"); if(last) last.scrollIntoView({behavior:"smooth", block:"start"});
   syncComposerPad();
 }
+// A suggestion is {question, tag} (tag = an optional lens label, e.g. CEO/VC/CTO) — or a bare
+// string (legacy). Render a chip with the lens badge; the click always uses the QUESTION text.
+function _sugQ(s){ return (typeof s === "string") ? s : ((s && s.question) || ""); }
+function _sugChip(s){
+  const q = _sugQ(s); if(!q) return "";
+  const tag = (s && typeof s === "object" && s.tag) ? String(s.tag) : "";
+  const badge = tag ? `<span class="chip-lens">${esc(tag)}</span>` : "";
+  return `<button type="button" class="chip-q" data-q="${esc(q)}">${badge}<span class="chip-qt">${esc(q)}</span></button>`;
+}
+function _wireSugChips(slot, before){
+  slot.querySelectorAll(".chip-q").forEach(b => b.addEventListener("click", () => {
+    if(before) before();
+    askQuestion(b.getAttribute("data-q") || b.textContent.trim());
+  }));
+}
 async function loadSuggestions(){
   if(!SUGGEST_ENABLED || !THREAD.turns.length) return;
   const last = THREAD.turns[THREAD.turns.length-1];
@@ -5222,9 +5241,8 @@ async function loadSuggestions(){
     if(!r.ok) throw new Error();
     const {suggestions} = await r.json();
     if(!suggestions || !suggestions.length){ dropFollow(); return; }
-    slot.innerHTML = `<div class="suggest-chips">` +
-      suggestions.map(s=>`<button type="button" class="chip-q">${esc(s)}</button>`).join("") + `</div>`;
-    slot.querySelectorAll(".chip-q").forEach(b=>b.addEventListener("click",()=>askQuestion(b.textContent.trim())));
+    slot.innerHTML = `<div class="suggest-chips">` + suggestions.map(_sugChip).join("") + `</div>`;
+    _wireSugChips(slot);
     syncComposerPad();
     // Bring the chips into view above the composer if the (short-answer) layout left them covered.
     if(document.body.classList.contains("chatting")){
@@ -5429,9 +5447,8 @@ function sessionWhereNext(sdbody, row, turns){
       if(!r.ok) throw new Error();
       const {suggestions} = await r.json();
       if(!suggestions || !suggestions.length) throw new Error();
-      slot.innerHTML = `<div class="suggest-chips">` +
-        suggestions.map(s=>`<button type="button" class="chip-q">${esc(s)}</button>`).join("") + `</div>`;
-      slot.querySelectorAll(".chip-q").forEach(b=>b.addEventListener("click",()=>{ seed(); askQuestion(b.textContent.trim()); }));
+      slot.innerHTML = `<div class="suggest-chips">` + suggestions.map(_sugChip).join("") + `</div>`;
+      _wireSugChips(slot, seed);
     }catch(err){
       slot.innerHTML = `<div class="suggest-loading">No good follow-ups found for this session.</div>`;
     }
