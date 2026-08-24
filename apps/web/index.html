@@ -702,6 +702,25 @@
   .evhead{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;color:var(--gold);
     font-weight:680;margin:0;padding:0;display:flex;align-items:center;gap:.55rem;}
   .evhint{font-size:.8rem;color:var(--muted);margin-top:.45rem;line-height:1.5;}
+  /* Top related public research section (mirrors the evidence block; teal accent to read as distinct) */
+  .rrblock{margin:.7rem 0 0;border:1px solid var(--hair);border-left:3px solid var(--person,#57d9c4);
+    border-radius:12px;background:var(--panel2);overflow:hidden;}
+  .rrblock>summary{list-style:none;cursor:pointer;padding:.85rem 1rem;transition:background .15s;}
+  .rrblock>summary::-webkit-details-marker{display:none;}
+  .rrblock>summary:hover{background:rgba(87,217,196,.05);}
+  .rrhead{font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;
+    color:var(--person,#57d9c4);font-weight:680;margin:0;padding:0;display:flex;align-items:center;gap:.55rem;}
+  .rr-list{list-style:none;margin:0;padding:.2rem 1rem 1rem;display:flex;flex-direction:column;gap:.7rem;}
+  .rr-item{display:flex;flex-direction:column;gap:.28rem;padding:.6rem .75rem;border:1px solid var(--hair);
+    border-radius:9px;background:var(--panel);}
+  .rr-title{font-family:var(--serif,Georgia,serif);font-size:1rem;line-height:1.35;color:var(--ink);
+    text-decoration:none;font-weight:600;}
+  a.rr-title:hover{color:var(--person,#57d9c4);text-decoration:underline;}
+  .rr-meta{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .6rem;font-size:.74rem;color:var(--muted);}
+  .rr-badge{font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;
+    border:1px solid var(--hair);border-radius:999px;padding:.08rem .5rem;color:var(--muted);}
+  .rr-badge.rr-peer{color:var(--person,#57d9c4);border-color:color-mix(in srgb,var(--person,#57d9c4) 45%,transparent);}
+  .rr-m{font-variant-numeric:tabular-nums;}
   /* explicit clickable pill so it's obvious the evidence section expands */
   .evtoggle{margin-left:auto;font-family:var(--mono);font-size:.6rem;letter-spacing:.04em;white-space:nowrap;
     color:var(--on-accent);background:var(--gold);border-radius:12px;padding:.2rem .62rem;text-transform:none;}
@@ -1615,6 +1634,7 @@ let VOICE_TTS_NEURAL = false;     // server neural voiceover (/voice/tts); brows
 let GAP_ENABLED = false;    // self-healing: suggest + queue sources to fill evidence gaps
 let CONV_ENABLED = false;   // multi-turn conversation (follow-ups carry context)
 let FOCUS_ENABLED = false;  // select a span of an answer → Go deeper / Rethink (POST /research/focus)
+let RELATED_ENABLED = false;// "Top related public research" section attached to answers
 let SUGGEST_ENABLED = false;// suggested follow-up questions after each answer
 let STREAM_ENABLED = false; // live agent trace via SSE (/research/stream)
 let EFFORT_ENABLED = false; // effort multiplier available (scales turns/results/depth/budget)
@@ -1689,6 +1709,7 @@ async function loadConfig(){
     GAP_ENABLED = !!c.gap_healing_enabled;
     CONV_ENABLED = !!c.conversation_enabled;
     FOCUS_ENABLED = !!c.focus_deepen_enabled;
+    RELATED_ENABLED = !!c.related_research_enabled;
     SUGGEST_ENABLED = !!c.suggest_enabled;
     STREAM_ENABLED = !!c.stream_enabled;
     EFFORT_ENABLED = !!c.effort_scale_enabled;
@@ -1813,6 +1834,28 @@ const _RKIND = {
   assumption:{c:"k-assumption",l:"Assumption"}, implication:{c:"k-implication",l:"Implication"},
   what_would_change_this:{c:"k-change",l:"What would change this"},
 };
+const _RRKIND = {paper:"Paper", preprint:"Preprint", filing:"Filing"};
+function relatedResearchMarkup(data){
+  if(typeof RELATED_ENABLED !== "undefined" && !RELATED_ENABLED) return "";
+  const items = (data && data.related_research) || [];
+  if(!items.length) return "";
+  const rows = items.map(it => {
+    const title = esc(it.title || "Untitled");
+    const linked = it.url
+      ? `<a class="rr-title" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${title} ↗</a>`
+      : `<span class="rr-title">${title}</span>`;
+    const meta = [];
+    if(it.venue) meta.push(esc(it.venue));
+    if(it.year) meta.push(esc(it.year));
+    if(it.citations) meta.push(esc(it.citations) + " cites");
+    const badges = (it.peer_reviewed ? `<span class="rr-badge rr-peer">peer-reviewed</span>` : ``) +
+      `<span class="rr-badge">${esc(_RRKIND[it.kind] || it.kind || "research")}</span>`;
+    return `<li class="rr-item">${linked}<div class="rr-meta">${badges}${meta.length?`<span class="rr-m">${meta.join(" · ")}</span>`:``}</div></li>`;
+  }).join("");
+  return `<details class="rrblock" open><summary><h4 class="rrhead">Top related public research (${items.length})<span class="evtoggle"></span></h4>
+    <div class="evhint">High-quality papers, preprints, and filings related to your question — not necessarily cited in the answer above.</div></summary>
+    <ul class="rr-list">${rows}</ul></details>`;
+}
 const _RLEVEL = {high:"High", moderate:"Moderate", low:"Low", unknown:"Unknown"};
 function reasoningMarkup(data){
   if(!REASONING_ENABLED) return "";
@@ -2267,6 +2310,9 @@ function render(data, target, opts){
   // no dossier to host it (unverified answer) → diagnostics stands alone, still collapsed
   if(data.answer && !n) evBits.push(diagBoxMarkup(data));
   if(evBits.length) parts.push(`<div class="ansbox">${evBits.join("")}</div>`);
+  // Top related public research — grounded, quality-ranked papers/preprints/filings (flag-gated).
+  const rrm = relatedResearchMarkup(data);
+  if(rrm) parts.push(rrm);
   // CONVERSATION-LEVEL box: briefing video + explain-in-plain-language. In a thread it renders ONCE at
   // the bottom (renderThread passes noConvo per turn); in single-answer mode it renders here.
   // per-answer feedback: slim thumbs at the BOTTOM (the top pair lives in the toolbar); 👎 opens the

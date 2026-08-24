@@ -705,6 +705,14 @@ def focus_deepen_enabled() -> bool:
     return os.environ.get("EIGEN_FOCUS_DEEPEN", "").lower() in ("1", "true", "yes")
 
 
+def related_research_enabled() -> bool:
+    """Flag (default OFF, Rule 20): when ON, an answer carries a 'Top related public research'
+    section — a SEPARATE facet-filtered semantic search over papers/preprints/filings, dedup'd,
+    quality-ranked (structural), honest-omit when nothing clears the bar. OFF → empty list, no
+    section, no extra retrieval (byte-identical)."""
+    return os.environ.get("EIGEN_RELATED_RESEARCH", "").lower() in ("1", "true", "yes")
+
+
 class Attachment(BaseModel):
     data: str                              # base64-encoded file bytes
     media_type: str = ""                   # e.g. image/png, application/pdf, application/dicom
@@ -965,6 +973,8 @@ class ResearchOut(BaseModel):
     diagnostics: dict | None = None       # troubleshooting trace (None unless the diag-trace flag is on)
     freshness: dict | None = None         # {as_of,newest_year,oldest_year,n_dated,n_total,stale_warning}
     #                                       (None unless the freshness-ranking flag is on)
+    related_research: list = []           # top related public research [{title,url,kind,venue,year,
+    #                                       citations,peer_reviewed}] (empty unless the flag is on)
 
 
 def build_default_service() -> ResearchService:
@@ -1389,6 +1399,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "gap_healing_enabled": gap_healing_enabled() and bool(getattr(svc, "gap_prompt", None)),
             "conversation_enabled": conversation_enabled(),
             "focus_deepen_enabled": focus_deepen_enabled(),
+            "related_research_enabled": related_research_enabled(),
             "suggest_enabled": conversation_enabled() and bool(getattr(svc, "suggest_prompt", None)),
             "term_glossary_enabled": term_glossary_enabled() and bool(getattr(svc, "terms_prompt", None)),
             "visual_augment_enabled": visual_augment_enabled() and bool(getattr(svc, "visuals_prompt", None)),
@@ -2256,6 +2267,17 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                         audience=audience))
                 except Exception:
                     pass
+        # 'Top related public research' (flag-gated): a SEPARATE facet-filtered search over
+        # papers/preprints/filings, quality-ranked + honest-omit. Best-effort — never breaks the answer.
+        related = []
+        if related_research_enabled() and res.grounded and body.question:
+            try:
+                from api.related_research import find_related_research
+                related = await find_related_research(
+                    app.state.service, question=body.question, tenant_id=body.tenant_id,
+                    workspace_id=body.workspace_id, ui=getattr(app.state.service, "ui", None))
+            except Exception:
+                related = []
         return ResearchOut(
             grounded=res.grounded, answer=res.composed_answer, claims=claims,
             coverage_gaps=res.coverage_gaps, rejected=len(res.rejected_claims),
@@ -2277,6 +2299,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                           for d in (getattr(res, "derivations", []) or [])] if derive_enabled() else []),
             diagnostics=(getattr(res, "diagnostics", None) if diag_trace_enabled() else None),
             freshness=(getattr(res, "freshness", None) if freshness_ranking_enabled() else None),
+            related_research=related,
         )
 
     @app.post("/research/stream")

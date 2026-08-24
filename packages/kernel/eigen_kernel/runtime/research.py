@@ -843,11 +843,14 @@ class ResearchService:
         workspace_id: str | None = None,
         source_keys: list[str] | None = None,
         k: int = 8,
+        facets: dict | None = None,
     ):
         """Retrieval only — no LLM. Returns ranked evidence blocks. Works with just
-        the embedder (OpenAI), so it's available even when the answer LLM isn't."""
+        the embedder (OpenAI), so it's available even when the answer LLM isn't.
+        `facets` is an optional HARD filter (generic dimension→allowed-values), e.g.
+        `{"source_kind": ("paper","preprint")}` to retrieve only research. Omitted → no filter."""
         from eigen_kernel.contract.dto import RetrievalRequest
         qv = list(self.embedder.embed([question])[0])
         return await self._retriever(source_keys).search(RetrievalRequest(
             query=question, tenant_id=tenant_id, workspace_id=workspace_id,
-            query_embedding=qv, k=k))
+            query_embedding=qv, k=k, facets=facets or {}))
