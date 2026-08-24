@@ -1894,15 +1894,15 @@ function linkFirstCompany(root, co){
   const before = node.nodeValue.slice(0, idx), after = node.nodeValue.slice(idx + name.length);
   const frag = document.createDocumentFragment();
   if(before) frag.appendChild(document.createTextNode(before));
-  const grounded = !!co.eigen_url;   // grounded companies carry an Eigen entity page
+  const isSearch = !!co.search;      // a last-resort web search (no site we could determine)
   const a = document.createElement("a");
-  a.className = grounded ? "colink" : "colink colink-search"; a.textContent = name;
+  a.className = isSearch ? "colink colink-search" : "colink"; a.textContent = name;
   if(co.url){
     a.href = co.url; a.target = "_blank"; a.rel = "noopener noreferrer";
-    a.title = grounded ? ("Open " + name + " ↗") : ("Search the web for " + name + " ↗");
+    a.title = isSearch ? ("Search the web for " + name + " ↗") : ("Open " + name + "’s site ↗");
   } else if(co.eigen_url){ a.href = co.eigen_url; a.title = "Eigen's grounded view of " + name; }
   frag.appendChild(a);
-  if(grounded){
+  if(co.eigen_url){                  // grounded company → a ◉ to our evidence view (secondary)
     const g = document.createElement("a");
     g.className = "coeigen"; g.href = co.eigen_url; g.textContent = "◉";
     g.title = "Eigen's grounded view of " + name; g.setAttribute("aria-label", "Eigen grounded view of " + name);
