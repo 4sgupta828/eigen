@@ -623,6 +623,9 @@ class AnswerResult:
     clarification: str = ""              # a clarifying question to ask instead of answering (ambiguous follow-up)
     charts: list = field(default_factory=list)   # validated grounded bar charts (dicts) for the UI
     derived_from_prior: bool = False     # answer is a transform of the PREVIOUS answer (no new retrieval)
+    deep_synthesis_fell_back: bool = False   # DEEP SYNTHESIS: the prose-audit fell back to the non-deep
+    #                                          compose because the deep prose kept an unsupported figure
+    #                                          (observability; False unless deep_synthesis drove this run)
     # Grounded reasoning (flag EIGEN_DERIVE): gated, labeled derivations built FROM the verified claims —
     # each with a basis (finding indices), an epistemic label (inference/hypothesis/speculation) the gate
     # assigned, and a falsifier. Adds no fact; empty unless the derive flag is on (byte-identical OFF).
@@ -702,6 +705,17 @@ async def run_react(
     tech_synthesis: bool = False,             # flag: add a strategic 'how it works' TECHNICAL SYNTHESIS
     #                                           from the evidence (disclosed cited + labeled likely-design
     #                                           inference). Compose skips it for non-technical subjects.
+    deep_synthesis: bool = False,             # flag EIGEN_DEEP_SYNTHESIS: synthesis-first grounded answer.
+    #                                           When on for a NON-lookup question: the deep format is the
+    #                                           compose base, the per-kind cap is raised, grounded
+    #                                           derivations are woven into the compose spine, and a
+    #                                           corrective prose grounding-audit runs post-compose.
+    deep_answer_format: str | None = None,    # vertical's deep-synthesis compose format (the deep base).
+    kind: str = "",                           # question kind (management/lookup/understanding); "" → treated
+    #                                           as non-lookup by the deep gate (best-effort; a clear lookup
+    #                                           carries kind="lookup" from the reasoned scaffold).
+    derive_ideas: bool = False,               # deep-weave: also generate grounded 'opportunity' ideas in derive
+    derive_judge_llm=None,                     # deep-weave: optional cross-family validity judge (else reuses llm)
     entity_open_web: bool = False,            # flag: fire ONE additive open-web Exa probe on step 0 for
                                               # single-entity questions (contract.subject_kind), quality-screened
     web_open_denoise: bool = False,           # flag EIGEN_WEB_OPEN_DENOISE: open the aux web leg to the FULL
@@ -801,6 +815,14 @@ async def run_react(
     import asyncio
     atoms = AtomStore()
     result = AnswerResult()
+
+    # DEEP SYNTHESIS (flag) — per-kind compose cap. A synthesis-first answer needs a wider evidence
+    # base than the default 30; RAISE the cap (never lower) so the higher value is in effect for both
+    # the extraction-collection cap and the final claim-selection cap below. Only for non-lookup deep
+    # runs — lookups (and OFF) keep the default cap, byte-identical.
+    if deep_synthesis and kind != "lookup":
+        _deep_cap = 48 if kind == "understanding" else 60   # management / other-non-lookup → 60
+        compose_claim_cap = max(int(compose_claim_cap), _deep_cap)
 
     def _atom_render(a) -> str:
         """Atom text as handed to claim-writing LLM surfaces (claims-first extractor, fallback
@@ -1741,6 +1763,42 @@ async def run_react(
             f"{_finding_year(vc)}{_finding_note(vc)}"
             for i, vc in enumerate(result.verified_claims, 1))
 
+        # DEEP SYNTHESIS (flag) — DERIVE-WEAVE. On a non-lookup deep run, run the grounded reasoning
+        # gate (derive: propose → validity-judge → gate) over the SAME verified findings compose sees,
+        # then weave its survivors into the compose prompt as the analytical spine (a distinct block
+        # right after the findings). Each survivor is already gated (label + basis + falsifier) and adds
+        # NO fact — it only reasons over findings. Fail-OPEN: any derive error → no block, and compose
+        # is byte-identical to the non-deep path. OFF / lookup → `_derivations` stays empty and the
+        # `_deriv_block` injected below is "" (byte-identical compose prompt).
+        _derivations: list = []
+        _deriv_block = ""
+        if deep_synthesis and kind != "lookup" and result.verified_claims:
+            try:
+                from eigen_kernel.research.reason import derive as _derive_fn
+                _derivations = await _derive_fn(
+                    question, result.verified_claims, llm,
+                    generate_ideas=derive_ideas, judge_llm=derive_judge_llm,
+                    max_out=(4 if kind == "understanding" else 6))
+            except Exception as _e:   # noqa: BLE001 — a derive failure must never break compose
+                _log.warning("deep-synthesis derive-weave failed: %r", _e)
+                _derivations = []
+            # BUDGET: derive makes 2 LLM calls (propose + validity-judge) but surfaces no token usage,
+            # so charge a conservative flat estimate (charge-after, gated like compose/frame-repair).
+            # NOTE: exact per-call token metering for derive is deferred (derive returns no usage).
+            if not budget.exhausted:
+                budget.charge(calls=2, tokens=3000)
+            if _derivations:
+                _dl = []
+                for _i, _d in enumerate(_derivations, 1):
+                    _basis = ", ".join(str(b) for b in (getattr(_d, "basis", ()) or ()))
+                    _dl.append(
+                        f"[D{_i}] {_d.label}: {_d.conclusion} "
+                        f"(from findings {_basis}; falsifier: {_d.falsifier})")
+                _deriv_block = (
+                    "\n\nGROUNDED DERIVATIONS (already validated — weave the best into the answer as its "
+                    "analytical spine; keep each label + falsifier; cite [Dn]):\n" + "\n".join(_dl))
+                result.derivations = _derivations   # surface for the UI (parity with the derive flag)
+
         # FRESHNESS disclosure metadata (flag): compute the as-of year, the newest/oldest cited year,
         # and a stale_warning when the freshest evidence predates the vertical's recency horizon — so
         # the UI + the answer can say "as of <year>" instead of presenting dated facts as current.
@@ -1765,10 +1823,16 @@ async def run_react(
         # vertical's addendum (an opaque caller-supplied string — kernel litmus) to the existing
         # directive. The base directive is UNTOUCHED (it is the protected baseline); not fired →
         # `_compose_directive is answer_format` and every compose prompt is byte-identical.
-        _compose_directive = answer_format
+        # DEEP SYNTHESIS (flag): on a non-lookup deep run, REPLACE the compose base with the vertical's
+        # deep format; the existing addenda (enum / axis / tech) still apply ON TOP as today. OFF or a
+        # lookup → `_base_directive is answer_format`, so every compose prompt below is byte-identical.
+        _base_directive = answer_format
+        if deep_synthesis and kind != "lookup" and deep_answer_format:
+            _base_directive = deep_answer_format
+        _compose_directive = _base_directive
         if _enum_compose:
             _ad = (enumerative_compose_addendum or "").strip()
-            _compose_directive = (answer_format + "\n\n" + _ad) if answer_format else _ad
+            _compose_directive = (_base_directive + "\n\n" + _ad) if _base_directive else _ad
         # ANSWER-AXES (flag): make the answer ADDRESS EVERY aspect the reader asked about (the derived
         # contract axes) + lead with a synthesized take — so a requested aspect (e.g. 'moat') is never
         # silently dropped and the answer synthesizes rather than surveys. No axes → a no-op.
@@ -1793,7 +1857,11 @@ async def run_react(
             # unaffected. The vertical directive, when present, is appended AFTER that.
             compose_user = (
                 f"Question: {question}\n\nVERIFIED FINDINGS (the ONLY facts you may use):\n"
-                f"{findings}\n\n"
+                f"{findings}"
+                # DEEP SYNTHESIS derive-weave: the grounded-derivations block (empty "" when OFF /
+                # lookup / none survived → compose prompt byte-identical to today).
+                + _deriv_block
+                + "\n\n"
                 "Write a clear, well-organized answer to the question that synthesizes "
                 "these findings into coherent prose. Reference each finding inline as "
                 "[n] where you use it. Use ONLY the findings above — do not add facts, "
@@ -1922,6 +1990,53 @@ async def run_react(
                 except Exception as _e:   # noqa: BLE001 — best-effort; a failed retry leaves the answer intact
                     _log.warning("compose reasoning-retry failed: %r", _e)
             result.composed_answer = text
+            # DEEP SYNTHESIS (flag) — CORRECTIVE prose grounding-audit. The deep directive widens the
+            # free-prose surface the span-gate does NOT cover (it gates the claims list, not the prose),
+            # so a richer answer could introduce a figure absent from the findings. Turn the diagnostic
+            # `_unsupported_prose_tokens` check into a CORRECTIVE one for deep runs: (1) recompose ONCE
+            # asking the model to drop the offending figures; (2) if any remain, FALL BACK to the
+            # non-deep compose (the protected baseline) rather than ship widened ungrounded prose.
+            # Entirely inside the deep gate → OFF / lookup path never runs it (byte-identical).
+            if deep_synthesis and kind != "lookup":
+                _u = _unsupported_prose_tokens(result.composed_answer, result.verified_claims)
+                if _u and not budget.exhausted:
+                    _fix = ("\n\nGROUNDING FIX (mandatory): you stated figure(s) "
+                            + ", ".join(sorted(_u)) + " that are NOT present in the findings — remove "
+                            "them; keep ONLY figures that appear verbatim in the findings above.")
+                    if diag is not None:
+                        diag.setdefault("retries", {})["deep_prose_audit"] = sorted(_u)
+                    try:
+                        _alt = await _compose((_compose_directive or "") + _fix)
+                        _alt_text = strip_control_tags((_alt.answer or "").strip())
+                        if _alt_text and _refs_valid(_alt_text, n_findings):
+                            parsed, text = _alt, _alt_text
+                            result.composed_answer = text
+                    except Exception as _e:   # noqa: BLE001 — best-effort; keep the answer we have
+                        _log.warning("deep-synthesis prose-audit recompose failed: %r", _e)
+                    # RE-AUDIT: still-unsupported → fall back to the NON-DEEP compose (normal base
+                    # directive). Prefer a grounded plain answer over a richer ungrounded one.
+                    _u2 = _unsupported_prose_tokens(result.composed_answer, result.verified_claims)
+                    if _u2 and not budget.exhausted:
+                        # the non-deep base is `answer_format` (the deep base was `deep_answer_format`);
+                        # re-run compose with it so the prose reverts to the validated baseline shape.
+                        try:
+                            _fb = await _compose(answer_format)
+                            _fb_text = strip_control_tags((_fb.answer or "").strip())
+                            if _fb_text and _refs_valid(_fb_text, n_findings):
+                                parsed, text = _fb, _fb_text
+                                result.composed_answer = text
+                                result.deep_synthesis_fell_back = True
+                        except Exception as _e:   # noqa: BLE001
+                            _log.warning("deep-synthesis non-deep fallback failed: %r", _e)
+                        # Whatever remains after fallback: record it LOUDLY (never silently ship it).
+                        _resid = _unsupported_prose_tokens(result.composed_answer, result.verified_claims)
+                        if _resid:
+                            _log.warning("deep-synthesis: residual unsupported figures after fallback: %s",
+                                         sorted(_resid))
+                            if diag is not None:
+                                diag["failures"].append(
+                                    {"stage": "deep_prose_grounding",
+                                     "detail": "residual unsupported figures: " + ", ".join(sorted(_resid))})
             # Grounded charts: keep only bars whose figure appears in the cited finding (drop the whole
             # chart otherwise). Empty when the charts flag isn't driving the directive → no-op.
             result.charts = _validate_charts(getattr(parsed, "charts", []) or [], result.verified_claims)
@@ -1933,6 +2048,17 @@ async def run_react(
                     getattr(parsed, "interpretation", []) or [], result.verified_claims)
                 conf = getattr(parsed, "confidence", None)
                 result.confidence = conf.model_dump() if conf is not None else None
+                # DEEP SYNTHESIS (flag) — the confidence RATIONALE is free prose too (currently ungated),
+                # so a deep run validates each dimension's rationale for unsupported hard tokens and BLANKS
+                # any that introduce a figure absent from the findings (fail-safe; the level band stays).
+                # Gated on the deep run so the non-deep reasoning-read path is byte-identical.
+                if (deep_synthesis and kind != "lookup" and isinstance(result.confidence, dict)):
+                    for _dim in ("factual", "causal", "generalization"):
+                        _d = result.confidence.get(_dim)
+                        if isinstance(_d, dict):
+                            _rat = (_d.get("rationale") or "").strip()
+                            if _rat and _unsupported_prose_tokens(_rat, result.verified_claims):
+                                _d["rationale"] = ""
                 # Purpose + conclusion FRAME the answer — they restate/synthesize figures already in the
                 # grounded COMPOSED ANSWER, not just single claim atoms. So the no-new-facts allowance is
                 # the union of (verified findings) AND (the composed answer); see _frame_grounded. Without

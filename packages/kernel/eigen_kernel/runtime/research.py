@@ -128,6 +128,8 @@ class ResearchService:
     readable_prose: bool = False            # EIGEN_READABLE_PROSE: plain-language style over compose (flag)
     axis_complete: bool = False             # EIGEN_ANSWER_AXES: compose addresses each asked aspect + synthesizes
     tech_synthesis: bool = False            # EIGEN_TECH_SYNTHESIS: add a strategic 'how it works' technical synthesis
+    deep_synthesis: bool = False            # EIGEN_DEEP_SYNTHESIS: synthesis-first grounded analysis for non-lookup Qs
+    deep_answer_format: str | None = None   # the vertical's deep-synthesis compose format (inert until T2/T3 consume it)
     entity_open_web: bool = False           # EIGEN_WEB_ENTITY_OPEN: entity-scoped open-web probe (screened) on step 0
     web_open_denoise: bool = False          # EIGEN_WEB_OPEN_DENOISE: open the aux web leg to the FULL web + denoise-screen ALL hits
     web_quality_prompt: str | None = None   # vertical-supplied LLM page-quality screen prompt for the open-web leg
@@ -218,6 +220,7 @@ class ResearchService:
                 kw["graph_question"] = kw.get("question", "")
                 kw["question"] = (kw.get("question", "") + "\n\n[" + self.understanding_query_hint + "]")
             kw["answer_format_override"] = self.understanding_answer_format
+            kw["kind"] = "understanding"     # thread kind for DEEP SYNTHESIS gating in run_react
             oe = kw.get("on_event")
             if oe is not None:
                 try:
@@ -253,16 +256,18 @@ class ResearchService:
                     await on_event(ev)
                 except Exception:
                     pass
+        _reasoned_kind = ""    # classified kind, threaded to run_react for DEEP SYNTHESIS gating
         try:
             comp = await self.llm.complete(
                 system=self.reasoned_scaffold_prompt,
                 messages=[{"role": "user", "content": question}],
                 response_format=_Scaffold, max_tokens=1200)
             s = comp.parsed
+            _reasoned_kind = s.kind
             if route and s.kind == "lookup":
                 # pure evidence lookup → the standard adaptive engine fits better; say so in the trace
                 await _emit({"type": "engine", "engine": "standard", "why": "evidence lookup"})
-                return await self.ask(**kw)
+                return await self.ask(**{**kw, "kind": "lookup"})
             if route and s.kind == "understanding" and self.understanding_answer_format:
                 # WHY/HOW question → the UNDERSTANDING engine: mechanism-steered retrieval + the
                 # causal-model compose contract (per-link evidence-status labels)
@@ -271,6 +276,7 @@ class ResearchService:
                     kw["graph_question"] = question
                     kw["question"] = question + "\n\n[" + self.understanding_query_hint + "]"
                 kw["answer_format_override"] = self.understanding_answer_format
+                kw["kind"] = "understanding"
                 await _emit({"type": "engine", "engine": "understanding", "why": "why/how question"})
                 return await self.ask(**kw)
             lines = ([f"- explicitly asked: {x}" for x in s.explicit_asks[:8]]
@@ -288,6 +294,7 @@ class ResearchService:
         except Exception:   # noqa: BLE001 — scaffold is an enhancer; its failure never blocks the answer
             pass
         kw["answer_format_override"] = self.reasoned_answer_format
+        kw["kind"] = _reasoned_kind      # management (or route=False lookup/understanding); "" if scaffold failed
         return await self.ask(**kw)
 
     async def ask(
@@ -325,6 +332,9 @@ class ResearchService:
         #                                      structural brand→generic mapping, Noesis IN D-3) — rides
         #                                      the attachment-context channel, so it frames search and
         #                                      NEVER reaches compose or becomes citable
+        kind: str = "",                       # question kind (management/lookup/understanding) from the
+        #                                      reasoned scaffold — threads into run_react so DEEP SYNTHESIS
+        #                                      keeps lookups crisp. "" → treated as non-lookup (best-effort).
     ) -> AnswerResult:
         # ANSWER-FOCUS (flag): resolve a conversational FOLLOW-UP ("what dose?") into a self-contained
         # question carrying the subject from the conversation ("dose of TMP-SMX for PCP prophylaxis"),
@@ -514,6 +524,8 @@ class ResearchService:
             answer_focus=answer_focus, reasoning_read=self.reasoning_read,
             readable_prose=self.readable_prose, country_boost=country_boost,
             axis_complete=self.axis_complete, tech_synthesis=self.tech_synthesis,
+            deep_synthesis=self.deep_synthesis, deep_answer_format=self.deep_answer_format,
+            kind=kind, derive_ideas=self.derive_ideas, derive_judge_llm=self.derive_judge_llm,
             entity_open_web=self.entity_open_web, web_open_denoise=self.web_open_denoise,
             web_quality_prompt=self.web_quality_prompt,
             collect_diagnostics=self.collect_diagnostics,
@@ -536,7 +548,11 @@ class ResearchService:
         # GROUNDED REASONING (flag): derive labeled, checked conclusions FROM the verified findings —
         # a second trust regime on top of the fact gate. Additive: adds no fact, only reasons over the
         # findings run_react already verified; a failure never breaks the answer.
-        if self.derive and getattr(res, "verified_claims", None):
+        # SKIP when DEEP SYNTHESIS already WOVE derivations into the answer (deep + non-lookup): run_react
+        # ran derive pre-compose and folded it into the prose spine, so appending the post-compose
+        # "## Reasoning & ideas" section here would duplicate it. Non-deep / lookup → unchanged.
+        _deep_wove = self.deep_synthesis and kind != "lookup"
+        if self.derive and getattr(res, "verified_claims", None) and not _deep_wove:
             try:
                 from eigen_kernel.research.reason import derive as _derive
                 ds = await _derive(

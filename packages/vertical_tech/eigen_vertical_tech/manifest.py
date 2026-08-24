@@ -28,7 +28,7 @@ from .answer_contract import (ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_CONTRA
                               TECH_LANDSCAPE_CONTRACT_PROMPT)
 from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
                        TECH_ANSWER_360_BLOCK, tech_closing_block, TECH_LANDSCAPE_COMPOSE_BLOCK,
-                       answer_close_on, TECH_REASONED_ANSWER_FORMAT,
+                       answer_close_on, TECH_DEEP_SYNTHESIS_FORMAT, TECH_REASONED_ANSWER_FORMAT,
                        TECH_REASONED_SCAFFOLD_PROMPT, TECH_UNDERSTANDING_ANSWER_FORMAT,
                        TECH_UNDERSTANDING_QUERY_HINT, adaptive_format_on, answer_360_on,
                        landscape_coverage_on)
@@ -55,6 +55,16 @@ def web_entity_open_on() -> bool:
     single-entity diligence question apart. OFF → the original TECH_CONTRACT_PROMPT (byte-identical)."""
     import os
     return os.environ.get("EIGEN_WEB_ENTITY_OPEN", "").lower() in ("1", "true", "yes")
+
+
+def deep_synthesis_on() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_DEEP_SYNTHESIS turns a non-lookup answer into a synthesis-first
+    grounded analysis (core thesis → tensions → second-order implications → mechanism) built around
+    grounded derivations, and appends the deep-analyst persona clause. The deep format is exposed to the
+    kernel as inert data (`deep_answer_format`, always set); this flag + the question kind gate whether
+    the kernel ever selects it (T2/T3). OFF → byte-identical (persona + format unchanged)."""
+    import os
+    return os.environ.get("EIGEN_DEEP_SYNTHESIS", "").lower() in ("1", "true", "yes")
 
 
 def build_manifest() -> VerticalManifest:
@@ -156,6 +166,10 @@ def build_manifest() -> VerticalManifest:
         understanding_answer_format=(TECH_UNDERSTANDING_ANSWER_FORMAT
                                      + (tech_closing_block() if answer_close_on() else "")),
         understanding_query_hint=TECH_UNDERSTANDING_QUERY_HINT,
+        # FLAG EIGEN_DEEP_SYNTHESIS: the synthesis-first compose format (core thesis → tensions →
+        # second-order implications → mechanism, derivation-woven). ALWAYS set — inert data; the flag
+        # (deep_synthesis) + question kind gate whether the kernel selects it (T2/T3). OFF → never used.
+        deep_answer_format=TECH_DEEP_SYNTHESIS_FORMAT,
         # Sub-vertical seam: sectors as a per-question subject scope (AI seeded), NOT separate verticals.
         sector_profiles=SECTOR_PROFILES,
         # Analytical lenses (the orthogonal axis): angles applied within the active sector.

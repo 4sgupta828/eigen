@@ -88,14 +88,34 @@ _ADVICE_RULE_GENERAL = (
     "with no claims when NONE of the retrieved evidence is relevant to the question.")
 
 
+# Deep-synthesis clause (flag EIGEN_DEEP_SYNTHESIS). APPENDED (never a swap) so OFF is byte-identical.
+# The deep-analyst voice: reason OVER the evidence toward the non-obvious read; a correct recital is a
+# FAILURE of the role; every synthesis move stays a labeled inference over cited facts, never a new fact.
+_DEEP_ANALYST_CLAUSE = (
+    "DEEP-SYNTHESIS MODE — reason OVER the evidence, do not recite it. Your job here is the synthesis the "
+    "reader cannot assemble alone: surface the non-obvious CONNECTION across findings, the SECOND-ORDER "
+    "implication of the load-bearing facts, and the TENSION where sources or authority tiers disagree — "
+    "the reads only synthesis can build. A correct recital of what each source says, with nothing "
+    "connected, is a FAILURE of this role, not a safe answer. Every synthesis move stays a LABELED "
+    "INFERENCE over the cited facts — wrapped [[R]]…[[/R]] with its basis — and NEVER a new fact: "
+    "introduce no figure, date, named event, amount, or proper noun that is not in the retrieved "
+    "evidence. Lead with the insight, and keep disclosed fact and inferred read grammatically distinct.")
+
+
 class TechPersona:
     def system_prompt(self) -> str:
         from .reasoned import adaptive_format_on
+        from .manifest import deep_synthesis_on
         if adaptive_format_on():
             # general-audience voice: swap the VC advice rule + drop "and never as investment advice"
             s = _SYSTEM.replace(_ADVICE_RULE_VC, _ADVICE_RULE_GENERAL)
-            return s.replace(" and never as investment advice.", ".")
-        return _SYSTEM
+            s = s.replace(" and never as investment advice.", ".")
+        else:
+            s = _SYSTEM
+        # Flag-gated deep-analyst clause — appended, so OFF returns the string byte-identically.
+        if deep_synthesis_on():
+            s = s + "\n\n" + _DEEP_ANALYST_CLAUSE
+        return s
 
     def tool_descriptions(self) -> dict[str, str]:
         return dict(_TOOLS)

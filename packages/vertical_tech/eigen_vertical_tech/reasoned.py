@@ -173,6 +173,76 @@ TECH_UNDERSTANDING_QUERY_HINT = (
     "papers, primary write-ups) vs. merely asserted or hypothesized.")
 
 
+# ── DEEP SYNTHESIS FORMAT (flag EIGEN_DEEP_SYNTHESIS) ──────────────────────────────────────────────
+# The synthesis-first compose contract for a non-lookup question: the answer's value is the non-obvious
+# read that pulls several findings into one coherent insight, NOT a survey of what each source says.
+# Threaded to the kernel via the manifest's `deep_answer_format` slot; the flag + question kind gate
+# whether the kernel ever selects it (T3). Grounding is UNCHANGED — the deep read widens the free-prose
+# surface, so the grounding contract below (facts cite [n] verbatim; novelty only from reasoning over
+# cited findings / supplied derivations; never a new number/date/name) is load-bearing, and T3 adds a
+# corrective post-compose prose-audit on top of it.
+TECH_DEEP_SYNTHESIS_FORMAT = """\
+STRUCTURE (deep-synthesis answer — a SYNTHESIS the reader could not assemble themselves, NOT a survey of
+what each source says):
+
+You are not summarizing the findings; you are REASONING OVER them. The value of this answer is the
+non-obvious read that pulls several findings into one coherent insight — a correct recital of what each
+source reports, with nothing connected, is a FAILURE of this format. Lead with the insight, then support
+it. Shape the sections to the question; the headings below are the analytical spine, not a rigid template.
+
+## Core thesis
+The non-obvious read: the single coherent insight that pulls multiple findings together and answers what
+the question is really after. One tight paragraph. This is the take the reader came for — state it up
+front, grounded in the cited facts [n], with the synthesis move that produced it wrapped [[R]]…[[/R]].
+
+## Tensions & contradictions
+Where the evidence CONFLICTS or the authority tiers disagree — surface it, do NOT smooth it over. Name
+what each side says, which tier carries it (a filing / granted patent vs a preprint vs sentiment), and —
+in one line — what evidence WOULD RESOLVE it. If the findings genuinely agree, say so briefly; never
+manufacture a false tension.
+
+## Second-order implications
+The "which means… / the consequence is…" of the load-bearing facts — where the first-order finding LEADS
+if it holds. Each implication is an inference over cited findings, wrapped [[R]]…[[/R]], with its basis
+visible; keep it distinct from the disclosed fact it rests on. Draw only the implications the evidence
+actually supports.
+
+## Mechanism
+WHY the technology / market / behavior works this way — the causal reason underneath the pattern, not a
+restatement of the pattern. Cite the findings the mechanism rests on [n]; label the parts that are the
+likely-but-not-disclosed mechanism [[R]]…[[/R]].
+
+LENGTH — scale to the question, never to fill space:
+- A lookup / narrow factual ask → short: the answer, then only the synthesis that genuinely adds to it.
+- An understanding / why-how ask → the causal depth the mechanism needs, no more.
+- A landscape / strategy / "what does this mean" ask → the richest, because there the synthesis IS the answer.
+
+ANTI-PADDING: depth comes from INSIGHT + STRUCTURE, NOT word count. No boilerplate, no generic
+definitions, no restating the question, no recap of the findings for their own sake. Every sentence either
+states a grounded fact or advances the synthesis — cut anything that does neither. A shorter answer with a
+sharper thesis beats a longer one that surveys.
+
+GROUNDING CONTRACT (the deep read widens the free-prose surface — hold it to the same grounding as the
+claims list):
+- Every FACT — a figure, date, named event, funding amount, benchmark, proper noun, source
+  characterization — comes from the findings and cites [n] VERBATIM. NEVER introduce a number, date,
+  named event, amount, or proper noun that is not in the findings.
+- NOVELTY comes ONLY from reasoning OVER the cited findings, or from the supplied GROUNDED DERIVATIONS —
+  never from a new fact smuggled in as prose. Wrap every inference in [[R]]…[[/R]] and keep its BASIS (the
+  finding[s] it reasons from) visible.
+- Separate DISCLOSED from INFERRED in your wording: "disclosed / reported / benchmarked / filed" for what
+  a source states; "suggests / implies / would mean / points to" for what you reason. Never present an
+  inference in the grammar of a disclosed fact.
+
+USE THE DERIVATIONS: when a "GROUNDED DERIVATIONS [D1..Dn]" block is supplied, it is already-validated
+reasoning — weave the best ones into the body as the ANALYTICAL SPINE (not a bolt-on list at the end),
+preserving each one's label and citing it [Dn] so its basis stays traceable:
+- an `inference` may be stated with confidence, as a labeled [[R]] read;
+- a `hypothesis` must carry its FALSIFIER — what would show it wrong — in the same breath;
+- a `speculation` appears ONLY in an explicit ideas / "worth watching" aside, never in the bottom line.
+"""
+
+
 # ── ADAPTIVE, GENERAL-AUDIENCE FORMAT (flag EIGEN_ADAPTIVE_FORMAT) ─────────────────────────────────
 # Replaces the ported clinical decision memo (Assessment / do-now / Do-if — inherited from Noesis's
 # treatment scaffold) AND its VC framing. Eigen is a GENERAL deep-tech intelligence platform: it answers

@@ -670,6 +670,15 @@ def tech_synthesis_enabled() -> bool:
     return os.environ.get("EIGEN_TECH_SYNTHESIS", "").lower() in ("1", "true", "yes")
 
 
+def deep_synthesis_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_DEEP_SYNTHESIS makes a non-lookup answer a synthesis-first
+    grounded analysis — core thesis (the non-obvious read) → tensions/contradictions → second-order
+    implications → mechanism — built around grounded derivations woven into the spine, with the deep
+    read held to the same grounding contract as the claims list. Lookups stay crisp. OFF → byte-identical
+    (today's compose path). T1 wires the flag → service field only; T2/T3 add the behavior."""
+    return os.environ.get("EIGEN_DEEP_SYNTHESIS", "").lower() in ("1", "true", "yes")
+
+
 def entity_open_web_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_WEB_ENTITY_OPEN fires one entity-scoped, quality-screened
     open-web Exa probe (whitelist dropped) on step 0 for single-entity diligence questions. OFF →
@@ -1134,6 +1143,11 @@ def build_default_service() -> ResearchService:
         readable_prose=readable_prose_enabled(),
         axis_complete=axis_complete_enabled(),
         tech_synthesis=tech_synthesis_enabled(),
+        # EIGEN_DEEP_SYNTHESIS (T1): flag → service field + the vertical's deep format as inert data.
+        # Routing (letting deep ride the reasoned/dynamic path for an unset engine) is deferred to T3;
+        # T1 only wires the flag so OFF and ON stay byte-identical today.
+        deep_synthesis=deep_synthesis_enabled(),
+        deep_answer_format=getattr(manifest, "deep_answer_format", None),
         entity_open_web=entity_open_web_enabled(),
         web_open_denoise=open_web_denoise_enabled(),
         web_quality_prompt=getattr(manifest, "web_quality_prompt", None),

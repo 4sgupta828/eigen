@@ -110,6 +110,12 @@ class VerticalManifest:
     # mechanism-steering retrieval hint, selected by the dynamic router for WHY/HOW questions.
     understanding_answer_format: str | None = None
     understanding_query_hint: str | None = None
+    # Optional DEEP-SYNTHESIS compose format (flag EIGEN_DEEP_SYNTHESIS): a synthesis-first directive
+    # (core thesis → tensions → second-order implications → mechanism, grounded-derivation-woven) selected
+    # for non-lookup questions when the app's deep_synthesis flag is on. Domain-free opaque slot the kernel
+    # only threads into compose (via the service's deep_answer_format); ALL domain wording lives in the
+    # vertical. Always safe to set as inert data — the flag + question kind gate its use. None → unavailable.
+    deep_answer_format: str | None = None
     # Optional vertical-supplied instruction for the VISION pre-step: how to DESCRIBE a
     # user-uploaded image (color/shape/borders/texture/distribution), producing a labeled
     # visual observation — never a diagnosis. Opaque prose; the kernel only threads it into
