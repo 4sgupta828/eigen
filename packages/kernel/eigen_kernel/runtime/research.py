@@ -338,9 +338,12 @@ class ResearchService:
                     if _parametric_eligible:
                         _pd = await draft_prior(question, self.llm, self.prior_draft_prompt,
                                                 budget=BudgetState(max_calls=self.max_calls))
-                        if _pd is not None:
+                        # A claim-less (degenerate) draft can't drive parametric verification — engaging it
+                        # would skip the agentic loop and abstain (the empty-answer failure). Require at
+                        # least one claim; else fall back to today's retrieval-led path (prior_draft unset).
+                        if _pd is not None and getattr(_pd, "claims", None):
                             kw = dict(kw)
-                            kw["prior_draft"] = _pd          # inert until T2/T3
+                            kw["prior_draft"] = _pd
                             await _emit({"type": "parametric_led", "claims": len(_pd.claims)})
                 except Exception:   # noqa: BLE001 — parametric draft is an enhancer; never blocks the answer
                     pass

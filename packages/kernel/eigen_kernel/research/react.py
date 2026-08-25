@@ -117,9 +117,14 @@ _TECH_SYNTHESIS_ADDENDUM = (
 # an unverifiable model claim is never restated as established fact. <OUTLINE> is replaced with the
 # drafted outline text. OFF (prior_draft is None) → not appended → every compose prompt byte-identical.
 _PARAMETRIC_ADDENDUM = (
-    "[Structure the answer to follow this OUTLINE: <OUTLINE>. Every FACT you state must come from the "
-    "VERIFIED FINDINGS above and cite [n]. Do NOT restate any unverifiable claim as established fact. "
-    "Lead with the reasoning/structure; keep facts grounded.]")
+    "[PARAMETRIC-LED. Structure the answer to follow this OUTLINE:\n<OUTLINE>\n\n"
+    "The following is YOUR OWN REASONING for this question — build the answer AROUND it, as the analytical "
+    "spine. Present each as labeled inference wrapped [[R]]...[[/R]], grounded in and consistent with the "
+    "VERIFIED FINDINGS; NEVER assert a new fact from it (every figure, name, date, or event MUST come from "
+    "a verified finding and cite [n]):\n<REASONING>\n\n"
+    "RULES: lead with the reasoning/synthesis (that is the value); every FACT cites [n] from the VERIFIED "
+    "FINDINGS; do NOT restate any unverifiable claim as established fact; where your reasoning outruns the "
+    "findings, keep it clearly labeled [[R]] inference, never fact.]")
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -2023,8 +2028,15 @@ async def run_react(
         # verified findings (cite [n]) — no unverifiable claim restated as established fact. Appended ONLY
         # when a prior_draft drove this run → OFF (prior_draft is None) → not appended → byte-identical.
         if prior_draft is not None:
-            _outline = (getattr(prior_draft, "outline", "") or "").strip()
-            _pad = _PARAMETRIC_ADDENDUM.replace("<OUTLINE>", _outline)
+            _outline = (getattr(prior_draft, "outline", "") or "").strip() or "(none)"
+            # The model's REASONING claims are the analytical spine of a parametric answer — inject them so
+            # compose builds around them (as labeled [[R]] inference), not just the outline. Without this an
+            # understanding/reasoning-heavy question (few verifiable facts) composed a thin answer.
+            _reasoning = "\n".join(
+                f"- {(getattr(c, 'text', '') or '').strip()}"
+                for c in (getattr(prior_draft, "claims", None) or [])
+                if getattr(c, "kind", "fact") == "reasoning" and (getattr(c, "text", "") or "").strip())
+            _pad = _PARAMETRIC_ADDENDUM.replace("<OUTLINE>", _outline).replace("<REASONING>", _reasoning or "(none)")
             _compose_directive = (_compose_directive + "\n\n" + _pad) if _compose_directive else _pad
 
         async def _compose(directive: str | None) -> ComposedAnswer:

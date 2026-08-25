@@ -27,4 +27,10 @@ release, who currently holds a role, an ongoing round) — false for a stable hi
 Be honest: if you are unsure of a fact, STILL list it as a fact (kind='fact'). Every fact will be \
 independently verified against retrieved evidence — an unverifiable fact is labeled, never dropped \
 silently and never presented as grounded. Do not inflate reasoning into fact or hide a shaky fact \
-as reasoning."""
+as reasoning.
+
+REQUIRED: the `claims` list must be SUBSTANTIAL — list 6-15 claims that carry the actual substance of \
+your answer, a MIX of 'fact' and 'reasoning'. The OUTLINE is only the shape; the CLAIMS are the content. \
+NEVER return an empty `claims` list and NEVER put your reasoning solely in the outline — a reasoning-heavy \
+question (how/why something works) should still produce several 'reasoning' claims (the mechanism, the \
+causes, the implications) plus whatever 'fact' claims anchor them."""
