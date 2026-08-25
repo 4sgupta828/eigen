@@ -405,6 +405,13 @@
     border-top:1px solid var(--hair);display:flex;align-items:center;gap:.55rem;}
   .answer.md .mdh::before{content:"";width:15px;height:2px;border-radius:2px;background:var(--gold);flex:none;}
   .answer.md .mdh:first-child{margin-top:0;padding-top:0;border-top:none;}
+  /* PARAMETRIC-LED unverified register: muted, non-gold heading so the "model's read" section reads as
+     visibly UNVERIFIED (not a grounded findings heading). The ~ dims its following disclaimer + bullets;
+     it is the LAST appended section, so the general-sibling reach stays within the register. */
+  .answer.md .mdh-unverified{color:var(--faint,#8a93ad);cursor:help;}
+  .answer.md .mdh-unverified::before{background:var(--faint,#8a93ad);opacity:.7;}
+  .answer.md .mdh-unverified ~ .mdp,.answer.md .mdh-unverified ~ .mdl{color:var(--faint,#8a93ad);}
+  .answer.md .mdh-unverified ~ .mdl li::before{background:var(--faint,#8a93ad);opacity:.6;}
   .answer.md .mdh:first-child + .mdp{font-family:var(--serif);font-size:1.24rem;line-height:1.5;
     letter-spacing:-.011em;color:var(--ink);margin:.1rem 0 .5rem;}
   .answer.md .mdp{margin:.55rem 0;line-height:1.72;color:var(--ink);}
@@ -2240,7 +2247,13 @@ function mdToHtml(raw){
       continue;
     }
     const hm = line.match(/^(#{1,4})\s+(.*)$/);
-    if(hm){ const lvl = Math.min(6, hm[1].length+2); out.push(`<h${lvl} class="mdh">${mdInline(hm[2])}</h${lvl}>`); i++; continue; }
+    if(hm){ const lvl = Math.min(6, hm[1].length+2);
+      // PARAMETRIC-LED (EIGEN_PARAMETRIC_LED): the unverified register's heading gets a distinct, muted
+      // class + tooltip so the "model's read" block reads as visibly UNVERIFIED, not grounded findings.
+      const unver = /^Model's read\b/.test(hm[2]);
+      const cls = unver ? "mdh mdh-unverified" : "mdh";
+      const tip = unver ? ' title="The model&#39;s own assertions that retrieval could not confirm — unverified, not established fact."' : "";
+      out.push(`<h${lvl} class="${cls}"${tip}>${mdInline(hm[2])}</h${lvl}>`); i++; continue; }
     if(/^\s*[-*]\s+/.test(line)){
       const items = [];
       while(i<lines.length && /^\s*[-*]\s+/.test(lines[i])){ items.push(mdInline(lines[i].replace(/^\s*[-*]\s+/,""))); i++; }

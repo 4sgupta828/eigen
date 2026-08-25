@@ -689,6 +689,16 @@ def deep_synthesis_enabled() -> bool:
     return os.environ.get("EIGEN_DEEP_SYNTHESIS", "").lower() in ("1", "true", "yes")
 
 
+def parametric_led_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_PARAMETRIC_LED lets the model's integrated knowledge LEAD a
+    parametric-eligible answer's structure + reasoning while retrieval VALIDATES every asserted fact.
+    When ON AND the question is parametric-eligible (stance=established, kind∈{understanding,management},
+    subject_kind!=specific_entity), a pre-retrieval PriorDraft is produced. T1 wires the flag → service
+    field + produces the draft, threading it INERTLY (unused by compose until T2/T3). OFF or not
+    eligible → no draft call, today's retrieve-first path byte-identical."""
+    return os.environ.get("EIGEN_PARAMETRIC_LED", "").lower() in ("1", "true", "yes")
+
+
 def entity_open_web_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_WEB_ENTITY_OPEN fires one entity-scoped, quality-screened
     open-web Exa probe (whitelist dropped) on step 0 for single-entity diligence questions. OFF →
@@ -1056,6 +1066,10 @@ class ResearchOut(BaseModel):
     #                                       citations,peer_reviewed}] (empty unless the flag is on)
     companies: list = []                  # companies this answer is grounded on [{name,entity_id,url,
     #                                       eigen_url}] for prose hyperlinking (empty unless flag on)
+    unverified_priors: list = []          # EIGEN_PARAMETRIC_LED (T3): the model's OWN asserted facts that
+    #                                       retrieval could NOT ground [{text,needs_freshness}] — the
+    #                                       labeled register, kept OUT of `claims`/grounded prose (empty
+    #                                       unless the parametric-led flag drove this run)
 
 
 def build_default_service() -> ResearchService:
@@ -1158,6 +1172,11 @@ def build_default_service() -> ResearchService:
         # T1 only wires the flag so OFF and ON stay byte-identical today.
         deep_synthesis=deep_synthesis_enabled(),
         deep_answer_format=getattr(manifest, "deep_answer_format", None),
+        # EIGEN_PARAMETRIC_LED (T1): flag → service field + the vertical's prior-draft prompt as inert
+        # data. When ON + parametric-eligible, ask_reasoned produces a PriorDraft and threads it inertly
+        # (unused by compose until T2/T3). OFF or not eligible → byte-identical.
+        parametric_led=parametric_led_enabled(),
+        prior_draft_prompt=getattr(manifest, "prior_draft_prompt", None),
         entity_open_web=entity_open_web_enabled(),
         web_open_denoise=open_web_denoise_enabled(),
         web_quality_prompt=getattr(manifest, "web_quality_prompt", None),
@@ -1531,6 +1550,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "diag_trace_enabled": diag_trace_enabled(),
             "evidence_fitness_enabled": evidence_fitness_enabled(),
             "authority_basis_enabled": authority_basis_enabled(),
+            "parametric_led_enabled": parametric_led_enabled(),
             "ask_panel_enabled": live_panel,
             "panel_specialists": ([
                 {"id": getattr(s, "id", ""), "specialty": getattr(s, "specialty", ""),
@@ -2532,6 +2552,8 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             freshness=(getattr(res, "freshness", None) if freshness_ranking_enabled() else None),
             related_research=related,
             companies=companies,
+            unverified_priors=((getattr(res, "unverified_priors", []) or [])
+                               if parametric_led_enabled() else []),
         )
 
     @app.post("/research/stream")

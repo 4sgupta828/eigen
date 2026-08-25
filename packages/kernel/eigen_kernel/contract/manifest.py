@@ -122,6 +122,12 @@ class VerticalManifest:
     # threads into compose (via the service's authority_basis_directive); ALL domain wording lives in the
     # vertical. Always safe to set as inert data — the flag gates its use. None → nothing appended.
     authority_basis_directive: str | None = None
+    # Optional PARAMETRIC-LED draft directive (flag EIGEN_PARAMETRIC_LED): the system prompt for the
+    # pre-retrieval `draft_prior` call — the model drafts an answer OUTLINE + separates checkable FACTS
+    # (verified against retrieval in T2) from its REASONING. Domain-free opaque slot the kernel only
+    # threads into draft_prior (via the service's prior_draft_prompt); ALL domain wording lives in the
+    # vertical. Always safe to set as inert data — the flag + routing gate its use. None → unavailable.
+    prior_draft_prompt: str | None = None
     # Optional vertical-supplied instruction for the VISION pre-step: how to DESCRIBE a
     # user-uploaded image (color/shape/borders/texture/distribution), producing a labeled
     # visual observation — never a diagnosis. Opaque prose; the kernel only threads it into

@@ -13,6 +13,7 @@ from . import discovery, entities, evidence_kind
 from .answer_format import (TECH_ANSWER_FORMAT, TECH_DILIGENCE_SYNTHESIS_FORMAT,
                             TECH_VISUAL_GUIDANCE, TECH_CHART_GUIDANCE, TECH_REASONING_FORMAT,
                             TECH_AUTHORITY_BASIS_DIRECTIVE)
+from .prior_draft import PRIOR_DRAFT_PROMPT
 from .terms import TECH_TERMS_PROMPT
 from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
@@ -180,6 +181,10 @@ def build_manifest() -> VerticalManifest:
         # opinion/blog/social are supplementary signal). ALWAYS set — inert data; the flag gates whether the
         # kernel appends it. OFF → never used (byte-identical).
         authority_basis_directive=TECH_AUTHORITY_BASIS_DIRECTIVE,
+        # FLAG EIGEN_PARAMETRIC_LED: the pre-retrieval parametric-draft directive (outline + fact/reasoning
+        # decomposition). ALWAYS set — inert data; the flag (parametric_led) + routing predicate gate whether
+        # the kernel calls draft_prior (T2/T3 consume the draft). OFF → never used (byte-identical).
+        prior_draft_prompt=PRIOR_DRAFT_PROMPT,
         # Sub-vertical seam: sectors as a per-question subject scope (AI seeded), NOT separate verticals.
         sector_profiles=SECTOR_PROFILES,
         # Analytical lenses (the orthogonal axis): angles applied within the active sector.

@@ -73,6 +73,8 @@ _READABILITY_STYLE = (
 # and keep the ones most RELEVANT to the question — so compose gets the BEST findings, not the first.
 _COMPOSE_CLAIM_CAP = 30       # max verified findings sent to compose
 _EXTRACT_COLLECT = 80         # under evidence-select, gather up to this many before ranking down
+_PARAMETRIC_FACT_CAP = 12     # EIGEN_PARAMETRIC_LED (T2): max drafted FACT claims verified per run
+#                               (bounds cost: one targeted retrieval + one grounding call per fact)
 
 # Answer-axes addendum (flag `axis_complete`): appended after the base compose directive so the answer
 # COVERS each aspect the reader asked about + synthesizes. Domain-neutral (the axes come from the
@@ -108,6 +110,16 @@ _TECH_SYNTHESIS_ADDENDUM = (
     "Concrete and technical — a sharp engineer's read synthesized from the evidence, not marketing and "
     "not ungrounded speculation. Separate DISCLOSED from LIKELY throughout. Skip this entirely if the "
     "subject has no technical product.]")
+
+# Parametric-led addendum (EIGEN_PARAMETRIC_LED, T3): appended to the compose directive ONLY when the
+# model's integrated knowledge LED this run (a `prior_draft` is present). The answer FOLLOWS the drafted
+# OUTLINE for structure/reasoning, but every FACT must come from the VERIFIED FINDINGS and cite [n] —
+# an unverifiable model claim is never restated as established fact. <OUTLINE> is replaced with the
+# drafted outline text. OFF (prior_draft is None) → not appended → every compose prompt byte-identical.
+_PARAMETRIC_ADDENDUM = (
+    "[Structure the answer to follow this OUTLINE: <OUTLINE>. Every FACT you state must come from the "
+    "VERIFIED FINDINGS above and cite [n]. Do NOT restate any unverifiable claim as established fact. "
+    "Lead with the reasoning/structure; keep facts grounded.]")
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -630,6 +642,11 @@ class AnswerResult:
     # each with a basis (finding indices), an epistemic label (inference/hypothesis/speculation) the gate
     # assigned, and a falsifier. Adds no fact; empty unless the derive flag is on (byte-identical OFF).
     derivations: list = field(default_factory=list)
+    # Parametric-led (flag EIGEN_PARAMETRIC_LED, T2): asserted-model FACTS that could NOT be grounded
+    # against retrieval — each {"text","needs_freshness"}. A labeled register (parity with `derivations`)
+    # that T3 renders as "model asserts — not yet verified", NEVER merged into grounded prose. Empty on
+    # every OFF (prior_draft is None) run, so the byte-identical OFF path never populates it.
+    unverified_priors: list = field(default_factory=list)
     # Reasoning Read (flag): a purpose-driven analysis — a stated PURPOSE, the interpretation FACTORS
     # that bear on it, a converging CONCLUSION, and the 3-dimension confidence read. All empty/None
     # unless the reasoning-read flag drove the compose directive (byte-identical OFF).
@@ -711,6 +728,11 @@ async def run_react(
     #                                           derivations are woven into the compose spine, and a
     #                                           corrective prose grounding-audit runs post-compose.
     deep_answer_format: str | None = None,    # vertical's deep-synthesis compose format (the deep base).
+    prior_draft=None,                         # EIGEN_PARAMETRIC_LED (T1): the pre-retrieval PriorDraft for
+    #                                           a parametric-eligible question. DECLARED-BUT-UNUSED here in
+    #                                           T1 (threaded inertly) — T2 verifies each asserted fact
+    #                                           against the span-gate + binding, T3 composes from the
+    #                                           verified + labeled-unverified register. None → today's path.
     kind: str = "",                           # question kind (management/lookup/understanding); "" → treated
     #                                           as non-lookup by the deep gate (best-effort; a clear lookup
     #                                           carries kind="lookup" from the reasoned scaffold).
@@ -1235,9 +1257,103 @@ async def run_react(
         _log.info("answer-contract stance=%s recency=%s suppress_authority=%s web_open=%s entity_open=%s denoise=%s steps=%s cap=%s",
                   _contract.stance, bool(_eff_freshness), _suppress_auth, _web_open, _entity_open, web_open_denoise, max_steps, compose_claim_cap)
 
+    # EIGEN_PARAMETRIC_LED (T2): the DIRECTED VERIFY LOOP. When a `prior_draft` is present the model
+    # has ALREADY drafted its answer's facts + structure; retrieval now VALIDATES each asserted FACT
+    # instead of authoring the answer. For each drafted fact claim we run its targeted `verify_query`,
+    # then try to ground the claim against the retrieved atoms through the ADVERSARIAL directed grounder
+    # + the UNTOUCHED span-gate. A fact that grounds becomes a normal cited VerifiedClaim (identical
+    # shape to today's); a fact that can't be grounded lands in `unverified_priors` (labeled register,
+    # T3 renders it — never grounded prose). This REPLACES the agentic search loop below; both paths
+    # converge on the SAME post-loop selection / congruence / authority / compose block. OFF
+    # (prior_draft is None) → this block is skipped and the agentic loop runs byte-identical to today.
+    if prior_draft is not None:
+        from eigen_kernel.research.prior_verify import ground_asserted_claim
+        _fact_claims = [c for c in (getattr(prior_draft, "claims", None) or [])
+                        if getattr(c, "kind", "fact") == "fact"][:_PARAMETRIC_FACT_CAP]
+        _drafted = len(_fact_claims)
+        _grounded_n = 0
+        await emit({"type": "parametric_verify", "drafted_facts": _drafted})
+        for _ci, _c in enumerate(_fact_claims):
+            if budget.exhausted:
+                # Fail-closed: no budget to verify the rest → they stay UNVERIFIED (never shipped
+                # from the prior alone). Includes any needs_freshness claim, as required.
+                for _rest in _fact_claims[_ci:]:
+                    result.unverified_priors.append(
+                        {"text": _rest.text, "needs_freshness": bool(getattr(_rest, "needs_freshness", False))})
+                result.stopped_reason = "budget"
+                break
+            _q = (getattr(_c, "verify_query", "") or "").strip() or _c.text
+            _qvec = await _timed("embed_ms",
+                                 asyncio.to_thread(lambda q=_q: list(embedder.embed([q])[0])))
+            # Reuse the EXACT base_req construction the agentic loop uses (facets/exclusions +
+            # web_open / web_denoise / web_recency), so the verifier sees the same retrieval surface.
+            _base_req = RetrievalRequest(
+                query=_q, tenant_id=tenant_id, workspace_id=workspace_id,
+                query_embedding=_qvec, k=k, facets=dict(facets or {}),
+                exclude_facets=dict(exclude_facets or {}),
+                web_open=(_web_open or web_open_denoise),
+                web_denoise=web_open_denoise,
+                web_recency_days=_web_recency_days,
+            )
+            await emit({"type": "search", "query": _q, "variants": []})
+            _legs = [("corpus", source.search(_base_req))]
+            if aux_source is not None:
+                _legs.append(("web", aux_source.search(_base_req)))
+            _got = await _timed("retrieval_ms", asyncio.gather(
+                *[co for _n, co in _legs], return_exceptions=True))
+            _hits = []
+            for (_leg, _co), _r in zip(_legs, _got):
+                if isinstance(_r, Exception):
+                    _log.warning("%s verify leg failed on %r: %s", _leg, _q, _r)
+                    if diag is not None:
+                        diag.setdefault("failures", []).append(
+                            {"stage": f"{_leg}_verify", "detail": f"{type(_r).__name__}: {_r}"[:200]})
+                    continue
+                # Same open-web screen + liveness gate the agentic loop applies to the `web` leg.
+                if _leg == "web" and web_open_denoise:
+                    _screened = await screen_open_web_hits(
+                        _r, question=question, llm=llm, prompt=web_quality_prompt, budget=budget,
+                        emit_provenance=authority_basis)
+                    _r = _authoritative_subset(_r) if _screened is None else _screened
+                    _r = await drop_dead_urls(_r)
+                _hits += _r
+            _before = len(atoms.all())
+            atoms.add_hits(_hits)
+            # The atoms retrieved FOR THIS claim (newly-added AND any pre-existing block this query
+            # re-surfaced) — the grounding candidate set for this specific fact.
+            _hit_keys = {(h.document_id, h.block_id) for h in _hits}
+            _claim_atoms = [a for a in atoms.all() if (a.document_id, a.block_id) in _hit_keys]
+            await emit({"type": "found", "added": len(atoms.all()) - _before,
+                        "total": len(atoms.all())})
+            _res = await ground_asserted_claim(_c.text, _claim_atoms, llm, verifier, budget=budget)
+            if _res is not None:
+                _aid, _quote = _res
+                _atom = atoms.get(_aid)
+                if _atom is not None:
+                    result.verified_claims.append(_mk_verified(_c.text, _aid, _quote, _atom))
+                    _grounded_n += 1
+                else:                                   # atom vanished (defensive) → unverified
+                    result.unverified_priors.append(
+                        {"text": _c.text, "needs_freshness": bool(getattr(_c, "needs_freshness", False))})
+            else:
+                # A needs_freshness fact that fails to ground MUST stay unverified (never shipped from
+                # the prior alone) — automatic here since a fact becomes verified ONLY via retrieval.
+                result.unverified_priors.append(
+                    {"text": _c.text, "needs_freshness": bool(getattr(_c, "needs_freshness", False))})
+        result.atoms_gathered = len(atoms.all())
+        if result.stopped_reason != "budget":
+            result.stopped_reason = "answered"
+        await emit({"type": "verified", "verified": len(result.verified_claims),
+                    "rejected": len(result.rejected_claims)})
+        _log.info("parametric-led verify: drafted_facts=%d grounded=%d unverified=%d",
+                  _drafted, _grounded_n, len(result.unverified_priors))
+        if diag is not None:
+            diag["parametric"] = {"drafted_facts": _drafted, "grounded": _grounded_n,
+                                  "unverified": len(result.unverified_priors)}
+
     stale_searches = 0          # consecutive searches that added NO new atoms (spinning detector)
     premature_answers = 0       # zero-evidence answer attempts (see the guard below)
-    for step_i in range(max_steps):
+    for step_i in range(max_steps if prior_draft is None else 0):
         if budget.exhausted:
             result.stopped_reason = "budget"
             break
@@ -1409,17 +1525,20 @@ async def run_react(
     else:
         # Loop exhausted without an answer action. Force one final answer over the
         # evidence gathered (so the agent never silently returns nothing) — unless
-        # the budget is spent.
-        result.stopped_reason = "max_steps"
-        if not budget.exhausted:
-            try:
-                budget.reserve()
-                final = await _ask(mode="force")
-                if final.action == "answer":
-                    await _finalize_answer(final)
-                    result.stopped_reason = "answered"
-            except BudgetExceeded:
-                pass
+        # the budget is spent. In parametric mode (prior_draft set) the loop ran zero
+        # steps by design — the verify loop above already produced the answer state, so
+        # this force-answer branch is a no-op (guard keeps stopped_reason from the verify loop).
+        if prior_draft is None:
+            result.stopped_reason = "max_steps"
+            if not budget.exhausted:
+                try:
+                    budget.reserve()
+                    final = await _ask(mode="force")
+                    if final.action == "answer":
+                        await _finalize_answer(final)
+                        result.stopped_reason = "answered"
+                except BudgetExceeded:
+                    pass
 
     result.atoms_gathered = len(atoms.all())
 
@@ -1429,7 +1548,11 @@ async def run_react(
     # atomize into cited claims, then run them through the SAME verbatim span gate (_apply_answer).
     # Provenance is unchanged: only claims whose quote verifies survive. Fail-safe: no key / error /
     # nothing → 0 claims and the original abstention stands.
-    if (not result.verified_claims and not result.rejected_claims
+    # Skipped in parametric mode (prior_draft set): the directed verify loop VALIDATES the model's
+    # drafted facts — it must never AUTHOR arbitrary claims from the retrieved atoms (that would break
+    # the "retrieval validates, model leads" contract and launder a non-drafted fact into grounded
+    # prose). OFF (prior_draft is None) → the guard is always true → byte-identical to today.
+    if (prior_draft is None and not result.verified_claims and not result.rejected_claims
             and atoms.all() and not budget.exhausted):
         await emit({"type": "grounding"})
         try:
@@ -1543,7 +1666,10 @@ async def run_react(
     # model, then ADD any claim that passes BOTH the unchanged verbatim span gate AND an independent
     # entailment gate. Only adds provenance-clean claims (never fabricates, never weakens the gate);
     # runs OFF the expensive loop model. Dedups against what the loop already grounded.
-    if claims_first and atoms.all() and not budget.exhausted:
+    # `prior_draft is None` gate: like the fallback grounder above, comprehensive extraction AUTHORS
+    # claims from the atom pool — it must not run in parametric mode, where retrieval only VALIDATES
+    # the model's drafted facts. OFF → the added conjunct is always true → byte-identical to today.
+    if prior_draft is None and claims_first and atoms.all() and not budget.exhausted:
         await emit({"type": "extracting"})
         try:
             from eigen_kernel.research.claims_first import (
@@ -1892,6 +2018,14 @@ async def run_react(
             _abd = authority_basis_directive.strip()
             if _abd:
                 _compose_directive = (_compose_directive + "\n\n" + _abd) if _compose_directive else _abd
+        # PARAMETRIC-LED (EIGEN_PARAMETRIC_LED, T3): when the model drafted the answer from its integrated
+        # knowledge, FOLLOW its OUTLINE for structure/reasoning while keeping every FACT grounded in the
+        # verified findings (cite [n]) — no unverifiable claim restated as established fact. Appended ONLY
+        # when a prior_draft drove this run → OFF (prior_draft is None) → not appended → byte-identical.
+        if prior_draft is not None:
+            _outline = (getattr(prior_draft, "outline", "") or "").strip()
+            _pad = _PARAMETRIC_ADDENDUM.replace("<OUTLINE>", _outline)
+            _compose_directive = (_compose_directive + "\n\n" + _pad) if _compose_directive else _pad
 
         async def _compose(directive: str | None) -> ComposedAnswer:
             # Base ANSWER instruction kept identical to the original (directive-free path stays a
@@ -2040,7 +2174,12 @@ async def run_react(
             # asking the model to drop the offending figures; (2) if any remain, FALL BACK to the
             # non-deep compose (the protected baseline) rather than ship widened ungrounded prose.
             # Entirely inside the deep gate → OFF / lookup path never runs it (byte-identical).
-            if deep_synthesis and kind != "lookup":
+            # PARAMETRIC-LED (EIGEN_PARAMETRIC_LED, T3): the corrective audit ALSO fires when the model
+            # LED this run (a prior_draft is present) — the parametric compose reasons from the model's
+            # own draft, so a qualitative model sentence must not ride an unsupported figure into grounded
+            # prose. Same recompose-once-then-fall-back-to-baseline logic; only the trigger is widened.
+            # OFF (prior_draft is None and not a deep non-lookup run) → this block never runs (unchanged).
+            if (deep_synthesis and kind != "lookup") or prior_draft is not None:
                 _u = _unsupported_prose_tokens(result.composed_answer, result.verified_claims)
                 if _u and not budget.exhausted:
                     _fix = ("\n\nGROUNDING FIX (mandatory): you stated figure(s) "

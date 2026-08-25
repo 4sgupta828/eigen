@@ -64,6 +64,27 @@ def _render_derivations(ds: list) -> str:
             "would make it wrong._\n\n" + "\n\n".join(blocks))
 
 
+def _render_unverified_priors(priors: list) -> str:
+    """Render the parametric-led UNVERIFIED register (EIGEN_PARAMETRIC_LED, T3): the model's OWN asserted
+    facts that retrieval could NOT confirm, in a clearly-LABELED section kept visibly SEPARATE from the
+    grounded prose — never merged into a cited finding. `priors` is a list of {"text","needs_freshness"}
+    (dicts, or objects with those attrs). A `needs_freshness` prior is marked '(may be outdated)'. Empty
+    or all-blank → "" (no section) — so an OFF run, whose `unverified_priors` is always empty, is a no-op."""
+    rows: list[str] = []
+    for p in priors or []:
+        text = ((p.get("text") if isinstance(p, dict) else getattr(p, "text", "")) or "").strip()
+        if not text:
+            continue
+        fresh = bool(p.get("needs_freshness") if isinstance(p, dict)
+                     else getattr(p, "needs_freshness", False))
+        rows.append(f"- {text}" + (" _(may be outdated)_" if fresh else ""))
+    if not rows:
+        return ""
+    return ("## Model's read — not yet verified\n"
+            "_These are the model's own assertions that retrieval could NOT confirm. Treat as "
+            "unverified — not established fact._\n\n" + "\n".join(rows))
+
+
 def build_history_context(history, *, answer_focus: bool = False) -> str | None:
     """Prior conversation turns → a compact context block (a follow-up can be elliptical). Context ONLY —
     it frames search/interpretation and NEVER becomes a citable claim. Shared by ask() and ask_panel() so
@@ -151,6 +172,11 @@ class ResearchService:
     tech_synthesis: bool = False            # EIGEN_TECH_SYNTHESIS: add a strategic 'how it works' technical synthesis
     deep_synthesis: bool = False            # EIGEN_DEEP_SYNTHESIS: synthesis-first grounded analysis for non-lookup Qs
     deep_answer_format: str | None = None   # the vertical's deep-synthesis compose format (inert until T2/T3 consume it)
+    parametric_led: bool = False            # EIGEN_PARAMETRIC_LED: model-integrated-knowledge LEADS a
+    #                                         parametric-eligible answer; retrieval VALIDATES every fact.
+    #                                         T1 gates the pre-retrieval PriorDraft; OFF → byte-identical.
+    prior_draft_prompt: str | None = None   # the vertical's parametric-draft directive (inert data;
+    #                                         the flag + routing predicate gate the draft_prior call)
     entity_open_web: bool = False           # EIGEN_WEB_ENTITY_OPEN: entity-scoped open-web probe (screened) on step 0
     web_open_denoise: bool = False          # EIGEN_WEB_OPEN_DENOISE: open the aux web leg to the FULL web + denoise-screen ALL hits
     web_quality_prompt: str | None = None   # vertical-supplied LLM page-quality screen prompt for the open-web leg
@@ -290,6 +316,34 @@ class ResearchService:
                 response_format=_Scaffold, max_tokens=1200)
             s = comp.parsed
             _reasoned_kind = s.kind
+            # PARAMETRIC-LED (flag EIGEN_PARAMETRIC_LED, T1): when ON, derive the question's stance +
+            # subject_kind (same contract flow run_react uses) and, if the routing predicate holds,
+            # produce a pre-retrieval PriorDraft and thread it INERTLY into whichever ask() fires
+            # (kw is copied — never mutated in place — so OFF / not-eligible stays byte-identical). The
+            # draft is UNUSED by compose in T1; T2/T3 consume it. Fail-safe: any error → no draft, today's
+            # path. NOTE: stance/subject_kind are NOT available in ask_reasoned (run_react derives them),
+            # so this runs its OWN derive_contract — one extra charged call, ONLY when the flag is on and
+            # the vertical supplies contract_prompt (run_react re-derives; de-duping is a T2 concern).
+            if self.parametric_led:
+                try:
+                    from eigen_kernel.research.budget import BudgetState
+                    from eigen_kernel.research.contract import derive_contract
+                    from eigen_kernel.research.prior_draft import draft_prior
+                    _c = await derive_contract(question, self.llm, self.contract_prompt)
+                    _stance = getattr(_c, "stance", "") if _c else ""
+                    _subject = getattr(_c, "subject_kind", "") if _c else ""
+                    _parametric_eligible = (self.parametric_led and _stance == "established"
+                                            and s.kind in ("understanding", "management")
+                                            and _subject != "specific_entity")
+                    if _parametric_eligible:
+                        _pd = await draft_prior(question, self.llm, self.prior_draft_prompt,
+                                                budget=BudgetState(max_calls=self.max_calls))
+                        if _pd is not None:
+                            kw = dict(kw)
+                            kw["prior_draft"] = _pd          # inert until T2/T3
+                            await _emit({"type": "parametric_led", "claims": len(_pd.claims)})
+                except Exception:   # noqa: BLE001 — parametric draft is an enhancer; never blocks the answer
+                    pass
             if route and s.kind == "lookup":
                 # pure evidence lookup → the standard adaptive engine fits better; say so in the trace
                 await _emit({"type": "engine", "engine": "standard", "why": "evidence lookup"})
@@ -361,6 +415,10 @@ class ResearchService:
         kind: str = "",                       # question kind (management/lookup/understanding) from the
         #                                      reasoned scaffold — threads into run_react so DEEP SYNTHESIS
         #                                      keeps lookups crisp. "" → treated as non-lookup (best-effort).
+        prior_draft=None,                     # EIGEN_PARAMETRIC_LED (T1): the pre-retrieval PriorDraft
+        #                                      when the question is parametric-eligible — threaded INERTLY
+        #                                      to run_react (declared-but-unused until T2/T3 consume it).
+        #                                      None → today's retrieve-first path (byte-identical).
     ) -> AnswerResult:
         # ANSWER-FOCUS (flag): resolve a conversational FOLLOW-UP ("what dose?") into a self-contained
         # question carrying the subject from the conversation ("dose of TMP-SMX for PCP prophylaxis"),
@@ -551,6 +609,7 @@ class ResearchService:
             readable_prose=self.readable_prose, country_boost=country_boost,
             axis_complete=self.axis_complete, tech_synthesis=self.tech_synthesis,
             deep_synthesis=self.deep_synthesis, deep_answer_format=self.deep_answer_format,
+            prior_draft=prior_draft,   # EIGEN_PARAMETRIC_LED (T1): inert; consumed by T2/T3
             kind=kind, derive_ideas=self.derive_ideas, derive_judge_llm=self.derive_judge_llm,
             entity_open_web=self.entity_open_web, web_open_denoise=self.web_open_denoise,
             web_quality_prompt=self.web_quality_prompt,
@@ -591,6 +650,16 @@ class ResearchService:
                     res.composed_answer = (res.composed_answer or "").rstrip() + "\n\n" + section
             except Exception:   # noqa: BLE001 — reasoning is additive; never sink the grounded answer
                 pass
+
+        # PARAMETRIC-LED (flag EIGEN_PARAMETRIC_LED, T3): append the UNVERIFIED register — the model's own
+        # asserted facts retrieval could NOT ground — as a visibly SEPARATE labeled section, AFTER the
+        # grounded prose (and after the derivations section), never merged into a cited finding. Rendered
+        # the SAME way derivations are (a labeled post-compose section). `unverified_priors` is populated
+        # ONLY on a parametric run (prior_draft set) and is empty otherwise, so this reduces to a no-op
+        # and the OFF composed_answer stays byte-identical.
+        _uv = _render_unverified_priors(getattr(res, "unverified_priors", None) or [])
+        if _uv:
+            res.composed_answer = (res.composed_answer or "").rstrip() + "\n\n" + _uv
         return res
 
     def panel_roster(self) -> list[dict]:
