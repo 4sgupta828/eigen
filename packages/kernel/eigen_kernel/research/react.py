@@ -77,6 +77,9 @@ _PARAMETRIC_FACT_CAP = 12     # EIGEN_PARAMETRIC_LED (T2): max drafted FACT clai
 #                               (bounds cost: one targeted retrieval + one grounding call per fact)
 _INTELLIGENCE_HYP_CAP = 3     # EIGEN_INTELLIGENCE_CORE (T2): max hypotheses whose FOR/AGAINST legs
 #                               pre-seed the atom pool (bounds cost: ≤2 targeted retrievals per hypothesis)
+_REFUTER_AGAINST_CAP = 2      # T-B: max AGAINST legs per hypothesis when a cross-family red-team authors
+#                               them — keeps hyp_cap*for + hyp_cap*against bounded (≤3×1 + 3×2 = 9 legs)
+_REFUTER_N = 2                # T-B: disconfirming queries the red-team refuter is asked for per hypothesis
 
 # Answer-axes addendum (flag `axis_complete`): appended after the base compose directive so the answer
 # COVERS each aspect the reader asked about + synthesizes. Domain-neutral (the axes come from the
@@ -156,6 +159,7 @@ from eigen_kernel.providers.llm import LLMClient
 from eigen_kernel.research.atoms import IDENTITY_INSTRUCTION, AtomStore, identity_tag
 from eigen_kernel.research.budget import BudgetExceeded, BudgetState
 from eigen_kernel.research.provenance import BlockSpanVerifier
+from eigen_kernel.research.refuter import refute_hypothesis
 from eigen_kernel.research.web_liveness import drop_dead_urls
 from eigen_kernel.research.web_quality import screen_open_web_hits
 from eigen_kernel.retrieval.dispatch import multi_query_retrieve
@@ -678,6 +682,12 @@ class AnswerResult:
     # model's falsifier text, labeled as "what would change this read", NOT a fact). Populated ONLY on an
     # intelligence run (hypotheses present) and empty otherwise, so the OFF answer stays byte-identical.
     intelligence_cruxes: list = field(default_factory=list)
+    # Intelligence UNDER-TESTED (flag EIGEN_INTELLIGENCE_CORE, T-B): the competing hypotheses whose
+    # disconfirming (AGAINST) search surfaced ZERO evidence — disconfirmation ATTEMPTED but not FOUND,
+    # so the hypothesis is NOT confirmed, only not-yet-refuted (treat with caution). A list of
+    # {"index": int, "claim": str}. Populated ONLY on an intelligence run (hypotheses present) whose
+    # against-search came up empty; empty otherwise, so the OFF answer stays byte-identical.
+    intelligence_undertested: list = field(default_factory=list)
     # Reasoning Read (flag): a purpose-driven analysis — a stated PURPOSE, the interpretation FACTORS
     # that bear on it, a converging CONCLUSION, and the 3-dimension confidence read. All empty/None
     # unless the reasoning-read flag drove the compose directive (byte-identical OFF).
@@ -1402,14 +1412,32 @@ async def run_react(
         _hyps = list(hypotheses)[:_INTELLIGENCE_HYP_CAP]
         _for_hits_n = 0
         _against_hits_n = 0
+        # T-B RED-TEAM REFUTER: a genuinely cross-family judge (the same "cross-family" test the
+        # grounding gate uses — `derive_judge_llm` present AND not the drafting `llm`) authors the
+        # DISCONFIRMING (against) queries — a separate, uncorrelated mind, not the drafter grading its
+        # own homework. FAIL-CLOSED: no cross-family judge / refuter error / empty → fall back to the
+        # hypothesis's self-authored `against_query` (today's behavior). None → self-authored throughout.
+        _rf_judge = (derive_judge_llm
+                     if (derive_judge_llm is not None and derive_judge_llm is not llm) else None)
+        _refuter_qs_n = 0                    # total red-team queries authored (diag / observability)
+        _undertested: list[dict] = []        # hypotheses whose AGAINST search found ZERO hits
         await emit({"type": "intelligence_retrieval", "hypotheses": len(_hyps)})
         for _hi, _hyp in enumerate(_hyps):
             _claim = (getattr(_hyp, "claim", "") or "").strip()
-            # FOR leg falls back to the claim if `for_query` is blank; a blank AGAINST leg is skipped.
-            _hyp_legs = [
-                ("for", (getattr(_hyp, "for_query", "") or "").strip() or _claim),
-                ("against", (getattr(_hyp, "against_query", "") or "").strip()),
-            ]
+            # FOR leg (UNCHANGED): self-authored `for_query`, falling back to the claim if blank.
+            _for_q = (getattr(_hyp, "for_query", "") or "").strip() or _claim
+            # AGAINST legs: the cross-family red-team authors the disconfirming queries when available;
+            # otherwise the hypothesis's self-authored `against_query` (today's behavior). Fail-closed.
+            _against_qs: list[str] = []
+            if _rf_judge is not None and _claim and not budget.exhausted:
+                _against_qs = await refute_hypothesis(_claim, _rf_judge, budget=budget, n=_REFUTER_N)
+                _refuter_qs_n += len(_against_qs)
+            if not _against_qs:              # no judge / refuter empty / error → self-authored fallback
+                _self_against = (getattr(_hyp, "against_query", "") or "").strip()
+                _against_qs = [_self_against] if _self_against else []
+            _against_qs = _against_qs[:_REFUTER_AGAINST_CAP]   # bound against legs per hypothesis
+            _hyp_legs = [("for", _for_q)] + [("against", _q) for _q in _against_qs]
+            _hyp_against_hits = 0            # hits this hypothesis's disconfirming search surfaced
             for _stance, _hq in _hyp_legs:
                 if not _hq:
                     continue                      # blank leg (e.g. no against_query) → skip, never crash
@@ -1460,6 +1488,7 @@ async def run_react(
                         _for_hits_n += len(_hhits)
                     else:
                         _against_hits_n += len(_hhits)
+                        _hyp_against_hits += len(_hhits)
                     await emit({"type": "found", "added": len(atoms.all()) - _hbefore,
                                 "total": len(atoms.all())})
                 except Exception as _he:
@@ -1469,11 +1498,23 @@ async def run_react(
                         diag.setdefault("failures", []).append(
                             {"stage": f"intelligence_{_stance}",
                              "detail": f"{type(_he).__name__}: {_he}"[:200]})
-        _log.info("intelligence pre-seed: hypotheses=%d for_hits=%d against_hits=%d",
-                  len(_hyps), _for_hits_n, _against_hits_n)
+            # UNDER-TESTED (T-B): the disconfirming search for this hypothesis surfaced NO evidence —
+            # disconfirmation was ATTEMPTED but nothing was found. That is NOT confirmation; the
+            # hypothesis is only not-yet-refuted (treat with caution). Flag it for the compose + reader.
+            if _hyp_against_hits == 0:
+                _undertested.append({"index": _hi + 1, "claim": _claim})
+        # Surface the under-tested hypotheses on the result so the compose block below can warn the
+        # model (do NOT let it treat a hypothesis with zero disconfirming evidence as "confirmed") and
+        # the runtime can render a caution line. Empty unless the against-search came up empty.
+        result.intelligence_undertested = _undertested
+        _log.info("intelligence pre-seed: hypotheses=%d for_hits=%d against_hits=%d "
+                  "refuter_queries=%d undertested=%d",
+                  len(_hyps), _for_hits_n, _against_hits_n, _refuter_qs_n, len(_undertested))
         if diag is not None:
             diag["intelligence"] = {"hypotheses": len(_hyps),
                                     "for_hits": _for_hits_n, "against_hits": _against_hits_n}
+            diag["refuter"] = {"hypotheses": len(_hyps), "refuter_queries": _refuter_qs_n,
+                               "undertested": [u["index"] for u in _undertested]}
 
     stale_searches = 0          # consecutive searches that added NO new atoms (spinning detector)
     premature_answers = 0       # zero-evidence answer attempts (see the guard below)
@@ -2176,6 +2217,19 @@ async def run_react(
             _iad = (_INTELLIGENCE_ADDENDUM
                     .replace("<FRAME>", (intelligence_frame or "").strip() or "(none)")
                     .replace("<HYPOTHESES>", _hyp_text or "(none)"))
+            # UNDER-TESTED note (T-B): warn the model about any hypothesis whose disconfirming search
+            # found NOTHING — it is NOT confirmed, only not-yet-refuted. Appended ONLY when at least one
+            # hypothesis is under-tested (populated during the adversarial retrieval block above); when
+            # none are under-tested the addendum is byte-identical to today's intelligence addendum.
+            _ut = getattr(result, "intelligence_undertested", None) or []
+            if _ut:
+                _ut_lines = "\n".join(
+                    f"- H{u['index']}: {(u.get('claim') or '').strip()}" for u in _ut)
+                _iad = _iad + (
+                    "\n\nUNDER-TESTED — the red-team disconfirming search found NO evidence AGAINST "
+                    "these hypotheses. That is NOT confirmation; it means disconfirmation was attempted "
+                    "and nothing turned up yet. Do NOT treat them as established — flag each as "
+                    "not-yet-disconfirmed and treat with explicit caution:\n" + _ut_lines)
             _compose_directive = (_compose_directive + "\n\n" + _iad) if _compose_directive else _iad
             # CRUX register: the falsifiers are the concrete observables that would flip the preferred
             # read (the model's text, surfaced post-compose as "what would change this read", NOT a fact).

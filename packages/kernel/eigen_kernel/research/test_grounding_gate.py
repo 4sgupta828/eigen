@@ -27,6 +27,7 @@ from eigen_kernel.providers.embeddings import FakeEmbedder
 from eigen_kernel.providers.llm import LLMResult
 from eigen_kernel.research.budget import BudgetState
 from eigen_kernel.research.grounding_gate import GroundingProbe, cross_family_ground_check
+from eigen_kernel.research.refuter import RefuterQueries
 from eigen_kernel.research.intelligence_draft import Hypothesis
 from eigen_kernel.research.react import AgentStep, ClaimOut, VerifiedClaim, run_react
 from eigen_kernel.retrieval.memory import IndexedBlock, InMemoryRetrievalSource
@@ -169,6 +170,11 @@ class ScriptedJudge:
         self.answers_seen: list[str] = []
 
     async def complete(self, *, system, messages, response_format, max_tokens=2048, temperature=None):
+        # T-B: in intelligence mode the SAME cross-family judge also authors the red-team refuter's
+        # disconfirming queries. Return an empty query set (→ retrieval falls back to the self-authored
+        # against_query) and do NOT count it as a grounding-gate call.
+        if getattr(response_format, "__name__", "") == "RefuterQueries":
+            return LLMResult(parsed=RefuterQueries(queries=[]), output_tokens=1, model="gpt-judge")
         self.calls += 1
         self.answers_seen.append(messages[0]["content"])
         assert response_format is GroundingProbe

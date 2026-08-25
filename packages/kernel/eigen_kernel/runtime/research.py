@@ -99,6 +99,30 @@ def _render_cruxes(cruxes: list) -> str:
     return "## What would change this read\n" + lead + "\n\n" + "\n".join(rows)
 
 
+def _render_undertested(undertested: list) -> str:
+    """Render the intelligence UNDER-TESTED register (EIGEN_INTELLIGENCE_CORE, T-B): the competing
+    hypotheses whose red-team DISCONFIRMING search surfaced NO evidence — disconfirmation was attempted
+    but nothing was found, so the hypothesis is NOT confirmed, only not-yet-refuted. `undertested` is a
+    list of {"index","claim"}. Empty / no valid entries → "" (no section), so an OFF run — whose
+    `intelligence_undertested` is always empty — is a byte-identical no-op."""
+    rows = []
+    for u in (undertested or []):
+        if not isinstance(u, dict):
+            continue
+        idx = u.get("index")
+        if idx is None:                      # a well-formed entry always carries its hypothesis index
+            continue
+        claim = (u.get("claim") or "").strip()
+        rows.append(f"- H{idx}: {claim} — not yet disconfirmed by any evidence found; treat with caution."
+                    if claim else
+                    f"- H{idx}: not yet disconfirmed by any evidence found; treat with caution.")
+    if not rows:
+        return ""
+    lead = ("_The red-team disconfirming search found NO evidence against these — disconfirmation was "
+            "attempted and nothing turned up. That is NOT confirmation; treat them as unresolved._")
+    return "## Under-tested — not yet disconfirmed\n" + lead + "\n\n" + "\n".join(rows)
+
+
 def build_history_context(history, *, answer_focus: bool = False) -> str | None:
     """Prior conversation turns → a compact context block (a follow-up can be elliptical). Context ONLY —
     it frames search/interpretation and NEVER becomes a citable claim. Shared by ask() and ask_panel() so
@@ -741,6 +765,15 @@ class ResearchService:
         _cx = _render_cruxes(getattr(res, "intelligence_cruxes", None) or [])
         if _cx:
             res.composed_answer = (res.composed_answer or "").rstrip() + "\n\n" + _cx
+
+        # INTELLIGENCE-CORE (flag EIGEN_INTELLIGENCE_CORE, T-B): append the UNDER-TESTED register — the
+        # competing hypotheses whose red-team disconfirming search found NO evidence — as a labeled
+        # post-compose section (same shape as the crux register). `intelligence_undertested` is
+        # populated ONLY on an intelligence run whose against-search came up empty, and is empty
+        # otherwise, so this reduces to a no-op and the OFF composed_answer stays byte-identical.
+        _ut = _render_undertested(getattr(res, "intelligence_undertested", None) or [])
+        if _ut:
+            res.composed_answer = (res.composed_answer or "").rstrip() + "\n\n" + _ut
         return res
 
     def panel_roster(self) -> list[dict]:

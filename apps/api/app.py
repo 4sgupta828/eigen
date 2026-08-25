@@ -741,6 +741,15 @@ def derive_ideas_enabled() -> bool:
     return os.environ.get("EIGEN_DERIVE_IDEAS", "").lower() in ("1", "true", "yes")
 
 
+def cross_family_judge_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_CROSS_FAMILY_JUDGE wires a DIFFERENT-family (OpenAI) model as
+    `derive_judge_llm` — activating the cross-family GROUNDING GATE and making derive's validity judge
+    cross-family. When ON *and* OPENAI_API_KEY is set, build_default_service constructs an
+    OpenAILLMClient and passes it as derive_judge_llm; OFF or no key → derive_judge_llm=None (today's
+    behavior: grounding gate + derive judge fail-closed / same-family). OFF → byte-identical."""
+    return os.environ.get("EIGEN_CROSS_FAMILY_JUDGE", "").lower() in ("1", "true", "yes")
+
+
 def answer_focus_enabled() -> bool:
     """Flag (default OFF, Rule 20): when ON, elliptical conversational follow-ups are condensed into a
     self-contained question (so retrieval + compose inherit the subject) AND compose ANSWERS the
@@ -1170,6 +1179,14 @@ def build_default_service() -> ResearchService:
     patient_directive = manifest.patient_answer_format if patient_mode_enabled() else None
     if patient_directive and reasoning_read_enabled() and getattr(manifest, "patient_reasoning_format", None):
         patient_directive = patient_directive + "\n\n" + manifest.patient_reasoning_format
+    # Cross-family judge (flag, default OFF — Rule 20). When ON *and* a key is present, wire a
+    # DIFFERENT-family (OpenAI) model as derive_judge_llm — this activates the cross-family grounding
+    # gate and makes derive's validity judge cross-family. OFF or no key → None (today's behavior:
+    # grounding gate + derive judge fail-closed / same-family), byte-identical.
+    derive_judge_llm = None
+    if cross_family_judge_enabled() and os.environ.get("OPENAI_API_KEY"):
+        from eigen_kernel.providers.openai_client import OpenAILLMClient
+        derive_judge_llm = OpenAILLMClient()
     return ResearchService(
         llm=build_llm(mode=mode), embedder=embedder, planner_llm=planner_llm,
         graph_expander=_make_graph_expander(),
@@ -1199,6 +1216,7 @@ def build_default_service() -> ResearchService:
         web_quality_prompt=getattr(manifest, "web_quality_prompt", None),
         derive=derive_enabled(),
         derive_ideas=derive_ideas_enabled(),
+        derive_judge_llm=derive_judge_llm,
         collect_diagnostics=diag_trace_enabled(),
         classify_evidence=getattr(manifest, "evidence_classifier", None),
         evidence_fitness=evidence_fitness_enabled(),
@@ -1569,6 +1587,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "authority_basis_enabled": authority_basis_enabled(),
             "parametric_led_enabled": parametric_led_enabled(),
             "intelligence_core_enabled": intelligence_core_enabled(),
+            "cross_family_judge_enabled": cross_family_judge_enabled() and bool(os.environ.get("OPENAI_API_KEY")),
             "ask_panel_enabled": live_panel,
             "panel_specialists": ([
                 {"id": getattr(s, "id", ""), "specialty": getattr(s, "specialty", ""),
