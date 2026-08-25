@@ -741,6 +741,12 @@ def entity_open_web_enabled() -> bool:
     return os.environ.get("EIGEN_WEB_ENTITY_OPEN", "").lower() in ("1", "true", "yes")
 
 
+def deep_company_reader_enabled() -> bool:
+    """Flag (default OFF): EIGEN_DEEP_COMPANY_READER adds a bounded facet-targeted web dossier leg on
+    step 0 for single-company diligence questions. OFF → no extra retrieval leg."""
+    return os.environ.get("EIGEN_DEEP_COMPANY_READER", "").lower() in ("1", "true", "yes")
+
+
 def open_web_denoise_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_WEB_OPEN_DENOISE opens the aux web (Exa) leg to the FULL web
     (whitelist demoted to a ranking boost) for every web-eligible question and admits its hits through
@@ -1227,6 +1233,16 @@ def build_default_service() -> ResearchService:
     if cross_family_judge_enabled() and os.environ.get("OPENAI_API_KEY"):
         from eigen_kernel.providers.openai_client import OpenAILLMClient
         derive_judge_llm = OpenAILLMClient()
+    # EIGEN_ANSWER_LAYOUT cost control: the reflow is mechanical reformatting (code-guarded for grounding),
+    # so run it on a CHEAP/FAST model instead of the compose model — kills most of the double-pass cost.
+    # EIGEN_LAYOUT_MODEL overrides; default a small Haiku. Only built when the layout flag is on.
+    layout_llm = None
+    if answer_layout_enabled():
+        try:
+            layout_llm = build_llm(mode=mode, model=os.environ.get("EIGEN_LAYOUT_MODEL", "claude-haiku-4-5-20251001"))
+        except Exception:
+            layout_llm = None
+    _deep_company_reader = deep_company_reader_enabled() and not _golden
     return ResearchService(
         llm=build_llm(mode=mode), embedder=embedder, planner_llm=planner_llm,
         graph_expander=_make_graph_expander(),
@@ -1238,6 +1254,7 @@ def build_default_service() -> ResearchService:
         # `_golden` is False when the flag is off → every layer keeps its own value → byte-identical.
         golden_answer=_golden,
         answer_layout=answer_layout_enabled(),   # EIGEN_ANSWER_LAYOUT: grounding-safe scannability reflow
+        layout_llm=layout_llm,                    # cheap model for the reflow (cost control)
         reasoning_read=reasoning_read_enabled() and not _golden,
         readable_prose=readable_prose_enabled() and not _golden,
         axis_complete=axis_complete_enabled() and not _golden,
@@ -1257,6 +1274,8 @@ def build_default_service() -> ResearchService:
         # them inertly (unused by compose until T2/T3). OFF or not eligible → byte-identical.
         intelligence_core=intelligence_core_enabled() and not _golden,
         intelligence_draft_prompt=getattr(manifest, "intelligence_draft_prompt", None),
+        deep_company=_deep_company_reader,
+        company_reader=getattr(manifest, "company_reader", None),
         entity_open_web=entity_open_web_enabled(),
         web_open_denoise=open_web_denoise_enabled(),
         web_quality_prompt=getattr(manifest, "web_quality_prompt", None),
@@ -1281,7 +1300,8 @@ def build_default_service() -> ResearchService:
         claim_congruence=claim_congruence_enabled(),
         # LANDSCAPE COVERAGE (flag): force contract steer + the enumerative-categories landscape prompt +
         # explore legs so a "map the landscape" ask fans retrieval out per category. Else the normal knobs.
-        question_contract=("steer" if landscape_coverage_enabled() else question_contract_mode()),
+        question_contract=("steer" if landscape_coverage_enabled() else
+                           "shadow" if _deep_company_reader else question_contract_mode()),
         contract_prompt=(getattr(manifest, "landscape_contract_prompt", None)
                          if landscape_coverage_enabled()
                          else getattr(manifest, "contract_prompt", None)),

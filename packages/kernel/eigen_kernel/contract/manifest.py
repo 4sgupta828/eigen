@@ -185,6 +185,10 @@ class VerticalManifest:
     # means) lives here; the kernel only threads it into `screen_open_web_hits`. None → no open-web
     # screen is available (the entity-open leg falls closed), a safe no-op.
     web_quality_prompt: str | None = None
+    # Optional vertical-supplied deep company reader config: opaque facet query templates, domain
+    # resolution prompt, bounded retrieval knobs, and compose attribution addendum. The kernel treats
+    # it as data and never interprets the vertical vocabulary inside it.
+    company_reader: dict = field(default_factory=dict)
     # Optional FRESHNESS policy (flag EIGEN_FRESHNESS_RANKING): how strongly recency re-orders the
     # verified-claim pool for THIS vertical. Domain-free opaque dict the kernel reads by key:
     #   {"min_rank": int, "weight": float, "horizon_years": int}

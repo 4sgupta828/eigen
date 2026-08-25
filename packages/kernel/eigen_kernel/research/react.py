@@ -18,6 +18,8 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
+from eigen_kernel.research.deep_company import retrieve_deep_company
+
 _log = logging.getLogger(__name__)
 
 # Compose is the user-facing DELIVERABLE (the prose answer), not discretionary enrichment — a
@@ -786,6 +788,10 @@ async def run_react(
     #                                           carries kind="lookup" from the reasoned scaffold).
     derive_ideas: bool = False,               # deep-weave: also generate grounded 'opportunity' ideas in derive
     derive_judge_llm=None,                     # deep-weave: optional cross-family validity judge (else reuses llm)
+    deep_company: bool = False,                # flag EIGEN_DEEP_COMPANY_READER: additive first-step web
+    #                                           dossier leg driven by vertical-supplied templates. The
+    #                                           kernel only handles bounded retrieval and BlockHit merge.
+    company_reader: dict | None = None,        # vertical company-reader config (opaque templates/addenda).
     entity_open_web: bool = False,            # flag: fire ONE additive open-web Exa probe on step 0 for
                                               # single-entity questions (contract.subject_kind), quality-screened
     web_open_denoise: bool = False,           # flag EIGEN_WEB_OPEN_DENOISE: open the aux web leg to the FULL
@@ -914,7 +920,7 @@ async def run_react(
     # base than the default 30; RAISE the cap (never lower) so the higher value is in effect for both
     # the extraction-collection cap and the final claim-selection cap below. Only for non-lookup deep
     # runs — lookups (and OFF) keep the default cap, byte-identical.
-    if deep_synthesis and kind != "lookup":
+    if (deep_synthesis or deep_company) and kind != "lookup":
         _deep_cap = 48 if kind == "understanding" else 60   # management / other-non-lookup → 60
         compose_claim_cap = max(int(compose_claim_cap), _deep_cap)
 
@@ -1303,6 +1309,17 @@ async def run_react(
                         # when the whole web leg is already open (denoise), the separate entity_open
                         # probe is redundant — avoid the 2nd Exa call (base `web` leg already covers it)
                         and not web_open_denoise)
+    _deep_company_entity = ""
+    if _contract is not None:
+        for _e in getattr(_contract, "entities", ()) or ():
+            _es = str(_e).strip()
+            if _es:
+                _deep_company_entity = _es
+                break
+    _deep_company = bool(deep_company and aux_source is not None and company_reader
+                         and _contract
+                         and getattr(_contract, "subject_kind", "") == "specific_entity"
+                         and _deep_company_entity)
     # the tier-boost/recency ranker argument, honoring per-question authority suppression
     _ranker_arg = None if _suppress_auth else (evidence_ranker if evidence_fitness else None)
     if _ac:
@@ -1616,6 +1633,11 @@ async def run_react(
                 _legs.append(("corpus:routed", routed_co))
             if aux_source is not None:
                 _legs.append(("web", aux_source.search(base_req)))
+                if _deep_company and step_i == 0:
+                    _legs.append(("web:deep", retrieve_deep_company(
+                        company=_deep_company_entity, templates=company_reader or {},
+                        source=aux_source, tenant_id=tenant_id, workspace_id=workspace_id,
+                        llm=planner, budget=budget)))
                 # ADDITIVE open-web probe (flag): first step only, single-entity questions. Drops the
                 # trusted-domain whitelist (web_open=True) so the entity's OWN site/niche coverage is
                 # reachable via Exa. The whitelisted `web` leg above is untouched (authority still leads).
@@ -1634,7 +1656,9 @@ async def run_react(
                             diag.setdefault("failures", []).append(
                                 {"stage": f"{leg}_search", "detail": f"{type(r).__name__}: {r}"[:200]})
                     else:
-                        _screen_this = (leg == "web:entity_open") or (leg == "web" and web_open_denoise)
+                        _screen_this = (
+                            leg in ("web:entity_open", "web:deep")
+                            or (leg == "web" and web_open_denoise))
                         if _screen_this:
                             _raw_n = len(r)
                             screened = await screen_open_web_hits(
@@ -1645,7 +1669,15 @@ async def run_react(
                                 emit_provenance=authority_basis)
                             # None = could-not-judge → fail safe to the authoritative subset;
                             # a list (even empty) = judged → respect it.
-                            r = _authoritative_subset(r) if screened is None else screened
+                            if screened is None:
+                                r = _authoritative_subset(r)
+                            elif leg == "web:deep":
+                                # The judge evaluates pages, while the deep leg deliberately keeps
+                                # several chunks per page. Keep every chunk whose page survived.
+                                _kept_urls = {getattr(h, "document_id", "") for h in screened}
+                                r = [h for h in r if getattr(h, "document_id", "") in _kept_urls]
+                            else:
+                                r = screened
                             # LIVENESS: an open-web page can 404 in the user's browser even though its
                             # quote was span-verified against the body Exa fetched. Drop citations whose
                             # URL is definitively dead (404/410) so we never surface a broken evidence
@@ -1654,7 +1686,8 @@ async def run_react(
                             r = await drop_dead_urls(r)
                             await emit({"type": "retrieving", "source": f"{leg}:kept", "hits": len(r)})
                             if diag is not None:
-                                _dkey = "web_denoise" if leg == "web" else "web_entity_open"
+                                _dkey = ("web_denoise" if leg == "web" else
+                                         "web_deep" if leg == "web:deep" else "web_entity_open")
                                 diag.setdefault(_dkey, []).append(
                                     {"step": step_i + 1, "raw": _raw_n, "kept": _kept_n,
                                      "live": len(r), "dead_dropped": _kept_n - len(r)})

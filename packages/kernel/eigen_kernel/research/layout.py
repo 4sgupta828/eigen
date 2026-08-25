@@ -48,6 +48,31 @@ LAYOUT_PROMPT = (
 
 _HARD = re.compile(r"\$\s?\d[\d,.]*|\b\d+(?:\.\d+)?\s?%|\b\d{4}\b|\b\d+(?:\.\d+)?\b")
 _REF = re.compile(r"\[\d+\]")
+_BULLET = re.compile(r"(?m)^\s*[-*]\s")
+_TABLE = re.compile(r"(?m)^\s*\|.*\|")
+
+
+def _needs_reflow(answer: str) -> bool:
+    """CHEAP code gate (no LLM) — skip the reflow call entirely when the answer is already scannable.
+    Only a genuine wall of text is worth a second pass; a short or already-structured answer is left as-is.
+    This is the main cost control: most answers skip the expensive second call."""
+    a = answer or ""
+    if len(a) < 1200:
+        return False                                  # short — no wall to break
+    paras = [p for p in a.split("\n\n") if p.strip()]
+    longest = max((len(p) for p in paras), default=0)
+    avg = sum(len(p) for p in paras) // max(1, len(paras))
+    has_structure = bool(_BULLET.search(a)) or bool(_TABLE.search(a))
+    # Fire ONLY on a genuine wall (calibrated against real answers): one very long block (>=900 chars),
+    # OR consistently dense paragraphs (avg >=550), OR a long answer with NO visual structure at all.
+    # An answer already broken into short paragraphs with some bullets/tables skips the pass (no cost).
+    if longest >= 900:
+        return True
+    if avg >= 550:
+        return True
+    if len(a) >= 2000 and not has_structure and longest >= 500:
+        return True
+    return False
 
 
 class _Reflowed(BaseModel):
@@ -67,9 +92,12 @@ async def reflow_for_scannability(answer: str, llm: LLMClient, prompt: str | Non
     """Return a reflowed (more scannable) version of `answer`, or None to keep the original.
 
     None is returned on: empty input, LLM error, empty output, a citation added or dropped, a NEW hard
-    token introduced, or a length that ballooned/gutted the content (a reflow should be near-isometric)."""
+    token introduced, or a length that ballooned/gutted the content (a reflow should be near-isometric).
+    COST GATE: returns None WITHOUT any LLM call when the answer is already scannable (`_needs_reflow`)."""
     if not answer or not answer.strip():
         return None
+    if not _needs_reflow(answer):
+        return None                                   # already scannable — no second pass, no cost
     try:
         comp = await llm.complete(
             system=(prompt or LAYOUT_PROMPT),

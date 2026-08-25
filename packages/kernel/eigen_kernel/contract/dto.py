@@ -106,6 +106,12 @@ class RetrievalRequest:
     # flag EIGEN_WEB_OPEN_DENOISE: apply the open-web denoising gates (structural + cosine floor +
     # authority boost) in web retrieval; corpus ignores it.
     web_denoise: bool = False
+    # Optional web-only overrides for additive high-recall legs. Defaults are inert and preserve the
+    # source/provider defaults exactly.
+    web_max_results: int | None = None
+    web_max_chars: int | None = None
+    web_max_chunks_per_page: int | None = None
+    web_extra_facets: dict | None = None
 
 
 class Capability(str, enum.Enum):

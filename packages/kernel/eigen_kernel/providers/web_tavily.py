@@ -22,7 +22,8 @@ class TavilyWebSearch:
         self._time_range = time_range
 
     async def search(self, query: str, *, max_results: int = 8,
-                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
+                     open_web: bool = False, recency_days: int | None = None,
+                     max_chars: int | None = None) -> list[WebResult]:
         import httpx
         payload = {
             "api_key": self._api_key,
@@ -43,11 +44,14 @@ class TavilyWebSearch:
             data = resp.json()
         out: list[WebResult] = []
         for r in data.get("results", []):
+            body = r.get("raw_content") or r.get("content", "")
+            if max_chars is not None:
+                body = body[:int(max_chars)]
             out.append(WebResult(
                 url=r.get("url", ""),
                 title=r.get("title", ""),
                 snippet=r.get("content", ""),
-                body=r.get("raw_content") or r.get("content", ""),
+                body=body,
                 published=r.get("published_date") or None,
             ))
         # freshness: recency window active → re-sort newest-first so the latest pages lead the pool

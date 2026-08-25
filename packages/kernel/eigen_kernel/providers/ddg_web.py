@@ -58,9 +58,11 @@ class DuckDuckGoWebSearch:
         return "d" if d <= 1 else "w" if d <= 7 else "m" if d <= 31 else "y"
 
     async def search(self, query: str, *, max_results: int = 8,
-                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
+                     open_web: bool = False, recency_days: int | None = None,
+                     max_chars: int | None = None) -> list[WebResult]:
         import httpx
         data = {"q": query}
+        cap = int(max_chars) if max_chars is not None else self._cap
         df = self._df(recency_days)
         if df:
             data["df"] = df
@@ -83,7 +85,7 @@ class DuckDuckGoWebSearch:
                     async def _enrich(it: dict) -> None:
                         try:
                             p = await client.get(it["url"])
-                            txt = _page_text(p.text, self._cap)
+                            txt = _page_text(p.text, cap)
                             if len(txt) > len(it["body"]):
                                 it["body"] = txt
                         except Exception:   # noqa: BLE001 — a blocked/slow page degrades to snippet

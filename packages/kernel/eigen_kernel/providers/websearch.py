@@ -27,7 +27,8 @@ class WebResult:
 @runtime_checkable
 class WebSearchClient(Protocol):
     async def search(self, query: str, *, max_results: int = 10,
-                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]: ...
+                     open_web: bool = False, recency_days: int | None = None,
+                     max_chars: int | None = None) -> list[WebResult]: ...
 
 
 def _norm_url(u: str) -> str:
@@ -48,10 +49,12 @@ class CompositeWebSearch:
         self._clients = [c for c in clients if c is not None]
 
     async def search(self, query: str, *, max_results: int = 10,
-                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
+                     open_web: bool = False, recency_days: int | None = None,
+                     max_chars: int | None = None) -> list[WebResult]:
         import asyncio
         lists = await asyncio.gather(
-            *(c.search(query, max_results=max_results, open_web=open_web, recency_days=recency_days)
+            *(c.search(query, max_results=max_results, open_web=open_web,
+                       recency_days=recency_days, max_chars=max_chars)
               for c in self._clients),
             return_exceptions=True)
         lists = [r for r in lists if isinstance(r, list)]
@@ -75,7 +78,8 @@ class FakeWebSearch:
         self._canned = canned or {}
 
     async def search(self, query: str, *, max_results: int = 10,
-                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
+                     open_web: bool = False, recency_days: int | None = None,
+                     max_chars: int | None = None) -> list[WebResult]:
         return self._canned.get(query, [])[:max_results]
 
 
@@ -89,17 +93,20 @@ class CassetteWebSearch:
         self._cassette = Cassette(root=cassette_root, namespace=namespace)
 
     async def search(self, query: str, *, max_results: int = 10,
-                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
-        # cassette KEY stays (query, max_results) so REPLAY tests are unaffected by the new live-only
-        # web controls; the controls only shape live/record fetches (forwarded to the inner client).
-        key = hash_request("web", query, max_results)
+                     open_web: bool = False, recency_days: int | None = None,
+                     max_chars: int | None = None) -> list[WebResult]:
+        # Default cassette KEY stays (query, max_results) so existing replay fixtures are untouched;
+        # a raised text cap gets its own key because it changes the recorded page body.
+        key = (hash_request("web", query, max_results) if max_chars is None
+               else hash_request("web", query, max_results, max_chars))
         if self._mode is ProviderMode.REPLAY:
             return [WebResult(**r) for r in self._cassette.replay(key, hint=query)]
         guard_live(self._mode)
         if self._inner is None:
             raise RuntimeError("CassetteWebSearch in record/live mode requires an inner client")
         results = await self._inner.search(query, max_results=max_results,
-                                           open_web=open_web, recency_days=recency_days)
+                                           open_web=open_web, recency_days=recency_days,
+                                           max_chars=max_chars)
         if self._mode is ProviderMode.RECORD:
             self._cassette.record(key, [asdict(r) for r in results])
         return results

@@ -27,7 +27,8 @@ class ExaWebSearch:
         self._start_published_date = start_published_date
 
     async def search(self, query: str, *, max_results: int = 8,
-                     open_web: bool = False, recency_days: int | None = None) -> list[WebResult]:
+                     open_web: bool = False, recency_days: int | None = None,
+                     max_chars: int | None = None) -> list[WebResult]:
         import httpx
         payload = {
             "query": query,
@@ -36,7 +37,7 @@ class ExaWebSearch:
             # text: inline page body for provenance. highlights: QUERY-AWARE extracts pulled from
             # anywhere in the page — the discriminating paragraph of a long guideline surfaces even
             # when it sits beyond the text-budget truncation window.
-            "contents": {"text": {"maxCharacters": 4000},
+            "contents": {"text": {"maxCharacters": int(max_chars) if max_chars is not None else 4000},
                          "highlights": {"numSentences": 5, "highlightsPerUrl": 2, "query": query}},
         }
         # open_web (answer-contract, per request) → DROP the trusted-domain whitelist for open-web

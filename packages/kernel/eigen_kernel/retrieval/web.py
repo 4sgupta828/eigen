@@ -83,10 +83,12 @@ def _year_of(published: str | None) -> str:
 
 class WebRetrievalSource:
     def __init__(self, client: WebSearchClient, *, key: str = "web", max_results: int = 8,
-                 domain_facets: dict[str, dict] | None = None, embedder=None):
+                 domain_facets: dict[str, dict] | None = None, embedder=None,
+                 max_chunks_per_page: int = _MAX_CHUNKS_PER_PAGE):
         self.key = key
         self._client = client
         self._max = max_results
+        self._max_chunks_per_page = max(1, int(max_chunks_per_page))
         # domain (suffix-matched against the URL host) → facets stamped on every block from it.
         # Supplied by the VERTICAL (venue authority is domain knowledge); empty → no stamping.
         self._domain_facets = dict(domain_facets or {})
@@ -139,9 +141,10 @@ class WebRetrievalSource:
         # thread the per-request web controls (answer-contract) through to the client; a client that
         # doesn't accept them ignores the kwargs (they carry safe defaults).
         results = self._dedup(await self._client.search(
-            req.query, max_results=self._max,
+            req.query, max_results=(getattr(req, "web_max_results", None) or self._max),
             open_web=getattr(req, "web_open", False),
-            recency_days=getattr(req, "web_recency_days", None)))
+            recency_days=getattr(req, "web_recency_days", None),
+            max_chars=getattr(req, "web_max_chars", None)))
         # Chunk each fetched page body into length-bounded blocks so a verbatim span is findable
         # (a 4000-char blob is nearly unquotable). Provider HIGHLIGHTS (query-aware extracts from
         # anywhere in the page) come FIRST — they can carry a discriminator the truncated body
@@ -173,6 +176,7 @@ class WebRetrievalSource:
                 self._cache[(r.url, bid)] = text
                 year = _year_of(getattr(r, "published", None))
                 facets = self._facets_for(r.url)
+                facets.update(dict(getattr(req, "web_extra_facets", None) or {}))
                 facets["source_domain"] = _host_of(r.url)
                 if year:
                     facets.setdefault("year", year)
@@ -234,7 +238,8 @@ class WebRetrievalSource:
         per_doc: dict[str, int] = {}
         for i in order:
             h = hits[i]
-            if per_doc.get(h.document_id, 0) >= _MAX_CHUNKS_PER_PAGE:
+            max_chunks = int(getattr(req, "web_max_chunks_per_page", None) or self._max_chunks_per_page)
+            if per_doc.get(h.document_id, 0) >= max(1, max_chunks):
                 continue
             per_doc[h.document_id] = per_doc.get(h.document_id, 0) + 1
             picked.append(h)

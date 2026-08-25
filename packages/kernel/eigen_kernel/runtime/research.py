@@ -218,6 +218,8 @@ class ResearchService:
     #                                         token) → keeps original on any violation. OFF → byte-identical.
     layout_prompt: str | None = None        # optional override for the reflow directive (kernel default used
     #                                         when None); domain-free presentation instruction.
+    layout_llm: LLMClient | None = None     # optional CHEAP model for the layout reflow (mechanical
+    #                                         reformat — doesn't need the compose model). None → self.llm.
     axis_complete: bool = False             # EIGEN_ANSWER_AXES: compose addresses each asked aspect + synthesizes
     tech_synthesis: bool = False            # EIGEN_TECH_SYNTHESIS: add a strategic 'how it works' technical synthesis
     deep_synthesis: bool = False            # EIGEN_DEEP_SYNTHESIS: synthesis-first grounded analysis for non-lookup Qs
@@ -233,6 +235,8 @@ class ResearchService:
     #                                         pre-retrieval draft + inert threading; OFF → byte-identical.
     intelligence_draft_prompt: str | None = None  # the vertical's intelligence-draft directive (inert
     #                                         data; the flag + routing predicate gate draft_intelligence)
+    deep_company: bool = False              # EIGEN_DEEP_COMPANY_READER: additive first-step web dossier leg
+    company_reader: dict | None = None      # vertical-supplied deep-company templates + compose addendum
     entity_open_web: bool = False           # EIGEN_WEB_ENTITY_OPEN: entity-scoped open-web probe (screened) on step 0
     web_open_denoise: bool = False          # EIGEN_WEB_OPEN_DENOISE: open the aux web leg to the FULL web + denoise-screen ALL hits
     web_quality_prompt: str | None = None   # vertical-supplied LLM page-quality screen prompt for the open-web leg
@@ -606,6 +610,10 @@ class ResearchService:
             directive = answer_format_override or self.answer_format
         if extra_directive:   # opt-in addendum (e.g. integrative section) — appended to WHICHEVER directive won
             directive = (directive + "\n\n" + extra_directive) if directive else extra_directive
+        if self.deep_company and self.company_reader:
+            _dcr = (self.company_reader.get("attribution_addendum") or "").strip()
+            if _dcr:
+                directive = (directive + "\n\n" + _dcr) if directive else _dcr
         # Effort scales STRUCTURAL search knobs only (turns, results, context, citations, budget) —
         # never the grounding gates. At effort<=1.0 every value round-trips to today's exact defaults,
         # so this is a byte-identical no-op when the caller passes 1.0 (flag OFF).
@@ -743,6 +751,7 @@ class ResearchService:
             prior_draft=prior_draft,   # EIGEN_PARAMETRIC_LED (T1): inert; consumed by T2/T3
             hypotheses=hypotheses, intelligence_frame=intelligence_frame,  # EIGEN_INTELLIGENCE_CORE (T1): inert; T2/T3
             kind=kind, derive_ideas=self.derive_ideas, derive_judge_llm=self.derive_judge_llm,
+            deep_company=self.deep_company, company_reader=self.company_reader,
             entity_open_web=self.entity_open_web, web_open_denoise=self.web_open_denoise,
             web_quality_prompt=self.web_quality_prompt,
             collect_diagnostics=self.collect_diagnostics,
@@ -824,7 +833,7 @@ class ResearchService:
                 # would make BudgetState method-local across `ask` and break the earlier budget = BudgetState(...).
                 from eigen_kernel.research.layout import reflow_for_scannability
                 _reflow = await reflow_for_scannability(
-                    res.composed_answer, self.llm, self.layout_prompt,
+                    res.composed_answer, (self.layout_llm or self.llm), self.layout_prompt,
                     budget=BudgetState(max_calls=self.max_calls))
                 if _reflow:
                     res.composed_answer = _reflow
