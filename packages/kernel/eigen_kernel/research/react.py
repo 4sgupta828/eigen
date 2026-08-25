@@ -75,6 +75,8 @@ _COMPOSE_CLAIM_CAP = 30       # max verified findings sent to compose
 _EXTRACT_COLLECT = 80         # under evidence-select, gather up to this many before ranking down
 _PARAMETRIC_FACT_CAP = 12     # EIGEN_PARAMETRIC_LED (T2): max drafted FACT claims verified per run
 #                               (bounds cost: one targeted retrieval + one grounding call per fact)
+_INTELLIGENCE_HYP_CAP = 3     # EIGEN_INTELLIGENCE_CORE (T2): max hypotheses whose FOR/AGAINST legs
+#                               pre-seed the atom pool (bounds cost: ≤2 targeted retrievals per hypothesis)
 
 # Answer-axes addendum (flag `axis_complete`): appended after the base compose directive so the answer
 # COVERS each aspect the reader asked about + synthesizes. Domain-neutral (the axes come from the
@@ -125,6 +127,25 @@ _PARAMETRIC_ADDENDUM = (
     "RULES: lead with the reasoning/synthesis (that is the value); every FACT cites [n] from the VERIFIED "
     "FINDINGS; do NOT restate any unverifiable claim as established fact; where your reasoning outruns the "
     "findings, keep it clearly labeled [[R]] inference, never fact.]")
+
+# Intelligence-core addendum (EIGEN_INTELLIGENCE_CORE, T3): appended to the compose directive ONLY when
+# the model drafted competing HYPOTHESES + an analytical FRAME for this run. It structures the answer
+# around WEIGHING the hypotheses against the retrieved evidence — but strictly as an analytical frame the
+# evidence TESTS, never as a set of facts. Every FACT still comes from the VERIFIED FINDINGS and cites
+# [n]; the synthesis is labeled [[R]] inference (and, on a deep run, flows through the derive-weave). The
+# hypotheses/frame shape STRUCTURE, not asserted facts (the parametric post-mortem lesson: do NOT inject
+# raw reasoning as the fact-spine). <FRAME> / <HYPOTHESES> are replaced with the drafted frame + the
+# rendered hypothesis lines. OFF (hypotheses is None) → not appended → every compose prompt byte-identical.
+_INTELLIGENCE_ADDENDUM = (
+    "[INTELLIGENCE FRAME — organize the answer around these COMPETING HYPOTHESES, tested against the "
+    "evidence. This FRAME (analytical world-model for the question) is: <FRAME>\n\n"
+    "The competing hypotheses (each with the observation that would DISPROVE it):\n<HYPOTHESES>\n\n"
+    "Weigh the VERIFIED FINDINGS both FOR and AGAINST each hypothesis, then resolve which the evidence "
+    "BEST supports and WHY. STRICT RULES: this is an analytical FRAME the evidence TESTS, NOT a set of "
+    "facts. Every FACT you state comes from the VERIFIED FINDINGS and cites [n]. Present your synthesis / "
+    "judgment as labeled inference [[R]]...[[/R]] grounded in the findings; NEVER assert a hypothesis or "
+    "mechanism as established fact. State plainly WHICH hypothesis the evidence best supports and the ONE "
+    "concrete observation (its falsifier) that would change that read.]")
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -652,6 +673,11 @@ class AnswerResult:
     # that T3 renders as "model asserts — not yet verified", NEVER merged into grounded prose. Empty on
     # every OFF (prior_draft is None) run, so the byte-identical OFF path never populates it.
     unverified_priors: list = field(default_factory=list)
+    # Intelligence cruxes (flag EIGEN_INTELLIGENCE_CORE, T3): the falsifier(s) of the drafted competing
+    # hypotheses — the concrete observable(s) that would flip the preferred read. A list of strings (the
+    # model's falsifier text, labeled as "what would change this read", NOT a fact). Populated ONLY on an
+    # intelligence run (hypotheses present) and empty otherwise, so the OFF answer stays byte-identical.
+    intelligence_cruxes: list = field(default_factory=list)
     # Reasoning Read (flag): a purpose-driven analysis — a stated PURPOSE, the interpretation FACTORS
     # that bear on it, a converging CONCLUSION, and the 3-dimension confidence read. All empty/None
     # unless the reasoning-read flag drove the compose directive (byte-identical OFF).
@@ -738,6 +764,13 @@ async def run_react(
     #                                           T1 (threaded inertly) — T2 verifies each asserted fact
     #                                           against the span-gate + binding, T3 composes from the
     #                                           verified + labeled-unverified register. None → today's path.
+    hypotheses=None,                          # EIGEN_INTELLIGENCE_CORE (T1): the parsed competing
+    #                                           Hypotheses for an intelligence-eligible question. INERT —
+    #                                           declared-but-unused in T1 (zero body references); T2 adds
+    #                                           the FOR/AGAINST adversarial retrieval legs and T3 the
+    #                                           hypotheses-as-frame compose. None → today's path byte-identical.
+    intelligence_frame=None,                  # EIGEN_INTELLIGENCE_CORE (T1): the drafted analytical frame
+    #                                           (prose) paired with `hypotheses`. INERT until T3 compose.
     kind: str = "",                           # question kind (management/lookup/understanding); "" → treated
     #                                           as non-lookup by the deep gate (best-effort; a clear lookup
     #                                           carries kind="lookup" from the reasoned scaffold).
@@ -1355,6 +1388,92 @@ async def run_react(
         if diag is not None:
             diag["parametric"] = {"drafted_facts": _drafted, "grounded": _grounded_n,
                                   "unverified": len(result.unverified_priors)}
+
+    # EIGEN_INTELLIGENCE_CORE (T2): adversarial FOR/AGAINST pre-seed. When the model drafted competing
+    # hypotheses, PRE-SEED the atom pool with bounded targeted retrievals that seek CONFIRMING (`for_query`)
+    # AND DISCONFIRMING (`against_query`) evidence per hypothesis — the disconfirmation search the agentic
+    # loop never runs on its own. These legs are ADDITIVE: their atoms just join the pool and the normal
+    # loop below still runs in FULL (recall preserved — we do NOT set max_steps=0). Facts still enter ONLY
+    # via claims_first + the span-gate + binding + authority, all unchanged. Budget: not charged per
+    # retrieval (matching the parametric verify legs and the agentic loop — retrieval is cheap); the only
+    # LLM call here is the open-web screen, which charges the request budget inside `screen_open_web_hits`.
+    # OFF (`hypotheses is None`) → this whole block is skipped → the loop + everything else are byte-identical.
+    if hypotheses is not None:
+        _hyps = list(hypotheses)[:_INTELLIGENCE_HYP_CAP]
+        _for_hits_n = 0
+        _against_hits_n = 0
+        await emit({"type": "intelligence_retrieval", "hypotheses": len(_hyps)})
+        for _hi, _hyp in enumerate(_hyps):
+            _claim = (getattr(_hyp, "claim", "") or "").strip()
+            # FOR leg falls back to the claim if `for_query` is blank; a blank AGAINST leg is skipped.
+            _hyp_legs = [
+                ("for", (getattr(_hyp, "for_query", "") or "").strip() or _claim),
+                ("against", (getattr(_hyp, "against_query", "") or "").strip()),
+            ]
+            for _stance, _hq in _hyp_legs:
+                if not _hq:
+                    continue                      # blank leg (e.g. no against_query) → skip, never crash
+                if budget.exhausted:
+                    break
+                try:
+                    _hqvec = await _timed("embed_ms",
+                                          asyncio.to_thread(lambda q=_hq: list(embedder.embed([q])[0])))
+                    # Small FIXED k=4 for these targeted legs (NOT the full loop k); no query variants,
+                    # no open-web expansion beyond the normal aux web leg. Same base_req shape as the loop.
+                    _hreq = RetrievalRequest(
+                        query=_hq, tenant_id=tenant_id, workspace_id=workspace_id,
+                        query_embedding=_hqvec, k=4, facets=dict(facets or {}),
+                        exclude_facets=dict(exclude_facets or {}),
+                        web_open=(_web_open or web_open_denoise),
+                        web_denoise=web_open_denoise,
+                        web_recency_days=_web_recency_days,
+                    )
+                    await emit({"type": "search", "query": _hq, "variants": [],
+                                "hypothesis": _hi + 1, "stance": _stance})
+                    _hlegs = [("corpus", source.search(_hreq))]
+                    if aux_source is not None:
+                        _hlegs.append(("web", aux_source.search(_hreq)))
+                    _hgot = await _timed("retrieval_ms", asyncio.gather(
+                        *[co for _n, co in _hlegs], return_exceptions=True))
+                    _hhits = []
+                    for (_hleg, _co), _hr in zip(_hlegs, _hgot):
+                        if isinstance(_hr, Exception):
+                            # Fail-safe (Rule 13): a dead leg is logged + visible, never blocks the answer.
+                            _log.warning("intelligence %s/%s leg failed on %r: %s",
+                                         _stance, _hleg, _hq, _hr)
+                            if diag is not None:
+                                diag.setdefault("failures", []).append(
+                                    {"stage": f"intelligence_{_stance}_{_hleg}",
+                                     "detail": f"{type(_hr).__name__}: {_hr}"[:200]})
+                            continue
+                        # Same open-web screen + liveness gate the agentic loop applies to the `web` leg.
+                        if _hleg == "web" and web_open_denoise:
+                            _hscreened = await screen_open_web_hits(
+                                _hr, question=question, llm=llm, prompt=web_quality_prompt, budget=budget,
+                                emit_provenance=authority_basis)
+                            _hr = _authoritative_subset(_hr) if _hscreened is None else _hscreened
+                            _hr = await drop_dead_urls(_hr)
+                        _hhits += _hr
+                    _hbefore = len(atoms.all())
+                    atoms.add_hits(_hhits)          # ADDITIVE: the for/against atoms join the pool
+                    if _stance == "for":
+                        _for_hits_n += len(_hhits)
+                    else:
+                        _against_hits_n += len(_hhits)
+                    await emit({"type": "found", "added": len(atoms.all()) - _hbefore,
+                                "total": len(atoms.all())})
+                except Exception as _he:
+                    # Belt-and-suspenders fail-safe: a leg NEVER blocks the answer (Rule 13).
+                    _log.warning("intelligence %s leg errored on %r: %s", _stance, _hq, _he)
+                    if diag is not None:
+                        diag.setdefault("failures", []).append(
+                            {"stage": f"intelligence_{_stance}",
+                             "detail": f"{type(_he).__name__}: {_he}"[:200]})
+        _log.info("intelligence pre-seed: hypotheses=%d for_hits=%d against_hits=%d",
+                  len(_hyps), _for_hits_n, _against_hits_n)
+        if diag is not None:
+            diag["intelligence"] = {"hypotheses": len(_hyps),
+                                    "for_hits": _for_hits_n, "against_hits": _against_hits_n}
 
     stale_searches = 0          # consecutive searches that added NO new atoms (spinning detector)
     premature_answers = 0       # zero-evidence answer attempts (see the guard below)
@@ -2038,6 +2157,31 @@ async def run_react(
                 if getattr(c, "kind", "fact") == "reasoning" and (getattr(c, "text", "") or "").strip())
             _pad = _PARAMETRIC_ADDENDUM.replace("<OUTLINE>", _outline).replace("<REASONING>", _reasoning or "(none)")
             _compose_directive = (_compose_directive + "\n\n" + _pad) if _compose_directive else _pad
+        # INTELLIGENCE-CORE (EIGEN_INTELLIGENCE_CORE, T3): when the model drafted competing HYPOTHESES +
+        # an analytical FRAME, structure the answer around WEIGHING them against the evidence — as a frame
+        # the evidence TESTS, never as facts (facts stay retrieval-authored + [n]-cited; the synthesis is
+        # labeled [[R]] and, on a deep run, flows through the derive-weave already woven above). The
+        # hypotheses' falsifiers become the CRUX register (`intelligence_cruxes`, rendered post-compose as
+        # "what would change this read"). Appended ONLY when `hypotheses is not None` → OFF → not appended
+        # → every compose prompt byte-identical, and `intelligence_cruxes` stays empty.
+        if hypotheses is not None:
+            _hyps_c = list(hypotheses)[:_INTELLIGENCE_HYP_CAP]
+            _hyp_lines = []
+            for _hi, _h in enumerate(_hyps_c, 1):
+                _claim = (getattr(_h, "claim", "") or "").strip()
+                _fals = (getattr(_h, "falsifier", "") or "").strip()
+                _hyp_lines.append(
+                    f"H{_hi}: {_claim}" + (f" — falsifier: {_fals}" if _fals else ""))
+            _hyp_text = "\n".join(_hyp_lines)
+            _iad = (_INTELLIGENCE_ADDENDUM
+                    .replace("<FRAME>", (intelligence_frame or "").strip() or "(none)")
+                    .replace("<HYPOTHESES>", _hyp_text or "(none)"))
+            _compose_directive = (_compose_directive + "\n\n" + _iad) if _compose_directive else _iad
+            # CRUX register: the falsifiers are the concrete observables that would flip the preferred
+            # read (the model's text, surfaced post-compose as "what would change this read", NOT a fact).
+            result.intelligence_cruxes = [
+                (getattr(_h, "falsifier", "") or "").strip()
+                for _h in _hyps_c if (getattr(_h, "falsifier", "") or "").strip()]
 
         async def _compose(directive: str | None) -> ComposedAnswer:
             # Base ANSWER instruction kept identical to the original (directive-free path stays a
@@ -2231,6 +2375,83 @@ async def run_react(
                                 diag["failures"].append(
                                     {"stage": "deep_prose_grounding",
                                      "detail": "residual unsupported figures: " + ", ".join(sorted(_resid))})
+            # INTELLIGENCE-CORE (EIGEN_INTELLIGENCE_CORE, T4) — SEMANTIC cross-family grounding gate. The
+            # hard-token audit above catches unsupported FIGURES only; a laundered qualitative mechanism/
+            # entity/relationship/causal claim asserted as fact rides straight through it. When the model
+            # drafted competing HYPOTHESES (intelligence mode) AND a genuinely CROSS-FAMILY judge is
+            # available, a different-family judge re-reads the composed prose + ONLY the verified claims and
+            # flags any span asserting a mechanism/entity/date/outcome/causal claim NO claim supports. On a
+            # hit: recompose ONCE asking to REMOVE or RELABEL those spans as [[R]] inference; re-check; still
+            # unsupported → one HARDER recompose (delete), then keep the best answer + log + record diag.
+            # This is IN ADDITION to the hard-token audit (which already ran) — it never weakens it.
+            # FAIL-CLOSED: no cross-family judge (`derive_judge_llm` is None or IS `llm`) / judge error / no
+            # claims → the gate returns [] → no action → the hard-token audit result stands (today's
+            # behavior). We NEVER run the gate same-family. OFF (hypotheses is None) → this whole block is
+            # skipped → byte-identical.
+            _ground_judge = (derive_judge_llm
+                             if (derive_judge_llm is not None and derive_judge_llm is not llm) else None)
+            if hypotheses is not None and _ground_judge is not None and result.composed_answer:
+                from eigen_kernel.research.grounding_gate import cross_family_ground_check
+                try:
+                    _bad = await cross_family_ground_check(
+                        result.composed_answer, result.verified_claims, _ground_judge, budget=budget)
+                except Exception as _e:   # noqa: BLE001 — a gate failure fails CLOSED, never breaks the answer
+                    _log.warning("intelligence grounding gate failed: %r", _e); _bad = []
+                if diag is not None and _bad:
+                    diag["intelligence_grounding"] = {
+                        "flagged": _bad[:20], "recomposed": False, "hard_recomposed": False, "resolved": False}
+                if _bad and not budget.exhausted:
+                    _spans = "\n".join(f'  - "{s}"' for s in _bad[:20])
+                    _gfix = ("\n\nGROUNDING FIX (mandatory): the following statement(s) assert a mechanism, "
+                             "entity, date, outcome, or causal claim that is NOT supported by any verified "
+                             "finding above:\n" + _spans + "\nFor EACH: either REMOVE it, or — if it is your "
+                             "own reasoning over the findings — RELABEL it as clearly-marked inference wrapped "
+                             "[[R]]...[[/R]], never asserted as fact. Keep every [n] citation; state facts "
+                             "using ONLY the verified findings.")
+                    try:
+                        _galt = await _compose((_compose_directive or "") + _gfix)
+                        _galt_text = strip_control_tags((_galt.answer or "").strip())
+                        if _galt_text and _refs_valid(_galt_text, n_findings):
+                            parsed, text = _galt, _galt_text
+                            result.composed_answer = text
+                            if diag is not None:
+                                diag["intelligence_grounding"]["recomposed"] = True
+                    except Exception as _e:   # noqa: BLE001 — best-effort; keep the answer we have
+                        _log.warning("intelligence grounding recompose failed: %r", _e)
+                    # RE-CHECK the (re)composed prose. Still unsupported → one HARDER recompose (delete, do
+                    # not relabel). Prefer a grounded answer over a richer laundered one.
+                    try:
+                        _bad2 = await cross_family_ground_check(
+                            result.composed_answer, result.verified_claims, _ground_judge, budget=budget)
+                    except Exception:   # noqa: BLE001
+                        _bad2 = []
+                    if _bad2 and not budget.exhausted:
+                        _spans2 = "\n".join(f'  - "{s}"' for s in _bad2[:20])
+                        _hfix = ("\n\nGROUNDING FIX (final, mandatory): DELETE the following unsupported "
+                                 "statement(s) ENTIRELY — do not restate, hedge, or relabel them. Write the "
+                                 "answer using ONLY facts present in the verified findings:\n" + _spans2)
+                        try:
+                            _hgalt = await _compose((_compose_directive or "") + _hfix)
+                            _hgalt_text = strip_control_tags((_hgalt.answer or "").strip())
+                            if _hgalt_text and _refs_valid(_hgalt_text, n_findings):
+                                parsed, text = _hgalt, _hgalt_text
+                                result.composed_answer = text
+                                if diag is not None:
+                                    diag["intelligence_grounding"]["hard_recomposed"] = True
+                        except Exception as _e:   # noqa: BLE001
+                            _log.warning("intelligence grounding hard-recompose failed: %r", _e)
+                        # Whatever remains: keep the best answer, but record it LOUDLY (Rule 13) — never
+                        # silently ship laundered prose; the caller/UI can surface the residual spans.
+                        if diag is not None:
+                            diag["intelligence_grounding"]["residual"] = _bad2[:20]
+                        _log.warning("intelligence grounding: residual unsupported spans after recompose: %s",
+                                     _bad2[:5])
+                        if diag is not None:
+                            diag["failures"].append(
+                                {"stage": "intelligence_grounding",
+                                 "detail": "residual unsupported spans: " + "; ".join(_bad2[:5])})
+                    elif diag is not None:
+                        diag["intelligence_grounding"]["resolved"] = True
             # Grounded charts: keep only bars whose figure appears in the cited finding (drop the whole
             # chart otherwise). Empty when the charts flag isn't driving the directive → no-op.
             result.charts = _validate_charts(getattr(parsed, "charts", []) or [], result.verified_claims)

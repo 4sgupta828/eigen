@@ -85,6 +85,20 @@ def _render_unverified_priors(priors: list) -> str:
             "unverified — not established fact._\n\n" + "\n".join(rows))
 
 
+def _render_cruxes(cruxes: list) -> str:
+    """Render the intelligence CRUX register (EIGEN_INTELLIGENCE_CORE, T3): the falsifier(s) of the
+    competing hypotheses — the concrete observation(s) that would flip the preferred read. `cruxes` is a
+    list of strings (the model's falsifier text). This is labeled as what-would-CHANGE-the-read, NOT a
+    fact (it never enters the grounded prose or a cited finding). Empty / all-blank → "" (no section), so
+    an OFF run — whose `intelligence_cruxes` is always empty — is a byte-identical no-op."""
+    rows = [f"- {c.strip()}" for c in (cruxes or []) if isinstance(c, str) and c.strip()]
+    if not rows:
+        return ""
+    lead = ("_The concrete observation(s) that would flip the read above. Each is the model's stated "
+            "falsifier — what would change this conclusion, not an established fact._")
+    return "## What would change this read\n" + lead + "\n\n" + "\n".join(rows)
+
+
 def build_history_context(history, *, answer_focus: bool = False) -> str | None:
     """Prior conversation turns → a compact context block (a follow-up can be elliptical). Context ONLY —
     it frames search/interpretation and NEVER becomes a citable claim. Shared by ask() and ask_panel() so
@@ -177,6 +191,12 @@ class ResearchService:
     #                                         T1 gates the pre-retrieval PriorDraft; OFF → byte-identical.
     prior_draft_prompt: str | None = None   # the vertical's parametric-draft directive (inert data;
     #                                         the flag + routing predicate gate the draft_prior call)
+    intelligence_core: bool = False         # EIGEN_INTELLIGENCE_CORE: the model OWNS the inquiry on an
+    #                                         eligible answer — drafts competing HYPOTHESES + a frame;
+    #                                         (T2) retrieval tests each FOR-and-AGAINST. T1 gates the
+    #                                         pre-retrieval draft + inert threading; OFF → byte-identical.
+    intelligence_draft_prompt: str | None = None  # the vertical's intelligence-draft directive (inert
+    #                                         data; the flag + routing predicate gate draft_intelligence)
     entity_open_web: bool = False           # EIGEN_WEB_ENTITY_OPEN: entity-scoped open-web probe (screened) on step 0
     web_open_denoise: bool = False          # EIGEN_WEB_OPEN_DENOISE: open the aux web leg to the FULL web + denoise-screen ALL hits
     web_quality_prompt: str | None = None   # vertical-supplied LLM page-quality screen prompt for the open-web leg
@@ -324,7 +344,48 @@ class ResearchService:
             # path. NOTE: stance/subject_kind are NOT available in ask_reasoned (run_react derives them),
             # so this runs its OWN derive_contract — one extra charged call, ONLY when the flag is on and
             # the vertical supplies contract_prompt (run_react re-derives; de-duping is a T2 concern).
-            if self.parametric_led:
+            # INTELLIGENCE-CORE (flag EIGEN_INTELLIGENCE_CORE, T1): parallel to the parametric block and
+            # sharing its eligibility predicate (stance=established + kind∈{understanding,management} +
+            # subject!=specific_entity). When ON + eligible, draft competing HYPOTHESES + an analytical
+            # FRAME and, if >=2 well-formed hypotheses parse, thread them INERTLY into whichever ask()
+            # fires (kw is copied — OFF / not-eligible / <2 stays byte-identical). The hypotheses are
+            # UNUSED by compose in T1; T2 (adversarial retrieval) + T3 (compose) consume them. Fail-safe:
+            # any error → no threading, today's path. Preferred over parametric when BOTH are somehow on
+            # (they shouldn't overlap in practice) — `_intel_threaded` skips the parametric block below.
+            # BUDGET NOTE (honest): the REQUEST budget is constructed downstream in ask() (it doesn't
+            # exist yet here), so — exactly like the parametric block — the draft charges a LOCAL
+            # BudgetState; this spend is not yet reflected in the request budget. That's the least-bad
+            # option for T1; threading the real budget/reserve is a T2 concern (same limitation the
+            # parametric draft carries).
+            _intel_threaded = False
+            if self.intelligence_core:
+                try:
+                    from eigen_kernel.research.budget import BudgetState
+                    from eigen_kernel.research.contract import derive_contract
+                    from eigen_kernel.research.intelligence_draft import (draft_intelligence,
+                                                                          parse_hypotheses)
+                    _c = await derive_contract(question, self.llm, self.contract_prompt)
+                    _stance = getattr(_c, "stance", "") if _c else ""
+                    _subject = getattr(_c, "subject_kind", "") if _c else ""
+                    _intel_eligible = (_stance == "established"
+                                       and s.kind in ("understanding", "management")
+                                       and _subject != "specific_entity")
+                    if _intel_eligible:
+                        _draft = await draft_intelligence(
+                            question, self.llm, self.intelligence_draft_prompt,
+                            budget=BudgetState(max_calls=self.max_calls))
+                        _hyps = parse_hypotheses(getattr(_draft, "hypotheses_text", "")) if _draft else []
+                        # Require >=2 genuinely-competing hypotheses; a degenerate draft can't drive the
+                        # adversarial for/against retrieval, so fall back to today's retrieval-led path.
+                        if len(_hyps) >= 2:
+                            kw = dict(kw)
+                            kw["hypotheses"] = _hyps
+                            kw["intelligence_frame"] = (getattr(_draft, "frame", "") or "").strip()
+                            _intel_threaded = True
+                            await _emit({"type": "intelligence_core", "hypotheses": len(_hyps)})
+                except Exception:   # noqa: BLE001 — the intelligence draft is an enhancer; never blocks the answer
+                    pass
+            if self.parametric_led and not _intel_threaded:
                 try:
                     from eigen_kernel.research.budget import BudgetState
                     from eigen_kernel.research.contract import derive_contract
@@ -422,6 +483,12 @@ class ResearchService:
         #                                      when the question is parametric-eligible — threaded INERTLY
         #                                      to run_react (declared-but-unused until T2/T3 consume it).
         #                                      None → today's retrieve-first path (byte-identical).
+        hypotheses=None,                      # EIGEN_INTELLIGENCE_CORE (T1): the parsed competing
+        #                                      Hypotheses when the question is intelligence-eligible —
+        #                                      threaded INERTLY to run_react (declared-but-unused until
+        #                                      T2 adversarial retrieval / T3 compose). None → byte-identical.
+        intelligence_frame=None,              # EIGEN_INTELLIGENCE_CORE (T1): the drafted analytical frame
+        #                                      (prose) paired with `hypotheses`; inert until T3. None → today.
     ) -> AnswerResult:
         # ANSWER-FOCUS (flag): resolve a conversational FOLLOW-UP ("what dose?") into a self-contained
         # question carrying the subject from the conversation ("dose of TMP-SMX for PCP prophylaxis"),
@@ -613,6 +680,7 @@ class ResearchService:
             axis_complete=self.axis_complete, tech_synthesis=self.tech_synthesis,
             deep_synthesis=self.deep_synthesis, deep_answer_format=self.deep_answer_format,
             prior_draft=prior_draft,   # EIGEN_PARAMETRIC_LED (T1): inert; consumed by T2/T3
+            hypotheses=hypotheses, intelligence_frame=intelligence_frame,  # EIGEN_INTELLIGENCE_CORE (T1): inert; T2/T3
             kind=kind, derive_ideas=self.derive_ideas, derive_judge_llm=self.derive_judge_llm,
             entity_open_web=self.entity_open_web, web_open_denoise=self.web_open_denoise,
             web_quality_prompt=self.web_quality_prompt,
@@ -663,6 +731,16 @@ class ResearchService:
         _uv = _render_unverified_priors(getattr(res, "unverified_priors", None) or [])
         if _uv:
             res.composed_answer = (res.composed_answer or "").rstrip() + "\n\n" + _uv
+
+        # INTELLIGENCE-CORE (flag EIGEN_INTELLIGENCE_CORE, T3): append the CRUX register — the falsifier(s)
+        # of the drafted competing hypotheses (the observation that would flip the preferred read) — as a
+        # labeled post-compose "## What would change this read" section, the SAME shape as the derivations /
+        # unverified-priors sections. `intelligence_cruxes` is populated ONLY on an intelligence run
+        # (hypotheses present) and empty otherwise, so this reduces to a no-op and the OFF composed_answer
+        # stays byte-identical.
+        _cx = _render_cruxes(getattr(res, "intelligence_cruxes", None) or [])
+        if _cx:
+            res.composed_answer = (res.composed_answer or "").rstrip() + "\n\n" + _cx
         return res
 
     def panel_roster(self) -> list[dict]:

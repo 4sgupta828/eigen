@@ -128,6 +128,13 @@ class VerticalManifest:
     # threads into draft_prior (via the service's prior_draft_prompt); ALL domain wording lives in the
     # vertical. Always safe to set as inert data — the flag + routing gate its use. None → unavailable.
     prior_draft_prompt: str | None = None
+    # Optional INTELLIGENCE-CORE draft directive (flag EIGEN_INTELLIGENCE_CORE): the system prompt for the
+    # pre-retrieval `draft_intelligence` call — the model states a short analytical FRAME + emits 2-3
+    # COMPETING hypotheses in a flat line protocol (each with a for/against search query + a falsifier).
+    # Domain-free opaque slot the kernel only threads into draft_intelligence (via the service's
+    # intelligence_draft_prompt); ALL domain wording lives in the vertical. Always safe to set as inert
+    # data — the flag + routing gate its use. None → unavailable.
+    intelligence_draft_prompt: str | None = None
     # Optional vertical-supplied instruction for the VISION pre-step: how to DESCRIBE a
     # user-uploaded image (color/shape/borders/texture/distribution), producing a labeled
     # visual observation — never a diagnosis. Opaque prose; the kernel only threads it into

@@ -699,6 +699,18 @@ def parametric_led_enabled() -> bool:
     return os.environ.get("EIGEN_PARAMETRIC_LED", "").lower() in ("1", "true", "yes")
 
 
+def intelligence_core_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_INTELLIGENCE_CORE makes the model OWN the inquiry on an
+    eligible question — it drafts competing HYPOTHESES + a short analytical FRAME, and (T2) retrieval
+    tests each hypothesis with FOR-and-AGAINST searches (adversarial disconfirmation, the one thing
+    missing today). When ON AND the question is eligible (stance=established, kind∈{understanding,
+    management}, subject_kind!=specific_entity), a pre-retrieval IntelligenceDraft is produced and, if
+    it parses to >=2 competing hypotheses, threaded INERTLY into run_react (unused by compose until
+    T2/T3 consume it). Facts stay retrieval-authored (span-gate untouched). OFF or not eligible / <2
+    hypotheses → no draft threading, today's retrieval-led path byte-identical."""
+    return os.environ.get("EIGEN_INTELLIGENCE_CORE", "").lower() in ("1", "true", "yes")
+
+
 def entity_open_web_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_WEB_ENTITY_OPEN fires one entity-scoped, quality-screened
     open-web Exa probe (whitelist dropped) on step 0 for single-entity diligence questions. OFF →
@@ -1177,6 +1189,11 @@ def build_default_service() -> ResearchService:
         # (unused by compose until T2/T3). OFF or not eligible → byte-identical.
         parametric_led=parametric_led_enabled(),
         prior_draft_prompt=getattr(manifest, "prior_draft_prompt", None),
+        # EIGEN_INTELLIGENCE_CORE (T1): flag → service field + the vertical's intelligence-draft prompt as
+        # inert data. When ON + eligible, ask_reasoned drafts competing hypotheses + a frame and threads
+        # them inertly (unused by compose until T2/T3). OFF or not eligible → byte-identical.
+        intelligence_core=intelligence_core_enabled(),
+        intelligence_draft_prompt=getattr(manifest, "intelligence_draft_prompt", None),
         entity_open_web=entity_open_web_enabled(),
         web_open_denoise=open_web_denoise_enabled(),
         web_quality_prompt=getattr(manifest, "web_quality_prompt", None),
@@ -1551,6 +1568,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "evidence_fitness_enabled": evidence_fitness_enabled(),
             "authority_basis_enabled": authority_basis_enabled(),
             "parametric_led_enabled": parametric_led_enabled(),
+            "intelligence_core_enabled": intelligence_core_enabled(),
             "ask_panel_enabled": live_panel,
             "panel_specialists": ([
                 {"id": getattr(s, "id", ""), "specialty": getattr(s, "specialty", ""),
