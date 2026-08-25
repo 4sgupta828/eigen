@@ -398,7 +398,14 @@ class ResearchService:
                     _c = await derive_contract(question, self.llm, self.contract_prompt)
                     _stance = getattr(_c, "stance", "") if _c else ""
                     _subject = getattr(_c, "subject_kind", "") if _c else ""
-                    _intel_eligible = (_stance == "established"
+                    # Eligible stances = {established, balanced}. `balanced` (genuinely contested /
+                    # multi-sided) is the PRIME case for competing-hypotheses + adversarial for/against
+                    # retrieval, and the contract flips a strategy Q between 'established' and 'balanced'
+                    # nondeterministically (the management-moat flake: local='established', prod='balanced'
+                    # for the same Q) — accepting both makes engagement consistent. `current` stays
+                    # retrieval-led (recency wants fresh facts, not a hypothesis frame); the recency
+                    # control Q also stays out via the specific_entity guard.
+                    _intel_eligible = (_stance in ("established", "balanced")
                                        and s.kind in ("understanding", "management")
                                        and _subject != "specific_entity")
                     if not _intel_eligible:
