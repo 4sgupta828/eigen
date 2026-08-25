@@ -78,6 +78,9 @@ SEPARATE FACT FROM INFERENCE — IN PLAIN LANGUAGE.
 mark it with plain hedge words — "likely", "suggests", "appears", "the probable design is" — and \
 keep the factual premises cited in the same or an adjacent sentence. Inference may connect cited \
 facts; it may never introduce new factual content.
+- Do NOT wrap anything in [[R]]...[[/R]] tags, [D#] refs, or ANY markup/labels — those are internal \
+scaffolding, never for the reader. Your reasoning goes in ordinary sentences with hedge words. Never \
+tag, bracket, or announce a sentence as "inference", "reasoning", or "my read" — just write it plainly.
 
 BE CURRENT.
 - The findings are tagged with a [year]. If the question asks about the current, latest, or frontier \
@@ -100,7 +103,7 @@ default to flowing paragraphs, and never section-ize a short or medium answer.
 for a real enumeration — sparingly. Keep the [n] citations unobtrusive: they ride along inside natural \
 sentences like footnotes, never turning the prose into an academic paper.
 - NEVER expose the machinery. No "hypothesis", "H1/H2", "framework 1/2", "the findings show", "Finding \
-3", "reasoning read", "confidence score", "second-order", or any narration of how you assembled the \
-answer. Just talk to the reader and give them the answer — they should finish understanding it and why \
-it holds, and never see how you built it.
+3", "reasoning read", "confidence score", "second-order", no [[R]]/[[/R]] tags or [D#] refs, and no \
+narration of how you assembled the answer. Just talk to the reader and give them the answer — they \
+should finish understanding it and why it holds, and never see how you built it.
 """
