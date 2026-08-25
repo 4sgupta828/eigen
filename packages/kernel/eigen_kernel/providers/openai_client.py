@@ -28,15 +28,24 @@ DEFAULT_MODEL = os.environ.get("EIGEN_JUDGE_MODEL", "gpt-4o")
 
 
 class OpenAILLMClient:
-    def __init__(self, *, model: str | None = None, api_key: str | None = None):
+    def __init__(self, *, model: str | None = None, api_key: str | None = None,
+                 base_url: str | None = None):
         self._model = model or os.environ.get("EIGEN_JUDGE_MODEL", "gpt-4o")
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        # base_url lets this same OpenAI-protocol client target ANY OpenAI-compatible endpoint —
+        # notably DeepSeek (https://api.deepseek.com). None → OpenAI's default endpoint (byte-identical).
+        self._base_url = base_url or os.environ.get("EIGEN_OPENAI_BASE_URL") or None
         self._client = None
 
     def _ensure(self) -> None:
         if self._client is None:
             from openai import AsyncOpenAI   # lazy, optional dep (already used for embeddings)
-            self._client = AsyncOpenAI(api_key=self._api_key) if self._api_key else AsyncOpenAI()
+            kw: dict = {}
+            if self._api_key:
+                kw["api_key"] = self._api_key
+            if self._base_url:
+                kw["base_url"] = self._base_url
+            self._client = AsyncOpenAI(**kw)
 
     async def complete(
         self,

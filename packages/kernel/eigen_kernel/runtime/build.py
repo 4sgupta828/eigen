@@ -26,11 +26,41 @@ def default_cassette_root() -> Path:
     return Path(os.environ.get("EIGEN_CASSETTE_ROOT", "evals/cassettes"))
 
 
+def _route_by_name(model: str | None) -> str | None:
+    """A model NAME picks its provider — so an explicit `claude-*` (e.g. the cheap layout model) stays
+    Anthropic even when the global provider is switched to deepseek, and vice versa."""
+    m = (model or "").lower()
+    if m.startswith("deepseek"):
+        return "deepseek"
+    if m.startswith(("gpt", "o1", "o3", "o4")):
+        return "openai"
+    if m.startswith("claude"):
+        return "anthropic"
+    return None
+
+
+def _build_inner_llm(model: str | None) -> LLMClient:
+    """Provider seam. `EIGEN_LLM_PROVIDER` (default 'anthropic') selects the family; `EIGEN_LLM_MODEL`
+    the model. An explicit model name overrides the provider (see `_route_by_name`). DeepSeek and OpenAI
+    reuse the OpenAI-protocol client (DeepSeek is OpenAI-compatible via base_url). Default (no provider
+    env, no model) → AnthropicLLM() exactly as before → byte-identical."""
+    provider = _route_by_name(model) or os.environ.get("EIGEN_LLM_PROVIDER", "anthropic").strip().lower()
+    if provider == "deepseek":
+        from eigen_kernel.providers.openai_client import OpenAILLMClient
+        return OpenAILLMClient(
+            model=model or os.environ.get("EIGEN_LLM_MODEL", "deepseek-chat"),
+            api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
+            base_url=os.environ.get("EIGEN_DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
+    if provider == "openai":
+        from eigen_kernel.providers.openai_client import OpenAILLMClient
+        return OpenAILLMClient(model=model or os.environ.get("EIGEN_LLM_MODEL", "gpt-4o"))
+    return AnthropicLLM(model=model) if model else AnthropicLLM()
+
+
 def build_llm(*, mode: ProviderMode | str | None = None, cassette_root: Path | None = None,
               model: str | None = None) -> LLMClient:
     m = resolve_mode(mode)
-    inner = None if m is ProviderMode.REPLAY else AnthropicLLM(model=model) if model \
-        else AnthropicLLM()
+    inner = None if m is ProviderMode.REPLAY else _build_inner_llm(model)
     return CassetteLLM(inner, cassette_root=cassette_root or default_cassette_root(),
                        namespace="llm", mode=m)
 
