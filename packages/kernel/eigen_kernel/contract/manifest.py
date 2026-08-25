@@ -68,6 +68,12 @@ class VerticalManifest:
     # exactly like `answer_format`. None → the vertical has no patient view (patient mode falls back to
     # the clinician directive), so the flag is a safe no-op for verticals that don't supply this.
     patient_answer_format: str | None = None
+    # Optional SINGLE golden-answer compose directive. When the golden-answer flag is ON, the app boundary
+    # REPLACES `answer_format` with this one directive and forces every other answer-shaping layer OFF, so
+    # the answer is one clean freeform brief with no narrated scaffolding. Opaque prose threaded exactly
+    # like `answer_format` (all domain vocabulary lives here — kernel litmus). None → the flag is a no-op
+    # for verticals that don't supply it.
+    golden_answer_directive: str | None = None
     # Optional VISUALIZATION guidance appended to the compose directive when the answer-visuals flag is
     # on — pushes the answer toward comparison tables / ranked options / pros-cons, strictly from the
     # verified findings (never fabricated structure). Opaque prose threaded like `answer_format`.

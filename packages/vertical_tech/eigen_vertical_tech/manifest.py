@@ -15,6 +15,7 @@ from .answer_format import (TECH_ANSWER_FORMAT, TECH_DILIGENCE_SYNTHESIS_FORMAT,
                             TECH_AUTHORITY_BASIS_DIRECTIVE)
 from .prior_draft import PRIOR_DRAFT_PROMPT
 from .intelligence_draft import INTELLIGENCE_DRAFT_PROMPT
+from .golden_answer import GOLDEN_ANSWER_DIRECTIVE
 from .terms import TECH_TERMS_PROMPT
 from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
@@ -119,6 +120,9 @@ def build_manifest() -> VerticalManifest:
         # FLAG EIGEN_ANSWER_CLOSE: append a required LANDING (fitted synthesis + 2-4 grounded next
         # questions) so an answer concludes instead of stopping on a sources/gaps line. OFF → byte-identical.
         answer_format=(TECH_ANSWER_FORMAT + (tech_closing_block() if answer_close_on() else "")),
+        # EIGEN_GOLDEN_ANSWER: the single golden compose directive that replaces the whole answer-shaping
+        # stack when the flag is ON (one clean freeform brief, no narrated scaffolding). None → no-op.
+        golden_answer_directive=GOLDEN_ANSWER_DIRECTIVE,
         # Enhanced A/B synthesis variant (reuses the kernel's enhanced-answer slot; same section set).
         clinical_answer_format=TECH_DILIGENCE_SYNTHESIS_FORMAT,
         # Concept/term glossary + grounded conceptual VISUALS (diagrams) + inline visual/chart/reasoning

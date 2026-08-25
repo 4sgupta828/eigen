@@ -206,6 +206,11 @@ class ResearchService:
     atom_cap: int = 1600                    # per-atom char window for the extractor (raised under evidence_select)
     reasoning_read: bool = False            # surface the validated interpretation + confidence layer (flag)
     readable_prose: bool = False            # EIGEN_READABLE_PROSE: plain-language style over compose (flag)
+    golden_answer: bool = False             # EIGEN_GOLDEN_ANSWER: collapse the 8-layer answer-shaping stack to
+    #                                         ONE golden compose directive (wired as answer_format at the app
+    #                                         boundary with every other layer flag OFF); this field only
+    #                                         re-binds the two prose grounding audits in run_react so the
+    #                                         freer golden prose stays policed. OFF → byte-identical.
     axis_complete: bool = False             # EIGEN_ANSWER_AXES: compose addresses each asked aspect + synthesizes
     tech_synthesis: bool = False            # EIGEN_TECH_SYNTHESIS: add a strategic 'how it works' technical synthesis
     deep_synthesis: bool = False            # EIGEN_DEEP_SYNTHESIS: synthesis-first grounded analysis for non-lookup Qs
@@ -725,6 +730,7 @@ class ResearchService:
             compose_claim_cap=sc.compose_claim_cap, extract_collect=sc.extract_collect,
             answer_focus=answer_focus, reasoning_read=self.reasoning_read,
             readable_prose=self.readable_prose, country_boost=country_boost,
+            golden_answer=self.golden_answer,   # EIGEN_GOLDEN_ANSWER: re-bind the two prose grounding audits
             axis_complete=self.axis_complete, tech_synthesis=self.tech_synthesis,
             deep_synthesis=self.deep_synthesis, deep_answer_format=self.deep_answer_format,
             prior_draft=prior_draft,   # EIGEN_PARAMETRIC_LED (T1): inert; consumed by T2/T3

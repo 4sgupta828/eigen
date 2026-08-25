@@ -711,6 +711,19 @@ def intelligence_core_enabled() -> bool:
     return os.environ.get("EIGEN_INTELLIGENCE_CORE", "").lower() in ("1", "true", "yes")
 
 
+def golden_answer_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_GOLDEN_ANSWER collapses the eight stacked answer-shaping layers
+    (deep-synthesis, axes, tech-synthesis, intelligence-core, parametric, derive, derive-ideas,
+    reasoning-read, readable-prose, authority-basis, answer-profiles) into ONE golden compose directive —
+    the vertical's `golden_answer_directive`, wired as `answer_format` with every other layer forced OFF.
+    The answer becomes one clean freeform brief: the answer only, no narrated scaffolding (no hypotheses/
+    frames/'reasoning & ideas'/cruxes/confidence meta, and the UI reasoning panel is hidden). The upstream
+    EVIDENCE machinery that makes answers better stays ON and invisible (adversarial retrieval, authority
+    ranking, freshness, span-gate); the two PROSE grounding audits are re-bound to this flag so the freer
+    prose is still policed. OFF → the stacked path is byte-identical to today."""
+    return os.environ.get("EIGEN_GOLDEN_ANSWER", "").lower() in ("1", "true", "yes")
+
+
 def entity_open_web_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_WEB_ENTITY_OPEN fires one entity-scoped, quality-screened
     open-web Exa probe (whitelist dropped) on step 0 for single-entity diligence questions. OFF →
@@ -1134,22 +1147,28 @@ def build_default_service() -> ResearchService:
     # OFF → None → the kernel's flat-prose compose path, byte-identical to pre-flag. When the
     # separate clinical-synthesis flag is ALSO on, swap in the sharper directive (A/B seam);
     # falls back to the base format if the vertical doesn't supply one.
+    # EIGEN_GOLDEN_ANSWER: engages only with structured answers + a vertical golden directive to swap in.
+    # When ON it REPLACES answer_format with the single golden directive and suppresses every append below
+    # (and, further down, forces the eight layer flags OFF). OFF → _golden is False → byte-identical.
+    _golden = golden_answer_enabled() and structured_answers() and bool(getattr(manifest, "golden_answer_directive", None))
     if structured_answers():
         answer_format = manifest.answer_format
         if clinical_synthesis():
             answer_format = getattr(manifest, "clinical_answer_format", None) or manifest.answer_format
+        if _golden:
+            answer_format = manifest.golden_answer_directive
     else:
         answer_format = None
     # Visualization guidance (flag): append to the CLINICIAN directive so answers use tables/rankings/
     # pros-cons from the verified findings. Only when structured answers are on (tables render then).
-    if answer_format and answer_visuals_enabled() and getattr(manifest, "visual_guidance", None):
+    if answer_format and not _golden and answer_visuals_enabled() and getattr(manifest, "visual_guidance", None):
         answer_format = answer_format + "\n\n" + manifest.visual_guidance
     # Chart emission (flag): compose may populate a grounded bar chart, validated in the kernel.
-    if answer_format and answer_charts_enabled() and getattr(manifest, "chart_guidance", None):
+    if answer_format and not _golden and answer_charts_enabled() and getattr(manifest, "chart_guidance", None):
         answer_format = answer_format + "\n\n" + manifest.chart_guidance
     # Reasoning Read (flag): append the interpretation-layer directive so compose emits typed
     # interpretation + a confidence read (both validated in the kernel). Requires structured answers.
-    if answer_format and reasoning_read_enabled() and getattr(manifest, "reasoning_format", None):
+    if answer_format and not _golden and reasoning_read_enabled() and getattr(manifest, "reasoning_format", None):
         answer_format = answer_format + "\n\n" + manifest.reasoning_format
     vision_prompt = manifest.vision_prompt if vision_enabled() else None
     report_prompt = getattr(manifest, "report_prompt", None) if vision_enabled() else None
@@ -1192,41 +1211,50 @@ def build_default_service() -> ResearchService:
         graph_expander=_make_graph_expander(),
         claims_first=claims_first, extraction_lenses=getattr(manifest, "extraction_lenses", ()),
         evidence_select=evidence_select, atom_cap=atom_cap,
-        reasoning_read=reasoning_read_enabled(),
-        readable_prose=readable_prose_enabled(),
-        axis_complete=axis_complete_enabled(),
-        tech_synthesis=tech_synthesis_enabled(),
+        # EIGEN_GOLDEN_ANSWER: force every answer-shaping layer OFF so the golden directive is the SOLE
+        # compose base — the directive addenda, the inline flag-instructions, and all four post-compose
+        # section appends then no-op automatically (each is byte-identical when its flag/data is falsy).
+        # `_golden` is False when the flag is off → every layer keeps its own value → byte-identical.
+        golden_answer=_golden,
+        reasoning_read=reasoning_read_enabled() and not _golden,
+        readable_prose=readable_prose_enabled() and not _golden,
+        axis_complete=axis_complete_enabled() and not _golden,
+        tech_synthesis=tech_synthesis_enabled() and not _golden,
         # EIGEN_DEEP_SYNTHESIS (T1): flag → service field + the vertical's deep format as inert data.
         # Routing (letting deep ride the reasoned/dynamic path for an unset engine) is deferred to T3;
         # T1 only wires the flag so OFF and ON stay byte-identical today.
-        deep_synthesis=deep_synthesis_enabled(),
+        deep_synthesis=deep_synthesis_enabled() and not _golden,
         deep_answer_format=getattr(manifest, "deep_answer_format", None),
         # EIGEN_PARAMETRIC_LED (T1): flag → service field + the vertical's prior-draft prompt as inert
         # data. When ON + parametric-eligible, ask_reasoned produces a PriorDraft and threads it inertly
         # (unused by compose until T2/T3). OFF or not eligible → byte-identical.
-        parametric_led=parametric_led_enabled(),
+        parametric_led=parametric_led_enabled() and not _golden,
         prior_draft_prompt=getattr(manifest, "prior_draft_prompt", None),
         # EIGEN_INTELLIGENCE_CORE (T1): flag → service field + the vertical's intelligence-draft prompt as
         # inert data. When ON + eligible, ask_reasoned drafts competing hypotheses + a frame and threads
         # them inertly (unused by compose until T2/T3). OFF or not eligible → byte-identical.
-        intelligence_core=intelligence_core_enabled(),
+        intelligence_core=intelligence_core_enabled() and not _golden,
         intelligence_draft_prompt=getattr(manifest, "intelligence_draft_prompt", None),
         entity_open_web=entity_open_web_enabled(),
         web_open_denoise=open_web_denoise_enabled(),
         web_quality_prompt=getattr(manifest, "web_quality_prompt", None),
-        derive=derive_enabled(),
-        derive_ideas=derive_ideas_enabled(),
+        derive=derive_enabled() and not _golden,
+        derive_ideas=derive_ideas_enabled() and not _golden,
+        # derive_judge_llm is KEPT under golden — it powers the cross-family semantic grounding gate
+        # (re-bound to golden in run_react), which is evidence policing, not answer-shaping.
         derive_judge_llm=derive_judge_llm,
         collect_diagnostics=diag_trace_enabled(),
         classify_evidence=getattr(manifest, "evidence_classifier", None),
         evidence_fitness=evidence_fitness_enabled(),
         # EIGEN_AUTHORITY_BASIS (T1/T2): unconditional low-basis partition + the compose floor directive.
         # The directive is inert vertical data (always threaded); the flag gates whether it's appended.
-        authority_basis=authority_basis_enabled(),
+        # Golden drops the authority COMPOSE DIRECTIVE only; the authority RANKING (evidence_ranker below)
+        # stays ON — the golden prompt states the strong-evidence rule itself, and ranking is invisible.
+        authority_basis=authority_basis_enabled() and not _golden,
         authority_basis_directive=getattr(manifest, "authority_basis_directive", None),
         evidence_ranker=getattr(getattr(manifest, "authority_policy", None), "rank", None),
         freshness=(getattr(manifest, "freshness_policy", None) or None) if freshness_ranking_enabled() else None,
-        answer_profiles=(getattr(manifest, "answer_profiles", None) or None) if answer_contract_enabled() else None,
+        answer_profiles=(getattr(manifest, "answer_profiles", None) or None) if (answer_contract_enabled() and not _golden) else None,
         evidence_identity=evidence_identity_enabled(),
         claim_congruence=claim_congruence_enabled(),
         # LANDSCAPE COVERAGE (flag): force contract steer + the enumerative-categories landscape prompt +
@@ -1581,7 +1609,10 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "answer_charts_enabled": answer_charts_enabled(),
             "freshness_ranking_enabled": freshness_ranking_enabled(),
             "answer_contract_enabled": answer_contract_enabled(),
-            "reasoning_read_enabled": reasoning_read_enabled() and structured_answers(),
+            # EIGEN_GOLDEN_ANSWER hides the UI reasoning panel (Tier E): golden emits no interpretation/
+            # confidence, so the client-side "Critical reasoning" render must be off too.
+            "reasoning_read_enabled": reasoning_read_enabled() and structured_answers() and not golden_answer_enabled(),
+            "golden_answer_enabled": golden_answer_enabled(),
             "diag_trace_enabled": diag_trace_enabled(),
             "evidence_fitness_enabled": evidence_fitness_enabled(),
             "authority_basis_enabled": authority_basis_enabled(),

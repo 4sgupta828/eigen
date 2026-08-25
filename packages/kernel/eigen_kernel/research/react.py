@@ -896,6 +896,15 @@ async def run_react(
     #                                           ceil(k*frac) of the top-k pool (backfill preserves
     #                                           recall) so a volume-skewed source can't crowd out
     #                                           other sources on broad queries. None → byte-identical.
+    golden_answer: bool = False,               # EIGEN_GOLDEN_ANSWER (flag): the answer-shaping STACK is
+    #                                           collapsed to ONE compose directive (the vertical's golden
+    #                                           directive, wired as `answer_format` with all 8 layer flags
+    #                                           OFF at the app boundary) so the prose is one clean freeform
+    #                                           answer with no narrated scaffolding. This flag ONLY re-binds
+    #                                           the two PROSE grounding audits (hard-token recompose + the
+    #                                           cross-family semantic gate) so the freer golden prose is
+    #                                           still policed even though deep_synthesis/hypotheses are OFF.
+    #                                           OFF → both audits keep today's triggers (byte-identical).
 ) -> AnswerResult:
     import asyncio
     atoms = AtomStore()
@@ -2389,7 +2398,11 @@ async def run_react(
             # own draft, so a qualitative model sentence must not ride an unsupported figure into grounded
             # prose. Same recompose-once-then-fall-back-to-baseline logic; only the trigger is widened.
             # OFF (prior_draft is None and not a deep non-lookup run) → this block never runs (unchanged).
-            if (deep_synthesis and kind != "lookup") or prior_draft is not None:
+            # GOLDEN-ANSWER (EIGEN_GOLDEN_ANSWER): the golden directive frees the prose surface exactly like
+            # deep-synthesis does (it is the sole compose base, all other layers OFF), so the SAME corrective
+            # hard-token audit must run — otherwise collapsing to one prompt would silently strip figure
+            # grounding. `golden_answer` widens the trigger; OFF → unchanged.
+            if (deep_synthesis and kind != "lookup") or prior_draft is not None or golden_answer:
                 _u = _unsupported_prose_tokens(result.composed_answer, result.verified_claims)
                 if _u and not budget.exhausted:
                     _fix = ("\n\nGROUNDING FIX (mandatory): you stated figure(s) "
@@ -2442,9 +2455,14 @@ async def run_react(
             # claims → the gate returns [] → no action → the hard-token audit result stands (today's
             # behavior). We NEVER run the gate same-family. OFF (hypotheses is None) → this whole block is
             # skipped → byte-identical.
+            # GOLDEN-ANSWER (EIGEN_GOLDEN_ANSWER): the semantic gate catches laundered QUALITATIVE claims
+            # (a mechanism/entity/causal assertion the hard-token audit misses) — exactly the risk a freer,
+            # more synthetic golden answer raises. Re-bind it to `golden_answer` too so it runs on golden
+            # runs whenever a cross-family judge is wired (EIGEN_CROSS_FAMILY_JUDGE, kept ON in golden mode).
+            # Fail-closed when no cross-family judge → returns [] → today's behavior. OFF → unchanged.
             _ground_judge = (derive_judge_llm
                              if (derive_judge_llm is not None and derive_judge_llm is not llm) else None)
-            if hypotheses is not None and _ground_judge is not None and result.composed_answer:
+            if (hypotheses is not None or golden_answer) and _ground_judge is not None and result.composed_answer:
                 from eigen_kernel.research.grounding_gate import cross_family_ground_check
                 try:
                     _bad = await cross_family_ground_check(
