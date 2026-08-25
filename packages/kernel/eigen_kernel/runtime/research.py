@@ -211,6 +211,13 @@ class ResearchService:
     #                                         boundary with every other layer flag OFF); this field only
     #                                         re-binds the two prose grounding audits in run_react so the
     #                                         freer golden prose stays policed. OFF → byte-identical.
+    answer_layout: bool = False             # EIGEN_ANSWER_LAYOUT: grounding-safe presentation pass — reflow
+    #                                         the final answer into a scannable whiteboard layout (short
+    #                                         paragraphs / bullets / tables / arrow-flows) as a dedicated
+    #                                         second pass. Fail-closed (citations preserved, no new hard
+    #                                         token) → keeps original on any violation. OFF → byte-identical.
+    layout_prompt: str | None = None        # optional override for the reflow directive (kernel default used
+    #                                         when None); domain-free presentation instruction.
     axis_complete: bool = False             # EIGEN_ANSWER_AXES: compose addresses each asked aspect + synthesizes
     tech_synthesis: bool = False            # EIGEN_TECH_SYNTHESIS: add a strategic 'how it works' technical synthesis
     deep_synthesis: bool = False            # EIGEN_DEEP_SYNTHESIS: synthesis-first grounded analysis for non-lookup Qs
@@ -804,6 +811,24 @@ class ResearchService:
         _ut = _render_undertested(getattr(res, "intelligence_undertested", None) or [])
         if _ut:
             res.composed_answer = (res.composed_answer or "").rstrip() + "\n\n" + _ut
+
+        # ANSWER LAYOUT (flag EIGEN_ANSWER_LAYOUT): grounding-safe PRESENTATION pass. The compose call
+        # drops layout under load, so long grounded answers come out as a wall of text; this reflows the
+        # FULLY-ASSEMBLED answer into a scannable whiteboard layout (short paragraphs, bullets, tables,
+        # arrow-flows) as a dedicated second pass. Fail-closed: reflow_for_scannability returns None (keep
+        # the original) unless every [n] citation is preserved and no new hard token appears. OFF → never
+        # called → composed_answer byte-identical.
+        if self.answer_layout and (res.composed_answer or "").strip():
+            try:
+                from eigen_kernel.research.budget import BudgetState
+                from eigen_kernel.research.layout import reflow_for_scannability
+                _reflow = await reflow_for_scannability(
+                    res.composed_answer, self.llm, self.layout_prompt,
+                    budget=BudgetState(max_calls=self.max_calls))
+                if _reflow:
+                    res.composed_answer = _reflow
+            except Exception:   # noqa: BLE001 — presentation-only; never break the grounded answer
+                pass
         return res
 
     def panel_roster(self) -> list[dict]:

@@ -724,6 +724,16 @@ def golden_answer_enabled() -> bool:
     return os.environ.get("EIGEN_GOLDEN_ANSWER", "").lower() in ("1", "true", "yes")
 
 
+def answer_layout_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_ANSWER_LAYOUT runs a grounding-safe PRESENTATION pass after the
+    answer is composed + span-gated — a dedicated second LLM call that reflows the final text into a
+    scannable whiteboard layout (short paragraphs, bullets, tables, arrow-flows) WITHOUT changing facts or
+    citations. Fail-closed in code: the reflow is discarded (original kept) unless every [n] citation is
+    preserved and no new hard token appears. Fixes wall-of-text where the single compose pass can't. OFF →
+    the pass never runs → composed answer byte-identical."""
+    return os.environ.get("EIGEN_ANSWER_LAYOUT", "").lower() in ("1", "true", "yes")
+
+
 def entity_open_web_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_WEB_ENTITY_OPEN fires one entity-scoped, quality-screened
     open-web Exa probe (whitelist dropped) on step 0 for single-entity diligence questions. OFF →
@@ -1227,6 +1237,7 @@ def build_default_service() -> ResearchService:
         # section appends then no-op automatically (each is byte-identical when its flag/data is falsy).
         # `_golden` is False when the flag is off → every layer keeps its own value → byte-identical.
         golden_answer=_golden,
+        answer_layout=answer_layout_enabled(),   # EIGEN_ANSWER_LAYOUT: grounding-safe scannability reflow
         reasoning_read=reasoning_read_enabled() and not _golden,
         readable_prose=readable_prose_enabled() and not _golden,
         axis_complete=axis_complete_enabled() and not _golden,

@@ -107,6 +107,8 @@ or a sequence/pipeline;
 These make it EASIER to read, not more formal. Use them to serve the reader and skip them when plain \
 sentences are clearer. Match the amount of structure to the question: a quick ask stays a sentence or \
 two; a meaty one gets sketched out.
+- Keep paragraphs SHORT — at most 2-3 sentences, then break. Never write one long dense block; a \
+paragraph running past three sentences is a wall of text — split it or turn part of it into bullets.
 - Structure must show the CONTENT'S shape (a list of things is a list; a process is an arrow-flow), \
 never impose a report TEMPLATE. Still forbidden: formal meta-sections ("Bottom line", "Key sources", \
 "Perspectives", "What this means", "Overview") and a heading-per-subtopic that turns the answer into a \
