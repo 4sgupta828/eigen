@@ -820,7 +820,8 @@ class ResearchService:
         # called → composed_answer byte-identical.
         if self.answer_layout and (res.composed_answer or "").strip():
             try:
-                from eigen_kernel.research.budget import BudgetState
+                # BudgetState is imported at module level; do NOT re-import locally here — a local import
+                # would make BudgetState method-local across `ask` and break the earlier budget = BudgetState(...).
                 from eigen_kernel.research.layout import reflow_for_scannability
                 _reflow = await reflow_for_scannability(
                     res.composed_answer, self.llm, self.layout_prompt,
