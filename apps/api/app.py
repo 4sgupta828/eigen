@@ -1181,6 +1181,17 @@ def build_default_service() -> ResearchService:
     triage_prompt_v2 = getattr(manifest, "triage_prompt_v2", None)
     reasoned_scaffold = getattr(manifest, "reasoned_scaffold_prompt", None)
     reasoned_format = getattr(manifest, "reasoned_answer_format", None)
+    # EIGEN_GOLDEN_ANSWER: the reasoned / understanding / deep engines compose from their OWN format
+    # slots, NOT `answer_format` — and the reasoned engine is the default path for most questions. So
+    # golden must swap THOSE slots too, or reasoned-routed answers keep the old structured format (the
+    # wiring gap that let report sections + [[R]] leak through on a "golden" answer). Point all compose
+    # bases at the single golden directive. OFF → _golden False → each keeps its manifest value.
+    _understanding_fmt = getattr(manifest, "understanding_answer_format", None)
+    _deep_fmt = getattr(manifest, "deep_answer_format", None)
+    if _golden:
+        reasoned_format = manifest.golden_answer_directive
+        _understanding_fmt = manifest.golden_answer_directive
+        _deep_fmt = manifest.golden_answer_directive
     # Use the BEST model for EVERY research step (planning + claim extraction + compose). A cheaper
     # planner (haiku) paraphrased quotes → span-verification rejected them (grounding regression),
     # so planner_llm is left unset and run_react uses `llm` throughout. Optional explicit override.
@@ -1224,7 +1235,7 @@ def build_default_service() -> ResearchService:
         # Routing (letting deep ride the reasoned/dynamic path for an unset engine) is deferred to T3;
         # T1 only wires the flag so OFF and ON stay byte-identical today.
         deep_synthesis=deep_synthesis_enabled() and not _golden,
-        deep_answer_format=getattr(manifest, "deep_answer_format", None),
+        deep_answer_format=_deep_fmt,
         # EIGEN_PARAMETRIC_LED (T1): flag → service field + the vertical's prior-draft prompt as inert
         # data. When ON + parametric-eligible, ask_reasoned produces a PriorDraft and threads it inertly
         # (unused by compose until T2/T3). OFF or not eligible → byte-identical.
@@ -1291,7 +1302,7 @@ def build_default_service() -> ResearchService:
         alt_directive=getattr(manifest, "alt_directive", None),
         alt_query_hint=getattr(manifest, "alt_query_hint", None),
         integrative_query_hint=getattr(manifest, "integrative_query_hint", None),
-        understanding_answer_format=getattr(manifest, "understanding_answer_format", None),
+        understanding_answer_format=_understanding_fmt,
         understanding_query_hint=getattr(manifest, "understanding_query_hint", None),
         retrieval_source_cap=retrieval_diversity_frac(),
         source_routing=source_routing_enabled(),
