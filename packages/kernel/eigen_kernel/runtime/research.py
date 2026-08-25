@@ -383,6 +383,13 @@ class ResearchService:
             # parametric draft carries).
             _intel_threaded = False
             if self.intelligence_core:
+                # Observability (Rule 13): the intelligence block used to swallow every non-engage path
+                # (ineligible routing / degenerate draft / exception) into a silent fall-back, so a prod
+                # answer that "didn't engage" was indistinguishable from one that engaged-but-errored.
+                # `_skip_reason` records WHY it did not thread; emitted as an `intelligence_skip` trace and
+                # logged. This does NOT change the engage decision — the threading logic is byte-identical;
+                # only the non-engaged branches gain a trace.
+                _skip_reason = ""
                 try:
                     from eigen_kernel.research.budget import BudgetState
                     from eigen_kernel.research.contract import derive_contract
@@ -394,7 +401,10 @@ class ResearchService:
                     _intel_eligible = (_stance == "established"
                                        and s.kind in ("understanding", "management")
                                        and _subject != "specific_entity")
-                    if _intel_eligible:
+                    if not _intel_eligible:
+                        _skip_reason = (f"ineligible(kind={s.kind!r},stance={_stance!r},"
+                                        f"subject={_subject!r})")
+                    else:
                         _draft = await draft_intelligence(
                             question, self.llm, self.intelligence_draft_prompt,
                             budget=BudgetState(max_calls=self.max_calls))
@@ -407,8 +417,15 @@ class ResearchService:
                             kw["intelligence_frame"] = (getattr(_draft, "frame", "") or "").strip()
                             _intel_threaded = True
                             await _emit({"type": "intelligence_core", "hypotheses": len(_hyps)})
-                except Exception:   # noqa: BLE001 — the intelligence draft is an enhancer; never blocks the answer
-                    pass
+                        else:
+                            _skip_reason = (f"draft_hyps={len(_hyps)}"
+                                            f"(draft={'none' if _draft is None else 'ok'})")
+                except Exception as _e:   # noqa: BLE001 — the intelligence draft is an enhancer; never blocks the answer
+                    _skip_reason = f"exception:{type(_e).__name__}:{str(_e)[:160]}"
+                if not _intel_threaded and _skip_reason:
+                    await _emit({"type": "intelligence_skip", "reason": _skip_reason})
+                    import logging
+                    logging.getLogger(__name__).info("intelligence_core skipped: %s", _skip_reason)
             if self.parametric_led and not _intel_threaded:
                 try:
                     from eigen_kernel.research.budget import BudgetState
