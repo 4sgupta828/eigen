@@ -2007,12 +2007,34 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                           "okind": r["okind"] or "unknown"})
         # a value that IS a promoted node is already an edge → keep values only for un-promoted names
         _promoted_norms = {r["object_norm"] for r in promoted_edge_rows}
+        # DEDUP value facts: the SAME fact extracted from many sources appears as near-identical value
+        # strings ("$24M Series A" / "$24 million Series A" / "Series A: $24M"). Collapse by a COMPUTABLE
+        # signature — currency/unit/punctuation-normalized + token-sorted (Rule 18: structural, no
+        # semantics) — keeping the row with the LONGEST quote (most informative provenance). Genuinely
+        # different facts ($24M-A vs $50M-B) get different signatures and are NOT merged.
+        import re as _re
+        def _vsig(v: str) -> str:
+            s = (v or "").lower()
+            s = _re.sub(r'[\$,:;()\"\'.%]', ' ', s)
+            s = _re.sub(r'\b(million|mn|mm)\b', 'm', s)
+            s = _re.sub(r'\b(billion|bn)\b', 'b', s)
+            s = _re.sub(r'\b(thousand)\b', 'k', s)
+            s = _re.sub(r'(\d)\s+([mbk])\b', r'\1\2', s)   # "24 m" -> "24m"
+            return " ".join(sorted(t for t in s.split() if t))
+        _best: dict = {}
+        for r in val_rows:
+            if r["object_norm"] in _promoted_norms:
+                continue
+            key = (r["subject_id"], r["predicate"], _vsig(r["object_value"]))
+            q = r["quote"] or ""
+            cur = _best.get(key)
+            if cur is None or len(q) > len(cur["_ql"]):
+                _best[key] = {"s": r["subject_id"], "p": r["predicate"],
+                              "v": r["object_value"], "q": q[:180], "_ql": q}
         return {
             "companies": [{"id": r["entity_id"], "name": r["name"], "claims": r["n"]} for r in top],
             "edges": edges,
-            "values": [{"s": r["subject_id"], "p": r["predicate"], "v": r["object_value"],
-                        "q": (r["quote"] or "")[:180]} for r in val_rows
-                       if r["object_norm"] not in _promoted_norms],
+            "values": [{k: v for k, v in d.items() if k != "_ql"} for d in _best.values()],
         }
 
     @app.get("/{name}.png")
