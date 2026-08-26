@@ -692,6 +692,9 @@
   /* unknown company (no graph entity) → links to a web search: dotted underline, muted */
   .answer .colink.colink-search{border-bottom:1px dotted var(--faint,#5c6688);font-weight:600;}
   .answer .colink.colink-search:hover{color:var(--gold);border-bottom-color:var(--gold);}
+  /* grounded person hyperlinks → their public profile (LinkedIn/X/GitHub) — person-teal underline */
+  .answer .pplink{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--person,#57d9c4);font-weight:600;}
+  .answer .pplink:hover{color:var(--person,#57d9c4);border-bottom-color:var(--person,#57d9c4);}
   /* citation hover card — a quick non-truncated depth view of the [n] evidence */
   #citehover{position:fixed;z-index:1300;max-width:min(440px,92vw);display:none;background:var(--panel);
     border:1px solid var(--hair);border-left:3px solid var(--gold);border-radius:10px;padding:11px 13px;
@@ -1935,6 +1938,57 @@ function linkFirstCompany(root, co){
   if(after) frag.appendChild(document.createTextNode(after));
   node.parentNode.replaceChild(frag, node);
 }
+// Person hyperlinks: link the FIRST exact mention of each named person the answer references (server-
+// supplied data.people from the deep-person reader) to their public profile — LinkedIn > X > GitHub >
+// self-page (server preference order). Same text-node / word-boundary / skip-links-refs-code discipline
+// as companies, so it can't corrupt [n] refs. Only rendered when the server sends `people`.
+function linkPeople(target, people){
+  if(!people || !people.length || !target) return;
+  const ans = target.querySelector(".answer");
+  if(!ans) return;
+  people.slice().filter(p => p && p.name && p.name.length >= 3 && p.url)
+    .sort((a,b) => b.name.length - a.name.length)
+    .forEach(p => linkFirstPerson(ans, p));
+}
+function _profileLabel(host){
+  host = (host || "").toLowerCase();
+  if(host.indexOf("linkedin") >= 0) return "LinkedIn";
+  if(host === "x.com" || host.indexOf("twitter") >= 0) return "X";
+  if(host.indexOf("github") >= 0) return "GitHub";
+  return "profile";
+}
+function linkFirstPerson(root, p){
+  const name = p.name;
+  let re; try{ re = new RegExp("(?<![A-Za-z0-9])" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9])"); }
+  catch(e){ try{ re = new RegExp("\\b" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b"); } catch(e2){ return; } }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(n){
+      if(!n.nodeValue || !re.test(n.nodeValue)) return NodeFilter.FILTER_REJECT;
+      let par = n.parentElement;
+      while(par && par !== root){
+        const t = par.tagName;
+        if(t === "A" || t === "SUP" || t === "CODE") return NodeFilter.FILTER_REJECT;
+        par = par.parentElement;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const node = walker.nextNode();
+  if(!node) return;
+  const m = re.exec(node.nodeValue);
+  if(!m) return;
+  const idx = m.index;
+  const before = node.nodeValue.slice(0, idx), after = node.nodeValue.slice(idx + name.length);
+  const frag = document.createDocumentFragment();
+  if(before) frag.appendChild(document.createTextNode(before));
+  const a = document.createElement("a");
+  a.className = "pplink"; a.textContent = name;
+  a.href = p.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+  a.title = name + " on " + _profileLabel(p.host) + " ↗";
+  frag.appendChild(a);
+  if(after) frag.appendChild(document.createTextNode(after));
+  node.parentNode.replaceChild(frag, node);
+}
 const _RRKIND = {paper:"Paper", preprint:"Preprint", news:"Article", essay:"Essay", corp_eng:"Blog"};
 // A plausible research title (mirrors the server _ok_title guard) — so a mis-ingested doc PERSISTED
 // before the server fix can't dump a multi-thousand-char LLM answer into the UI as a "title".
@@ -2470,6 +2524,7 @@ function render(data, target, opts){
   if(data.answer && DISCLAIMER.answer) parts.push(`<div class="ansdisc">${esc(DISCLAIMER.answer)}</div>`);
   target.innerHTML = parts.join("");
   linkCompanies(target, data.companies);   // hyperlink grounded company mentions (flag-gated)
+  linkPeople(target, data.people);         // hyperlink named people → their profile (deep-person reader)
   wireFeedback(target, data);
   checkAnswerIntegrity(target, data);   // async, structural: banners answers citing changed sources
   // dossier tabs: Backing evidence ⇄ Coverage gaps/Strengthen
