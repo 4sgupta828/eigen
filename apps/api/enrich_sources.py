@@ -38,6 +38,37 @@ async def news_fetcher(company_name: str, *, web, max_results: int = 3) -> list[
     return docs
 
 
+_SITE_FACETS = ["product what it does", "technology how it works architecture",
+                "founders team leadership", "customers case studies", "pricing plans"]
+
+
+async def site_fetcher(company_name: str, *, web, domain: str = "", max_per_facet: int = 2) -> list[dict]:
+    """Read the company's OWN site for DEPTH (product / technology / team / customers / pricing) —
+    the dimensions news + Form-D miss. Domain-scoped Exa searches; stamped `corp_eng` (SELF-REPORTED
+    tier — never outranks press/filings). Not a filing, so it attaches to the targeted company.
+    Fail-safe → []."""
+    prefix = (f"site:{domain} " if domain else f"{company_name} ")
+    docs: list[dict] = []
+    seen: set = set()
+    for facet in _SITE_FACETS:
+        try:
+            results = await web.search(prefix + facet, max_results=max_per_facet)
+        except Exception:   # noqa: BLE001
+            continue
+        for r in (results or []):
+            body = (getattr(r, "body", None) or getattr(r, "snippet", "") or "").strip()
+            url = getattr(r, "url", "") or ""
+            if not body or url in seen:
+                continue
+            seen.add(url)
+            docs.append({
+                "source_key": "web", "document_id": "site:" + _sha(url or body),
+                "text": body[:4000],
+                "facets": {"source_kind": "corp_eng", "web_role": "official", "url": url},
+            })
+    return docs
+
+
 async def formd_fetcher(company_name: str, *, edgar, max_hits: int = 3) -> list[dict]:
     """EDGAR full-text Form D for `company_name` → candidate FILING docs (source_key='edgar' →
     `primary_filing`, controlling). Carries `issuer_name` so the pipeline's ER can accept a real
