@@ -53,26 +53,11 @@ _TABLE = re.compile(r"(?m)^\s*\|.*\|")
 
 
 def _needs_reflow(answer: str) -> bool:
-    """CHEAP code gate (no LLM) — skip the reflow call entirely when the answer is already scannable.
-    Only a genuine wall of text is worth a second pass; a short or already-structured answer is left as-is.
-    This is the main cost control: most answers skip the expensive second call."""
-    a = answer or ""
-    if len(a) < 1200:
-        return False                                  # short — no wall to break
-    paras = [p for p in a.split("\n\n") if p.strip()]
-    longest = max((len(p) for p in paras), default=0)
-    avg = sum(len(p) for p in paras) // max(1, len(paras))
-    has_structure = bool(_BULLET.search(a)) or bool(_TABLE.search(a))
-    # Fire ONLY on a genuine wall (calibrated against real answers): one very long block (>=900 chars),
-    # OR consistently dense paragraphs (avg >=550), OR a long answer with NO visual structure at all.
-    # An answer already broken into short paragraphs with some bullets/tables skips the pass (no cost).
-    if longest >= 900:
-        return True
-    if avg >= 550:
-        return True
-    if len(a) >= 2000 and not has_structure and longest >= 500:
-        return True
-    return False
+    """ALWAYS reflow a substantial answer. A single compose pass reliably UNDER-formats (wall-of-text is
+    the norm, not the exception), the reflow runs on the cheap main model, and it is grounding-guarded
+    (a bad reflow is rejected and the original kept) — so there is no reason to skip it. The only skip is
+    a trivially short answer (a line or two) where there is nothing to lay out."""
+    return len(answer or "") >= 700
 
 
 class _Reflowed(BaseModel):
