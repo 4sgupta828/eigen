@@ -43,8 +43,10 @@ def _extract_system(lenses: list[str], evidence_identity: bool = False) -> str:
         "RULES:\n"
         "- Extract EVERY specific fact the atoms support — be COMPREHENSIVE. " + lens_line +
         "One claim = one specific factual sentence supported by the SINGLE atom you cite.\n"
-        "- 'quote' MUST be copied EXACTLY, character-for-character, as a contiguous substring of that "
-        "atom's text. Never paraphrase, summarize, translate, or reformat numbers/units.\n"
+        "- 'quote' MUST be an EXACT SUBSTRING of that atom's text: copy the characters byte-for-byte, "
+        "INCLUDING every comma, period, capital, number, and unit. Never paraphrase, summarize, "
+        "translate, reformat, trim trailing words, or add/remove/'fix' punctuation. If unsure where a "
+        "span ends, copy a LONGER exact span. A quote that is not an exact substring is DISCARDED.\n"
         "- Cite ONLY atom ids present in the list; never invent one. Prefer specific facts (drugs, "
         "doses, outcomes, populations) over vague synthesis. Return [] only if NOTHING is relevant."
         # Evidence-identity flag (stage 1): the caller prefixed each atom with its ⟨title — source⟩

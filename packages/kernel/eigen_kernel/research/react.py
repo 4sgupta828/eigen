@@ -1074,8 +1074,9 @@ async def run_react(
                 "directly supports. Emit at least one claim for EACH directly-relevant atom you can "
                 "(more is better); a PARTIAL answer is correct and expected — do not withhold because "
                 "the question asks for a ranking/recommendation/completeness the evidence can't fully "
-                "settle. For each claim: cite the atom_id and copy a 'quote' EXACTLY, character-for-"
-                "character, from that atom's text (no paraphrase/summary/reformatting). action MUST be "
+                "settle. For each claim: cite the atom_id and copy a 'quote' that is an EXACT SUBSTRING "
+                "of that atom's text — byte-for-byte, including every comma/period/number/unit; do NOT "
+                "paraphrase, trim words, or change punctuation (a non-exact quote is DISCARDED). action MUST be "
                 "'answer'; do NOT search. Format example (STRUCTURE ONLY — do not reuse these words): "
                 '{"action":"answer","claims":[{"text":"A trial evaluates drug X for condition Y.",'
                 '"atom_id":"a3","quote":"a verbatim span copied from atom a3"}]}')
@@ -1097,9 +1098,12 @@ async def run_react(
             "only PARTIALLY answers the question, or cannot satisfy a ranking, recommendation, "
             "or 'which is best/safest' the question implies (report the supported facts; the "
             "synthesis will note what is not supported). A partial grounded answer is far better "
-            "than none. Each claim must cite an atom_id and a 'quote' copied EXACTLY, "
-            "character-for-character, from that atom — do NOT paraphrase, summarize, or reformat "
-            "numbers/units. Return an empty claims list ONLY if NONE of the gathered evidence is "
+            "than none. Each claim must cite an atom_id and a 'quote' that is an EXACT SUBSTRING of "
+            "that atom: copy the characters byte-for-byte, INCLUDING every comma, period, capital, "
+            "number, and unit. Do NOT paraphrase, summarize, reformat, trim trailing words, add or "
+            "remove punctuation, or 'fix' anything — if unsure where a span ends, copy a LONGER exact "
+            "span. A quote that is not an exact substring of its atom WILL BE DISCARDED and the claim "
+            "lost. Return an empty claims list ONLY if NONE of the gathered evidence is "
             "relevant to the question.")
         # Evidence-identity flag (stage 1): ONE added sentence — claims must be attributed to their
         # source's actual subject (the atoms above carry ⟨title — source⟩ tags). OFF → byte-identical.
