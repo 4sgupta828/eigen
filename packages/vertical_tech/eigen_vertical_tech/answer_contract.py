@@ -46,13 +46,22 @@ ALSO add one more key to the SAME JSON object:
   - "specific_entity" — the question is DILIGENCE on a SINGLE NAMED company / product / project: what
     it is, how its tech works, its moat/traction/team/funding/risks (e.g. "what is Blazel", "how does
     X's tech work and what's its moat", "is Acme's approach defensible", "tell me about the startup Y").
+    A question about ONE named company's FOUNDERS, team, or leadership is diligence on THAT company →
+    specific_entity, even when it says "founders" (plural) (e.g. "tell me everything about Traversal.com
+    founders", "who runs Acme", "Acme's founding team"). It becomes "general" only when NO single company
+    is named (a class/many companies, e.g. "founders of AI SRE startups").
   - "person" — the question is DILIGENCE on a SINGLE NAMED person: biography, role, career history,
     founder/investor background, public views, affiliations, or reputation (e.g. "tell me about Jane
     Roe", "what has Pat Lee built", "what is Sam Altman's background").
   - "general" — anything else: a landscape/population map, a comparison across many players, a how/why
     about a concept, a trend, or any question NOT centered on one named entity.
-  Decide from the QUESTION'S INTENT, not keywords. When unsure, choose "general". Still output ONLY the
-  JSON object (WITH the extra `subject_kind` key alongside the others)."""
+  Decide from the QUESTION'S INTENT, not keywords. When unsure, choose "general".
+
+WHEN `subject_kind` is "person" OR "specific_entity", ALSO set `entities` to a ONE-element list holding
+the exact named subject — the person's name (for "person") or the company/product name (for
+"specific_entity"), e.g. entities=["Zain Jaffer"] or entities=["Traversal.com"]. This names the subject
+the deep reader will research. For "general" leave `entities` as it was (the landscape categories, or
+empty). Output ONLY the JSON object (WITH the extra `subject_kind` key alongside the others)."""
 
 
 # ENTITY-OPEN variant (flag EIGEN_WEB_ENTITY_OPEN). Byte-identical derivation to TECH_CONTRACT_PROMPT
