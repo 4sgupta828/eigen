@@ -1964,8 +1964,23 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                      AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
                                  WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')""",
                 subj, tenant_id)
+            # MENTION-FIRST edges: a value claim (e.g. has_investor='a16z') whose object norm matches a
+            # PROMOTED canonical node (a16z earned a node via corroboration) becomes a real edge
+            # company -> promoted-node. This is the tech-flow / investor graph forming as query-time joins.
+            promoted_edge_rows = await conn.fetch(
+                """SELECT cl.subject_id, s.name sname, cl.predicate,
+                          o.entity_id, o.name oname, o.kind okind
+                   FROM rs_claim cl
+                   JOIN rs_entity s ON s.entity_id = cl.subject_id
+                   JOIN rs_mention m ON m.tenant_id = cl.tenant_id AND m.norm = cl.object_norm
+                        AND m.status = 'promoted'
+                   JOIN rs_entity o ON o.entity_id = m.promoted_to
+                   WHERE cl.object_kind = 'value' AND cl.subject_id = ANY($1) AND cl.tenant_id = $2
+                     AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                 WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')""",
+                subj, tenant_id)
             val_rows = await conn.fetch(
-                """SELECT cl.subject_id, cl.predicate, cl.object_value,
+                """SELECT cl.subject_id, cl.predicate, cl.object_value, cl.object_norm,
                           (SELECT ev.quote FROM rs_claim_evidence ev
                            WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active'
                            ORDER BY ev.authority_tier DESC LIMIT 1) quote
@@ -1976,14 +1991,28 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                 subj, tenant_id)
         finally:
             await conn.close()
+        edges = [{"s": r["subject_id"], "sname": r["sname"], "p": r["predicate"],
+                  "o": r["object_entity_id"], "oname": r["oname"] or r["object_entity_id"],
+                  "okind": r["okind"] or "unknown"}
+                 for r in edge_rows if r["object_entity_id"]]
+        # promoted-node edges (mention-first), deduped against the entity edges
+        _seen = {(e["s"], e["p"], e["o"]) for e in edges}
+        for r in promoted_edge_rows:
+            k = (r["subject_id"], r["predicate"], r["entity_id"])
+            if k in _seen:
+                continue
+            _seen.add(k)
+            edges.append({"s": r["subject_id"], "sname": r["sname"], "p": r["predicate"],
+                          "o": r["entity_id"], "oname": r["oname"] or r["entity_id"],
+                          "okind": r["okind"] or "unknown"})
+        # a value that IS a promoted node is already an edge → keep values only for un-promoted names
+        _promoted_norms = {r["object_norm"] for r in promoted_edge_rows}
         return {
             "companies": [{"id": r["entity_id"], "name": r["name"], "claims": r["n"]} for r in top],
-            "edges": [{"s": r["subject_id"], "sname": r["sname"], "p": r["predicate"],
-                       "o": r["object_entity_id"], "oname": r["oname"] or r["object_entity_id"],
-                       "okind": r["okind"] or "unknown"}
-                      for r in edge_rows if r["object_entity_id"]],
+            "edges": edges,
             "values": [{"s": r["subject_id"], "p": r["predicate"], "v": r["object_value"],
-                        "q": (r["quote"] or "")[:180]} for r in val_rows],
+                        "q": (r["quote"] or "")[:180]} for r in val_rows
+                       if r["object_norm"] not in _promoted_norms],
         }
 
     @app.get("/{name}.png")
