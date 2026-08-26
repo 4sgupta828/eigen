@@ -1247,8 +1247,12 @@ async def run_react(
     # when explore_legs is on; OFF strips them right here so nothing downstream can consume them.
     _contract = None
     _c_stash: list[tuple[str, list]] = []       # steer: (query, hits) held back until post-loop
-    # derive the contract when the QuestionContract flag is on OR the ANSWER-CONTRACT needs a stance
-    if ((question_contract in ("shadow", "steer")) or answer_profiles) and (contract_prompt or "").strip():
+    # derive the contract when the QuestionContract flag is on OR the ANSWER-CONTRACT needs a stance OR a
+    # DEEP READER is on (the deep company/person readers ROUTE on the contract's subject_kind + entities,
+    # so they need it derived — otherwise golden, which zeros answer_profiles, leaves _contract None and
+    # the deep readers can never fire).
+    if ((question_contract in ("shadow", "steer")) or answer_profiles or deep_company or deep_person) \
+            and (contract_prompt or "").strip():
         from eigen_kernel.research.contract import build_legs, derive_contract
         try:
             budget.reserve()
