@@ -1252,8 +1252,11 @@ def build_default_service() -> ResearchService:
             layout_llm = build_llm(mode=mode, model=_layout_model)
         except Exception:
             layout_llm = None
-    _deep_company_reader = deep_company_reader_enabled() and not _golden
-    _deep_people_reader = deep_people_reader_enabled() and not _golden
+    # The deep readers are RETRIEVAL (evidence-gathering), NOT answer-shaping — golden collapses the
+    # compose STACK but WANTS rich grounded material to synthesize from, so it must KEEP the deep readers
+    # (like it keeps adversarial retrieval + authority ranking). Do NOT gate these on `not _golden`.
+    _deep_company_reader = deep_company_reader_enabled()
+    _deep_people_reader = deep_people_reader_enabled()
     return ResearchService(
         llm=build_llm(mode=mode), embedder=embedder, planner_llm=planner_llm,
         graph_expander=_make_graph_expander(),
