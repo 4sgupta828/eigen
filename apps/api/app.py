@@ -1968,7 +1968,7 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             # PROMOTED canonical node (a16z earned a node via corroboration) becomes a real edge
             # company -> promoted-node. This is the tech-flow / investor graph forming as query-time joins.
             promoted_edge_rows = await conn.fetch(
-                """SELECT cl.subject_id, s.name sname, cl.predicate,
+                """SELECT cl.subject_id, s.name sname, cl.predicate, cl.object_norm,
                           o.entity_id, o.name oname, o.kind okind
                    FROM rs_claim cl
                    JOIN rs_entity s ON s.entity_id = cl.subject_id

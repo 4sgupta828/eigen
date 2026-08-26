@@ -135,13 +135,16 @@
 (function(){
   "use strict";
   const KIND = {
-    company:{c:"#ffcf6b", label:"Companies"}, person:{c:"#57d9c4", label:"Founders"},
-    category:{c:"#b79bff", label:"Categories"}, investor:{c:"#ff8fb3", label:"Investors"},
+    company:{c:"#ffcf6b", label:"Companies"}, person:{c:"#57d9c4", label:"People"},
+    investor:{c:"#ff8fb3", label:"Investors"}, technology:{c:"#7fb5ff", label:"Technologies"},
+    product:{c:"#8fe6a0", label:"Products"}, category:{c:"#b79bff", label:"Categories"},
+    market:{c:"#ffb173", label:"Segments"},
   };
   const PRED_LABEL = {
-    operates_in_category:"operates in", has_founder:"founded by", has_investor:"backed by",
-    compared_to:"compared to", offers_product:"product", uses_technology:"technology",
-    targets_customer:"customer", claims_differentiator:"differentiator", raised_funding:"funding",
+    operates_in_category:"operates in", has_founder:"founded by", key_person:"key person",
+    has_investor:"backed by", compared_to:"competes with", offers_product:"produces",
+    uses_technology:"uses tech", targets_customer:"targets", ideal_customer_profile:"ICP",
+    claims_differentiator:"differentiator", raised_funding:"funding", revenue:"revenue",
     traction_metric:"traction", headcount:"headcount", company_location:"location",
     company_status:"status", business_model:"business model", moat_claim:"moat",
     customer_evidence:"customer", go_to_market:"go-to-market", risk_factor:"risk",
