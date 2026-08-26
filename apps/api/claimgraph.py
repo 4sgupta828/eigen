@@ -426,11 +426,12 @@ class ClaimGraphStore:
         return entity_id
 
     async def upsert_mention(self, *, name: str, kind: str, tenant_id: str = "demo") -> str:
-        """Park an evidence-bound name in the MENTION LANE (mention-first ER). Idempotent per
-        (kind, norm): re-seeing the same name bumps `n_evidence`+`last_seen`, never a new row.
-        Returns the deterministic `mention:<kind>:<norm>` id. This is NOT a canonical entity — graph
-        views never read `rs_mention`, so a mention can never pollute the entity space. A later
-        strong-id/adjudicated match PROMOTES it (see `promote_mention`)."""
+        """Park an evidence-bound name in the MENTION LANE (mention-first ER). FULLY IDEMPOTENT per
+        (kind, norm): re-seeing the same name only touches `last_seen`, never a new row and never an
+        inflated counter (corroboration is DERIVED from the distinct grounded claims at promotion
+        time — see `promote_corroborated_mentions` — so a re-run can never falsely promote). Returns
+        the deterministic `mention:<kind>:<norm>` id. NOT a canonical entity — graph views never read
+        `rs_mention`, so a mention can never pollute the entity space."""
         await self.ensure_schema()
         norm = normalize_name(name)
         mention_id = f"mention:{kind}:{norm}"
@@ -438,10 +439,8 @@ class ClaimGraphStore:
         async with pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO rs_mention (mention_id, tenant_id, kind, name, norm, n_evidence)
-                   VALUES ($1,$2,$3,$4,$5,1)
-                   ON CONFLICT (mention_id) DO UPDATE SET
-                     n_evidence = rs_mention.n_evidence + 1,
-                     last_seen = now()""",
+                   VALUES ($1,$2,$3,$4,$5,0)
+                   ON CONFLICT (mention_id) DO UPDATE SET last_seen = now()""",
                 mention_id, tenant_id, kind, name, norm)
         return mention_id
 
@@ -458,37 +457,47 @@ class ClaimGraphStore:
                 mention_id, entity_id, tenant_id)
 
     async def promote_corroborated_mentions(self, *, tenant_id: str = "demo",
-                                            min_evidence: int = 3,
+                                            min_corroboration: int = 3,
                                             kinds: tuple[str, ...] | None = None) -> list[dict]:
-        """PROMOTION BY CORROBORATION — the zero-pollution way a tech/product/segment NODE is born.
-        A mention seen across `>= min_evidence` independent grounded pieces of evidence is a REAL
-        thing (repeated independent grounded mentions == an identity), so it earns a canonical
-        `rs_entity` node keyed at `<kind>:<norm>` — NOT soft-minted from a single bare name (that
-        was the pollution), but promoted only after corroboration. Fail-safe + idempotent (an
-        already-promoted mention is skipped; upsert_entity is idempotent). Returns the promotions
-        made [{mention_id, entity_id, kind, name, n_evidence}]. `kinds` optionally restricts which
-        node kinds may be promoted (e.g. only technology/product/market for the tech-flow spine)."""
+        """PROMOTION BY CORROBORATION — the zero-pollution way a tech/product/investor/segment NODE is
+        born. Corroboration is DERIVED (idempotently) from the distinct grounded claims: a mention
+        whose `norm` is the object of active-evidence claims from `>= min_corroboration` DISTINCT
+        subjects (companies) is a REAL thing (many independent grounded companies name it), so it earns
+        a canonical `rs_entity` at `<kind>:<norm>` — NOT soft-minted from one bare name (the pollution),
+        and NOT counted from a raw upsert counter (which a re-run would inflate). Fully idempotent:
+        re-running never changes the distinct-subject count, and an already-promoted mention is skipped;
+        upsert_entity is idempotent. `kinds` optionally restricts which node kinds may be promoted.
+        Returns [{mention_id, entity_id, kind, name, corroboration}]."""
         await self.ensure_schema()
         pool = await self._get_pool()
-        params = [tenant_id, int(min_evidence)]
+        params: list = [tenant_id]
         kind_clause = ""
         if kinds:
-            kind_clause = " AND kind = ANY($3)"
+            kind_clause = " AND kind = ANY($2)"
             params.append(list(kinds))
         async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"""SELECT mention_id, kind, name, norm, n_evidence FROM rs_mention
-                    WHERE tenant_id=$1 AND status='unresolved' AND n_evidence >= $2{kind_clause}
-                    ORDER BY n_evidence DESC""",
+            mentions = await conn.fetch(
+                f"""SELECT mention_id, kind, name, norm FROM rs_mention
+                    WHERE tenant_id=$1 AND status='unresolved'{kind_clause}""",
                 *params)
-        promoted: list[dict] = []
-        for r in rows:
-            entity_id = f"{r['kind']}:{r['norm']}"
-            await self.upsert_entity(entity_id, kind=r["kind"], name=r["name"],
-                                     tenant_id=tenant_id)
-            await self.promote_mention(r["mention_id"], entity_id, tenant_id=tenant_id)
-            promoted.append({"mention_id": r["mention_id"], "entity_id": entity_id,
-                             "kind": r["kind"], "name": r["name"], "n_evidence": r["n_evidence"]})
+            promoted: list[dict] = []
+            for m in mentions:
+                # DERIVED corroboration: distinct subjects whose active-evidence claim has this norm
+                # as its object. Idempotent — a re-run cannot change the distinct count.
+                corr = await conn.fetchval(
+                    """SELECT count(DISTINCT c.subject_id) FROM rs_claim c
+                       WHERE c.tenant_id=$1 AND c.object_norm=$2
+                         AND EXISTS (SELECT 1 FROM rs_claim_evidence e
+                                     WHERE e.claim_id=c.claim_id AND e.evidence_status='active')""",
+                    tenant_id, m["norm"]) or 0
+                if corr < int(min_corroboration):
+                    continue
+                entity_id = f"{m['kind']}:{m['norm']}"
+                await self.upsert_entity(entity_id, kind=m["kind"], name=m["name"],
+                                         tenant_id=tenant_id)
+                await self.promote_mention(m["mention_id"], entity_id, tenant_id=tenant_id)
+                promoted.append({"mention_id": m["mention_id"], "entity_id": entity_id,
+                                 "kind": m["kind"], "name": m["name"], "corroboration": corr})
         return promoted
 
     async def add_alias(self, alias: str, entity_id: str, source: str = "") -> str:
