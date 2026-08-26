@@ -1233,13 +1233,16 @@ def build_default_service() -> ResearchService:
     if cross_family_judge_enabled() and os.environ.get("OPENAI_API_KEY"):
         from eigen_kernel.providers.openai_client import OpenAILLMClient
         derive_judge_llm = OpenAILLMClient()
-    # EIGEN_ANSWER_LAYOUT cost control: the reflow is mechanical reformatting (code-guarded for grounding),
-    # so run it on a CHEAP/FAST model instead of the compose model — kills most of the double-pass cost.
-    # EIGEN_LAYOUT_MODEL overrides; default a small Haiku. Only built when the layout flag is on.
+    # EIGEN_ANSWER_LAYOUT cost control: the reflow is mechanical reformatting (code-guarded for grounding).
+    # Only build a SEPARATE layout model when EIGEN_LAYOUT_MODEL is explicitly set (e.g. a cheap model when
+    # the main model is expensive). UNSET → layout_llm stays None → the runtime uses the MAIN model, which
+    # is already the cheap one (DeepSeek/Sonnet). This avoids a hardcoded Anthropic-Haiku dependency that
+    # would burn separate credits and break when the main provider is DeepSeek and Anthropic is unfunded.
     layout_llm = None
-    if answer_layout_enabled():
+    _layout_model = os.environ.get("EIGEN_LAYOUT_MODEL", "").strip()
+    if answer_layout_enabled() and _layout_model:
         try:
-            layout_llm = build_llm(mode=mode, model=os.environ.get("EIGEN_LAYOUT_MODEL", "claude-haiku-4-5-20251001"))
+            layout_llm = build_llm(mode=mode, model=_layout_model)
         except Exception:
             layout_llm = None
     _deep_company_reader = deep_company_reader_enabled() and not _golden
