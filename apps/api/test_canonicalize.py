@@ -175,6 +175,76 @@ def test_ambiguous_llm_confident_same_to_TWO_candidates_is_unresolved() -> None:
     assert r["method"] == "unresolved"
 
 
+# --------------------------------------------------------------------------- #
+# MENTION-FIRST ER (on_new='mention') — the fresh-graph zero-pollution contract #
+# --------------------------------------------------------------------------- #
+def test_mention_bare_name_no_strong_id_returns_mention_and_mints_nothing() -> None:
+    # A bare name with no strong id and no existing match is NOT an identity → it must become a
+    # MENTION, never a canonical entity (no duplicate-spawn). This is the core pollution fix.
+    store = _FakeEntityStore()
+    r = asyncio.run(resolve_entity(store, name="Sequoia Capital", kind="investor",
+                                   on_new="mention"))
+    assert r["method"] == "mention" and r["entity_id"] is None
+    assert r["mention"]["name"] == "Sequoia Capital" and r["mention"]["kind"] == "investor"
+    assert store.upserts == [], "a mention must mint NO canonical rs_entity row"
+
+
+def test_mention_strong_id_still_promotes_to_canonical() -> None:
+    # a STRONG id is a real identity anchor → promote to canonical even under mention-first.
+    store = _FakeEntityStore()
+    r = asyncio.run(resolve_entity(store, name="Acme", kind="company",
+                                   strong_ids={"domain": "Acme.com"}, on_new="mention"))
+    assert r["method"] == "new" and r["entity_id"] == "domain:acme.com" and r["entity_id"]
+
+
+def test_mention_exact_norm_single_still_promotes() -> None:
+    # an exact match to ONE existing canonical entity is a real identity → promote (not a mention).
+    store = _FakeEntityStore(by_norm={"acme": [{"entity_id": "domain:acme.com", "name": "Acme",
+                                                "kind": "company", "facets": {}}]})
+    r = asyncio.run(resolve_entity(store, name="ACME", kind="company", on_new="mention"))
+    assert r["method"] == "exact_norm" and r["entity_id"] == "domain:acme.com"
+
+
+def test_mention_ambiguous_no_confident_merge_returns_mention_not_canonical() -> None:
+    # namesakes with no strong id and no confident LLM merge → MENTION (never a false merge,
+    # never a flagged canonical row). The name waits for stronger evidence.
+    cands = [{"entity_id": "domain:apex-a.com", "name": "Apex", "kind": "company", "facets": {}},
+             {"entity_id": "domain:apex-b.io", "name": "Apex", "kind": "company", "facets": {}}]
+    store = _FakeEntityStore(by_norm={"apex": cands})
+    r = asyncio.run(resolve_entity(store, name="Apex", kind="company", llm=None,
+                                   on_new="mention"))
+    assert r["method"] == "mention" and r["entity_id"] is None
+    assert store.upserts == []
+
+
+def test_mention_ambiguous_confident_merge_still_promotes() -> None:
+    cands = [{"entity_id": "domain:apex-a.com", "name": "Apex", "kind": "company", "facets": {}},
+             {"entity_id": "domain:apex-b.io", "name": "Apex", "kind": "company", "facets": {}}]
+    store = _FakeEntityStore(by_norm={"apex": cands})
+    llm = _FakeLLM([{"same": True, "confidence": 0.95}, {"same": False, "confidence": 0.1}])
+    r = asyncio.run(resolve_entity(store, name="Apex", kind="company", llm=llm, on_new="mention"))
+    assert r["method"] == "llm_merge" and r["entity_id"] == "domain:apex-a.com"
+
+
+def test_create_default_is_byte_identical_legacy() -> None:
+    # on_new default ('create') is unchanged: a bare name still mints a canonical entity.
+    store = _FakeEntityStore()
+    r = asyncio.run(resolve_entity(store, name="Brand New Co", kind="company"))
+    assert r["method"] == "new" and r["entity_id"] == "company:" + normalize_name("Brand New Co")
+    assert any(u["entity_id"] == r["entity_id"] for u in store.upserts)
+
+
+def test_leak_fabricated_name_never_becomes_canonical() -> None:
+    # THE LEAK TEST (in miniature): a fabricated/model-seeded name run through the mention-first
+    # gate mints NO canonical entity — it can only ever be a mention. Views (which read only
+    # canonical grounded entities) can therefore never surface it.
+    store = _FakeEntityStore()
+    r = asyncio.run(resolve_entity(store, name="Totally Fake Ghostcorp XYZ", kind="company",
+                                   on_new="mention"))
+    assert r["entity_id"] is None and r["method"] == "mention"
+    assert store.upserts == [] and store.added_aliases == []
+
+
 def test_ambiguous_llm_uncertain_creates_flagged_unresolved() -> None:
     cands = [{"entity_id": "yc:apex-a", "name": "Apex", "kind": "company", "facets": {}},
              {"entity_id": "yc:apex-b", "name": "Apex", "kind": "company", "facets": {}}]

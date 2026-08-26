@@ -100,13 +100,33 @@ async def _judge_same_entity(client, *, name: str, kind: str, context: str, sour
     }
 
 
+def _mention_result(*, name: str, kind: str, norm: str, candidates: list[dict]) -> dict:
+    """A MENTION decision (mention-first ER, `on_new='mention'`): an evidence-bound name that has
+    NO canonical identity anchor (no strong id, no exact single match, no confident merge). It is
+    NOT written as a canonical `rs_entity` — the caller parks it in the mention lane (a separate
+    layer graph views never read) and may promote it later on stronger evidence. This is the
+    contract that makes zero-pollution achievable: a bare name never spawns a canonical node
+    (never a duplicate) and is never force-merged (never a wrong merge)."""
+    return {"entity_id": None, "is_new": False, "method": "mention",
+            "mention": {"name": name, "norm": norm, "kind": kind},
+            "candidates": candidates}
+
+
 async def resolve_entity(store, *, name: str, kind: str, tenant_id: str = "demo",
                          strong_ids: dict | None = None, source_key: str = "",
-                         context: str = "", llm=None, judge_cache: dict | None = None) -> dict:
-    """Resolve a subject MENTION to a CANONICAL `entity_id`, creating one if new.
+                         context: str = "", llm=None, judge_cache: dict | None = None,
+                         on_new: str = "create") -> dict:
+    """Resolve a subject/object MENTION to a CANONICAL `entity_id`.
+
+    `on_new` (mention-first ER, default 'create' = byte-identical legacy behavior):
+      - 'create': an unanchored name (0 candidates + no strong id) or an ambiguous no-confident-
+        merge creates a flagged canonical entity (legacy — used by the existing/​discarded graph).
+      - 'mention': those SAME cases instead return a MENTION decision (`method='mention'`,
+        `entity_id=None`) and create NOTHING — only a STRONG-ID / EXACT-single / CONFIDENT-merge
+        promotes to canonical. This is the FRESH-graph contract (resolve-before-mint; zero pollution).
 
     Returns `{entity_id, is_new, method, candidates}` where `method` is one of
-    `strong_id | exact_norm | new | llm_merge | unresolved`. `candidates` is the list of
+    `strong_id | exact_norm | new | llm_merge | unresolved | mention`. `candidates` is the list of
     normalized-name candidate entities that were considered (for observability).
 
     Order (Rule 18 — code owns the structural lookups, the LLM owns the ambiguous
@@ -147,6 +167,8 @@ async def resolve_entity(store, *, name: str, kind: str, tenant_id: str = "demo"
     # A name that normalizes to empty (e.g. a bare legal form) with no strong id is not
     # groundable to a canonical key — fail safe to a flagged unresolved node.
     if not norm and not preferred_id:
+        if on_new == "mention":
+            return _mention_result(name=name, kind=kind, norm=normalize_quote(name), candidates=[])
         return await _make_unresolved(store, name=name, kind=kind, tenant_id=tenant_id,
                                       source_key=source_key, norm=normalize_quote(name),
                                       candidates=[])
@@ -160,8 +182,12 @@ async def resolve_entity(store, *, name: str, kind: str, tenant_id: str = "demo"
         return {"entity_id": eid, "is_new": False, "method": "exact_norm",
                 "candidates": candidates}
 
-    # 2b) 0 candidates → NEW canonical entity (strong id gives a better global key).
+    # 2b) 0 candidates → NEW canonical entity (strong id gives a better global key). Under
+    # on_new='mention' a name WITHOUT a strong id is NOT canonicalized (a bare name isn't an
+    # identity) — it becomes a mention; only a strong id anchors a new canonical node.
     if not candidates:
+        if not preferred_id and on_new == "mention":
+            return _mention_result(name=name, kind=kind, norm=norm, candidates=[])
         new_id = preferred_id or f"{kind}:{norm}"
         await store.upsert_entity(new_id, kind=kind, name=name, tenant_id=tenant_id)
         await store.add_alias(name, new_id, source=source_key)
@@ -201,8 +227,11 @@ async def resolve_entity(store, *, name: str, kind: str, tenant_id: str = "demo"
             return {"entity_id": matched["entity_id"], "is_new": False,
                     "method": "llm_merge", "candidates": candidates}
 
-    # No client, judge error/uncertain, or ambiguous double-match → FAIL SAFE: a flagged,
-    # human-reviewable unresolved-candidate entity. Never a false merge.
+    # No client, judge error/uncertain, or ambiguous double-match → FAIL SAFE: never a false
+    # merge. Under on_new='mention' the ambiguous name stays a MENTION (parked, not canonical);
+    # legacy 'create' mints a flagged human-reviewable unresolved-candidate entity.
+    if on_new == "mention":
+        return _mention_result(name=name, kind=kind, norm=norm, candidates=candidates)
     return await _make_unresolved(store, name=name, kind=kind, tenant_id=tenant_id,
                                   source_key=source_key, norm=norm, candidates=candidates)
 
