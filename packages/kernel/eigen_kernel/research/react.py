@@ -920,7 +920,9 @@ async def run_react(
     # base than the default 30; RAISE the cap (never lower) so the higher value is in effect for both
     # the extraction-collection cap and the final claim-selection cap below. Only for non-lookup deep
     # runs — lookups (and OFF) keep the default cap, byte-identical.
-    if (deep_synthesis or deep_company) and kind != "lookup":
+    # GOLDEN also earns the wider cap: a golden answer synthesizes the full picture, so it should draw on
+    # up to 48/60 grounded findings, not the default 30 (the thinness limiter when material is rich).
+    if (deep_synthesis or deep_company or golden_answer) and kind != "lookup":
         _deep_cap = 48 if kind == "understanding" else 60   # management / other-non-lookup → 60
         compose_claim_cap = max(int(compose_claim_cap), _deep_cap)
 
