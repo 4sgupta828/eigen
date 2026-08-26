@@ -1351,6 +1351,21 @@ async def run_react(
                         and _contract
                         and _subject_kind == "person"
                         and _deep_person_entity)
+    # OBSERVABILITY (Rule 13): the deep-reader gates have several conjuncts (flag, aux_source,
+    # manifest slot, contract derived, subject_kind, entity) — when a deep read unexpectedly does
+    # NOT fire, this trace pinpoints WHICH conjunct failed without re-running the whole pipeline.
+    # subject_kind is the usual culprit (e.g. the landscape-coverage prompt swap dropping the key).
+    if deep_company or deep_person:
+        _dr_trace = {"subject_kind": _subject_kind,
+                     "contract": _contract is not None,
+                     "aux_source": aux_source is not None,
+                     "person": {"flag": bool(deep_person), "slot": bool(person_reader),
+                                "entity": bool(_deep_person_entity), "fires": _deep_person},
+                     "company": {"flag": bool(deep_company), "slot": bool(company_reader),
+                                 "entity": bool(_deep_company_entity), "fires": _deep_company}}
+        _log.info("deep-reader gate: %s", _dr_trace)
+        if diag is not None:
+            diag["deep_reader_gate"] = _dr_trace
     # the tier-boost/recency ranker argument, honoring per-question authority suppression
     _ranker_arg = None if _suppress_auth else (evidence_ranker if evidence_fitness else None)
     if _ac:

@@ -33,11 +33,13 @@ Decide from the QUESTION'S INTENT, not keywords. When genuinely unsure, choose "
 the JSON object."""
 
 
-# ENTITY-OPEN variant (flag EIGEN_WEB_ENTITY_OPEN). Byte-identical derivation to TECH_CONTRACT_PROMPT
-# PLUS one extra output key, `subject_kind`, so the kernel can tell an open-web probe is warranted only
-# for single-entity diligence. Built by concatenation so it stays in lockstep with the base prompt. The
+# SUBJECT-KIND addendum — the extra `subject_kind` output key that lets the kernel route the
+# entity-scoped open-web probe (flag EIGEN_WEB_ENTITY_OPEN) and the deep company/person readers
+# (flags EIGEN_DEEP_COMPANY_READER / EIGEN_DEEP_PEOPLE_READER). Factored into ONE constant so EVERY
+# contract prompt that needs it (the base entity variant AND the landscape variant) stays in lockstep:
+# a person/single-entity question must classify identically no matter which base prompt is active. The
 # judgment is the LLM's (Rule 18): no keyword matching — decide from the question's intent.
-TECH_CONTRACT_PROMPT_ENTITY = TECH_CONTRACT_PROMPT + """
+_SUBJECT_KIND_ADDENDUM = """
 
 ALSO add one more key to the SAME JSON object:
 - `subject_kind`: ONE of:
@@ -50,7 +52,12 @@ ALSO add one more key to the SAME JSON object:
   - "general" — anything else: a landscape/population map, a comparison across many players, a how/why
     about a concept, a trend, or any question NOT centered on one named entity.
   Decide from the QUESTION'S INTENT, not keywords. When unsure, choose "general". Still output ONLY the
-  JSON object (now with `mode`, `stance`, `axes`, and `subject_kind`)."""
+  JSON object (WITH the extra `subject_kind` key alongside the others)."""
+
+
+# ENTITY-OPEN variant (flag EIGEN_WEB_ENTITY_OPEN). Byte-identical derivation to TECH_CONTRACT_PROMPT
+# PLUS the `subject_kind` key. Built by concatenation so it stays in lockstep with the base prompt.
+TECH_CONTRACT_PROMPT_ENTITY = TECH_CONTRACT_PROMPT + _SUBJECT_KIND_ADDENDUM
 
 
 # Per-stance policy knobs (opaque to the kernel). See eigen_kernel/contract/manifest.py::answer_profiles.
@@ -134,3 +141,14 @@ Output ONLY the JSON object. For an enumerative landscape question the categorie
 distinct segments (e.g. for "AI startups": frontier models, coding agents, horizontal enterprise agents,
 vertical AI, AI search/knowledge, voice/multimodal, AI infrastructure, physical AI/robotics, defense/
 industrial AI, generative media) — pick the ones that actually fit the specific question's scope."""
+
+
+# LANDSCAPE + SUBJECT-KIND variant. When the landscape-coverage flag is on, the app swaps the ACTIVE
+# contract prompt to the landscape prompt (app.py) — which, without this, DROPS the `subject_kind` key
+# and so silently disables the deep company/person readers for EVERY question (a single-entity or person
+# ask under landscape coverage could never route a deep read). This variant restores `subject_kind` on
+# the landscape path so the two orthogonal concerns — landscape enumeration AND deep-reader routing —
+# both work. A landscape/population question stays enumerative with subject_kind="general"; a person or
+# single-entity ask stays exploratory (empty entities) and carries subject_kind="person"/"specific_entity"
+# to route its deep read. Same lockstep addendum as the base entity variant.
+TECH_LANDSCAPE_CONTRACT_PROMPT_ENTITY = TECH_LANDSCAPE_CONTRACT_PROMPT + _SUBJECT_KIND_ADDENDUM

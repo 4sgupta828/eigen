@@ -31,7 +31,7 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
                          WikidataConnector, WikipediaConnector, YcConnector)
 from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import (ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_CONTRACT_PROMPT_ENTITY,
-                              TECH_LANDSCAPE_CONTRACT_PROMPT)
+                              TECH_LANDSCAPE_CONTRACT_PROMPT, TECH_LANDSCAPE_CONTRACT_PROMPT_ENTITY)
 from .company_reader import COMPANY_READER
 from .person_reader import PERSON_READER
 from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
@@ -164,8 +164,13 @@ def build_manifest() -> VerticalManifest:
                          else TECH_CONTRACT_PROMPT),
         # FLAG EIGEN_LANDSCAPE_COVERAGE: the app swaps to this enumerative-categories contract (+ forces
         # question_contract="steer") so a "map the landscape / examine all X" ask fans retrieval out per
-        # category instead of a few narrow searches. Off → not used (byte-identical).
-        landscape_contract_prompt=TECH_LANDSCAPE_CONTRACT_PROMPT,
+        # category instead of a few narrow searches. Off → not used (byte-identical). When a deep reader
+        # or entity-open is ALSO on, use the variant that additionally emits `subject_kind` — otherwise the
+        # landscape swap would strip subject_kind and silently disable the deep company/person readers for
+        # every question (the muted "Tell me everything about <X> Founders" / person answers).
+        landscape_contract_prompt=(TECH_LANDSCAPE_CONTRACT_PROMPT_ENTITY
+                                   if (web_entity_open_on() or company_reader_on() or people_reader_on())
+                                   else TECH_LANDSCAPE_CONTRACT_PROMPT),
         answer_profiles=ANSWER_PROFILES,
         # REASONED engine (flag EIGEN_REASONED_DEFAULT, default OFF — the noesis clinical-decision mode
         # re-homed to diligence): one scaffold call classifies the question (decision/lookup/understanding)
