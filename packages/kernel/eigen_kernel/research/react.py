@@ -20,6 +20,7 @@ from typing import Literal
 
 from eigen_kernel.research.deep_company import retrieve_deep_company
 from eigen_kernel.research.deep_person import retrieve_deep_person
+from eigen_kernel.research.web_coverage import build_coverage_queries, retrieve_web_coverage
 
 _log = logging.getLogger(__name__)
 
@@ -869,6 +870,13 @@ async def run_react(
     contract_prompt: str | None = None,       # vertical-supplied contract-derivation directive
     #                                           (ALL domain vocabulary lives there — kernel litmus);
     #                                           None → no contract derived (flag effectively off)
+    reflection: str = "",                     # reflection pass (EIGEN_REFLECTION flag): "" off
+    #                                           (byte-identical); "shadow" → derive enriched reflection
+    #                                           + LOG the on-demand web-coverage legs it WOULD fire, change
+    #                                           nothing; "steer" → intent steer (confidence>=medium) + fan
+    #                                           out BOUNDED web coverage legs for landscape/multi-entity
+    #                                           questions (the "muted: didn't look" fix), late-merged +
+    #                                           screened like the existing web:deep legs
     explore_legs: bool = False,               # exploratory-legs extension (flag, default OFF):
     #                                           EXPLORATORY contracts now carry axes (the vertical
     #                                           derives them) and, under this flag, get AXIS-ONLY
@@ -1250,8 +1258,10 @@ async def run_react(
     # derive the contract when the QuestionContract flag is on OR the ANSWER-CONTRACT needs a stance OR a
     # DEEP READER is on (the deep company/person readers ROUTE on the contract's subject_kind + entities,
     # so they need it derived — otherwise golden, which zeros answer_profiles, leaves _contract None and
-    # the deep readers can never fire).
-    if ((question_contract in ("shadow", "steer")) or answer_profiles or deep_company or deep_person) \
+    # the deep readers can never fire) OR REFLECTION is on (the web-coverage fan-out + intent steer route
+    # on the contract's subject_kind/entities/axes, so they need it derived too).
+    if ((question_contract in ("shadow", "steer")) or answer_profiles or deep_company or deep_person
+            or reflection in ("shadow", "steer")) \
             and (contract_prompt or "").strip():
         from eigen_kernel.research.contract import build_legs, derive_contract
         try:
@@ -1366,6 +1376,27 @@ async def run_react(
         _log.info("deep-reader gate: %s", _dr_trace)
         if diag is not None:
             diag["deep_reader_gate"] = _dr_trace
+    # ON-DEMAND WEB COVERAGE FAN-OUT (reflection pass): the "muted: didn't look" fix. A LANDSCAPE /
+    # multi-entity / general question whose business dimensions the corpus does not hold (moat / ICP /
+    # distribution for specific startups) must ACTIVELY web-search those dimensions + players instead of
+    # reporting "the evidence is thin." Gate: reflection on AND web available AND a contract was derived
+    # AND it's NOT a single-entity/person ask (those already web-read via the deep readers / entity_open)
+    # AND there is something to search. Queries = axis-only (the missing business dimensions) + entity×axis
+    # (per derived category/player), built from the LLM-derived contract (Rule 18: meaning lives in the
+    # contract; this only shapes the fan-out). SHADOW logs what it WOULD fire; STEER fires it at step 0,
+    # late-merged + screened through the SAME web-quality + span-gate path as the web:deep legs.
+    _web_cov_queries: list[str] = []
+    if reflection in ("shadow", "steer") and aux_source is not None and _contract is not None \
+            and _subject_kind not in ("specific_entity", "person"):
+        _web_cov_queries = build_coverage_queries(
+            _contract_entities, list(getattr(_contract, "axes", ()) or []))
+    _web_coverage = bool(reflection == "steer" and _web_cov_queries)
+    if _web_cov_queries:
+        _log.info("web-coverage (%s): fires=%s %d legs %r",
+                  reflection, _web_coverage, len(_web_cov_queries), _web_cov_queries[:8])
+        if diag is not None:
+            diag["web_coverage"] = {"mode": reflection, "fired": _web_coverage,
+                                    "queries": _web_cov_queries}
     # the tier-boost/recency ranker argument, honoring per-question authority suppression
     _ranker_arg = None if _suppress_auth else (evidence_ranker if evidence_fitness else None)
     if _ac:
@@ -1695,6 +1726,10 @@ async def run_react(
                 # reachable via Exa. The whitelisted `web` leg above is untouched (authority still leads).
                 if _entity_open and step_i == 0:
                     _legs.append(("web:entity_open", aux_source.search(replace(base_req, web_open=True))))
+                if _web_coverage and step_i == 0:
+                    _legs.append(("web:coverage", retrieve_web_coverage(
+                        queries=_web_cov_queries, source=aux_source, tenant_id=tenant_id,
+                        workspace_id=workspace_id)))
             if len(_legs) > 1:
                 got = await _timed("retrieval_ms", asyncio.gather(
                     *[_traced_leg(name, co) for name, co in _legs], return_exceptions=True))
@@ -1712,7 +1747,7 @@ async def run_react(
                             r, _profiles = r
                             result.people_profiles = list(_profiles or [])
                         _screen_this = (
-                            leg in ("web:entity_open", "web:deep", "web:deep_person")
+                            leg in ("web:entity_open", "web:deep", "web:deep_person", "web:coverage")
                             or (leg == "web" and web_open_denoise))
                         if _screen_this:
                             _raw_n = len(r)
@@ -1726,9 +1761,9 @@ async def run_react(
                             # a list (even empty) = judged → respect it.
                             if screened is None:
                                 r = _authoritative_subset(r)
-                            elif leg in ("web:deep", "web:deep_person"):
-                                # The judge evaluates pages, while the deep leg deliberately keeps
-                                # several chunks per page. Keep every chunk whose page survived.
+                            elif leg in ("web:deep", "web:deep_person", "web:coverage"):
+                                # The judge evaluates pages, while these legs deliberately keep several
+                                # chunks per page. Keep every chunk whose page survived.
                                 _kept_urls = {getattr(h, "document_id", "") for h in screened}
                                 r = [h for h in r if getattr(h, "document_id", "") in _kept_urls]
                             else:
@@ -1744,6 +1779,7 @@ async def run_react(
                                 _dkey = ("web_denoise" if leg == "web" else
                                          "web_deep" if leg == "web:deep" else
                                          "web_deep_person" if leg == "web:deep_person" else
+                                         "web_coverage" if leg == "web:coverage" else
                                          "web_entity_open")
                                 diag.setdefault(_dkey, []).append(
                                     {"step": step_i + 1, "raw": _raw_n, "kept": _kept_n,

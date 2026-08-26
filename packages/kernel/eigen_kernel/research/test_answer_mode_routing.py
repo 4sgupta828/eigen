@@ -129,4 +129,5 @@ def test_result_carries_question_contract_when_derived():
     res = _run(llm, routing=False, diag=False)      # independent of routing AND diagnostics
     assert res.question_contract == {"mode": "enumerative",
                                      "entities": ["alphaline", "betaline"],
-                                     "axes": ["axis one", "axis two"]}
+                                     "axes": ["axis one", "axis two"],
+                                     "stance": ""}

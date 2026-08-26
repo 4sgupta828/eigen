@@ -89,7 +89,7 @@ def test_flag_off_steer_exploratory_axes_is_byte_identical():
     assert res_ex.diagnostics["question_contract"]["legs"] == []
     # ...while the derived axes stay observable (they were already logged pre-extension)
     assert res_ex.question_contract == {"mode": "exploratory", "entities": [],
-                                        "axes": ["axis one", "axis two"]}
+                                        "axes": ["axis one", "axis two"], "stance": ""}
 
 
 # ---- flag ON + steer: ≤4 axis legs, concurrent, k=4, late-merged -------------------------------

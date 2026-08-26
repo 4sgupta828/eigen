@@ -123,7 +123,11 @@ def test_run_react_deep_person_fires_only_when_enabled_and_surfaces_profiles(mon
     assert on_res.people_profiles == [profile]
 
 
-def test_run_react_deep_person_accepts_single_person_entity_from_contract(monkeypatch) -> None:
+def test_run_react_deep_person_does_not_fire_without_person_subject_kind(monkeypatch) -> None:
+    # Regression guard for the follow-up-bomb fix (commit 28f8600): the deep-person reader must fire
+    # ONLY on subject_kind=="person" — the old "subject_kind=='' AND single entity" fallback mis-fired it
+    # on ROLES/CATEGORIES (e.g. "expand on the AI SRE startup founders") and scattered the answer. With
+    # subject_kind="" the reader must NOT fire, even when the contract carries a single entity.
     calls: list[str] = []
 
     async def fake_deep(**kwargs):
@@ -143,4 +147,4 @@ def test_run_react_deep_person_accepts_single_person_entity_from_contract(monkey
         deep_person=True, person_reader={"external": {"bio": "{person} bio"}},
         web_quality_prompt="judge", max_steps=3))
 
-    assert calls == ["Jane Roe"]
+    assert calls == []

@@ -269,6 +269,10 @@ class ResearchService:
     #                                         "shadow" → derive + log the QuestionContract/legs,
     #                                         change nothing; "steer" → per-entity legs late-merged
     #                                         + slot-aware compose selection + loop coverage gaps
+    reflection: str = ""                    # Reflection pass (EIGEN_REFLECTION flag): "" off; "shadow"
+    #                                         → derive enriched reflection + log the web-coverage legs it
+    #                                         WOULD fire, change nothing; "steer" → intent steer + ON-DEMAND
+    #                                         web coverage fan-out (the "muted: didn't look" fix)
     contract_prompt: str | None = None      # vertical QuestionContract derivation directive
     #                                         (opaque — ALL domain vocabulary lives in the vertical)
     explore_legs: bool = False              # exploratory-legs extension (flag): EXPLORATORY
@@ -770,6 +774,7 @@ class ResearchService:
             freshness=self.freshness, answer_profiles=self.answer_profiles,
             evidence_identity=self.evidence_identity, claim_congruence=self.claim_congruence,
             question_contract=self.question_contract, contract_prompt=self.contract_prompt,
+            reflection=self.reflection,
             explore_legs=self.explore_legs,
             answer_mode_routing=self.answer_mode_routing,
             enumerative_compose_addendum=self.enumerative_compose_addendum,

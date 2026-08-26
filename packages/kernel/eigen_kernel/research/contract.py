@@ -39,6 +39,16 @@ class Contract:
     # field) names the classes. Domain-free (kernel litmus). "" = not emitted → callers keep
     # their default behavior (byte-identical).
     subject_kind: str = ""
+    # REFLECTION fields (flag EIGEN_REFLECTION; emitted only by the reflection prompt variant, so a
+    # non-reflection derivation leaves them all inert → byte-identical). These carry the "heart of the
+    # question" so the caller can steer retrieval + compose toward the user's real intent WITHOUT
+    # replacing the literal question. All default to inert values; every consumer guards `if field:`.
+    intent: str = ""                       # short inferred user job; "" = none
+    intent_confidence: str = ""            # "high" | "medium" | "low" | "" — steer only on high/medium
+    answer_brief: str = ""                 # "a great answer must deliver…"; "" = none
+    resolved_question: str = ""            # faithful restatement — additive retrieval seed, NEVER a substitute
+    ambiguity_risk: str = ""               # "high" | "medium" | "low" | "" — gates the disambiguation probe
+    candidates: list[str] = field(default_factory=list)   # distinct candidate readings of an ambiguous subject
 
 
 class _ContractOut(BaseModel):
@@ -49,6 +59,12 @@ class _ContractOut(BaseModel):
     axes: list[str] = []
     stance: str = ""                            # evidence regime (vertical-defined); "" = default
     subject_kind: str = ""                       # opaque subject judgment (vertical-defined); "" = default
+    intent: str = ""                             # reflection: inferred user job; "" = default
+    intent_confidence: str = ""                  # reflection: high|medium|low|""; steer only on high/medium
+    answer_brief: str = ""                       # reflection: what a great answer must deliver; "" = default
+    resolved_question: str = ""                  # reflection: faithful restatement (additive, never a substitute)
+    ambiguity_risk: str = ""                     # reflection: high|medium|low|""; gates the disambiguation probe
+    candidates: list[str] = []                   # reflection: distinct candidate readings of an ambiguous subject
 
 
 async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str | None,
@@ -80,10 +96,25 @@ async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str 
     subject_kind = (getattr(p, "subject_kind", "") or "").strip().lower()   # opaque; keep only known classes
     if subject_kind not in ("specific_entity", "person", "general"):
         subject_kind = ""                      # anything else (incl. hallucinated labels) → no-op default
+    # REFLECTION fields (inert unless the reflection prompt emitted them). Confidence/risk are clamped to
+    # the known enum (a hallucinated label → "" = no-op); free-text fields are stripped; candidates filtered.
+    intent = (getattr(p, "intent", "") or "").strip()
+    answer_brief = (getattr(p, "answer_brief", "") or "").strip()
+    resolved_question = (getattr(p, "resolved_question", "") or "").strip()
+    intent_confidence = (getattr(p, "intent_confidence", "") or "").strip().lower()
+    if intent_confidence not in ("high", "medium", "low"):
+        intent_confidence = ""
+    ambiguity_risk = (getattr(p, "ambiguity_risk", "") or "").strip().lower()
+    if ambiguity_risk not in ("high", "medium", "low"):
+        ambiguity_risk = ""
+    candidates = [c.strip() for c in (getattr(p, "candidates", None) or [])
+                  if isinstance(c, str) and c.strip()]
     if mode == "enumerative" and not entities:
         mode = "exploratory"                   # nothing to enumerate → inert contract, not None,
         #                                        so the derivation verdict stays observable in diag
-    return Contract(mode=mode, entities=entities, axes=axes, stance=stance, subject_kind=subject_kind)
+    return Contract(mode=mode, entities=entities, axes=axes, stance=stance, subject_kind=subject_kind,
+                    intent=intent, intent_confidence=intent_confidence, answer_brief=answer_brief,
+                    resolved_question=resolved_question, ambiguity_risk=ambiguity_risk, candidates=candidates)
 
 
 def build_legs(contract: Contract | None, *, cap: int = 12,

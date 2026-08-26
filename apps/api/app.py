@@ -572,6 +572,17 @@ def question_contract_mode() -> str:
     return v if v in ("shadow", "steer") else ""
 
 
+def reflection_mode() -> str:
+    """Reflection pass (Rule 20, default OFF) via EIGEN_REFLECTION. "" (default) → off, byte-identical;
+    "shadow" → derive the enriched reflection contract (intent/confidence/answer_brief/ambiguity/
+    candidates) + LOG the web-coverage legs it WOULD fire — steer/collect NOTHING; "steer" → thread
+    the intent into planner+compose (confidence>=medium), fan out ON-DEMAND WEB coverage legs for
+    landscape/multi-entity questions (the "muted: didn't look" fix), and run interactive grounded
+    disambiguation when genuinely ambiguous. Any other value → off. See docs/specs/reflection_pass.md."""
+    v = os.environ.get("EIGEN_REFLECTION", "").lower()
+    return v if v in ("shadow", "steer") else ""
+
+
 def explore_legs_enabled() -> bool:
     """Flag (default OFF, Rule 20 — exploratory-legs extension) via EIGEN_EXPLORE_LEGS: when ON
     (and EIGEN_QUESTION_CONTRACT=steer), EXPLORATORY questions' contract axes — 2-4 vertical-derived
@@ -1323,6 +1334,7 @@ def build_default_service() -> ResearchService:
                          if landscape_coverage_enabled()
                          else getattr(manifest, "contract_prompt", None)),
         explore_legs=(True if landscape_coverage_enabled() else explore_legs_enabled()),
+        reflection=reflection_mode(),   # EIGEN_REFLECTION: on-demand web coverage fan-out + intent steer
         answer_mode_routing=answer_mode_routing_enabled(),
         enumerative_compose_addendum=getattr(manifest, "enumerative_compose_addendum", None),
         panel_specialists=getattr(manifest, "panel_specialists", ()),
