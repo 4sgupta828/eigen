@@ -463,9 +463,22 @@ class ResearchService:
                     _c = await derive_contract(question, self.llm, self.contract_prompt)
                     _stance = getattr(_c, "stance", "") if _c else ""
                     _subject = getattr(_c, "subject_kind", "") if _c else ""
-                    _parametric_eligible = (self.parametric_led and _stance == "established"
-                                            and s.kind in ("understanding", "management")
-                                            and _subject != "specific_entity")
+                    _mode = getattr(_c, "mode", "") if _c else ""
+                    # Parametric-led is the model-integrated-knowledge LEAD: the model drafts the answer's
+                    # structure + candidate facts (which it KNOWS — e.g. the actual OSS tools of a stack),
+                    # then retrieval VERIFIES each fact and the span-gate grounds it (only verified facts
+                    # survive). It's the winning path for BREADTH questions where pure grounding-first
+                    # retrieval misses the well-known entities: ENUMERATION / "best-X" / landscape
+                    # (mode=="enumerative") AND understanding/management analysis. NOT for a single-entity
+                    # (specific_entity) diligence — retrieval should lead there — nor a pure lookup. Any
+                    # stance (the earlier established-only gate excluded exactly the enumeration questions
+                    # that need this most). Grounding is unchanged: a drafted fact that fails to verify is
+                    # dropped, never emitted.
+                    _parametric_eligible = (
+                        self.parametric_led
+                        and _subject != "specific_entity"
+                        and s.kind != "lookup"
+                        and (s.kind in ("understanding", "management") or _mode == "enumerative"))
                     if _parametric_eligible:
                         _pd = await draft_prior(question, self.llm, self.prior_draft_prompt,
                                                 budget=BudgetState(max_calls=self.max_calls))
