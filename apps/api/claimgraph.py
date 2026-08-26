@@ -500,6 +500,84 @@ class ClaimGraphStore:
                                  "kind": m["kind"], "name": m["name"], "corroboration": corr})
         return promoted
 
+    async def promote_corroborated_claims(self, *, tenant_id: str = "demo",
+                                          min_corroboration: int = 2,
+                                          predicate_kinds: dict[str, str]) -> list[dict]:
+        """CLAIM-DERIVED promotion of HUB nodes (technology / product / market / category /
+        investor / competitor-company). Supersedes `promote_corroborated_mentions` for these
+        kinds: it derives candidates from the grounded VALUE claims themselves — NOT from
+        `rs_mention` rows — so a norm that has claims but never got a mention row (older ingest;
+        e.g. the 32 `uses_technology` values with zero technology mentions) still promotes.
+
+        `predicate_kinds` maps a hub predicate → the node kind to mint (config, Rule 18 — the LLM
+        already chose the predicate; this only says what kind of node its object is). For each
+        (predicate, object_norm) named by `>= min_corroboration` DISTINCT subjects via active
+        evidence, upsert a canonical `<kind>:<norm>` entity, then upsert+mark a mention row
+        `promoted` (the render-join in `/graph/explore` keys off `rs_mention.status='promoted'`).
+        Fully idempotent. Does NOT collapse aliases (a16z ≈ Andreessen Horowitz) — that is a
+        SEMANTIC merge the LLM owns (Rule 18), deliberately deferred, never regex-hacked here.
+        Returns [{entity_id, kind, name, corroboration}]."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        promoted: list[dict] = []
+        async with pool.acquire() as conn:
+            for predicate, kind in predicate_kinds.items():
+                rows = await conn.fetch(
+                    """SELECT cl.object_norm,
+                              mode() WITHIN GROUP (ORDER BY cl.object_value) name,
+                              count(DISTINCT cl.subject_id) corr
+                       FROM rs_claim cl
+                       WHERE cl.tenant_id=$1 AND cl.predicate=$2 AND cl.object_kind='value'
+                         AND cl.object_norm <> ''
+                         AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                     WHERE ev.claim_id=cl.claim_id AND ev.evidence_status='active')
+                       GROUP BY cl.object_norm
+                       HAVING count(DISTINCT cl.subject_id) >= $3""",
+                    tenant_id, predicate, int(min_corroboration))
+                for r in rows:
+                    entity_id = f"{kind}:{r['object_norm']}"
+                    await self.upsert_entity(entity_id, kind=kind, name=r["name"] or r["object_norm"],
+                                             tenant_id=tenant_id)
+                    mid = await self.upsert_mention(name=r["name"] or r["object_norm"], kind=kind,
+                                                    tenant_id=tenant_id)
+                    await self.promote_mention(mid, entity_id, tenant_id=tenant_id)
+                    promoted.append({"entity_id": entity_id, "kind": kind,
+                                     "name": r["name"] or r["object_norm"], "corroboration": r["corr"]})
+        return promoted
+
+    async def promote_person_claims(self, *, tenant_id: str = "demo",
+                                    person_predicates: tuple[str, ...] = ("has_founder", "key_person")
+                                    ) -> list[dict]:
+        """PER-COMPANY person promotion (People nodes). Founders/key-people are 1:1 with their
+        company — they NEVER reach corroboration, so the hub path (`promote_corroborated_claims`)
+        can never surface them; this promotes each grounded `has_founder`/`key_person` VALUE claim
+        DIRECTLY (threshold=1 by design — a named founder IS an identified person relative to that
+        company). SPLIT-FIRST, merge-later: the entity id is scoped to the subject company
+        (`person:<subject_id>:<person_norm>`), so two different 'John Smith' founders at two
+        different companies can NEVER wrongly merge into one global person node. Idempotent —
+        re-run yields the same ids. The claim rows are left immutable (StateSnapshot spirit); the
+        person NODES + edges are materialized in `/graph/explore` from the same value claims with
+        the identical id derivation. Returns [{entity_id, name, company}]."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        promoted: list[dict] = []
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT cl.subject_id, s.name sname, cl.object_value, cl.object_norm
+                   FROM rs_claim cl JOIN rs_entity s ON s.entity_id=cl.subject_id
+                   WHERE cl.tenant_id=$1 AND cl.predicate = ANY($2) AND cl.object_kind='value'
+                     AND cl.object_norm <> ''
+                     AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                 WHERE ev.claim_id=cl.claim_id AND ev.evidence_status='active')""",
+                tenant_id, list(person_predicates))
+            for r in rows:
+                entity_id = f"person:{r['subject_id']}:{r['object_norm']}"
+                await self.upsert_entity(entity_id, kind="person", name=r["object_value"],
+                                         tenant_id=tenant_id)
+                promoted.append({"entity_id": entity_id, "name": r["object_value"],
+                                 "company": r["sname"]})
+        return promoted
+
     async def add_alias(self, alias: str, entity_id: str, source: str = "") -> str:
         """Register a normalized alias → entity mapping (exact-match resolution only)."""
         await self.ensure_schema()

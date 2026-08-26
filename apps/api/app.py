@@ -1989,6 +1989,18 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                      AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
                                  WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')""",
                 subj, tenant_id)
+            # PEOPLE nodes: founders/key-people are 1:1 with their company (never corroborate), so
+            # they're materialized DIRECTLY from the grounded value claims, keyed PER COMPANY
+            # (`person:<subject_id>:<norm>`) so two namesake founders at different companies never
+            # merge (matches claimgraph.promote_person_claims' id derivation exactly).
+            person_rows = await conn.fetch(
+                """SELECT cl.subject_id, s.name sname, cl.object_value, cl.object_norm
+                   FROM rs_claim cl JOIN rs_entity s ON s.entity_id = cl.subject_id
+                   WHERE cl.predicate IN ('has_founder','key_person') AND cl.object_kind = 'value'
+                     AND cl.object_norm <> '' AND cl.subject_id = ANY($1) AND cl.tenant_id = $2
+                     AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                 WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')""",
+                subj, tenant_id)
         finally:
             await conn.close()
         edges = [{"s": r["subject_id"], "sname": r["sname"], "p": r["predicate"],
@@ -2005,6 +2017,15 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             edges.append({"s": r["subject_id"], "sname": r["sname"], "p": r["predicate"],
                           "o": r["entity_id"], "oname": r["oname"] or r["entity_id"],
                           "okind": r["okind"] or "unknown"})
+        # PEOPLE edges: company -> per-company person node (founders/key-people), deduped by node id.
+        for r in person_rows:
+            pid = f"person:{r['subject_id']}:{r['object_norm']}"
+            k = (r["subject_id"], "has_founder", pid)
+            if k in _seen:
+                continue
+            _seen.add(k)
+            edges.append({"s": r["subject_id"], "sname": r["sname"], "p": "has_founder",
+                          "o": pid, "oname": r["object_value"], "okind": "person"})
         # a value that IS a promoted node is already an edge → keep values only for un-promoted names
         _promoted_norms = {r["object_norm"] for r in promoted_edge_rows}
         # DEDUP value facts: the SAME fact extracted from many sources appears as near-identical value
