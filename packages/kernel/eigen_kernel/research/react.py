@@ -1342,10 +1342,14 @@ async def run_react(
     if _contract_entities:
         _deep_person_entity = _contract_entities[0]
     _subject_kind = getattr(_contract, "subject_kind", "") if _contract is not None else ""
-    _single_person_subject = (_subject_kind == "" and len(_contract_entities) == 1)
+    # ONLY fire the person reader on a genuinely NAMED individual (subject_kind=='person'). An earlier
+    # over-eager fallback (subject_kind=='' AND exactly 1 entity) mis-fired it on ROLES/CATEGORIES/companies
+    # — e.g. the follow-up "expand on the AI SRE startup founders" resolved to entity 'AI SRE startup
+    # founders' with subject_kind='', fired the person leg on that generic phrase, and scattered the answer
+    # across every AI SRE founder (bombing a clarifying follow-up). subject_kind=='person' only.
     _deep_person = bool(deep_person and aux_source is not None and person_reader
                         and _contract
-                        and (_subject_kind == "person" or _single_person_subject)
+                        and _subject_kind == "person"
                         and _deep_person_entity)
     # the tier-boost/recency ranker argument, honoring per-question authority suppression
     _ranker_arg = None if _suppress_auth else (evidence_ranker if evidence_fitness else None)
