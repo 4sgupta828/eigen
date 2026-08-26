@@ -138,7 +138,7 @@
       <div class="stat"><div class="n" id="s-claim">&ndash;</div><div class="l">Cited facts</div></div>
     </div>
     <div>
-      <div class="sec-label">Focus lens</div>
+      <div class="sec-label">Show companies by</div>
       <div class="lenses" id="lenses"></div>
       <p class="lens-desc" id="lens-desc"></p>
     </div>
@@ -209,6 +209,13 @@
     RAW.values.forEach(v=>{ if(!values.has(v.s)) values.set(v.s,[]); values.get(v.s).push(v); });
     const nodes=[...nodeById.values()];
     nodes.forEach(n=>{ n.r = n.kind==="company" ? 6 + Math.sqrt(Math.max(n.claims,1))*2.1 : 3.4 + Math.min(n.deg,6)*1.15; });
+    // SUBJECT startups (the tracked companies) vs external RIVALS (Google/Microsoft, surfaced only as
+    // competitors). Same kind, but a distinct color so a rival never looks like a portfolio company.
+    const subjectIds=new Set(RAW.companies.map(c=>c.id));
+    const RIVAL="#8b93a7";
+    function isRival(n){ return n.kind==="company" && !subjectIds.has(n.id); }
+    function colOf(n){ return isRival(n) ? RIVAL : KIND[n.kind].c; }
+    nodes.forEach(n=>{ if(isRival(n)) n.r=Math.max(4.5, n.r*0.7); });   // rivals sit smaller than subjects
 
     document.getElementById("s-ent").textContent = nodes.length;
     document.getElementById("s-edge").textContent = links.length;
@@ -219,17 +226,16 @@
     // each lens reveals ONLY that focus area's satellites (never orphans the graph). Clicking a
     // company drills into its FULL world (all kinds) regardless of lens. ----
     const LENSES = [
-      {id:"landscape", label:"Landscape", c:"#ffcf6b", sat:[], preds:["compared_to"],
-        desc:"Companies and who they compete with."},
-      {id:"funding", label:"Funding", c:"#ff8fb3", sat:["investor"], preds:["has_investor"],
-        desc:"Companies and the investors backing them."},
-      {id:"talent", label:"Talent", c:"#57d9c4", sat:["person"], preds:["has_founder","key_person"],
-        desc:"Companies and the founders behind them."},
-      {id:"tech", label:"Tech & Product", c:"#7fb5ff", sat:["technology","product"],
-        preds:["uses_technology","offers_product"], desc:"What companies build and the tech they use."},
-      {id:"market", label:"Market", c:"#b79bff", sat:["category","market"],
-        preds:["operates_in_category","targets_customer","ideal_customer_profile"],
-        desc:"The categories companies play in and who they sell to."},
+      {id:"landscape", label:"Landscape", c:"#b79bff", sat:["category"],
+        preds:["operates_in_category","compared_to"],
+        desc:"The space each company plays in, and who it competes with."},
+      {id:"investors", label:"Investors", c:"#ff8fb3", sat:["investor"], preds:["has_investor"],
+        desc:"Who funds whom — shared investors link the companies they back."},
+      {id:"founders", label:"Founders", c:"#57d9c4", sat:["person"], preds:["has_founder","key_person"],
+        desc:"The people who founded each company."},
+      {id:"products", label:"Products & Tech", c:"#7fb5ff", sat:["product","technology","market"],
+        preds:["offers_product","uses_technology","targets_customer","ideal_customer_profile"],
+        desc:"What each company builds, the tech it uses, and who it sells to."},
     ];
     let activeLens = LENSES[0];
     let focusCompany = null;   // a drilled-in company → show its whole world; else lens view
@@ -247,9 +253,17 @@
     });
     function renderLegend(){
       const kinds=["company"].concat(activeLens.sat);
-      legendEl.innerHTML=kinds.map(k=>'<div class="lg"><span class="dot" style="background:'+
-        KIND[k].c+';color:'+KIND[k].c+'"></span><span class="nm">'+KIND[k].label+
+      let rows=kinds.map(k=>'<div class="lg"><span class="dot" style="background:'+
+        KIND[k].c+';color:'+KIND[k].c+'"></span><span class="nm">'+
+        (k==="company"?"Tracked companies":KIND[k].label)+
         '</span><span class="ct">'+(counts[k]||0)+'</span></div>').join("");
+      // rivals (external competitor companies) only surface in the Landscape lens (compared_to)
+      if(activeLens.id==="landscape"){
+        const nr=nodes.filter(isRival).length;
+        if(nr) rows+='<div class="lg"><span class="dot" style="background:'+RIVAL+';color:'+RIVAL+
+          '"></span><span class="nm">External rivals</span><span class="ct">'+nr+'</span></div>';
+      }
+      legendEl.innerHTML=rows;
     }
     function setLens(L){
       activeLens=L; focusCompany=null; selected=null;
@@ -283,21 +297,36 @@
     function visible(n){ return nodeVisible(n); }   // lens/focus-scoped (defined above)
     function neighbors(n){ const s=new Set([n]); links.forEach(l=>{ if(l.s===n)s.add(l.o); if(l.o===n)s.add(l.s); }); return s; }
 
+    // DRILL-DOWN uses a STATIC radial layout (no physics): the focused company centered, its
+    // neighbors fanned in a clean ring grouped by kind. Deterministic → zero jitter, reads instantly.
+    function radialLayout(c){
+      c.x=0; c.y=0; c.vx=0; c.vy=0;
+      const nb=[]; links.forEach(l=>{ if(l.s===c) nb.push(l.o); else if(l.o===c) nb.push(l.s); });
+      const uniq=[...new Set(nb)];
+      const order=["person","investor","technology","product","category","market","company"];
+      uniq.sort((a,b)=>(order.indexOf(a.kind)-order.indexOf(b.kind))||a.name.localeCompare(b.name));
+      const N=uniq.length||1, R=Math.max(150, 30*Math.sqrt(N)+96);
+      uniq.forEach((n,i)=>{ const ang=-Math.PI/2 + (i/N)*Math.PI*2;
+        n.x=Math.cos(ang)*R; n.y=Math.sin(ang)*R; n.vx=0; n.vy=0; });
+    }
+
     function tick(){
-      const rep=1400, spring=.015, springLen=64, center=.008, damp=.86;
-      // Only the CURRENTLY VISIBLE subgraph participates in the layout, so each lens / drill-down
-      // settles cleanly instead of being pushed around by off-lens nodes.
+      if(focusCompany) return false;                 // static radial layout — no simulation
+      const rep=1600, spring=.02, springLen=82, center=.006, damp=.85;
+      // Only the CURRENTLY VISIBLE subgraph participates. Repulsion spreads; a HARD collision pass
+      // (position-based) guarantees no two disks overlap → clean spacing that settles fast.
       for(let i=0;i<nodes.length;i++){ const a=nodes[i]; if(!visible(a)) continue;
         for(let j=i+1;j<nodes.length;j++){ const b=nodes[j]; if(!visible(b)) continue;
           let dx=a.x-b.x, dy=a.y-b.y; let d2=dx*dx+dy*dy||1;
-          if(d2<40000){ const f=rep/d2, d=Math.sqrt(d2), ux=dx/d, uy=dy/d;
-            a.vx+=ux*f*alpha; a.vy+=uy*f*alpha; b.vx-=ux*f*alpha; b.vy-=uy*f*alpha; } } }
+          if(d2<96100){ const d=Math.sqrt(d2), ux=dx/d, uy=dy/d, f=rep/d2;
+            a.vx+=ux*f*alpha; a.vy+=uy*f*alpha; b.vx-=ux*f*alpha; b.vy-=uy*f*alpha;
+            const md=a.r+b.r+12; if(d<md){ const p=(md-d)*0.5; a.x+=ux*p; a.y+=uy*p; b.x-=ux*p; b.y-=uy*p; } } } }
       links.forEach(l=>{ if(!linkVisible(l)) return; const a=l.s,b=l.o; let dx=b.x-a.x, dy=b.y-a.y; let d=Math.sqrt(dx*dx+dy*dy)||1;
         const f=(d-springLen)*spring, ux=dx/d, uy=dy/d;
         a.vx+=ux*f*alpha; a.vy+=uy*f*alpha; b.vx-=ux*f*alpha; b.vy-=uy*f*alpha; });
       nodes.forEach(n=>{ if(!visible(n)) return; n.vx-=n.x*center*alpha; n.vy-=n.y*center*alpha;
         if(n!==dragNode){ n.vx*=damp; n.vy*=damp; n.x+=n.vx; n.y+=n.vy; } });
-      alpha*=0.985; if(alpha<0.02) alpha=0.02;
+      alpha*=0.93; return alpha>0.04;                 // decays to rest → loop freezes (no perpetual jitter)
     }
 
     function draw(){
@@ -312,7 +341,7 @@
         else { ctx.strokeStyle="rgba(150,168,210,.16)"; ctx.lineWidth=.9/view.k; }
         ctx.stroke(); });
       nodes.forEach(n=>{ if(!visible(n)) return;
-        const dim = focus && !nb.has(n); const col = KIND[n.kind].c;
+        const dim = focus && !nb.has(n); const col = colOf(n);
         ctx.globalAlpha = dim?0.18:1;
         if(n.kind==="company" || n===focus){ ctx.beginPath(); ctx.arc(n.x,n.y,n.r+(n===focus?7:4),0,7);
           const g=ctx.createRadialGradient(n.x,n.y,n.r*.4,n.x,n.y,n.r+8);
@@ -325,15 +354,23 @@
         const showLabel = (view.k>0.55) || (n.kind!=="company") || (focus && nb.has(n)) || n===focus;
         if(showLabel){ ctx.globalAlpha = dim?0.25:1;
           ctx.font = ((n===focus?600:500))+' '+(n.kind==="company"?11:10.5)+'px "IBM Plex Sans",sans-serif';
-          ctx.fillStyle = n.kind==="company" ? "#e8edf9" : col; ctx.textAlign="center"; ctx.textBaseline="top";
+          ctx.fillStyle = (n.kind==="company" && !isRival(n)) ? "#e8edf9" : col; ctx.textAlign="center"; ctx.textBaseline="top";
           const t=n.name.length>26?n.name.slice(0,25)+"…":n.name;
           ctx.save(); ctx.translate(n.x,n.y); ctx.scale(1/view.k,1/view.k); ctx.fillText(t, 0, n.r*view.k+3); ctx.restore();
           ctx.globalAlpha=1; }
       });
       ctx.restore();
     }
-    function loop(){ tick(); draw(); requestAnimationFrame(loop); }
-    function reheat(a){ alpha=Math.max(alpha,a==null?.6:a); }
+    // The render loop PAUSES when the layout is at rest and nothing is being interacted with, then
+    // resumes on any interaction — so a settled graph sits perfectly still (no clunky perpetual drift).
+    let running=false;
+    function loop(){
+      const active=tick(); draw();
+      if(active || hover || dragNode || dragging){ requestAnimationFrame(loop); }
+      else { running=false; }
+    }
+    function kick(){ if(!running){ running=true; requestAnimationFrame(loop); } }
+    function reheat(a){ if(!focusCompany) alpha=Math.max(alpha,a==null?.6:a); kick(); }
 
     function toWorld(px,py){ return { x:(px-W/2-view.x)/view.k, y:(py-H/2-view.y)/view.k }; }
     function pick(px,py){ const w=toWorld(px,py); let best=null,bd=1e9;
@@ -346,7 +383,7 @@
     cv.addEventListener("pointermove",e=>{
       if(dragNode){ const w=toWorld(e.offsetX,e.offsetY); dragNode.x=w.x; dragNode.y=w.y; dragNode.vx=0; dragNode.vy=0; reheat(.4); moved=true; return; }
       if(dragging){ view.x+=e.offsetX-lastX; view.y+=e.offsetY-lastY; lastX=e.offsetX; lastY=e.offsetY; moved=true; return; }
-      const n=pick(e.offsetX,e.offsetY); if(n!==hover){ hover=n; cv.style.cursor=n?"pointer":"grab"; } });
+      const n=pick(e.offsetX,e.offsetY); if(n!==hover){ hover=n; cv.style.cursor=n?"pointer":"grab"; kick(); } });
     cv.addEventListener("pointerup",e=>{ if(dragNode && !moved) select(dragNode); else if(dragging && !moved) select(null);
       dragNode=null; dragging=false; cv.classList.remove("grabbing"); });
     cv.addEventListener("wheel",e=>{ e.preventDefault(); const f=Math.exp(-e.deltaY*0.0012);
@@ -366,10 +403,10 @@
     function select(n){
       selected=n;
       if(!n){ focusCompany=null; updateCrumb(); ev.innerHTML=document.getElementById("ev-empty").outerHTML; return; }
-      if(n.kind==="company"){ focusCompany=n; }   // drill into this company's full world
-      updateCrumb();
-      const col=KIND[n.kind].c;
-      let html='<div><div class="ev-kind" style="color:'+col+'">'+esc(n.kind)+'</div>'+
+      if(n.kind==="company"){ focusCompany=n; radialLayout(n); view={x:0,y:0,k:1}; }   // drill in: clean radial
+      updateCrumb(); kick();
+      const col=colOf(n);
+      let html='<div><div class="ev-kind" style="color:'+col+'">'+esc(isRival(n)?"rival company":n.kind)+'</div>'+
         '<div class="ev-name">'+esc(n.name)+'</div><div class="ev-id">'+esc(n.id)+'</div></div>';
       if(n.kind==="company"){
         // Grounded facts CLUSTERED by dimension: one block per key (e.g. all "backed by" values
@@ -377,7 +414,7 @@
         const groups=new Map();
         function add(dim,item){ if(!groups.has(dim)) groups.set(dim,[]); groups.get(dim).push(item); }
         links.filter(l=>l.s===n).forEach(l=>add(PRED_LABEL[l.p]||l.p,
-          {val:l.o.name, to:l.o.id, kc:KIND[l.o.kind]?KIND[l.o.kind].c:col}));
+          {val:l.o.name, to:l.o.id, kc:colOf(l.o)}));
         (values.get(n.id)||[]).forEach(a=>add(PRED_LABEL[a.p]||a.p, {val:a.v, to:"", kc:"", q:a.q||""}));
         let nfacts=0; groups.forEach(v=>nfacts+=v.length);
         html+='<div class="facts-h"><span class="sec-label">Grounded facts</span><span class="ct">'+nfacts+'</span></div>';
@@ -400,7 +437,9 @@
         });
       } else {
         const back=links.filter(l=>l.o===n).map(l=>l.s);
-        const rel = n.kind==="person"?"Founder of":n.kind==="investor"?"Backs":"Companies in this category";
+        const rel = n.kind==="person"?"Founder of":n.kind==="investor"?"Backs":
+          isRival(n)?"Competes with":n.kind==="technology"?"Used by":n.kind==="product"?"Offered by":
+          n.kind==="market"?"Targeted by":"Companies here";
         html+='<div class="grp"><div class="sec-label">'+rel+'</div><div class="link-wrap">'+
           back.map(s=>'<span class="link-pill" data-id="'+esc(s.id)+'"><span class="dot" style="width:8px;height:8px;background:'+KIND.company.c+';color:'+KIND.company.c+'"></span>'+esc(s.name)+'</span>').join("")+'</div></div>';
       }
@@ -411,9 +450,9 @@
     }
 
     window.addEventListener("resize",size);
-    size(); reheat(1);
-    if(reduce){ for(let i=0;i<260;i++) tick(); alpha=0.02; }
-    loop();
+    size();
+    if(reduce){ for(let i=0;i<300;i++) tick(); alpha=0; draw(); }
+    else { reheat(1); }
   }
 
   const load=document.getElementById("loading");

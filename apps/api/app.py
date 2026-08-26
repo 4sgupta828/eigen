@@ -1964,21 +1964,6 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                      AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
                                  WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')""",
                 subj, tenant_id)
-            # MENTION-FIRST edges: a value claim (e.g. has_investor='a16z') whose object norm matches a
-            # PROMOTED canonical node (a16z earned a node via corroboration) becomes a real edge
-            # company -> promoted-node. This is the tech-flow / investor graph forming as query-time joins.
-            promoted_edge_rows = await conn.fetch(
-                """SELECT cl.subject_id, s.name sname, cl.predicate, cl.object_norm,
-                          o.entity_id, o.name oname, o.kind okind
-                   FROM rs_claim cl
-                   JOIN rs_entity s ON s.entity_id = cl.subject_id
-                   JOIN rs_mention m ON m.tenant_id = cl.tenant_id AND m.norm = cl.object_norm
-                        AND m.status = 'promoted'
-                   JOIN rs_entity o ON o.entity_id = m.promoted_to
-                   WHERE cl.object_kind = 'value' AND cl.subject_id = ANY($1) AND cl.tenant_id = $2
-                     AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
-                                 WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')""",
-                subj, tenant_id)
             val_rows = await conn.fetch(
                 """SELECT cl.subject_id, cl.predicate, cl.object_value, cl.object_norm,
                           (SELECT ev.quote FROM rs_claim_evidence ev
@@ -2003,36 +1988,41 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                 subj, tenant_id)
         finally:
             await conn.close()
+        subj_name = {r["entity_id"]: r["name"] for r in top}
         edges = [{"s": r["subject_id"], "sname": r["sname"], "p": r["predicate"],
                   "o": r["object_entity_id"], "oname": r["oname"] or r["object_entity_id"],
                   "okind": r["okind"] or "unknown"}
                  for r in edge_rows if r["object_entity_id"]]
-        # promoted-node edges (mention-first), deduped against the entity edges
-        # KIND-DISAMBIGUATION: the mention join keys on `norm` alone, so a norm shared across kinds
-        # (e.g. Google promoted as BOTH an investor and a competitor company) can attach the wrong-kind
-        # node to a claim. Constrain each promoted edge to the kind its PREDICATE declares as its object
-        # (config from the vertical registry, Rule 18 — not a semantic guess): compared_to→company,
-        # has_investor→investor, uses_technology→technology, … Rows whose promoted-node kind doesn't
-        # match the predicate's object kind are dropped.
+        # Predicate → object node-kind (config from the vertical registry, Rule 18 — not a semantic
+        # guess): has_investor→investor, uses_technology→technology, compared_to→company, …
         try:
             from eigen_vertical_tech.claim_predicates import active_predicates as _ap
             _pred_kind = {p["name"]: (p.get("object_entity_kind") or p.get("mention_kind"))
                           for p in _ap(include_diligence=True)
                           if (p.get("object_entity_kind") or p.get("mention_kind"))}
-        except Exception:   # noqa: BLE001 — vertical unavailable → no kind constraint (prior behavior)
+        except Exception:   # noqa: BLE001 — vertical unavailable → no relationship edges (facts only)
             _pred_kind = {}
+        # RELATIONSHIP EDGES straight from the grounded VALUE claims (every one span-verified), keyed
+        # `<kind>:<norm>` so companies naming the SAME thing share ONE hub node — NO corroboration gate,
+        # so EVERY grounded investor / product / tech / category / segment / rival lights up, not only the
+        # promoted ones. (Promotion still governs the canonical ENTITY graph that answers read; this is the
+        # faithful VIEW.) People are handled separately (per-company nodes). Surface-form dedup across
+        # aliases (a16z ≈ Andreessen Horowitz) is the LLM alias-resolver's job (Rule 18), still deferred.
+        _REL_KINDS = {"investor", "product", "technology", "category", "market", "company"}
+        rel_preds = {p: k for p, k in _pred_kind.items()
+                     if k in _REL_KINDS and p not in ("has_founder", "key_person")}
         _seen = {(e["s"], e["p"], e["o"]) for e in edges}
-        for r in promoted_edge_rows:
-            want = _pred_kind.get(r["predicate"])
-            if want and (r["okind"] or "") != want:
-                continue   # wrong-kind node for this predicate (norm collision) — drop
-            k = (r["subject_id"], r["predicate"], r["entity_id"])
+        for r in val_rows:
+            kind = rel_preds.get(r["predicate"])
+            if not kind or not r["object_norm"]:
+                continue
+            nid = f"{kind}:{r['object_norm']}"
+            k = (r["subject_id"], r["predicate"], nid)
             if k in _seen:
                 continue
             _seen.add(k)
-            edges.append({"s": r["subject_id"], "sname": r["sname"], "p": r["predicate"],
-                          "o": r["entity_id"], "oname": r["oname"] or r["entity_id"],
-                          "okind": r["okind"] or "unknown"})
+            edges.append({"s": r["subject_id"], "sname": subj_name.get(r["subject_id"], r["subject_id"]),
+                          "p": r["predicate"], "o": nid, "oname": r["object_value"], "okind": kind})
         # PEOPLE edges: company -> per-company person node (founders/key-people), deduped by node id.
         for r in person_rows:
             pid = f"person:{r['subject_id']}:{r['object_norm']}"
@@ -2042,8 +2032,9 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             _seen.add(k)
             edges.append({"s": r["subject_id"], "sname": r["sname"], "p": "has_founder",
                           "o": pid, "oname": r["object_value"], "okind": "person"})
-        # a value that IS a promoted node is already an edge → keep values only for un-promoted names
-        _promoted_norms = {r["object_norm"] for r in promoted_edge_rows}
+        # Right-pane VALUE FACTS: exclude predicates now shown as edges/pills (relationships + people),
+        # so the pane holds the genuine scalar facts (funding, revenue, traction, headcount, differentiators…).
+        _edge_preds = set(rel_preds) | {"has_founder", "key_person"}
         # DEDUP value facts: the SAME fact extracted from many sources appears as near-identical value
         # strings ("$24M Series A" / "$24 million Series A" / "Series A: $24M"). Collapse by a COMPUTABLE
         # signature — currency/unit/punctuation-normalized + token-sorted (Rule 18: structural, no
@@ -2060,7 +2051,7 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             return " ".join(sorted(t for t in s.split() if t))
         _best: dict = {}
         for r in val_rows:
-            if r["object_norm"] in _promoted_norms:
+            if r["predicate"] in _edge_preds:
                 continue
             key = (r["subject_id"], r["predicate"], _vsig(r["object_value"]))
             q = r["quote"] or ""
