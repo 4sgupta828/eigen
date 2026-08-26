@@ -64,6 +64,29 @@ the deep reader will research. For "general" leave `entities` as it was (the lan
 empty). Output ONLY the JSON object (WITH the extra `subject_kind` key alongside the others)."""
 
 
+# REFLECTION addendum (flag EIGEN_REFLECTION). Appended to whichever contract prompt is active when
+# reflection is on, so the ONE derivation call ALSO returns the "heart of the question" — the user's real
+# underlying intent — used to steer retrieval + compose WITHOUT replacing the literal question. Rule 18 +
+# grounding: these are judgments about the QUESTION, never assertions of fact about any entity; the
+# span-gate still grounds every emitted claim. Emitted only under the flag → OFF derivation is identical.
+TECH_REFLECTION_ADDENDUM = """
+
+ALSO reflect on the HEART of the question and add these keys to the SAME JSON object (judge from the
+QUESTION ALONE — never assert facts about any company/person/technology; these only shape HOW we answer):
+- `intent`: ONE short sentence naming the user's REAL underlying job — the decision or understanding they
+  are actually after beneath the literal words (e.g. for "tell me everything about Traversal.com founders"
+  → "assess whether Traversal's founding team is credible/experienced enough to back", NOT "list the
+  founders"; for a landscape question → "understand the competitive structure and where the durable
+  advantage lies well enough to place a bet or build").
+- `intent_confidence`: "high" if that intent is unambiguous from the question; "medium" if a reasonable
+  inference; "low" if the question is genuinely ambiguous or you would be GUESSING. When "low", keep
+  `intent` faithful to the LITERAL question — do NOT invent a deeper intent you are unsure of.
+- `answer_brief`: ONE or TWO sentences naming what a GREAT answer MUST deliver to satisfy that intent —
+  the specific dimensions/shape it should cover (this guides coverage + framing; it states no facts).
+Decide from the question's real intent, not keywords. Output ONLY the JSON object (now also with
+`intent`, `intent_confidence`, and `answer_brief`)."""
+
+
 # ENTITY-OPEN variant (flag EIGEN_WEB_ENTITY_OPEN). Byte-identical derivation to TECH_CONTRACT_PROMPT
 # PLUS the `subject_kind` key. Built by concatenation so it stays in lockstep with the base prompt.
 TECH_CONTRACT_PROMPT_ENTITY = TECH_CONTRACT_PROMPT + _SUBJECT_KIND_ADDENDUM

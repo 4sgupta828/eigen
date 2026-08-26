@@ -1134,6 +1134,10 @@ async def run_react(
         # → prefer benchmarked/peer-reviewed sources). "" → byte-identical. Not applied in extract mode.
         if _steer and mode != "extract":
             instr = instr + " " + _steer
+        # REFLECTION intent steer: nudge the planner toward the user's REAL intent (WHAT to search).
+        # "" → byte-identical. Not applied in extract mode.
+        if _reflect_steer and mode != "extract":
+            instr = instr + " " + _reflect_steer
         # SOURCE ROUTING (flag): tell the agent it MAY name source TYPES to also target for a query. This
         # ADDS a scoped leg on top of the flat search (never restricts it), so route toward the source
         # types most likely to hold the discriminator for THIS sub-question. Off → not mentioned.
@@ -1325,6 +1329,27 @@ async def run_react(
     _suppress_auth = bool(_ac and _profile.get("suppress_authority")) or bool(suppress_authority)
     _steer = (_profile.get("planner_steer") or "").strip() if _ac else ""
     _answer_dir = (_profile.get("answer_directive") or "").strip() if _ac else ""
+    # REFLECTION intent steer (flag EIGEN_REFLECTION=steer): thread the inferred HEART-OF-INTENT into the
+    # planner + compose so the answer lands on what the user REALLY wants — but ONLY when the derivation
+    # was confident (high/medium). Low/empty confidence stays faithful to the literal question (the drift
+    # guard: never invent a "deeper" intent when unsure). The intent/brief steer WHAT to look for and HOW
+    # to shape the answer; they NEVER assert facts (grounding stays with the span-gate) and the literal
+    # Question header is never replaced. "" for every field → byte-identical.
+    _reflect_on = (reflection == "steer" and _contract is not None
+                   and getattr(_contract, "intent_confidence", "") in ("high", "medium"))
+    _reflect_intent = (getattr(_contract, "intent", "") or "").strip() if _reflect_on else ""
+    _reflect_brief = (getattr(_contract, "answer_brief", "") or "").strip() if _reflect_on else ""
+    _reflect_steer = ""
+    if _reflect_intent or _reflect_brief:
+        _reflect_steer = (
+            (("The user's underlying intent: " + _reflect_intent) if _reflect_intent else "")
+            + ((" A strong answer must deliver: " + _reflect_brief) if _reflect_brief else "")).strip()
+    if _reflect_steer:
+        _log.info("reflection intent (%s): %r | brief=%r", getattr(_contract, "intent_confidence", ""),
+                  _reflect_intent[:120], _reflect_brief[:160])
+        if diag is not None:
+            diag["reflection"] = {"intent": _reflect_intent, "answer_brief": _reflect_brief,
+                                  "confidence": getattr(_contract, "intent_confidence", "")}
     _web_recency_days = _profile.get("web_recency_days") if _ac else None
     _web_open = bool(_ac and _profile.get("web_open"))   # drop the trusted-domain whitelist (open web)
     # entity-open (flag): a single-entity diligence question earns ONE additive open-web probe.
@@ -2431,6 +2456,13 @@ async def run_react(
                 # lead with the newest, labeled announced/unbenchmarked; "established" → prioritize
                 # benchmarked/peer-reviewed evidence). "" when no profile → byte-identical.
                 + (("\n\n" + _answer_dir) if _answer_dir else "")
+                # REFLECTION intent (flag EIGEN_REFLECTION=steer): focus the composed answer on the user's
+                # REAL intent + what a great answer must deliver — a framing nudge only (states no facts;
+                # the literal Question above is unchanged; grounding stays with the span-gate). "" → no-op.
+                + (("\n\nFOCUS: answer to the user's underlying intent — " + _reflect_intent
+                    + ((" A strong answer must deliver: " + _reflect_brief) if _reflect_brief else "")
+                    + " Cover this while staying strictly grounded in the cited findings; do NOT pad.")
+                   if (_reflect_intent or _reflect_brief) else "")
                 # REASONING READ (flag): anchor the structured interpretation/confidence fields at the
                 # KERNEL level, symmetric to the directly_addresses metadata above — the domain-free
                 # mechanics live here; the domain MEANING (what each kind is, neutrality) is in the

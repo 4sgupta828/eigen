@@ -31,7 +31,8 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
                          WikidataConnector, WikipediaConnector, YcConnector)
 from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import (ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_CONTRACT_PROMPT_ENTITY,
-                              TECH_LANDSCAPE_CONTRACT_PROMPT, TECH_LANDSCAPE_CONTRACT_PROMPT_ENTITY)
+                              TECH_LANDSCAPE_CONTRACT_PROMPT, TECH_LANDSCAPE_CONTRACT_PROMPT_ENTITY,
+                              TECH_REFLECTION_ADDENDUM)
 from .company_reader import COMPANY_READER
 from .person_reader import PERSON_READER
 from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
@@ -171,6 +172,9 @@ def build_manifest() -> VerticalManifest:
         landscape_contract_prompt=(TECH_LANDSCAPE_CONTRACT_PROMPT_ENTITY
                                    if (web_entity_open_on() or company_reader_on() or people_reader_on())
                                    else TECH_LANDSCAPE_CONTRACT_PROMPT),
+        # REFLECTION addendum (flag EIGEN_REFLECTION): the app appends this to whichever contract prompt is
+        # active so the ONE derivation call also returns the heart-of-intent. Off → not appended.
+        reflection_contract_addendum=TECH_REFLECTION_ADDENDUM,
         answer_profiles=ANSWER_PROFILES,
         # REASONED engine (flag EIGEN_REASONED_DEFAULT, default OFF — the noesis clinical-decision mode
         # re-homed to diligence): one scaffold call classifies the question (decision/lookup/understanding)

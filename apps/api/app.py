@@ -583,6 +583,16 @@ def reflection_mode() -> str:
     return v if v in ("shadow", "steer") else ""
 
 
+def _apply_reflection_addendum(base_prompt, manifest):
+    """When EIGEN_REFLECTION is on, append the vertical's reflection addendum to the active contract
+    prompt so the ONE derivation call also returns the heart-of-intent. OFF → base unchanged (byte-
+    identical). If either the base or the addendum is missing, the base is returned as-is."""
+    if not reflection_mode():
+        return base_prompt
+    add = getattr(manifest, "reflection_contract_addendum", None)
+    return (base_prompt + add) if (base_prompt and add) else base_prompt
+
+
 def explore_legs_enabled() -> bool:
     """Flag (default OFF, Rule 20 — exploratory-legs extension) via EIGEN_EXPLORE_LEGS: when ON
     (and EIGEN_QUESTION_CONTRACT=steer), EXPLORATORY questions' contract axes — 2-4 vertical-derived
@@ -1330,9 +1340,11 @@ def build_default_service() -> ResearchService:
         question_contract=("steer" if landscape_coverage_enabled() else
                            "shadow" if (_deep_company_reader or _deep_people_reader)
                            else question_contract_mode()),
-        contract_prompt=(getattr(manifest, "landscape_contract_prompt", None)
-                         if landscape_coverage_enabled()
-                         else getattr(manifest, "contract_prompt", None)),
+        contract_prompt=_apply_reflection_addendum(
+            (getattr(manifest, "landscape_contract_prompt", None)
+             if landscape_coverage_enabled()
+             else getattr(manifest, "contract_prompt", None)),
+            manifest),
         explore_legs=(True if landscape_coverage_enabled() else explore_legs_enabled()),
         reflection=reflection_mode(),   # EIGEN_REFLECTION: on-demand web coverage fan-out + intent steer
         answer_mode_routing=answer_mode_routing_enabled(),

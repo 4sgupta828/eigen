@@ -295,6 +295,10 @@ class VerticalManifest:
     # (entity×axis legs) instead of a few narrow searches. The app swaps `contract_prompt` to this and
     # forces question_contract="steer" only when the flag is on. None → not offered (byte-identical).
     landscape_contract_prompt: str | None = None
+    # REFLECTION addendum (flag EIGEN_REFLECTION). Opaque text the app appends to whichever contract prompt
+    # is active so the ONE derivation call also returns the question's heart-of-intent (intent /
+    # intent_confidence / answer_brief) used to steer retrieval + compose. None → not offered (byte-identical).
+    reflection_contract_addendum: str | None = None
     # Optional ENUMERATIVE-COMPOSE addendum (Evidence Contract stage 4, flag
     # EIGEN_ANSWER_MODE_ROUTING): APPENDED by the kernel to the active compose directive ONLY when
     # the derived QuestionContract says enumerative AND ≥2 contract entities hold slot-matched
