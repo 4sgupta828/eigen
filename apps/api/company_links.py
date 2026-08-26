@@ -24,11 +24,15 @@ from pydantic import BaseModel
 _DETECT_SYSTEM = (
     "From the text below, extract the COMPANIES / startups / labs / funds discussed as SUBJECTS. "
     "For each, return its `name` EXACTLY as written in the text (same surface form + casing), and "
-    "its official homepage `website` (e.g. https://openai.com) ONLY if you are confident of the "
-    "real company's own domain — otherwise leave `website` empty. Do NOT guess or invent a homepage, "
-    "and never return a search/Wikipedia/social URL as the website. EXCLUDE products/models "
-    "(GPT-4, Claude), technologies, methods, benchmarks, people, government bodies, and generic "
-    "terms. Deduplicate. If none, return an empty list.")
+    "its official homepage `website` — the company's OWN domain (e.g. Runway → https://runwayml.com, "
+    "OpenAI → https://openai.com, Anthropic → https://anthropic.com). You reliably know the real "
+    "domains of well-known companies, so GIVE the homepage whenever you can identify the actual "
+    "company — this is a navigation link to their site, not a factual claim. Leave `website` empty "
+    "ONLY when you genuinely do not recognize the company or its real domain is truly ambiguous (do "
+    "not fabricate a domain for a company you don't know). NEVER return a search / Wikipedia / "
+    "Crunchbase / LinkedIn / social / GitHub URL as the website — only the company's own site. "
+    "EXCLUDE products/models (GPT-4, Claude), technologies, methods, benchmarks, people, government "
+    "bodies, and generic terms. Deduplicate. If none, return an empty list.")
 
 # hosts that are NOT a company's own homepage (a search/reference/social page is not 'the site')
 _NON_HOMEPAGE_HOSTS = (
