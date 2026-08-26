@@ -246,9 +246,11 @@
         ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,7); ctx.fillStyle=col; ctx.fill();
         if(n===selected){ ctx.lineWidth=2/view.k; ctx.strokeStyle="#fff"; ctx.stroke(); }
         ctx.globalAlpha=1;
-        const showLabel = (n.kind==="company" && view.k>0.75) || (focus && nb.has(n)) || n===focus;
+        // label EVERY node kind (not just companies) so an investor/tech/product node is
+        // identifiable at a glance; non-company labels are drawn in the kind's color (distinct).
+        const showLabel = (view.k>0.55) || (n.kind!=="company") || (focus && nb.has(n)) || n===focus;
         if(showLabel){ ctx.globalAlpha = dim?0.25:1;
-          ctx.font = (n===focus?600:500)+' 11px "IBM Plex Sans",sans-serif';
+          ctx.font = ((n===focus?600:500))+' '+(n.kind==="company"?11:10.5)+'px "IBM Plex Sans",sans-serif';
           ctx.fillStyle = n.kind==="company" ? "#e8edf9" : col; ctx.textAlign="center"; ctx.textBaseline="top";
           const t=n.name.length>26?n.name.slice(0,25)+"…":n.name;
           ctx.save(); ctx.translate(n.x,n.y); ctx.scale(1/view.k,1/view.k); ctx.fillText(t, 0, n.r*view.k+3); ctx.restore();
