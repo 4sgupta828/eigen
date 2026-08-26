@@ -46,7 +46,7 @@ class PriorDraft(BaseModel):
 
 
 async def draft_prior(question: str, llm, prompt: str | None, *,
-                      budget: BudgetState, max_tokens: int = 1500) -> PriorDraft | None:
+                      budget: BudgetState, max_tokens: int = 5000) -> PriorDraft | None:
     """ONE structured LLM call → PriorDraft, or None on ANY failure. Fail-safe is today's
     retrieve-first path — never a heuristic guess (Rule 18). Charges the budget on success."""
     if llm is None or not (prompt or "").strip() or not (question or "").strip():

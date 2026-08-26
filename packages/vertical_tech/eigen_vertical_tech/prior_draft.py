@@ -29,8 +29,19 @@ independently verified against retrieved evidence — an unverifiable fact is la
 silently and never presented as grounded. Do not inflate reasoning into fact or hide a shaky fact \
 as reasoning.
 
-REQUIRED: the `claims` list must be SUBSTANTIAL — list 6-15 claims that carry the actual substance of \
-your answer, a MIX of 'fact' and 'reasoning'. The OUTLINE is only the shape; the CLAIMS are the content. \
-NEVER return an empty `claims` list and NEVER put your reasoning solely in the outline — a reasoning-heavy \
-question (how/why something works) should still produce several 'reasoning' claims (the mechanism, the \
-causes, the implications) plus whatever 'fact' claims anchor them."""
+REQUIRED: the `claims` list must be SUBSTANTIAL and carry the actual substance of your answer, a MIX of \
+'fact' and 'reasoning'. The OUTLINE is only the shape; the CLAIMS are the content. NEVER return an empty \
+`claims` list and NEVER put your reasoning solely in the outline.
+
+SCALE THE BREADTH TO THE QUESTION:
+- A reasoning-heavy question (how/why something works) → several 'reasoning' claims (the mechanism, the \
+causes, the implications) plus the 'fact' claims that anchor them (aim ~6-15).
+- An ENUMERATION / "best-X" / "which tools|companies|repos|models" / "map the landscape" question → be \
+COMPREHENSIVE: draft ONE fact-claim PER CANDIDATE ITEM across the WHOLE space, grouped by the outline's \
+sections, and DO NOT stop at the obvious few — aim for 20-40 items when the field is broad (a strong \
+answer to "the best OSS AI building blocks" names the model/serving/inference/gateway/agent/RAG/vector- \
+db/observability/fine-tuning layers, ~25+ specific repos, not 8). For EACH enumerated item, put a \
+CONCRETE, CHECKABLE metric IN the claim (GitHub stars, adoption/who-uses-it, release recency) so it can \
+be grounded — and set `verify_query` to name that EXACT item plus the metric (e.g. "vLLM github stars \
+adoption", "LangGraph stars production use"). Breadth AND per-item grounding are both required; a thin \
+list of a few items is a failed draft for an enumeration question."""
