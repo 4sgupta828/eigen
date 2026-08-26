@@ -342,9 +342,12 @@ async def enrich_company(
                         store, name=d.get("issuer_name") or company_name, kind="company",
                         tenant_id=tenant_id, strong_ids=d.get("strong_ids"),
                         source_key=source_key, context=text[:1200], llm=llm,
-                        judge_cache=judge_cache)
+                        judge_cache=judge_cache,
+                        on_new=("mention" if object_policy == "mention" else "create"))
                     entity_id = res.get("entity_id")
                     method = res.get("method")
+                    # mention-first: an SPV/namesake issuer resolves to a MENTION (entity_id=None),
+                    # so the match fails and it is rejected WITHOUT minting a stray canonical entity.
                     if not (entity_id == company_id and method in _ACCEPT_METHODS):
                         # SPV / namesake → DO NOT pollute the company; record + skip (no spend).
                         rejected.append({
