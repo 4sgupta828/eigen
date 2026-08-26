@@ -1930,31 +1930,57 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
         return _html_response("crossviews.html", accept_encoding)
 
     @app.get("/graph/explore")
-    async def graph_explore(tenant_id: str = "demo", limit: int = 24):
+    async def graph_explore(tenant_id: str = "demo", limit: int = 60, sector: str = ""):
         """Live data for the Interactive Explorer: the richest companies + their entity edges
         (founders/categories/investors) + grounded value-attributes with their verbatim quotes.
         Read-only over the claim graph; returns empty (never errors the page) if unavailable."""
         dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        _empty = {"companies": [], "edges": [], "values": [], "sectors": [], "sector": ""}
         if not dsn:
-            return {"companies": [], "edges": [], "values": []}
-        cap = max(4, min(int(limit or 24), 60))
+            return _empty
+        cap = max(4, min(int(limit or 60), 120))
         import asyncpg
         try:
             conn = await asyncpg.connect(dsn)
         except Exception:   # noqa: BLE001
-            return {"companies": [], "edges": [], "values": []}
+            return _empty
         try:
-            top = await conn.fetch(
-                """SELECT e.entity_id, e.name, count(*) n FROM rs_claim cl
-                   JOIN rs_entity e ON e.entity_id = cl.subject_id AND e.kind = 'company'
-                   WHERE cl.tenant_id = $1
-                     AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
-                                 WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')
-                   GROUP BY e.entity_id, e.name ORDER BY n DESC LIMIT $2""",
-                tenant_id, cap)
+            # SECTOR clusters (each an AI sub-sector): the picker views ONE at a time so the graph never
+            # becomes an all-clusters hairball. A company's sector lives in rs_entity.facets->>'sector'.
+            sector_rows = await conn.fetch(
+                """SELECT e.facets->>'sector' sector, count(DISTINCT e.entity_id) n
+                   FROM rs_entity e
+                   WHERE e.tenant_id = $1 AND e.kind = 'company'
+                     AND coalesce(e.facets->>'sector','') <> ''
+                     AND EXISTS (SELECT 1 FROM rs_claim c WHERE c.subject_id = e.entity_id
+                                 AND c.tenant_id = $1)
+                   GROUP BY e.facets->>'sector' ORDER BY n DESC""",
+                tenant_id)
+            sectors = [{"id": r["sector"], "n": r["n"]} for r in sector_rows]
+            # Default to the largest sector so the payload is always a single clean cluster.
+            active_sector = sector or (sectors[0]["id"] if sectors else "")
+            if active_sector:
+                top = await conn.fetch(
+                    """SELECT e.entity_id, e.name, count(*) n FROM rs_claim cl
+                       JOIN rs_entity e ON e.entity_id = cl.subject_id AND e.kind = 'company'
+                       WHERE cl.tenant_id = $1 AND e.facets->>'sector' = $3
+                         AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                     WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')
+                       GROUP BY e.entity_id, e.name ORDER BY n DESC LIMIT $2""",
+                    tenant_id, cap, active_sector)
+            else:
+                # no sectors stamped yet (pre-population) → the whole graph, as before
+                top = await conn.fetch(
+                    """SELECT e.entity_id, e.name, count(*) n FROM rs_claim cl
+                       JOIN rs_entity e ON e.entity_id = cl.subject_id AND e.kind = 'company'
+                       WHERE cl.tenant_id = $1
+                         AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
+                                     WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')
+                       GROUP BY e.entity_id, e.name ORDER BY n DESC LIMIT $2""",
+                    tenant_id, cap)
             subj = [r["entity_id"] for r in top]
             if not subj:
-                return {"companies": [], "edges": [], "values": []}
+                return {**_empty, "sectors": sectors, "sector": active_sector}
             edge_rows = await conn.fetch(
                 """SELECT cl.subject_id, s.name sname, cl.predicate,
                           cl.object_entity_id, o.name oname, o.kind okind
@@ -2063,6 +2089,8 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             "companies": [{"id": r["entity_id"], "name": r["name"], "claims": r["n"]} for r in top],
             "edges": edges,
             "values": [{k: v for k, v in d.items() if k != "_ql"} for d in _best.values()],
+            "sectors": sectors,
+            "sector": active_sector,
         }
 
     @app.get("/{name}.png")
