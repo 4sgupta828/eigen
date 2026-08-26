@@ -2008,8 +2008,24 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                   "okind": r["okind"] or "unknown"}
                  for r in edge_rows if r["object_entity_id"]]
         # promoted-node edges (mention-first), deduped against the entity edges
+        # KIND-DISAMBIGUATION: the mention join keys on `norm` alone, so a norm shared across kinds
+        # (e.g. Google promoted as BOTH an investor and a competitor company) can attach the wrong-kind
+        # node to a claim. Constrain each promoted edge to the kind its PREDICATE declares as its object
+        # (config from the vertical registry, Rule 18 — not a semantic guess): compared_to→company,
+        # has_investor→investor, uses_technology→technology, … Rows whose promoted-node kind doesn't
+        # match the predicate's object kind are dropped.
+        try:
+            from eigen_vertical_tech.claim_predicates import active_predicates as _ap
+            _pred_kind = {p["name"]: (p.get("object_entity_kind") or p.get("mention_kind"))
+                          for p in _ap(include_diligence=True)
+                          if (p.get("object_entity_kind") or p.get("mention_kind"))}
+        except Exception:   # noqa: BLE001 — vertical unavailable → no kind constraint (prior behavior)
+            _pred_kind = {}
         _seen = {(e["s"], e["p"], e["o"]) for e in edges}
         for r in promoted_edge_rows:
+            want = _pred_kind.get(r["predicate"])
+            if want and (r["okind"] or "") != want:
+                continue   # wrong-kind node for this predicate (norm collision) — drop
             k = (r["subject_id"], r["predicate"], r["entity_id"])
             if k in _seen:
                 continue
