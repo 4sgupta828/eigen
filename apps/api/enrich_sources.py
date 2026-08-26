@@ -66,7 +66,8 @@ async def formd_fetcher(company_name: str, *, edgar, max_hits: int = 3) -> list[
 
 async def enrich_one(company_id: str, company_name: str, dsn: str, *,
                      sources: tuple[str, ...] = ("news", "formd"),
-                     dry_run: bool = True, tenant_id: str = "demo") -> dict:
+                     dry_run: bool = True, tenant_id: str = "demo",
+                     object_policy: str = "create") -> dict:
     """Run the live multi-source enrichment on ONE canonical company. Builds the tech-configured
     store + Exa web + EDGAR + tech authority policy, then calls the S2b pipeline with the S2a
     resolver. dry_run (default) plans + costs without spending. Returns the pipeline summary."""
@@ -92,7 +93,7 @@ async def enrich_one(company_id: str, company_name: str, dsn: str, *,
             fetchers=fetchers, extract_fn=extract_typed_claims,
             resolve_entity_fn=resolve_entity, resolve_conflicts_fn=resolve_conflicts,
             authority_policy=TechAuthorityPolicy(), llm=None,
-            tenant_id=tenant_id, dry_run=dry_run)
+            tenant_id=tenant_id, dry_run=dry_run, object_policy=object_policy)
     finally:
         try:
             await store.close()

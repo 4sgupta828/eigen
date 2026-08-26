@@ -141,6 +141,7 @@ async def _upsert_claim_with_object(
     store, *, subject_id: str, claim: dict, kind_by_predicate: dict[str, str],
     mintable: frozenset, subject_kind: str, document_id: str, block_id: str,
     source_key: str, authority_tier: int, evidence_kind: str, tenant_id: str,
+    object_policy: str = "create",
 ) -> None:
     """Route a single extracted claim's object (value vs entity) and upsert claim + evidence
     onto `subject_id`. This is the SAME value/entity routing as
@@ -167,9 +168,22 @@ async def _upsert_claim_with_object(
                 "routing object to the %r (subject-kind) path", predicate, ekind, subject_kind)
             ekind = subject_kind
 
-        if ekind == subject_kind:
-            # SUBJECT-KIND object (tech: company) → exact-alias resolve, else a soft
-            # `__unresolved:` node (NO fuzzy merge — slice-1 ER policy).
+        if object_policy == "mention":
+            # MENTION-FIRST ER (fresh graph, zero pollution) — SAME contract as
+            # claim_extract_job: promote to a canonical edge ONLY on a real identity anchor;
+            # a bare/ambiguous name degrades to a grounded VALUE claim + a parked mention.
+            from api.canonicalize import resolve_entity as _resolve_entity
+            _r = await _resolve_entity(store, name=obj_name, kind=ekind, tenant_id=tenant_id,
+                                       source_key=source_key, on_new="mention")
+            if _r["method"] == "mention":
+                await store.upsert_mention(name=obj_name, kind=ekind, tenant_id=tenant_id)
+                object_kind = "value"
+                object_value = obj_name
+                object_entity_id = ""
+            else:
+                object_entity_id = _r["entity_id"]
+        elif ekind == subject_kind:
+            # LEGACY 'create': SUBJECT-KIND object → exact-alias resolve, else soft `__unresolved:`.
             resolved = await store.resolve_alias(obj_name)
             if resolved:
                 object_entity_id = resolved
@@ -178,7 +192,7 @@ async def _upsert_claim_with_object(
                 await store.upsert_entity(object_entity_id, kind=subject_kind,
                                           name=obj_name, tenant_id=tenant_id)
         else:
-            # category / person / investor → deterministic soft `<kind>:<norm>` node.
+            # LEGACY 'create': category/person/investor → deterministic soft `<kind>:<norm>` node.
             object_entity_id = f"{ekind}:{object_norm}"
             await store.upsert_entity(object_entity_id, kind=ekind, name=obj_name,
                                       tenant_id=tenant_id)
@@ -212,6 +226,7 @@ async def enrich_company(
     predicates: list[dict] | None = None,
     dry_run: bool = True,
     conflict_predicates: Sequence[str] = ("raised_funding", "headcount", "company_status"),
+    object_policy: str = "create",
 ) -> dict:
     """Enrich ONE canonical company (`company_id`) from 2nd sources. Returns a summary:
     `{company_id, docs_fetched, blocks_ingested, claims_added, per_source, resolutions,
@@ -360,7 +375,7 @@ async def enrich_company(
                         kind_by_predicate=kind_by_predicate, mintable=mintable,
                         subject_kind=subject_kind, document_id=document_id,
                         block_id=block_id, source_key=source_key, authority_tier=tier,
-                        evidence_kind=kind, tenant_id=tenant_id)
+                        evidence_kind=kind, tenant_id=tenant_id, object_policy=object_policy)
                     claims_added += 1
                     _bump(source_key, "claims_added")
                     if subject_id == company_id:
