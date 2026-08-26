@@ -6,12 +6,14 @@ HTTP → agent → citations path is exercised without credits or a vertical pac
 """
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from eigen_kernel.contract.dto import Locator
 from eigen_kernel.providers.embeddings import FakeEmbedder
 from eigen_kernel.providers.llm import LLMResult
-from eigen_kernel.research.react import AgentStep, ClaimOut
+from eigen_kernel.research.react import AgentStep, AnswerResult, ClaimOut
 from eigen_kernel.retrieval.memory import IndexedBlock, InMemoryRetrievalSource
 from eigen_kernel.runtime.research import ResearchService
 
@@ -60,6 +62,46 @@ def test_research_returns_grounded_answer() -> None:
     assert data["rejected"] == 0
     assert len(data["claims"]) == 1
     assert data["claims"][0]["quote"] == "first-line therapy for type 2 diabetes"
+
+
+def test_research_returns_people_profiles(monkeypatch) -> None:
+    monkeypatch.delenv("EIGEN_REASONED_DEFAULT", raising=False)
+    profile = {"name": "Jane Roe", "url": "https://github.com/janeroe", "host": "github.com"}
+
+    class _PeopleService:
+        ui = None
+
+        async def ask(self, **kwargs):
+            return AnswerResult(composed_answer="", people_profiles=[profile])
+
+    client = TestClient(create_app(_PeopleService()))
+    resp = client.post("/research", json={
+        "question": "tell me about Jane Roe",
+        "tenant_id": "acme", "sources": ["corpus"]})
+    assert resp.status_code == 200
+    assert resp.json()["people"] == [profile]
+
+
+def test_research_stream_final_returns_people_profiles(monkeypatch) -> None:
+    monkeypatch.setenv("EIGEN_STREAM", "1")
+    monkeypatch.delenv("EIGEN_REASONED_DEFAULT", raising=False)
+    profile = {"name": "Jane Roe", "url": "https://github.com/janeroe", "host": "github.com"}
+
+    class _PeopleService:
+        ui = None
+
+        async def ask(self, **kwargs):
+            return AnswerResult(composed_answer="", people_profiles=[profile])
+
+    client = TestClient(create_app(_PeopleService()))
+    with client.stream("POST", "/research/stream", json={
+        "question": "tell me about Jane Roe",
+        "tenant_id": "acme", "sources": ["corpus"]}) as resp:
+        assert resp.status_code == 200
+        events = [line.removeprefix("data: ") for line in resp.iter_lines()
+                  if line.startswith("data: ")]
+    final = [json.loads(e) for e in events if json.loads(e).get("type") == "final"][0]
+    assert final["result"]["people"] == [profile]
 
 
 def test_tenant_isolation_via_api() -> None:

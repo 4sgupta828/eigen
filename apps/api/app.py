@@ -747,6 +747,12 @@ def deep_company_reader_enabled() -> bool:
     return os.environ.get("EIGEN_DEEP_COMPANY_READER", "").lower() in ("1", "true", "yes")
 
 
+def deep_people_reader_enabled() -> bool:
+    """Flag (default OFF): EIGEN_DEEP_PEOPLE_READER adds a bounded facet-targeted web dossier leg on
+    step 0 for single-person diligence questions. OFF → no extra retrieval leg."""
+    return os.environ.get("EIGEN_DEEP_PEOPLE_READER", "").lower() in ("1", "true", "yes")
+
+
 def open_web_denoise_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_WEB_OPEN_DENOISE opens the aux web (Exa) leg to the FULL web
     (whitelist demoted to a ranking boost) for every web-eligible question and admits its hits through
@@ -1116,6 +1122,7 @@ class ResearchOut(BaseModel):
     #                                       citations,peer_reviewed}] (empty unless the flag is on)
     companies: list = []                  # companies this answer is grounded on [{name,entity_id,url,
     #                                       eigen_url}] for prose hyperlinking (empty unless flag on)
+    people: list = []                     # people profile links [{name,url,host}]
     unverified_priors: list = []          # EIGEN_PARAMETRIC_LED (T3): the model's OWN asserted facts that
     #                                       retrieval could NOT ground [{text,needs_freshness}] — the
     #                                       labeled register, kept OUT of `claims`/grounded prose (empty
@@ -1246,6 +1253,7 @@ def build_default_service() -> ResearchService:
         except Exception:
             layout_llm = None
     _deep_company_reader = deep_company_reader_enabled() and not _golden
+    _deep_people_reader = deep_people_reader_enabled() and not _golden
     return ResearchService(
         llm=build_llm(mode=mode), embedder=embedder, planner_llm=planner_llm,
         graph_expander=_make_graph_expander(),
@@ -1279,6 +1287,8 @@ def build_default_service() -> ResearchService:
         intelligence_draft_prompt=getattr(manifest, "intelligence_draft_prompt", None),
         deep_company=_deep_company_reader,
         company_reader=getattr(manifest, "company_reader", None),
+        deep_person=_deep_people_reader,
+        person_reader=getattr(manifest, "person_reader", None),
         entity_open_web=entity_open_web_enabled(),
         web_open_denoise=open_web_denoise_enabled(),
         web_quality_prompt=getattr(manifest, "web_quality_prompt", None),
@@ -1304,7 +1314,8 @@ def build_default_service() -> ResearchService:
         # LANDSCAPE COVERAGE (flag): force contract steer + the enumerative-categories landscape prompt +
         # explore legs so a "map the landscape" ask fans retrieval out per category. Else the normal knobs.
         question_contract=("steer" if landscape_coverage_enabled() else
-                           "shadow" if _deep_company_reader else question_contract_mode()),
+                           "shadow" if (_deep_company_reader or _deep_people_reader)
+                           else question_contract_mode()),
         contract_prompt=(getattr(manifest, "landscape_contract_prompt", None)
                          if landscape_coverage_enabled()
                          else getattr(manifest, "contract_prompt", None)),
@@ -2601,6 +2612,8 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                 _extra["related_research"] = related
             if companies:                     # persist so a reopened session re-links the prose
                 _extra["companies"] = companies
+            if getattr(res, "people_profiles", None):
+                _extra["people"] = res.people_profiles
             turn.update(_extra)
             try:
                 # Audience-guarded append: only continue a thread whose audience MATCHES this turn's
@@ -2665,6 +2678,7 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             freshness=(getattr(res, "freshness", None) if freshness_ranking_enabled() else None),
             related_research=related,
             companies=companies,
+            people=(getattr(res, "people_profiles", []) or []),
             unverified_priors=((getattr(res, "unverified_priors", []) or [])
                                if parametric_led_enabled() else []),
         )

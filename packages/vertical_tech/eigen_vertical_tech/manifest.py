@@ -7,6 +7,8 @@ AI/fintech/biotech… (see sectors.py). Analytical angles are `extraction_lenses
 """
 from __future__ import annotations
 
+import os
+
 from eigen_kernel.contract.manifest import VerticalManifest
 
 from . import discovery, entities, evidence_kind
@@ -31,6 +33,7 @@ from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import (ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_CONTRACT_PROMPT_ENTITY,
                               TECH_LANDSCAPE_CONTRACT_PROMPT)
 from .company_reader import COMPANY_READER
+from .person_reader import PERSON_READER
 from .reasoned import (TECH_ADAPTIVE_ANSWER_FORMAT, TECH_ADAPTIVE_SCAFFOLD_PROMPT,
                        TECH_ADAPTIVE_SCAFFOLD_PROMPT_DEEP,
                        TECH_ANSWER_360_BLOCK, tech_closing_block, TECH_LANDSCAPE_COMPOSE_BLOCK,
@@ -59,15 +62,19 @@ def web_entity_open_on() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_WEB_ENTITY_OPEN gates the entity-scoped open-web probe. When
     ON, the manifest swaps in the `subject_kind`-emitting contract prompt so the kernel can tell a
     single-entity diligence question apart. OFF → the original TECH_CONTRACT_PROMPT (byte-identical)."""
-    import os
     return os.environ.get("EIGEN_WEB_ENTITY_OPEN", "").lower() in ("1", "true", "yes")
 
 
 def company_reader_on() -> bool:
     """Flag (default OFF): EIGEN_DEEP_COMPANY_READER needs the entity-aware contract prompt so the
     kernel can limit the additive web dossier to single-company diligence questions."""
-    import os
     return os.environ.get("EIGEN_DEEP_COMPANY_READER", "").lower() in ("1", "true", "yes")
+
+
+def people_reader_on() -> bool:
+    """Flag (default OFF): EIGEN_DEEP_PEOPLE_READER needs the entity-aware contract prompt so the
+    kernel can limit the additive web dossier to single-person diligence questions."""
+    return os.environ.get("EIGEN_DEEP_PEOPLE_READER", "").lower() in ("1", "true", "yes")
 
 
 def deep_synthesis_on() -> bool:
@@ -76,7 +83,6 @@ def deep_synthesis_on() -> bool:
     grounded derivations, and appends the deep-analyst persona clause. The deep format is exposed to the
     kernel as inert data (`deep_answer_format`, always set); this flag + the question kind gate whether
     the kernel ever selects it (T2/T3). OFF → byte-identical (persona + format unchanged)."""
-    import os
     return os.environ.get("EIGEN_DEEP_SYNTHESIS", "").lower() in ("1", "true", "yes")
 
 
@@ -154,7 +160,8 @@ def build_manifest() -> VerticalManifest:
         # FLAG EIGEN_WEB_ENTITY_OPEN: swap in the variant that ALSO emits `subject_kind` so the kernel
         # can gate the entity-scoped open-web probe. OFF → the original prompt (byte-identical).
         contract_prompt=(TECH_CONTRACT_PROMPT_ENTITY
-                         if (web_entity_open_on() or company_reader_on()) else TECH_CONTRACT_PROMPT),
+                         if (web_entity_open_on() or company_reader_on() or people_reader_on())
+                         else TECH_CONTRACT_PROMPT),
         # FLAG EIGEN_LANDSCAPE_COVERAGE: the app swaps to this enumerative-categories contract (+ forces
         # question_contract="steer") so a "map the landscape / examine all X" ask fans retrieval out per
         # category instead of a few narrow searches. Off → not used (byte-identical).
@@ -192,6 +199,7 @@ def build_manifest() -> VerticalManifest:
         # (deep_synthesis) + question kind gate whether the kernel selects it (T2/T3). OFF → never used.
         deep_answer_format=TECH_DEEP_SYNTHESIS_FORMAT,
         company_reader=COMPANY_READER,
+        person_reader=PERSON_READER,
         # FLAG EIGEN_AUTHORITY_BASIS: the compose FLOOR directive (ground facts in the highest-tier source;
         # opinion/blog/social are supplementary signal). ALWAYS set — inert data; the flag gates whether the
         # kernel appends it. OFF → never used (byte-identical).

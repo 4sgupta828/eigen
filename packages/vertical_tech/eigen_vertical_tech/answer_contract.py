@@ -44,6 +44,9 @@ ALSO add one more key to the SAME JSON object:
   - "specific_entity" — the question is DILIGENCE on a SINGLE NAMED company / product / project: what
     it is, how its tech works, its moat/traction/team/funding/risks (e.g. "what is Blazel", "how does
     X's tech work and what's its moat", "is Acme's approach defensible", "tell me about the startup Y").
+  - "person" — the question is DILIGENCE on a SINGLE NAMED person: biography, role, career history,
+    founder/investor background, public views, affiliations, or reputation (e.g. "tell me about Jane
+    Roe", "what has Pat Lee built", "what is Sam Altman's background").
   - "general" — anything else: a landscape/population map, a comparison across many players, a how/why
     about a concept, a trend, or any question NOT centered on one named entity.
   Decide from the QUESTION'S INTENT, not keywords. When unsure, choose "general". Still output ONLY the

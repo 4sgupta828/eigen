@@ -33,10 +33,11 @@ class Contract:
     # stance emitted → the caller keeps its default regime (byte-identical).
     stance: str = ""
     # SUBJECT KIND — an OPAQUE LLM judgment about what the question is ABOUT: "specific_entity" =
-    # diligence on ONE named company/product/project; "general" / "" = not (a landscape, how/why,
-    # comparison, or any non-single-entity ask). The kernel never interprets it; a vertical's
-    # derivation prompt (only when it asks for the field) names the classes. Domain-free (kernel
-    # litmus). "" = not emitted → callers keep their default behavior (byte-identical).
+    # diligence on ONE named company/product/project; "person" = one named individual;
+    # "general" / "" = not (a landscape, how/why, comparison, or any non-single-entity ask).
+    # The kernel never interprets it; a vertical's derivation prompt (only when it asks for the
+    # field) names the classes. Domain-free (kernel litmus). "" = not emitted → callers keep
+    # their default behavior (byte-identical).
     subject_kind: str = ""
 
 
@@ -77,7 +78,7 @@ async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str 
             if isinstance(a, str) and a.strip()]
     stance = (getattr(p, "stance", "") or "").strip().lower()   # opaque; validated by the vertical map
     subject_kind = (getattr(p, "subject_kind", "") or "").strip().lower()   # opaque; keep only known classes
-    if subject_kind not in ("specific_entity", "general"):
+    if subject_kind not in ("specific_entity", "person", "general"):
         subject_kind = ""                      # anything else (incl. hallucinated labels) → no-op default
     if mode == "enumerative" and not entities:
         mode = "exploratory"                   # nothing to enumerate → inert contract, not None,

@@ -189,6 +189,10 @@ class VerticalManifest:
     # resolution prompt, bounded retrieval knobs, and compose attribution addendum. The kernel treats
     # it as data and never interprets the vertical vocabulary inside it.
     company_reader: dict = field(default_factory=dict)
+    # Optional vertical-supplied deep person reader config: opaque name-based facet query templates,
+    # profile-link preferences, bounded retrieval knobs, and compose attribution addendum. The kernel
+    # treats it as data and never interprets the vertical vocabulary inside it.
+    person_reader: dict | None = None
     # Optional FRESHNESS policy (flag EIGEN_FRESHNESS_RANKING): how strongly recency re-orders the
     # verified-claim pool for THIS vertical. Domain-free opaque dict the kernel reads by key:
     #   {"min_rank": int, "weight": float, "horizon_years": int}

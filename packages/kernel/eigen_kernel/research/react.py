@@ -19,6 +19,7 @@ from dataclasses import dataclass, field, replace
 from typing import Literal
 
 from eigen_kernel.research.deep_company import retrieve_deep_company
+from eigen_kernel.research.deep_person import retrieve_deep_person
 
 _log = logging.getLogger(__name__)
 
@@ -708,6 +709,7 @@ class AnswerResult:
     # n_dated, n_total, stale_warning}. None unless a freshness policy drove this run — so the UI/answer
     # can show an as-of date and flag when the cited evidence predates the vertical's recency horizon.
     freshness: dict | None = None
+    people_profiles: list = field(default_factory=list)
 
     @property
     def grounded(self) -> bool:
@@ -792,6 +794,10 @@ async def run_react(
     #                                           dossier leg driven by vertical-supplied templates. The
     #                                           kernel only handles bounded retrieval and BlockHit merge.
     company_reader: dict | None = None,        # vertical company-reader config (opaque templates/addenda).
+    deep_person: bool = False,                 # flag EIGEN_DEEP_PEOPLE_READER: additive first-step web
+    #                                           dossier leg for one person. The reader returns hits +
+    #                                           profile links; only hits enter the atom store.
+    person_reader: dict | None = None,         # vertical person-reader config (opaque templates/addenda).
     entity_open_web: bool = False,            # flag: fire ONE additive open-web Exa probe on step 0 for
                                               # single-entity questions (contract.subject_kind), quality-screened
     web_open_denoise: bool = False,           # flag EIGEN_WEB_OPEN_DENOISE: open the aux web leg to the FULL
@@ -922,7 +928,7 @@ async def run_react(
     # runs — lookups (and OFF) keep the default cap, byte-identical.
     # GOLDEN also earns the wider cap: a golden answer synthesizes the full picture, so it should draw on
     # up to 48/60 grounded findings, not the default 30 (the thinness limiter when material is rich).
-    if (deep_synthesis or deep_company or golden_answer) and kind != "lookup":
+    if (deep_synthesis or deep_company or deep_person or golden_answer) and kind != "lookup":
         _deep_cap = 48 if kind == "understanding" else 60   # management / other-non-lookup → 60
         compose_claim_cap = max(int(compose_claim_cap), _deep_cap)
 
@@ -1316,16 +1322,27 @@ async def run_react(
                         # probe is redundant — avoid the 2nd Exa call (base `web` leg already covers it)
                         and not web_open_denoise)
     _deep_company_entity = ""
+    _contract_entities: list[str] = []
     if _contract is not None:
         for _e in getattr(_contract, "entities", ()) or ():
             _es = str(_e).strip()
             if _es:
-                _deep_company_entity = _es
-                break
+                _contract_entities.append(_es)
+        if _contract_entities:
+            _deep_company_entity = _contract_entities[0]
     _deep_company = bool(deep_company and aux_source is not None and company_reader
                          and _contract
                          and getattr(_contract, "subject_kind", "") == "specific_entity"
                          and _deep_company_entity)
+    _deep_person_entity = ""
+    if _contract_entities:
+        _deep_person_entity = _contract_entities[0]
+    _subject_kind = getattr(_contract, "subject_kind", "") if _contract is not None else ""
+    _single_person_subject = (_subject_kind == "" and len(_contract_entities) == 1)
+    _deep_person = bool(deep_person and aux_source is not None and person_reader
+                        and _contract
+                        and (_subject_kind == "person" or _single_person_subject)
+                        and _deep_person_entity)
     # the tier-boost/recency ranker argument, honoring per-question authority suppression
     _ranker_arg = None if _suppress_auth else (evidence_ranker if evidence_fitness else None)
     if _ac:
@@ -1628,7 +1645,8 @@ async def run_react(
             # gather below, exactly as before (Rule 13 logging unchanged).
             async def _traced_leg(leg: str, co):
                 r = await co
-                await emit({"type": "retrieving", "source": leg, "hits": len(r)})
+                n = len(r[0]) if leg == "web:deep_person" and isinstance(r, tuple) else len(r)
+                await emit({"type": "retrieving", "source": leg, "hits": n})
                 return r
 
             # Assemble the retrieval legs: the flat corpus pass, the optional ADDITIVE routed leg
@@ -1642,6 +1660,11 @@ async def run_react(
                 if _deep_company and step_i == 0:
                     _legs.append(("web:deep", retrieve_deep_company(
                         company=_deep_company_entity, templates=company_reader or {},
+                        source=aux_source, tenant_id=tenant_id, workspace_id=workspace_id,
+                        llm=planner, budget=budget)))
+                if _deep_person and step_i == 0:
+                    _legs.append(("web:deep_person", retrieve_deep_person(
+                        person=_deep_person_entity, templates=person_reader or {},
                         source=aux_source, tenant_id=tenant_id, workspace_id=workspace_id,
                         llm=planner, budget=budget)))
                 # ADDITIVE open-web probe (flag): first step only, single-entity questions. Drops the
@@ -1662,8 +1685,11 @@ async def run_react(
                             diag.setdefault("failures", []).append(
                                 {"stage": f"{leg}_search", "detail": f"{type(r).__name__}: {r}"[:200]})
                     else:
+                        if leg == "web:deep_person":
+                            r, _profiles = r
+                            result.people_profiles = list(_profiles or [])
                         _screen_this = (
-                            leg in ("web:entity_open", "web:deep")
+                            leg in ("web:entity_open", "web:deep", "web:deep_person")
                             or (leg == "web" and web_open_denoise))
                         if _screen_this:
                             _raw_n = len(r)
@@ -1677,7 +1703,7 @@ async def run_react(
                             # a list (even empty) = judged → respect it.
                             if screened is None:
                                 r = _authoritative_subset(r)
-                            elif leg == "web:deep":
+                            elif leg in ("web:deep", "web:deep_person"):
                                 # The judge evaluates pages, while the deep leg deliberately keeps
                                 # several chunks per page. Keep every chunk whose page survived.
                                 _kept_urls = {getattr(h, "document_id", "") for h in screened}
@@ -1693,7 +1719,9 @@ async def run_react(
                             await emit({"type": "retrieving", "source": f"{leg}:kept", "hits": len(r)})
                             if diag is not None:
                                 _dkey = ("web_denoise" if leg == "web" else
-                                         "web_deep" if leg == "web:deep" else "web_entity_open")
+                                         "web_deep" if leg == "web:deep" else
+                                         "web_deep_person" if leg == "web:deep_person" else
+                                         "web_entity_open")
                                 diag.setdefault(_dkey, []).append(
                                     {"step": step_i + 1, "raw": _raw_n, "kept": _kept_n,
                                      "live": len(r), "dead_dropped": _kept_n - len(r)})

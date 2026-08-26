@@ -237,6 +237,8 @@ class ResearchService:
     #                                         data; the flag + routing predicate gate draft_intelligence)
     deep_company: bool = False              # EIGEN_DEEP_COMPANY_READER: additive first-step web dossier leg
     company_reader: dict | None = None      # vertical-supplied deep-company templates + compose addendum
+    deep_person: bool = False               # EIGEN_DEEP_PEOPLE_READER: first-step person dossier leg
+    person_reader: dict | None = None       # vertical-supplied deep-person templates + compose addendum
     entity_open_web: bool = False           # EIGEN_WEB_ENTITY_OPEN: entity-scoped open-web probe (screened) on step 0
     web_open_denoise: bool = False          # EIGEN_WEB_OPEN_DENOISE: open the aux web leg to the FULL web + denoise-screen ALL hits
     web_quality_prompt: str | None = None   # vertical-supplied LLM page-quality screen prompt for the open-web leg
@@ -614,6 +616,10 @@ class ResearchService:
             _dcr = (self.company_reader.get("attribution_addendum") or "").strip()
             if _dcr:
                 directive = (directive + "\n\n" + _dcr) if directive else _dcr
+        if self.deep_person and self.person_reader:
+            _dpr = (self.person_reader.get("attribution_addendum") or "").strip()
+            if _dpr:
+                directive = (directive + "\n\n" + _dpr) if directive else _dpr
         # Effort scales STRUCTURAL search knobs only (turns, results, context, citations, budget) —
         # never the grounding gates. At effort<=1.0 every value round-trips to today's exact defaults,
         # so this is a byte-identical no-op when the caller passes 1.0 (flag OFF).
@@ -752,6 +758,7 @@ class ResearchService:
             hypotheses=hypotheses, intelligence_frame=intelligence_frame,  # EIGEN_INTELLIGENCE_CORE (T1): inert; T2/T3
             kind=kind, derive_ideas=self.derive_ideas, derive_judge_llm=self.derive_judge_llm,
             deep_company=self.deep_company, company_reader=self.company_reader,
+            deep_person=self.deep_person, person_reader=self.person_reader,
             entity_open_web=self.entity_open_web, web_open_denoise=self.web_open_denoise,
             web_quality_prompt=self.web_quality_prompt,
             collect_diagnostics=self.collect_diagnostics,
