@@ -43,6 +43,7 @@ SLICE1_PREDICATES: list[dict] = [
     },
     {
         "name": "offers_product",
+        "mention_kind": "product",
         "status": "active",
         "object_kind": "value",
         "cardinality": "multi",
@@ -52,6 +53,7 @@ SLICE1_PREDICATES: list[dict] = [
     },
     {
         "name": "targets_customer",
+        "mention_kind": "market",
         "status": "active",
         "object_kind": "value",
         "cardinality": "multi",
@@ -61,6 +63,7 @@ SLICE1_PREDICATES: list[dict] = [
     },
     {
         "name": "uses_technology",
+        "mention_kind": "technology",
         "status": "active",
         "object_kind": "value",
         "cardinality": "multi",
@@ -226,6 +229,7 @@ DILIGENCE_PREDICATES: list[dict] = [
     },
     {
         "name": "ideal_customer_profile",
+        "mention_kind": "market",
         "status": "active",
         "object_kind": "value",
         "cardinality": "multi",

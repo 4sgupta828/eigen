@@ -259,6 +259,10 @@ async def run_claim_extraction(
         # Predicate set: explicit caller list, else the AUTHORITATIVE DB registry (§A).
         active = await _resolve_active_predicates(store, predicates)
         kind_by_predicate = _entity_kind_by_predicate(active)  # data-driven object router
+        # mention-first spine: which VALUE predicates' objects also accrete in the mention lane
+        # (tech/product/segment names) so promotion-by-corroboration can mint canonical nodes.
+        mention_kind_by_predicate = {p["name"]: p["mention_kind"]
+                                     for p in active if p.get("mention_kind")}
         # Injected vocabulary (§D): subject kind + the mintable object entity-kinds.
         subject_kind = store.subject_kind
         mintable = frozenset(store.mintable_entity_kinds)
@@ -351,6 +355,13 @@ async def run_claim_extraction(
                     object_value = c["object_value"]
                     object_entity_id = ""
                     object_norm = normalize_name(object_value)
+                    # tech-flow spine: a tech/product/segment VALUE also accretes as a mention
+                    # (across companies) so it can be promoted-by-corroboration into a node later.
+                    if object_policy == "mention" and object_value:
+                        _mk = mention_kind_by_predicate.get(predicate)
+                        if _mk:
+                            await store.upsert_mention(name=object_value, kind=_mk,
+                                                       tenant_id=tenant_id)
                 else:  # entity object
                     obj_name = c["object_entity_name"]
                     object_value = ""
