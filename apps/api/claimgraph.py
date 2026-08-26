@@ -457,6 +457,40 @@ class ClaimGraphStore:
                    WHERE mention_id=$1 AND tenant_id=$3""",
                 mention_id, entity_id, tenant_id)
 
+    async def promote_corroborated_mentions(self, *, tenant_id: str = "demo",
+                                            min_evidence: int = 3,
+                                            kinds: tuple[str, ...] | None = None) -> list[dict]:
+        """PROMOTION BY CORROBORATION — the zero-pollution way a tech/product/segment NODE is born.
+        A mention seen across `>= min_evidence` independent grounded pieces of evidence is a REAL
+        thing (repeated independent grounded mentions == an identity), so it earns a canonical
+        `rs_entity` node keyed at `<kind>:<norm>` — NOT soft-minted from a single bare name (that
+        was the pollution), but promoted only after corroboration. Fail-safe + idempotent (an
+        already-promoted mention is skipped; upsert_entity is idempotent). Returns the promotions
+        made [{mention_id, entity_id, kind, name, n_evidence}]. `kinds` optionally restricts which
+        node kinds may be promoted (e.g. only technology/product/market for the tech-flow spine)."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        params = [tenant_id, int(min_evidence)]
+        kind_clause = ""
+        if kinds:
+            kind_clause = " AND kind = ANY($3)"
+            params.append(list(kinds))
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""SELECT mention_id, kind, name, norm, n_evidence FROM rs_mention
+                    WHERE tenant_id=$1 AND status='unresolved' AND n_evidence >= $2{kind_clause}
+                    ORDER BY n_evidence DESC""",
+                *params)
+        promoted: list[dict] = []
+        for r in rows:
+            entity_id = f"{r['kind']}:{r['norm']}"
+            await self.upsert_entity(entity_id, kind=r["kind"], name=r["name"],
+                                     tenant_id=tenant_id)
+            await self.promote_mention(r["mention_id"], entity_id, tenant_id=tenant_id)
+            promoted.append({"mention_id": r["mention_id"], "entity_id": entity_id,
+                             "kind": r["kind"], "name": r["name"], "n_evidence": r["n_evidence"]})
+        return promoted
+
     async def add_alias(self, alias: str, entity_id: str, source: str = "") -> str:
         """Register a normalized alias → entity mapping (exact-match resolution only)."""
         await self.ensure_schema()

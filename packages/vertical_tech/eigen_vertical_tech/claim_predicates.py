@@ -214,6 +214,26 @@ DILIGENCE_PREDICATES: list[dict] = [
         "description": "The subject company's go-to-market / distribution / sales "
                        "motion as stated (e.g. 'bottoms-up PLG', 'direct enterprise sales').",
     },
+    {
+        "name": "revenue",
+        "status": "active",
+        "object_kind": "value",
+        "cardinality": "multi",
+        "temporal_policy": "point",
+        "description": "A stated REVENUE or ARR figure for the subject company, with its period "
+                       "if given (e.g. '$12M ARR', '$3M revenue FY24'). The single hardest diligence "
+                       "number — keep it distinct from generic traction, exactly as written.",
+    },
+    {
+        "name": "ideal_customer_profile",
+        "status": "active",
+        "object_kind": "value",
+        "cardinality": "multi",
+        "temporal_policy": "static",
+        "description": "The subject company's IDEAL CUSTOMER PROFILE (ICP) as stated — the specific "
+                       "buyer/persona/segment it is built for (e.g. 'mid-market fintech CISOs', "
+                       "'AI infra teams'), distinct from the broad market it targets.",
+    },
 ]
 
 

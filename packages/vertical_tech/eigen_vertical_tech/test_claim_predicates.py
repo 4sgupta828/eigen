@@ -13,11 +13,12 @@ from eigen_vertical_tech.claim_predicates import (
     active_predicates,
 )
 
-# The 12 diligence predicates the slice-2 build requires (breadth of dimensions).
+# The diligence predicates the build requires (breadth of dimensions; +revenue/ICP first-classed).
 _EXPECTED_DILIGENCE = {
     "has_founder", "has_investor", "raised_funding", "headcount",
     "company_location", "company_status", "business_model", "moat_claim",
     "traction_metric", "customer_evidence", "risk_factor", "go_to_market",
+    "revenue", "ideal_customer_profile",
 }
 # Entity predicates → the rs_entity.kind their object must mint.
 _EXPECTED_ENTITY_KIND = {"has_founder": "person", "has_investor": "investor"}
@@ -29,11 +30,11 @@ _VALID_CARDINALITY = {"single", "multi"}
 _VALID_TEMPORAL = {"static", "point", "interval"}
 
 
-def test_all_twelve_diligence_predicates_exist_and_are_active():
+def test_all_diligence_predicates_exist_and_are_active():
     names = [p["name"] for p in DILIGENCE_PREDICATES]
-    assert len(names) == 12
+    assert len(names) == 14
     assert set(names) == _EXPECTED_DILIGENCE
-    assert len(set(names)) == 12                       # no dups
+    assert len(set(names)) == 14                       # no dups
     for p in DILIGENCE_PREDICATES:
         assert p["status"] == "active"
 
