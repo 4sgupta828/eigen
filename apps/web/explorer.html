@@ -39,10 +39,19 @@
   .stat .n{font-family:var(--display); font-weight:600; font-size:21px; font-variant-numeric:tabular-nums; letter-spacing:-.02em}
   .stat .l{font-size:10.5px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.09em; margin-top:2px}
   .sec-label{font-family:var(--mono); font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:2px}
+  .lenses{display:flex; flex-direction:column; gap:5px}
+  .lens{display:flex; align-items:center; gap:10px; cursor:pointer; padding:8px 10px; border-radius:9px;
+    border:1px solid transparent; background:var(--panel-2); transition:border-color .15s,background .15s}
+  .lens:hover{background:var(--panel)}
+  .lens.on{border-color:var(--accent); background:var(--panel)}
+  .lens .lc{width:9px; height:9px; border-radius:2.5px; flex:none; box-shadow:0 0 8px currentColor}
+  .lens .lnm{font-size:13.5px; color:var(--ink-mute); font-weight:500}
+  .lens.on .lnm{color:var(--ink)}
+  .lens .lct{margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--ink-faint); font-variant-numeric:tabular-nums}
+  .lens-desc{font-size:12px; color:var(--ink-faint); margin:9px 2px 0; line-height:1.4; min-height:16px}
   .legend{display:flex; flex-direction:column; gap:9px}
-  .lg{display:flex; align-items:center; gap:11px; cursor:pointer; padding:5px 7px; margin:-5px -7px; border-radius:8px; transition:background .15s}
-  .lg:hover{background:var(--panel)}
-  .lg.off{opacity:.32}
+  .lg{display:flex; align-items:center; gap:11px; padding:4px 7px; margin:-4px -7px; border-radius:8px}
+  .lg.off{display:none}
   .dot{width:11px; height:11px; border-radius:50%; flex:none; box-shadow:0 0 10px currentColor}
   .lg .nm{font-size:13.5px}
   .lg .ct{margin-left:auto; font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); font-variant-numeric:tabular-nums}
@@ -53,6 +62,12 @@
   canvas{display:block; cursor:grab}
   canvas.grabbing{cursor:grabbing}
   .stage-tag{position:absolute; left:20px; bottom:16px; font-family:var(--mono); font-size:11px; color:var(--ink-faint); letter-spacing:.04em; pointer-events:none}
+  .crumb{position:absolute; left:20px; top:18px; display:flex; align-items:center; gap:9px; z-index:4;
+    font-family:var(--mono); font-size:12px; color:var(--ink-mute);
+    background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:7px 13px}
+  .crumb b{color:var(--ink); font-weight:600; font-family:var(--display)}
+  .crumb .x{cursor:pointer; color:var(--ink-faint); padding-left:4px; border-left:1px solid var(--line)}
+  .crumb .x:hover{color:var(--accent)}
   .reset{position:absolute; right:18px; top:18px; font-family:var(--mono); font-size:11px; letter-spacing:.06em; color:var(--ink-mute);
     background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:7px 12px; cursor:pointer; transition:border-color .15s,color .15s}
   .reset:hover{border-color:var(--accent); color:var(--accent)}
@@ -123,15 +138,21 @@
       <div class="stat"><div class="n" id="s-claim">&ndash;</div><div class="l">Cited facts</div></div>
     </div>
     <div>
-      <div class="sec-label">Entity kinds &mdash; click to filter</div>
+      <div class="sec-label">Focus lens</div>
+      <div class="lenses" id="lenses"></div>
+      <p class="lens-desc" id="lens-desc"></p>
+    </div>
+    <div>
+      <div class="sec-label">Shown in this lens</div>
       <div class="legend" id="legend"></div>
     </div>
-    <div class="hint"><b style="color:var(--ink-mute)">Drag</b> to pan &middot; <kbd>scroll</kbd> to zoom &middot;
-      drag a node to move it &middot; click a node for its grounded evidence.</div>
+    <div class="hint"><b style="color:var(--ink-mute)">Click a company</b> to expand its world &middot;
+      switch <b style="color:var(--ink-mute)">lens</b> to change focus &middot; <kbd>scroll</kbd> zoom &middot; drag to pan.</div>
   </aside>
 
   <div class="stage">
     <canvas id="cv"></canvas>
+    <div class="crumb" id="crumb" hidden></div>
     <button class="reset" id="reset">recenter</button>
     <div class="stage-tag" id="tag">live from the production claim graph</div>
     <div class="loading" id="loading"><div class="load-msg"><div class="spin"></div>Loading the graph&hellip;</div></div>
@@ -194,16 +215,59 @@
     let nc=0; values.forEach(a=>nc+=a.length); nc += links.length;
     document.getElementById("s-claim").textContent = nc;
 
-    const legendEl=document.getElementById("legend");
+    // ---- LENSES: focus-area clusters viewed ONE AT A TIME. Companies are the always-on spine;
+    // each lens reveals ONLY that focus area's satellites (never orphans the graph). Clicking a
+    // company drills into its FULL world (all kinds) regardless of lens. ----
+    const LENSES = [
+      {id:"landscape", label:"Landscape", c:"#ffcf6b", sat:[], preds:["compared_to"],
+        desc:"Companies and who they compete with."},
+      {id:"funding", label:"Funding", c:"#ff8fb3", sat:["investor"], preds:["has_investor"],
+        desc:"Companies and the investors backing them."},
+      {id:"talent", label:"Talent", c:"#57d9c4", sat:["person"], preds:["has_founder","key_person"],
+        desc:"Companies and the founders behind them."},
+      {id:"tech", label:"Tech & Product", c:"#7fb5ff", sat:["technology","product"],
+        preds:["uses_technology","offers_product"], desc:"What companies build and the tech they use."},
+      {id:"market", label:"Market", c:"#b79bff", sat:["category","market"],
+        preds:["operates_in_category","targets_customer","ideal_customer_profile"],
+        desc:"The categories companies play in and who they sell to."},
+    ];
+    let activeLens = LENSES[0];
+    let focusCompany = null;   // a drilled-in company → show its whole world; else lens view
+
     const counts={}; nodes.forEach(n=>counts[n.kind]=(counts[n.kind]||0)+1);
-    const hidden=new Set();
-    Object.keys(KIND).forEach(k=>{
-      const row=document.createElement("div"); row.className="lg"; row.dataset.k=k;
-      row.innerHTML='<span class="dot" style="background:'+KIND[k].c+';color:'+KIND[k].c+'"></span>'+
-        '<span class="nm">'+KIND[k].label+'</span><span class="ct">'+(counts[k]||0)+'</span>';
-      row.onclick=function(){ if(hidden.has(k)){hidden.delete(k);row.classList.remove("off");} else {hidden.add(k);row.classList.add("off");} reheat(.3); };
-      legendEl.appendChild(row);
+    const legendEl=document.getElementById("legend"), descEl=document.getElementById("lens-desc");
+    const lensEl=document.getElementById("lenses");
+    LENSES.forEach(L=>{
+      const nSat = L.sat.length ? L.sat.reduce((a,k)=>a+(counts[k]||0),0) : (counts.company||0);
+      const el=document.createElement("div"); el.className="lens"+(L===activeLens?" on":""); el.dataset.id=L.id;
+      el.innerHTML='<span class="lc" style="background:'+L.c+';color:'+L.c+'"></span>'+
+        '<span class="lnm">'+L.label+'</span><span class="lct">'+nSat+'</span>';
+      el.onclick=function(){ setLens(L); };
+      lensEl.appendChild(el);
     });
+    function renderLegend(){
+      const kinds=["company"].concat(activeLens.sat);
+      legendEl.innerHTML=kinds.map(k=>'<div class="lg"><span class="dot" style="background:'+
+        KIND[k].c+';color:'+KIND[k].c+'"></span><span class="nm">'+KIND[k].label+
+        '</span><span class="ct">'+(counts[k]||0)+'</span></div>').join("");
+    }
+    function setLens(L){
+      activeLens=L; focusCompany=null; selected=null;
+      document.querySelectorAll(".lens").forEach(e=>e.classList.toggle("on", e.dataset.id===L.id));
+      descEl.textContent=L.desc; renderLegend(); updateCrumb(); select(null); reheat(.65);
+    }
+    descEl.textContent=activeLens.desc; renderLegend();
+    // ---- visibility: lens-scoped, or (when drilled in) the focus company's full ego network ----
+    function inLens(kind){ return kind==="company" || activeLens.sat.indexOf(kind)>=0; }
+    function egoTouches(c,l){ return l.s===c || l.o===c; }
+    function nodeVisible(n){
+      if(focusCompany){ return n===focusCompany || links.some(l=>egoTouches(focusCompany,l) && egoTouches(n,l)); }
+      return inLens(n.kind);
+    }
+    function linkVisible(l){
+      if(focusCompany){ return egoTouches(focusCompany,l); }
+      return activeLens.preds.indexOf(l.p)>=0 && inLens(l.s.kind) && inLens(l.o.kind);
+    }
 
     const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
     const stage=cv.parentElement;
@@ -216,19 +280,22 @@
     nodes.forEach((n,i)=>{ const a=i*2.399963, rad=40+Math.sqrt(i)*24; n.x=Math.cos(a)*rad; n.y=Math.sin(a)*rad; n.vx=0; n.vy=0; });
 
     let hover=null, selected=null, dragNode=null;
-    function visible(n){ return !hidden.has(n.kind); }
+    function visible(n){ return nodeVisible(n); }   // lens/focus-scoped (defined above)
     function neighbors(n){ const s=new Set([n]); links.forEach(l=>{ if(l.s===n)s.add(l.o); if(l.o===n)s.add(l.s); }); return s; }
 
     function tick(){
       const rep=1400, spring=.015, springLen=64, center=.008, damp=.86;
-      for(let i=0;i<nodes.length;i++){ const a=nodes[i];
-        for(let j=i+1;j<nodes.length;j++){ const b=nodes[j]; let dx=a.x-b.x, dy=a.y-b.y; let d2=dx*dx+dy*dy||1;
+      // Only the CURRENTLY VISIBLE subgraph participates in the layout, so each lens / drill-down
+      // settles cleanly instead of being pushed around by off-lens nodes.
+      for(let i=0;i<nodes.length;i++){ const a=nodes[i]; if(!visible(a)) continue;
+        for(let j=i+1;j<nodes.length;j++){ const b=nodes[j]; if(!visible(b)) continue;
+          let dx=a.x-b.x, dy=a.y-b.y; let d2=dx*dx+dy*dy||1;
           if(d2<40000){ const f=rep/d2, d=Math.sqrt(d2), ux=dx/d, uy=dy/d;
             a.vx+=ux*f*alpha; a.vy+=uy*f*alpha; b.vx-=ux*f*alpha; b.vy-=uy*f*alpha; } } }
-      links.forEach(l=>{ const a=l.s,b=l.o; let dx=b.x-a.x, dy=b.y-a.y; let d=Math.sqrt(dx*dx+dy*dy)||1;
+      links.forEach(l=>{ if(!linkVisible(l)) return; const a=l.s,b=l.o; let dx=b.x-a.x, dy=b.y-a.y; let d=Math.sqrt(dx*dx+dy*dy)||1;
         const f=(d-springLen)*spring, ux=dx/d, uy=dy/d;
         a.vx+=ux*f*alpha; a.vy+=uy*f*alpha; b.vx-=ux*f*alpha; b.vy-=uy*f*alpha; });
-      nodes.forEach(n=>{ n.vx-=n.x*center*alpha; n.vy-=n.y*center*alpha;
+      nodes.forEach(n=>{ if(!visible(n)) return; n.vx-=n.x*center*alpha; n.vy-=n.y*center*alpha;
         if(n!==dragNode){ n.vx*=damp; n.vy*=damp; n.x+=n.vx; n.y+=n.vy; } });
       alpha*=0.985; if(alpha<0.02) alpha=0.02;
     }
@@ -237,7 +304,7 @@
       ctx.clearRect(0,0,W,H); ctx.save();
       ctx.translate(W/2+view.x, H/2+view.y); ctx.scale(view.k,view.k);
       const focus = hover||selected; const nb = focus ? neighbors(focus) : null;
-      links.forEach(l=>{ if(!visible(l.s)||!visible(l.o)) return;
+      links.forEach(l=>{ if(!linkVisible(l)) return;
         const on = !focus || (nb.has(l.s)&&nb.has(l.o));
         ctx.beginPath(); ctx.moveTo(l.s.x,l.s.y); ctx.lineTo(l.o.x,l.o.y);
         if(on && focus){ ctx.strokeStyle="rgba(200,214,244,.42)"; ctx.lineWidth=1.1/view.k; }
@@ -288,11 +355,19 @@
       view.k=nk; view.x=e.offsetX-W/2-wx*view.k; view.y=e.offsetY-H/2-wy*view.k; },{passive:false});
     document.getElementById("reset").onclick=function(){ view={x:0,y:0,k:1}; reheat(.5); };
 
-    const ev=document.getElementById("ev");
+    const ev=document.getElementById("ev"), crumbEl=document.getElementById("crumb");
     function esc(s){ return (s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+    function updateCrumb(){
+      if(focusCompany){ crumbEl.hidden=false;
+        crumbEl.innerHTML='focused on <b>'+esc(focusCompany.name)+'</b><span class="x" id="cx">&times; back</span>';
+        crumbEl.querySelector("#cx").onclick=function(ev){ ev.stopPropagation(); select(null); reheat(.6); };
+      } else { crumbEl.hidden=true; crumbEl.innerHTML=""; }
+    }
     function select(n){
       selected=n;
-      if(!n){ ev.innerHTML=document.getElementById("ev-empty").outerHTML; return; }
+      if(!n){ focusCompany=null; updateCrumb(); ev.innerHTML=document.getElementById("ev-empty").outerHTML; return; }
+      if(n.kind==="company"){ focusCompany=n; }   // drill into this company's full world
+      updateCrumb();
       const col=KIND[n.kind].c;
       let html='<div><div class="ev-kind" style="color:'+col+'">'+esc(n.kind)+'</div>'+
         '<div class="ev-name">'+esc(n.name)+'</div><div class="ev-id">'+esc(n.id)+'</div></div>';
