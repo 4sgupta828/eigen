@@ -532,3 +532,46 @@ def test_job_reads_active_predicates_from_registry_when_none_passed(monkeypatch)
         finally:
             await seed_store.close()
     asyncio.run(body())
+
+
+@integration
+def test_mention_policy_parks_objects_no_entity_pollution(monkeypatch) -> None:
+    """FRESH-graph zero-pollution: object_policy='mention' must mint NO object entity nodes
+    (no `category:<norm>`, no `__unresolved:`, no soft `<kind>:<norm>`). Bare-name objects
+    (the category, the compared-to company 'Widgets Inc') degrade to grounded VALUE claims and
+    are parked in the rs_mention lane; only SUBJECT companies remain canonical entities."""
+    async def body():
+        tenant = "t_" + uuid.uuid4().hex[:12]
+        await _seed_yc_blocks(tenant)
+        import eigen_vertical_tech.claim_extract as ce
+        monkeypatch.setattr(ce, "extract_typed_claims_counted", _fake_extractor([]))
+
+        res = await run_claim_extraction(
+            dsn=DSN, source_keys=["yc"], tenant_id=tenant, dry_run=False,
+            object_policy="mention")
+        assert res["status"] == "done"
+
+        store = ClaimGraphStore(DSN)
+        try:
+            pool = await store._get_pool()
+            async with pool.acquire() as conn:
+                polluted = await conn.fetchval(
+                    "SELECT count(*) FROM rs_entity WHERE tenant_id=$1 AND "
+                    "(entity_id LIKE 'category:%' OR entity_id LIKE '%__unresolved:%' "
+                    " OR kind = 'category')", tenant)
+                assert polluted == 0, "mention policy minted an object entity node (pollution)"
+                n_mentions = await conn.fetchval(
+                    "SELECT count(*) FROM rs_mention WHERE tenant_id=$1", tenant)
+                assert n_mentions >= 2, "object names must be parked in the mention lane"
+                n_company = await conn.fetchval(
+                    "SELECT count(*) FROM rs_entity WHERE tenant_id=$1 AND kind='company'",
+                    tenant)
+                assert n_company >= 1, "subject companies must still be canonical entities"
+                # the degraded object facts survive as grounded VALUE claims (evidence retained)
+                n_val = await conn.fetchval(
+                    "SELECT count(*) FROM rs_claim WHERE tenant_id=$1 AND object_kind='value'",
+                    tenant)
+                assert n_val >= 2
+        finally:
+            await store.close()
+    asyncio.run(body())

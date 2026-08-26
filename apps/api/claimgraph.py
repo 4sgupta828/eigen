@@ -261,6 +261,25 @@ CREATE TABLE IF NOT EXISTS rs_extraction_run (
     started_at       timestamptz NOT NULL DEFAULT now(),
     finished_at      timestamptz
 );
+
+-- MENTION LANE (mention-first ER). An evidence-bound name that has NO safe canonical identity
+-- (no strong id, no exact single match, no confident merge). It is NOT a canonical rs_entity —
+-- graph VIEWS never read this table — so a bare name can never pollute the entity space
+-- (no duplicate, no wrong merge). A mention is PROMOTED to a real rs_entity later, on stronger
+-- evidence (a strong id, an adjudicated match). Never DELETE; promotion sets status+promoted_to.
+CREATE TABLE IF NOT EXISTS rs_mention (
+    mention_id   text PRIMARY KEY,        -- deterministic 'mention:<kind>:<norm>' (idempotent per name)
+    tenant_id    text NOT NULL DEFAULT 'demo',
+    kind         text NOT NULL,           -- company|person|investor|product|technology|market
+    name         text NOT NULL,
+    norm         text NOT NULL,
+    status       text NOT NULL DEFAULT 'unresolved',  -- unresolved|promoted
+    promoted_to  text NOT NULL DEFAULT '',             -- canonical entity_id once promoted
+    n_evidence   int  NOT NULL DEFAULT 0,
+    first_seen   timestamptz NOT NULL DEFAULT now(),
+    last_seen    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_rs_mention_norm ON rs_mention (tenant_id, kind, norm);
 """
 
 # Whitelisted numeric counters finish_run() may update (guards the dynamic SET).
@@ -405,6 +424,38 @@ class ClaimGraphStore:
                 entity_id, tenant_id, kind, name, canonical_name, primary_domain,
                 first_run_id, json.dumps(facets or {}))
         return entity_id
+
+    async def upsert_mention(self, *, name: str, kind: str, tenant_id: str = "demo") -> str:
+        """Park an evidence-bound name in the MENTION LANE (mention-first ER). Idempotent per
+        (kind, norm): re-seeing the same name bumps `n_evidence`+`last_seen`, never a new row.
+        Returns the deterministic `mention:<kind>:<norm>` id. This is NOT a canonical entity — graph
+        views never read `rs_mention`, so a mention can never pollute the entity space. A later
+        strong-id/adjudicated match PROMOTES it (see `promote_mention`)."""
+        await self.ensure_schema()
+        norm = normalize_name(name)
+        mention_id = f"mention:{kind}:{norm}"
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO rs_mention (mention_id, tenant_id, kind, name, norm, n_evidence)
+                   VALUES ($1,$2,$3,$4,$5,1)
+                   ON CONFLICT (mention_id) DO UPDATE SET
+                     n_evidence = rs_mention.n_evidence + 1,
+                     last_seen = now()""",
+                mention_id, tenant_id, kind, name, norm)
+        return mention_id
+
+    async def promote_mention(self, mention_id: str, entity_id: str, *,
+                              tenant_id: str = "demo") -> None:
+        """Mark a mention PROMOTED to a canonical entity (once it earned a real identity anchor).
+        Append-only status flip; the mention row is retained for provenance/audit."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE rs_mention SET status='promoted', promoted_to=$2, last_seen=now()
+                   WHERE mention_id=$1 AND tenant_id=$3""",
+                mention_id, entity_id, tenant_id)
 
     async def add_alias(self, alias: str, entity_id: str, source: str = "") -> str:
         """Register a normalized alias → entity mapping (exact-match resolution only)."""

@@ -239,6 +239,7 @@ async def run_claim_extraction(
     model: str | None = None,
     predicates: list[dict] | None = None,
     store=None,
+    object_policy: str = "create",
 ) -> dict:
     """Scan `rs_block` for `source_keys`, extract typed grounded claims PER BLOCK, resolve
     entities by strong id, and upsert them into the claim graph. Returns a run-summary dict.
@@ -367,9 +368,27 @@ async def run_claim_extraction(
                             predicate, ekind, subject_kind)
                         ekind = subject_kind
 
-                    if ekind == subject_kind:
-                        # SUBJECT-KIND object (tech: company) → exact-alias resolve, else a
-                        # soft `__unresolved:` node (NO fuzzy merge — slice-1 ER policy).
+                    if object_policy == "mention":
+                        # MENTION-FIRST ER (fresh graph, zero pollution): promote the object to a
+                        # canonical entity edge ONLY on a real identity anchor (strong-id / exact
+                        # single / confident merge). A bare/ambiguous name is NOT minted as a node —
+                        # it degrades to a grounded VALUE (the cited name is kept, so the FACT
+                        # survives) and is parked in the mention lane for later promotion.
+                        from api.canonicalize import resolve_entity as _resolve_entity
+                        _r = await _resolve_entity(
+                            store, name=obj_name, kind=ekind, tenant_id=tenant_id,
+                            source_key=source_key, on_new="mention")
+                        if _r["method"] == "mention":
+                            await store.upsert_mention(name=obj_name, kind=ekind,
+                                                       tenant_id=tenant_id)
+                            object_kind = "value"          # degrade: grounded cited value, no node
+                            object_value = obj_name
+                            object_entity_id = ""
+                        else:
+                            object_entity_id = _r["entity_id"]   # real canonical edge
+                    elif ekind == subject_kind:
+                        # LEGACY 'create' (existing/discarded graph): SUBJECT-KIND object (tech:
+                        # company) → exact-alias resolve, else a soft `__unresolved:` node.
                         resolved = await store.resolve_alias(obj_name)
                         if resolved:
                             object_entity_id = resolved
@@ -378,8 +397,8 @@ async def run_claim_extraction(
                             await store.upsert_entity(object_entity_id, kind=subject_kind,
                                                       name=obj_name, tenant_id=tenant_id)
                     else:
-                        # category / person / investor → deterministic soft `<kind>:<norm>`
-                        # node of the configured kind (no alias resolution — minted fresh).
+                        # LEGACY 'create': category/person/investor → deterministic soft
+                        # `<kind>:<norm>` node of the configured kind (minted fresh).
                         object_entity_id = f"{ekind}:{object_norm}"
                         await store.upsert_entity(object_entity_id, kind=ekind,
                                                   name=obj_name, tenant_id=tenant_id)
