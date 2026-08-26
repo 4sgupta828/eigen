@@ -73,8 +73,12 @@ def _run(reflection: str, subject_kind: str, monkeypatch):
 
 def test_web_coverage_fires_on_steer_for_general(monkeypatch):
     seen = _run("steer", "general", monkeypatch)
-    assert seen.get("queries")                       # fired
-    assert seen["queries"][:2] == ["moat", "ICP"]    # axis-only dimensions lead
+    qs = seen.get("queries")
+    assert qs                                        # fired
+    # topic-anchored axis legs lead (the question's subject prefixes each dimension so a bare 'moat'
+    # search isn't off-topic), then entity×axis legs
+    assert qs[0].endswith("moat") and "video" in qs[0].lower()
+    assert any("segment one" in q for q in qs)       # entity×axis legs present
 
 
 def test_web_coverage_off_is_byte_identical(monkeypatch):

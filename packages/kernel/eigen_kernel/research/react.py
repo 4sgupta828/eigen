@@ -1419,7 +1419,8 @@ async def run_react(
     if reflection in ("shadow", "steer") and aux_source is not None and _contract is not None \
             and _subject_kind not in ("specific_entity", "person"):
         _web_cov_queries = build_coverage_queries(
-            _contract_entities, list(getattr(_contract, "axes", ()) or []))
+            _contract_entities, list(getattr(_contract, "axes", ()) or []),
+            topic=(question or "")[:90])   # anchor bare-axis legs to the question's subject (on-topic web search)
     _web_coverage = bool(reflection == "steer" and _web_cov_queries)
     if _web_cov_queries:
         _log.info("web-coverage (%s): fires=%s %d legs %r",

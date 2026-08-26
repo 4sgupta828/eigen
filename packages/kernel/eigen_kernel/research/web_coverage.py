@@ -28,7 +28,7 @@ _DEFAULT_MAX_QUERIES = 8          # hard cap on web legs — credit/latency boun
 _DEFAULT_MAX_RESULTS_PER_QUERY = 4
 _DEFAULT_MAX_CHARS = 6000
 _DEFAULT_MAX_CHUNKS_PER_PAGE = 3
-_DEFAULT_CONCURRENCY = 6
+_DEFAULT_CONCURRENCY = 4          # gentler on the open-web provider (fewer simultaneous searches → fewer 429s)
 
 
 async def retrieve_web_coverage(
@@ -48,6 +48,11 @@ async def retrieve_web_coverage(
     web_open=True drops the trusted-domain whitelist so the players' own/business coverage is reachable;
     the caller MUST screen the result through the web-quality judge + span-gate (as the web:deep legs do)
     before it can be cited. Returns [] on no source / no queries / total failure.
+
+    ROBUSTNESS (the thin-coverage fix): each leg RETRIES ONCE on an error or an empty result — the open-web
+    provider throttles/fails transiently under load, and a whole fan-out silently collapsing to [] is worse
+    than a slower one. A per-fan-out SUMMARY is logged (legs / ok / empty / failed / hits) so a degraded run
+    is VISIBLE (Rule 13), never a silent shrug.
     """
     if source is None or not queries:
         return []
@@ -66,50 +71,71 @@ async def retrieve_web_coverage(
         return []
 
     sem = asyncio.Semaphore(max(1, int(concurrency)))
+    stats = {"ok": 0, "empty": 0, "failed": 0}
+
+    async def _search_once(q: str) -> list[BlockHit]:
+        return await source.search(RetrievalRequest(
+            query=q, tenant_id=tenant_id, workspace_id=workspace_id,
+            k=max_results_per_query * max_chunks_per_page, web_open=True,
+            web_max_results=max_results_per_query, web_max_chars=max_chars,
+            web_max_chunks_per_page=max_chunks_per_page,
+            web_extra_facets={"source_kind": "web", "web_role": "coverage"}))
 
     async def _one(q: str) -> list[BlockHit]:
         async with sem:
-            try:
-                return await source.search(RetrievalRequest(
-                    query=q, tenant_id=tenant_id, workspace_id=workspace_id,
-                    k=max_results_per_query * max_chunks_per_page, web_open=True,
-                    web_max_results=max_results_per_query, web_max_chars=max_chars,
-                    web_max_chunks_per_page=max_chunks_per_page,
-                    web_extra_facets={"source_kind": "web", "web_role": "coverage"}))
-            except Exception as e:   # noqa: BLE001 — a dead leg never breaks the answer
-                _log.warning("web-coverage leg failed on %r: %s", q, e)
-                return []
+            for attempt in (1, 2):           # retry ONCE on error OR empty (transient provider throttling)
+                try:
+                    r = await _search_once(q)
+                except Exception as e:   # noqa: BLE001 — a dead leg never breaks the answer
+                    if attempt == 2:
+                        stats["failed"] += 1
+                        _log.warning("web-coverage leg failed (both attempts) on %r: %s", q, e)
+                        return []
+                    continue
+                if r:
+                    stats["ok"] += 1
+                    return r
+                if attempt == 2:             # two empties → genuinely nothing for this query
+                    stats["empty"] += 1
+                    return []
+            return []
 
     results = await asyncio.gather(*(_one(q) for q in qs))
     out: list[BlockHit] = []
     for r in results:
         out.extend(r or [])
+    _log.info("web-coverage fan-out: %d legs → ok=%d empty=%d failed=%d, %d hits",
+              len(qs), stats["ok"], stats["empty"], stats["failed"], len(out))
     return out
 
 
-def build_coverage_queries(entities: list[str], axes: list[str], *, cap: int = _DEFAULT_MAX_QUERIES) -> list[str]:
-    """Structural expansion (Rule 18 — code owns the shape, the LLM-derived entities/axes own the
-    meaning): axis-only legs FIRST (the business dimensions a thin corpus misses — 'moat', 'ICP',
-    'distribution'), THEN entity×axis legs (per named player), axis-major round-robin, capped. Deduped
-    against itself. Empty entities → axis-only; empty axes → entity-only; both empty → []."""
+def build_coverage_queries(entities: list[str], axes: list[str], *, cap: int = _DEFAULT_MAX_QUERIES,
+                           topic: str = "") -> list[str]:
+    """Structural expansion (Rule 18 — code owns the shape, the LLM-derived entities/axes/topic own the
+    meaning): TOPIC-anchored axis legs FIRST (the business dimensions a thin corpus misses — 'moat',
+    'ICP', 'distribution' — anchored to the question's subject so a bare 'moat' search isn't off-topic),
+    THEN entity×axis legs (per named category/player), axis-major round-robin, capped. Deduped. `topic`
+    is a short subject string from the caller (the question's core); when empty the axis legs are bare
+    (today's behavior). Empty entities → axis-only; empty axes → entity-only; both empty → []."""
     axes = [a.strip() for a in (axes or []) if a and a.strip()]
     entities = [e.strip() for e in (entities or []) if e and e.strip()]
+    topic = (topic or "").strip()
     seen: set[str] = set()
     out: list[str] = []
 
     def _add(q: str) -> bool:
-        q = q.strip()
+        q = " ".join((q or "").split()).strip()     # collapse whitespace
         k = q.lower()
         if q and k not in seen:
             seen.add(k)
             out.append(q)
         return len(out) < cap
 
-    for a in axes:                       # axis-only first — the missing business dimensions
-        if not _add(a):
+    for a in axes:                       # topic-anchored axis legs — the missing business dimensions
+        if not _add(f"{topic} {a}" if topic else a):
             return out
     for a in (axes or [""]):             # then per-entity×axis (or bare entity when no axes)
         for e in entities:
-            if not _add(f"{e} {a}".strip()):
+            if not _add(f"{e} {a}"):
                 return out
     return out
