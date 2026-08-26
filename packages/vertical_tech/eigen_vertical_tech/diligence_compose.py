@@ -43,10 +43,11 @@ from typing import Any
 DIMENSIONS: list[tuple[str, list[str]]] = [
     ("Team", ["has_founder", "headcount"]),
     ("Funding", ["raised_funding", "has_investor"]),
-    ("Traction", ["traction_metric"]),
+    ("Traction", ["traction_metric", "revenue"]),
     ("Product & Technology", ["offers_product", "uses_technology"]),
     ("Market & Customers",
-     ["operates_in_category", "targets_customer", "customer_evidence", "compared_to"]),
+     ["operates_in_category", "targets_customer", "ideal_customer_profile",
+      "customer_evidence", "compared_to"]),
     ("Moat & Differentiation",
      ["claims_differentiator", "moat_claim", "business_model", "go_to_market", "risk_factor"]),
     ("Company profile", ["company_location", "company_status"]),
