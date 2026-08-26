@@ -711,6 +711,10 @@ class AnswerResult:
     # can show an as-of date and flag when the cited evidence predates the vertical's recency horizon.
     freshness: dict | None = None
     people_profiles: list = field(default_factory=list)
+    # REFLECTION echo (flag EIGEN_REFLECTION=steer): {intent, answer_brief, confidence} when the pass
+    # steered this answer — the app echoes it so the UI can show "here's what I understood" and so P2 is
+    # prod-observable without the diag flag. Empty dict when reflection is off / low-confidence.
+    reflection: dict = field(default_factory=dict)
 
     @property
     def grounded(self) -> bool:
@@ -1347,9 +1351,10 @@ async def run_react(
     if _reflect_steer:
         _log.info("reflection intent (%s): %r | brief=%r", getattr(_contract, "intent_confidence", ""),
                   _reflect_intent[:120], _reflect_brief[:160])
+        result.reflection = {"intent": _reflect_intent, "answer_brief": _reflect_brief,
+                             "confidence": getattr(_contract, "intent_confidence", "")}
         if diag is not None:
-            diag["reflection"] = {"intent": _reflect_intent, "answer_brief": _reflect_brief,
-                                  "confidence": getattr(_contract, "intent_confidence", "")}
+            diag["reflection"] = dict(result.reflection)
     _web_recency_days = _profile.get("web_recency_days") if _ac else None
     _web_open = bool(_ac and _profile.get("web_open"))   # drop the trusted-domain whitelist (open web)
     # entity-open (flag): a single-entity diligence question earns ONE additive open-web probe.

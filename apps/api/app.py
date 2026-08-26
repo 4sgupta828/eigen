@@ -1144,6 +1144,8 @@ class ResearchOut(BaseModel):
     companies: list = []                  # companies this answer is grounded on [{name,entity_id,url,
     #                                       eigen_url}] for prose hyperlinking (empty unless flag on)
     people: list = []                     # people profile links [{name,url,host}]
+    reflection: dict = {}                 # EIGEN_REFLECTION=steer: {intent, answer_brief, confidence} — what
+    #                                       the pass understood the user is really after (empty when off/low-conf)
     unverified_priors: list = []          # EIGEN_PARAMETRIC_LED (T3): the model's OWN asserted facts that
     #                                       retrieval could NOT ground [{text,needs_freshness}] — the
     #                                       labeled register, kept OUT of `claims`/grounded prose (empty
@@ -2706,6 +2708,7 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             related_research=related,
             companies=companies,
             people=(getattr(res, "people_profiles", []) or []),
+            reflection=(getattr(res, "reflection", {}) or {}),
             unverified_priors=((getattr(res, "unverified_priors", []) or [])
                                if parametric_led_enabled() else []),
         )
