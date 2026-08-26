@@ -77,18 +77,21 @@
   .claim .obj{font-size:14px; margin-top:2px; color:var(--ink)}
   .claim .q{font-size:12px; color:var(--ink-mute); margin-top:7px; padding-left:10px; border-left:2px solid var(--line); font-style:italic; line-height:1.45}
   .claim .q::before{content:"\201C"} .claim .q::after{content:"\201D"}
-  .facts-h{display:flex; align-items:center; justify-content:space-between; margin:12px 0 6px}
+  .facts-h{display:flex; align-items:center; justify-content:space-between; margin:12px 0 8px}
   .facts-h .ct{font-family:var(--mono); font-size:11px; color:var(--ink-faint)}
-  table.facts{width:100%; border-collapse:collapse; font-size:12.5px}
-  table.facts thead th{text-align:left; font-family:var(--mono); font-size:9.5px; letter-spacing:.12em;
-    text-transform:uppercase; color:var(--ink-faint); padding:5px 8px; border-bottom:1px solid var(--line);
-    position:sticky; top:0; background:var(--ground)}
-  table.facts td{padding:7px 8px; border-bottom:1px solid var(--line-soft); vertical-align:top}
-  table.facts td.f-dim{font-family:var(--mono); font-size:10px; color:var(--ink-faint);
-    text-transform:uppercase; white-space:nowrap; letter-spacing:.04em}
-  table.facts td.f-val{color:var(--ink); font-weight:500; min-width:90px}
-  table.facts td.f-q{color:var(--ink-mute); font-style:italic; font-size:11.5px; line-height:1.4}
-  table.facts tr:hover td{background:var(--panel)}
+  .cluster{margin:0 0 9px; padding-bottom:9px; border-bottom:1px solid var(--line-soft)}
+  .cluster:last-child{border-bottom:none}
+  .cl-key{font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--ink-faint); margin-bottom:6px}
+  .cl-vals{display:flex; flex-wrap:wrap; gap:6px}
+  .cl-pill{display:inline-flex; align-items:center; gap:6px; background:var(--panel);
+    border:1px solid var(--line-soft); border-radius:7px; padding:4px 10px; font-size:12.5px; color:var(--ink);
+    cursor:pointer} .cl-pill:hover{border-color:var(--line)}
+  .cl-facts{display:flex; flex-direction:column; gap:8px}
+  .cl-fact .cl-fv{font-size:13px; color:var(--ink); font-weight:500; line-height:1.35}
+  .cl-q{font-size:11.5px; color:var(--ink-mute); font-style:italic; margin-top:3px; padding-left:9px;
+    border-left:2px solid var(--line); line-height:1.42}
+  .cl-q::before{content:"\201C"} .cl-q::after{content:"\201D"}
   .link-pill{display:inline-flex; align-items:center; gap:7px; background:var(--panel); border:1px solid var(--line-soft); border-radius:20px; padding:5px 11px 5px 9px; font-size:13px; cursor:pointer; transition:border-color .15s}
   .link-pill:hover{border-color:var(--accent)}
   .link-wrap{display:flex; flex-wrap:wrap; gap:7px}
@@ -161,6 +164,10 @@
     company_status:"status", business_model:"business model", moat_claim:"moat",
     customer_evidence:"customer", go_to_market:"go-to-market", risk_factor:"risk",
   };
+  // canonical dimension order — clusters render in THIS order for EVERY company (stable read).
+  const DIM_ORDER = ["operates in","produces","uses tech","backed by","funding","revenue","traction",
+    "competes with","targets","ICP","customer","founded by","key person","headcount","business model",
+    "go-to-market","moat","differentiator","location","status","risk"];
 
   function boot(RAW){
     const nodeById = new Map();
@@ -290,20 +297,32 @@
       let html='<div><div class="ev-kind" style="color:'+col+'">'+esc(n.kind)+'</div>'+
         '<div class="ev-name">'+esc(n.name)+'</div><div class="ev-id">'+esc(n.id)+'</div></div>';
       if(n.kind==="company"){
-        // ONE grounded-facts TABLE: every relationship edge + every value attribute, as
-        // Dimension · Value · Source-quote. A linked entity value is clickable to navigate.
-        const rows=[];
-        links.filter(l=>l.s===n).forEach(l=>rows.push(
-          {dim:PRED_LABEL[l.p]||l.p, val:l.o.name, to:l.o.id, kc:KIND[l.o.kind]?KIND[l.o.kind].c:col, q:""}));
-        (values.get(n.id)||[]).forEach(a=>rows.push(
-          {dim:PRED_LABEL[a.p]||a.p, val:a.v, to:"", kc:"", q:a.q||""}));
-        html+='<div class="facts-h"><span class="sec-label">Grounded facts</span><span class="ct">'+rows.length+'</span></div>';
-        html+='<table class="facts"><thead><tr><th>Dimension</th><th>Value</th><th>Source quote</th></tr></thead><tbody>';
-        rows.forEach(r=>{
-          const v = r.to ? '<span class="link-pill" data-id="'+esc(r.to)+'"><span class="dot" style="width:7px;height:7px;background:'+r.kc+';color:'+r.kc+'"></span>'+esc(r.val)+'</span>' : esc(r.val);
-          html+='<tr><td class="f-dim">'+esc(r.dim)+'</td><td class="f-val">'+v+'</td><td class="f-q">'+esc(r.q)+'</td></tr>';
+        // Grounded facts CLUSTERED by dimension: one block per key (e.g. all "backed by" values
+        // together), values as compact chips (entity values clickable). No source quote — saves space.
+        const groups=new Map();
+        function add(dim,item){ if(!groups.has(dim)) groups.set(dim,[]); groups.get(dim).push(item); }
+        links.filter(l=>l.s===n).forEach(l=>add(PRED_LABEL[l.p]||l.p,
+          {val:l.o.name, to:l.o.id, kc:KIND[l.o.kind]?KIND[l.o.kind].c:col}));
+        (values.get(n.id)||[]).forEach(a=>add(PRED_LABEL[a.p]||a.p, {val:a.v, to:"", kc:"", q:a.q||""}));
+        let nfacts=0; groups.forEach(v=>nfacts+=v.length);
+        html+='<div class="facts-h"><span class="sec-label">Grounded facts</span><span class="ct">'+nfacts+'</span></div>';
+        // fixed order first (DIM_ORDER), then any remaining dims not in the list, so every company
+        // reads in the SAME dimension sequence.
+        const ordered=DIM_ORDER.filter(d=>groups.has(d))
+          .concat([...groups.keys()].filter(d=>!DIM_ORDER.includes(d)));
+        ordered.forEach(dim=>{
+          const items=groups.get(dim);
+          html+='<div class="cluster"><div class="cl-key">'+esc(dim)+'</div>';
+          if(items[0].to){   // entity relationships → clickable pills (no per-edge quote in the feed)
+            html+='<div class="cl-vals">'+items.map(it=>
+              '<span class="cl-pill" data-id="'+esc(it.to)+'"><span class="dot" style="width:7px;height:7px;background:'+it.kc+';color:'+it.kc+'"></span>'+esc(it.val)+'</span>').join("")+'</div>';
+          } else {           // value facts → value + its span-verified source quote
+            html+='<div class="cl-facts">'+items.map(it=>
+              '<div class="cl-fact"><div class="cl-fv">'+esc(it.val)+'</div>'+
+              (it.q?'<div class="cl-q">'+esc(it.q)+'</div>':'')+'</div>').join("")+'</div>';
+          }
+          html+='</div>';
         });
-        html+='</tbody></table>';
       } else {
         const back=links.filter(l=>l.o===n).map(l=>l.s);
         const rel = n.kind==="person"?"Founder of":n.kind==="investor"?"Backs":"Companies in this category";
@@ -312,7 +331,7 @@
       }
       html+='<div class="prov-note">Every fact above is <b>span-verified</b> to a quote in a source document. This is a live slice of Eigen’s production claim graph.</div>';
       ev.innerHTML=html;
-      ev.querySelectorAll(".link-pill").forEach(p=>p.onclick=function(){ const t=nodeById.get(p.dataset.id); if(t){ select(t); reheat(.25); }});
+      ev.querySelectorAll(".link-pill,.cl-pill").forEach(p=>p.onclick=function(){ const t=nodeById.get(p.dataset.id); if(t){ select(t); reheat(.25); }});
       ev.scrollTop=0;
     }
 
