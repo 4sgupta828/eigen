@@ -420,6 +420,12 @@ class ResearchService:
                     _c = await derive_contract(question, self.llm, self.contract_prompt)
                     _stance = getattr(_c, "stance", "") if _c else ""
                     _subject = getattr(_c, "subject_kind", "") if _c else ""
+                    _imode = getattr(_c, "mode", "") if _c else ""
+                    # ENUMERATION routes to parametric-led, NOT here: a "best-X / list the tools / map the
+                    # landscape" ask (mode=="enumerative") wants the model to DRAFT the candidate set and
+                    # retrieval to VERIFY each — competing-hypotheses is the wrong frame for it. So an
+                    # enumerative contract is ineligible for intelligence-core, freeing it for the
+                    # parametric-led block below (which no longer requires stance=='established').
                     # Eligible stances = {established, balanced}. `balanced` (genuinely contested /
                     # multi-sided) is the PRIME case for competing-hypotheses + adversarial for/against
                     # retrieval, and the contract flips a strategy Q between 'established' and 'balanced'
@@ -429,7 +435,8 @@ class ResearchService:
                     # control Q also stays out via the specific_entity guard.
                     _intel_eligible = (_stance in ("established", "balanced")
                                        and s.kind in ("understanding", "management")
-                                       and _subject != "specific_entity")
+                                       and _subject != "specific_entity"
+                                       and _imode != "enumerative")
                     if not _intel_eligible:
                         _skip_reason = (f"ineligible(kind={s.kind!r},stance={_stance!r},"
                                         f"subject={_subject!r})")
