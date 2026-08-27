@@ -2037,42 +2037,18 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
         _REL_KINDS = {"investor", "product", "technology", "category", "market", "company"}
         rel_preds = {p: k for p, k in _pred_kind.items()
                      if k in _REL_KINDS and p not in ("has_founder", "key_person")}
-        # STRUCTURAL heavy-dedup for relationship node keys (Rule 18 — computable, not semantic): collapse
-        # minor surface-form variants of the SAME thing ("Text to Speech" / "text-to-speech" / "Text to
-        # Speech API" → one node) by a signature that drops punctuation, boilerplate suffixes (api/platform/
-        # sdk/…), articles, and a trailing plural. NOT semantic alias merging (a16z ≈ Andreessen Horowitz) —
-        # that stays the LLM alias-resolver's job. Display name = the SHORTEST clean variant in the group.
-        import re as _re0
-        _REL_NOISE = {"api", "apis", "platform", "platforms", "sdk", "app", "apps",
-                      "the", "a", "an", "inc", "llc", "ltd", "co", "corp"}
-        def _relsig(v: str) -> str:
-            s = _re0.sub(r"[^\w\s]", " ", (v or "").lower())
-            toks = [t for t in s.split() if t and t not in _REL_NOISE]
-            toks = [t[:-1] if len(t) > 3 and t.endswith("s") and not t.endswith("ss") else t for t in toks]
-            return " ".join(toks) or _re0.sub(r"\s+", " ", (v or "").lower()).strip()
-        _relname: dict = {}
-        for r in val_rows:
-            kind = rel_preds.get(r["predicate"])
-            if not kind or not r["object_norm"]:
-                continue
-            nid = f"{kind}:{_relsig(r['object_value'])}"
-            nm = r["object_value"] or r["object_norm"]
-            cur = _relname.get(nid)
-            if cur is None or len(nm) < len(cur):        # keep the shortest clean surface form as the label
-                _relname[nid] = nm
         _seen = {(e["s"], e["p"], e["o"]) for e in edges}
         for r in val_rows:
             kind = rel_preds.get(r["predicate"])
             if not kind or not r["object_norm"]:
                 continue
-            nid = f"{kind}:{_relsig(r['object_value'])}"
+            nid = f"{kind}:{r['object_norm']}"
             k = (r["subject_id"], r["predicate"], nid)
             if k in _seen:
                 continue
             _seen.add(k)
             edges.append({"s": r["subject_id"], "sname": subj_name.get(r["subject_id"], r["subject_id"]),
-                          "p": r["predicate"], "o": nid, "oname": _relname.get(nid) or r["object_value"],
-                          "okind": kind})
+                          "p": r["predicate"], "o": nid, "oname": r["object_value"], "okind": kind})
         # PEOPLE edges: company -> per-company person node (founders/key-people), deduped by node id.
         for r in person_rows:
             pid = f"person:{r['subject_id']}:{r['object_norm']}"
