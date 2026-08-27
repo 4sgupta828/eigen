@@ -2603,9 +2603,29 @@ function diagBoxMarkup(data){
     }).join(" ");
     sources = `<div class="summary" style="border:none;padding:.4rem 0 0"><span>Sources used:</span> ${chips}</div>`;
   }
+  // Answer SHAPE (the derived question contract that decided enumerate vs reason) — observability.
+  const qc = data.question_contract || null; let contractLine = "";
+  if(qc && qc.mode){
+    const ax = (qc.axes||[]).slice(0,8).map(esc).join(", ");
+    contractLine = `<div class="summary" style="border:none;padding:.4rem 0 0"><span>Answer shape:</span> `
+      + `<span class="pill" style="cursor:default">${esc(qc.mode)}</span>`
+      + (ax?` <span class="mstat dim">dimensions: ${ax}</span>`:"")
+      + ((qc.entities&&qc.entities.length)?` <span class="mstat dim">${qc.entities.length} named items</span>`:"")
+      + `</div>`;
+  }
+  // SEARCH-SOURCE ATTRIBUTION — which web engine's evidence actually LANDED (cited/retrieved) + how many
+  // cited pages ONLY it surfaced (novel). Shows how much Brave vs Exa each contribute.
+  const wp = data.web_providers || {}; const wpk = Object.keys(wp); let webAttr = "";
+  if(wpk.length){
+    const chips = wpk.map(k=>{ const w = wp[k]; const helped = (w.cited||0)>0;
+      return `<span class="pill" style="cursor:default;${helped?'color:var(--on-accent);background:var(--verified);border-color:var(--verified)':''}">`
+        + `${esc(k)} · ${w.cited||0}/${w.retrieved||0} cited${w.unique_cited?` · ${w.unique_cited} novel`:""}</span>`;
+    }).join(" ");
+    webAttr = `<div class="summary" style="border:none;padding:.4rem 0 0"><span>Web engines:</span> ${chips}</div>`;
+  }
   return `<details class="diagbox"><summary><span class="diaghead">◔ Diagnostics<span class="evtoggle"></span></span>
       <div class="diaghint">How this answer was produced — grounding funnel, the agent's turns, tool calls, retries and failures.</div></summary>
-    <div class="diagbody"><div class="ansmeta" style="margin:0;padding:0;border:none">${bits.join("")}</div>${sources}${diagTraceMarkup(data.diagnostics)}</div></details>`;
+    <div class="diagbody"><div class="ansmeta" style="margin:0;padding:0;border:none">${bits.join("")}</div>${contractLine}${sources}${webAttr}${diagTraceMarkup(data.diagnostics)}</div></details>`;
 }
 
 // Troubleshooting trace (flag EIGEN_DIAG_TRACE): the ReAct run's turns, tool-call breakdown, grounding
