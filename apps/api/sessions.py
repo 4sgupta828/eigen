@@ -98,6 +98,7 @@ class SessionStore:
                    reasoning_conclusion: str = "",
                    diagnostics: dict | None = None,
                    question_contract: dict | None = None,
+                   web_providers: dict | None = None,
                    kind: str = "research",
                    extra: dict | None = None) -> str:
         await self._ensure()
@@ -129,6 +130,8 @@ class SessionStore:
             # Schema-registry phase 0: the derived QuestionContract (mode/entities/axes) rides the
             # JSONB thread turn — additive field only, no schema migration needed.
             turn0["question_contract"] = question_contract
+        if web_providers:
+            turn0["web_providers"] = web_providers   # search-source attribution (JSONB thread turn; additive)
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(

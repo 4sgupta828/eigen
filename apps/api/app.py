@@ -2811,6 +2811,8 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                 # on the session turn (JSONB thread — additive field, no migration). Only present
                 # when a contract was actually derived (EIGEN_QUESTION_CONTRACT shadow/steer).
                 turn["question_contract"] = res.question_contract
+            if getattr(res, "web_providers", None):
+                turn["web_providers"] = res.web_providers   # search-source attribution (additive JSONB)
             # Audit field (additive JSONB): when the question came from Guided intake, the intake
             # CONVERSATION transcript (shown only to a logged-in admin).
             _extra = {}
@@ -2848,6 +2850,7 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                         reasoning_conclusion=(getattr(res, "reasoning_conclusion", "") if reasoning_read_enabled() else ""),
                         diagnostics=(getattr(res, "diagnostics", None) if diag_trace_enabled() else None),
                         question_contract=getattr(res, "question_contract", None),
+                        web_providers=(getattr(res, "web_providers", {}) or None),
                         extra=(_extra or None))
             except Exception:
                 session_id = None
