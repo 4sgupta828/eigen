@@ -68,18 +68,28 @@ class _ContractOut(BaseModel):
 
 
 async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str | None,
-                          max_tokens: int = 400, attempts: int = 2) -> Contract | None:
-    """Derive the Contract, RETRYING once on a None result. A None means the derivation call errored or
-    emitted an invalid mode — a transient flake that would otherwise silently drop the answer to the thin
-    default shape (the muted-answer path). Two attempts make that rare; a genuine no-prompt/no-llm case
-    still returns None immediately (no wasted call). The per-attempt logic is `_derive_contract_once`."""
+                          max_tokens: int = 400, votes: int = 1) -> Contract | None:
+    """Derive the Contract by SELF-CONSISTENCY: run the classification `votes` times CONCURRENTLY and take
+    the MAJORITY MODE. A single call at the model's default sampling has irreducible variance on borderline
+    questions (a mixed "list all X + how/limits" flips enumerative↔exploratory run-to-run → the same
+    question mutes ~a third of the time). Voting stabilizes the SHAPE decision — the LLM still owns it
+    (Rule 18); we only reduce sampling noise — and dissolves the transient-None flake (a lone failed call
+    can't swing a majority). For the winning mode, return the RICHEST result (most axes) so the table
+    columns / coverage aren't lost to a terse draw. All None / no prompt / no llm → None (today's behavior)."""
     if llm is None or not (derivation_prompt or "").strip() or not (question or "").strip():
         return None
-    for _ in range(max(1, int(attempts))):
-        c = await _derive_contract_once(question, llm, derivation_prompt, max_tokens)
-        if c is not None:
-            return c
-    return None
+    import asyncio as _asyncio
+    n = max(1, int(votes))
+    results = await _asyncio.gather(
+        *(_derive_contract_once(question, llm, derivation_prompt, max_tokens) for _ in range(n)))
+    cs = [c for c in results if c is not None]
+    if not cs:
+        return None
+    from collections import Counter
+    win_mode = Counter(c.mode for c in cs).most_common(1)[0][0]   # majority mode
+    # among the winners, the richest (most axes, then most entities) — don't lose columns to a terse draw
+    return max((c for c in cs if c.mode == win_mode),
+               key=lambda c: (len(c.axes), len(c.entities)))
 
 
 async def _derive_contract_once(question: str, llm: LLMClient, derivation_prompt: str,

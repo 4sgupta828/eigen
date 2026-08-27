@@ -125,6 +125,26 @@ def test_derive_contract_no_prompt_is_none_without_llm_call():
     assert llm.prompts == []
 
 
+def test_derive_contract_majority_vote_picks_richest_winner():
+    # 3 votes: 2 enumerative (one richer) + 1 exploratory → majority enumerative, richest axes kept.
+    llm = RecordingLLM([
+        SimpleNamespace(mode="enumerative", entities=[], axes=["a", "b"]),
+        SimpleNamespace(mode="enumerative", entities=[], axes=["a", "b", "c"]),
+        SimpleNamespace(mode="exploratory", entities=[], axes=["x"])])
+    c = asyncio.run(derive_contract("q?", llm, _PROMPT, votes=3))
+    assert c is not None and c.mode == "enumerative" and c.axes == ["a", "b", "c"]
+
+
+def test_derive_contract_vote_survives_a_lone_none():
+    # one failed vote (invalid mode → None) can't swing the majority.
+    llm = RecordingLLM([
+        SimpleNamespace(mode="enumerative", entities=[], axes=["a"]),
+        SimpleNamespace(mode="enumerative", entities=[], axes=["a"]),
+        SimpleNamespace(mode="banana", entities=[], axes=[])])
+    c = asyncio.run(derive_contract("q?", llm, _PROMPT, votes=3))
+    assert c is not None and c.mode == "enumerative"
+
+
 def test_derive_contract_enumerative_with_axes_no_entities_stays_enumerative():
     # "build me a table of all X": the DIMENSIONS (axes) are named, the row items are not — they get
     # discovered from evidence. This MUST stay enumerative (the old coercion-to-exploratory was the bug
@@ -254,9 +274,7 @@ def test_flag_on_without_vertical_prompt_is_fully_off():
 
 def test_derivation_failure_in_steer_falls_back_to_todays_behavior():
     src = CountingSource(_source())
-    # BOTH derivation attempts fail (retry-on-None): an invalid mode on each → the fallback path.
-    llm = RecordingLLM([SimpleNamespace(mode="banana", entities=[], axes=[]),
-                        SimpleNamespace(mode="banana", entities=[], axes=[])] + _base_script())
+    llm = RecordingLLM([SimpleNamespace(mode="banana", entities=[], axes=[])] + _base_script())
     res = _run(llm, src, mode="steer")
     assert res.grounded
     assert src.searches == [("baseline metric reading cohort", 10)]   # no legs

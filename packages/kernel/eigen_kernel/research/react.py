@@ -1283,8 +1283,12 @@ async def run_react(
         from eigen_kernel.research.contract import build_legs, derive_contract
         try:
             budget.reserve()
-            budget.charge(calls=1)              # the derivation call (BudgetState honesty)
-            _contract = await derive_contract(question, planner, contract_prompt)
+            # contract-compose drives the ANSWER SHAPE off this contract, so it must be STABLE — vote
+            # (self-consistency, best-of-3) to remove the run-to-run flip that muted mixed questions ~1/3
+            # of the time. Other paths keep the single call (byte-identical). The votes run concurrently.
+            _votes = 3 if contract_compose else 1
+            budget.charge(calls=_votes)         # the derivation call(s) (BudgetState honesty)
+            _contract = await derive_contract(question, planner, contract_prompt, votes=_votes)
         except BudgetExceeded:
             _contract = None                    # over budget → no contract → today's behavior
         if _contract is not None:               # persistable contract record (schema-registry
