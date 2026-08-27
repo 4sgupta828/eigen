@@ -48,8 +48,13 @@ class CompositeWebSearch:
     classifier + span gate still grade + verify whatever is actually cited. Provider-major interleave
     so EVERY provider gets representation (breadth), not just the first one's list."""
 
-    def __init__(self, clients: list):
+    def __init__(self, clients: list, *, hydrator=None, thin_chars: int = 800):
         self._clients = [c for c in clients if c is not None]
+        # HYDRATOR (Brave-discovers → Exa-hydrates): async (urls, query) -> {url: (body, highlights)}.
+        # Turns a SNIPPET-only provider's discoveries into groundable full text. Applied ONLY to thin,
+        # already-deduped results, so it never adds a URL (no duplication) — it fills content in place.
+        self._hydrator = hydrator
+        self._thin_chars = int(thin_chars)
 
     async def search(self, query: str, *, max_results: int = 10,
                      open_web: bool = False, recency_days: int | None = None,
@@ -81,6 +86,23 @@ class CompositeWebSearch:
                         provs = prov_by_url.get(key) or ({hit.provider} if hit.provider else set())
                         hit.providers = tuple(sorted(provs))
                         out.append(hit)
+        # HYDRATE thin discoveries to full text. `out` is ALREADY deduped by URL, so each thin hit is a
+        # UNIQUE url a full-text provider didn't return (a snippet-provider's novel find) — filling its
+        # body in place adds NO url (no duplication). Provider stays as-is so attribution still credits the
+        # engine that DISCOVERED the url. Fail-safe: hydrator error → snippets kept unchanged.
+        if self._hydrator:
+            thin = [h for h in out if len((h.body or "")) < self._thin_chars and h.url]
+            if thin:
+                try:
+                    hy = await self._hydrator([h.url for h in thin], query)
+                except Exception:   # noqa: BLE001
+                    hy = {}
+                if hy:
+                    by_norm = {_norm_url(u): v for u, v in hy.items()}
+                    for h in thin:
+                        got = hy.get(h.url) or by_norm.get(_norm_url(h.url))
+                        if got:
+                            h.body, h.highlights = got[0], tuple(got[1] or ())
         return out
 
 

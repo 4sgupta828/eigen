@@ -12,6 +12,7 @@ import os
 from .websearch import WebResult
 
 EXA_URL = "https://api.exa.ai/search"
+EXA_CONTENTS_URL = "https://api.exa.ai/contents"
 
 
 class ExaWebSearch:
@@ -25,6 +26,38 @@ class ExaWebSearch:
         # freshness: ISO date floor (Exa startPublishedDate) so "latest state" queries return recent
         # pages, not the most-linked older ones. "" = no floor (byte-identical to today).
         self._start_published_date = start_published_date
+
+    async def get_contents(self, urls, *, max_chars: int = 4000,
+                           query: str = "") -> dict:
+        """HYDRATE arbitrary URLs to full page text + highlights via Exa's /contents endpoint. Used to
+        turn a SNIPPET-only provider's discoveries (e.g. Brave, which returns ~300-char descriptions) into
+        groundable full-text — Brave finds the URL, Exa fetches the content. Returns {url: (body, highlights
+        tuple)} for the urls Exa could fetch; a failure/empty simply omits that url (fail-safe). No key →
+        {} (no-op)."""
+        urls = [u for u in (urls or []) if u]
+        if not self._api_key or not urls:
+            return {}
+        import httpx
+        payload = {"urls": urls[:20],   # bound the batch
+                   "text": {"maxCharacters": int(max_chars)}}
+        if query:
+            payload["highlights"] = {"numSentences": 5, "highlightsPerUrl": 2, "query": query}
+        headers = {"x-api-key": self._api_key, "content-type": "application/json"}
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(EXA_CONTENTS_URL, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception:   # noqa: BLE001 — best-effort hydration; a failure leaves the thin snippet as-is
+            return {}
+        out: dict = {}
+        for r in data.get("results", []):
+            u = r.get("url", "")
+            text = (r.get("text") or "").strip()
+            if u and text:
+                hl = tuple(h for h in (r.get("highlights") or []) if h and h.strip())
+                out[u] = (text, hl)
+        return out
 
     async def search(self, query: str, *, max_results: int = 8,
                      open_web: bool = False, recency_days: int | None = None,

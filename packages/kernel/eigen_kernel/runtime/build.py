@@ -133,7 +133,20 @@ def build_web(*, mode: ProviderMode | str | None = None,
             if not clients:
                 # NO keyed provider at all → DuckDuckGo is the last-resort free leg (may be blocked).
                 clients.append(_ddg())
-            inner = clients[0] if len(clients) == 1 else CompositeWebSearch(clients)
+            if len(clients) == 1:
+                inner = clients[0]
+            else:
+                # BRAVE-DISCOVERS → EXA-HYDRATES: Brave (and any snippet-only engine) returns URLs with
+                # ~300-char descriptions that can't ground a quote. When Exa is present, hydrate those thin
+                # discoveries to full text via Exa /contents — so a Brave-found page becomes citable while
+                # Exa keeps crediting Brave for the discovery. The composite hydrates ONLY thin, already-
+                # deduped results (no new URL → no duplication). Fail-safe: hydration error keeps snippets.
+                _hydrator = None
+                if _has_exa:
+                    from eigen_kernel.providers.exa_web import ExaWebSearch as _ExaH
+                    _h = _ExaH()
+                    _hydrator = (lambda urls, q, _h=_h: _h.get_contents(urls, query=q))
+                inner = CompositeWebSearch(clients, hydrator=_hydrator)
     return CassetteWebSearch(inner, cassette_root=cassette_root or default_cassette_root(),
                              namespace="web", mode=m)
 
