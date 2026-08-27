@@ -637,12 +637,14 @@ def diligence_depth_enabled() -> bool:
 
 
 def contract_compose_enabled() -> bool:
-    """Flag (default OFF, Rule 20 — MIGRATION seam): EIGEN_CONTRACT_COMPOSE. When ON, compose RENDERS the
-    derived question contract — the universal VOICE plus the SHAPE the contract asks for (enumerate /
-    explore / decide) — instead of the flat golden directive that imposed one fixed shape. Shape follows
-    the QUESTION (the contract), not deployment flags. Supersedes EIGEN_ANSWER_MODE_ROUTING + the golden
-    flat directive; once A/B'd, the old golden path + shape-flags get deleted. OFF → golden path unchanged."""
-    return os.environ.get("EIGEN_CONTRACT_COMPOSE", "").lower() in ("1", "true", "yes")
+    """MIGRATION COMPLETE — default ON. EIGEN_CONTRACT_COMPOSE: compose RENDERS the derived question
+    contract — the universal VOICE plus the SHAPE the contract asks for (enumerate / decide) — instead of
+    the flat golden directive that imposed one fixed shape (which muted enumerative 'build me a table'
+    asks). Shape follows the QUESTION, not deployment flags. Validated end-to-end (classifier eval 8/8;
+    the muted Q2 now renders a grounded table) + supersedes the (inert-for-tech) EIGEN_ANSWER_MODE_ROUTING
+    path. KILL-SWITCH: set EIGEN_CONTRACT_COMPOSE=0 to fall back to the flat golden directive. A vertical
+    that supplies no contract_compose_voice no-ops regardless (byte-identical)."""
+    return os.environ.get("EIGEN_CONTRACT_COMPOSE", "1").lower() in ("1", "true", "yes")
 
 
 def alias_resolver_enabled() -> bool:
