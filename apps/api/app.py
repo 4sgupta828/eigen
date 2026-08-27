@@ -2058,10 +2058,15 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                      if k in _REL_KINDS and p not in ("has_founder", "key_person")}
         # Collapse the alias map to (kind, alias_norm) → canonical, ABSTAINING on any norm that maps to
         # >1 distinct canonical of the same kind (ambiguous → keep raw, the fail-safe). Kind-scoped so a
-        # norm that is a company alias never hijacks a technology edge (panel).
+        # norm that is a company alias never hijacks a technology edge (panel). A SELF-alias
+        # (`norm -> <kind>:<norm>`, the identity mapping every raw node already has) is NOT a competing
+        # canonical — exclude it, else a real merge (a16z -> andreessen horowitz) always looks ambiguous
+        # against the raw node's own self-alias and never applies.
         _alias_cands: dict = {}
         _alias_name: dict = {}
         for r in alias_rows:
+            if r["entity_id"] == f"{r['kind']}:{r['alias_norm']}":
+                continue                                  # identity alias — ignore
             _alias_cands.setdefault((r["kind"], r["alias_norm"]), set()).add(r["entity_id"])
             _alias_name[r["entity_id"]] = r["name"]
         alias_map = {k: next(iter(v)) for k, v in _alias_cands.items() if len(v) == 1}
