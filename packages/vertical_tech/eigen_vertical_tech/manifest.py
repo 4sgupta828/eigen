@@ -17,7 +17,8 @@ from .answer_format import (TECH_ANSWER_FORMAT, TECH_DILIGENCE_SYNTHESIS_FORMAT,
                             TECH_AUTHORITY_BASIS_DIRECTIVE)
 from .prior_draft import PRIOR_DRAFT_PROMPT
 from .intelligence_draft import INTELLIGENCE_DRAFT_PROMPT
-from .golden_answer import GOLDEN_ANSWER_DIRECTIVE
+from .golden_answer import (GOLDEN_ANSWER_DIRECTIVE, GOLDEN_VOICE, CONTRACT_SHAPES,
+                            SHAPE_DEFAULT)
 from .terms import TECH_TERMS_PROMPT
 from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
@@ -138,6 +139,13 @@ def build_manifest() -> VerticalManifest:
         # EIGEN_GOLDEN_ANSWER: the single golden compose directive that replaces the whole answer-shaping
         # stack when the flag is ON (one clean freeform brief, no narrated scaffolding). None → no-op.
         golden_answer_directive=GOLDEN_ANSWER_DIRECTIVE,
+        # EIGEN_CONTRACT_COMPOSE (voice ⟂ shape): the successor to the flat golden directive — compose is
+        # assembled as the universal VOICE + the SHAPE the derived contract asks for (enumerate / explore /
+        # decision). Shape follows the QUESTION, not a deployment flag; the enumerative shape is what a
+        # "build me a table of all X" ask needs and the flat golden directive suppressed.
+        contract_compose_voice=GOLDEN_VOICE,
+        contract_compose_shapes=CONTRACT_SHAPES,
+        contract_compose_default=SHAPE_DEFAULT,
         # Enhanced A/B synthesis variant (reuses the kernel's enhanced-answer slot; same section set).
         clinical_answer_format=TECH_DILIGENCE_SYNTHESIS_FORMAT,
         # Concept/term glossary + grounded conceptual VISUALS (diagrams) + inline visual/chart/reasoning

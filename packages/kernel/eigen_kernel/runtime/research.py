@@ -283,6 +283,14 @@ class ResearchService:
     #                                         enumerative-compose addendum when the derived contract
     #                                         is enumerative AND ≥2 entities hold slot-matched claims
     enumerative_compose_addendum: str | None = None  # vertical enumerative-compose addendum (opaque)
+    # EIGEN_CONTRACT_COMPOSE (voice ⟂ shape): when `contract_compose` is on, compose renders the derived
+    # contract — the directive is VOICE + the SHAPE for the contract's mode (enumerative shape gets the
+    # concrete items/dimensions appended by the kernel). Replaces the flat golden directive. All three
+    # None/off → byte-identical.
+    contract_compose: bool = False
+    contract_compose_voice: str | None = None
+    contract_compose_shapes: dict | None = None
+    contract_compose_default: str | None = None
     graph_expander: object | None = None    # A9: async (question) -> {"legs":[{query,note}],"shadow":bool}|None
     #                                         — app-injected relationship-graph hook; None → byte-identical
     panel_specialists: tuple = ()           # Ask-Panel roster (vertical-supplied specialist configs)
@@ -798,6 +806,10 @@ class ResearchService:
             explore_legs=self.explore_legs,
             answer_mode_routing=self.answer_mode_routing,
             enumerative_compose_addendum=self.enumerative_compose_addendum,
+            contract_compose=self.contract_compose,
+            contract_compose_voice=self.contract_compose_voice,
+            contract_compose_shapes=self.contract_compose_shapes,
+            contract_compose_default=self.contract_compose_default,
             graph_legs=graph_legs, graph_shadow=graph_shadow, graph_late=graph_late,
         )
         res.visual_observation = visual_obs      # surface the image reading (UI panel)

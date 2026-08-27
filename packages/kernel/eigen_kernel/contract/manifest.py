@@ -74,6 +74,15 @@ class VerticalManifest:
     # like `answer_format` (all domain vocabulary lives here — kernel litmus). None → the flag is a no-op
     # for verticals that don't supply it.
     golden_answer_directive: str | None = None
+    # CONTRACT-RENDERED COMPOSE (EIGEN_CONTRACT_COMPOSE) — voice ⟂ shape. The successor to the flat
+    # golden directive: instead of ONE fixed directive imposing one shape, compose is assembled as the
+    # universal VOICE (`contract_compose_voice`) PLUS the SHAPE the derived contract asks for
+    # (`contract_compose_shapes[mode]`, else the '' / default key). The kernel selects by the contract
+    # mode (a structural key) and, for an enumerative shape, appends the concrete items+dimensions from
+    # the contract — it never parses the opaque prose. Both None → the flag is a no-op (byte-identical).
+    contract_compose_voice: str | None = None
+    contract_compose_shapes: dict | None = None   # {mode: directive}; missing mode → contract_compose_default
+    contract_compose_default: str | None = None   # the shape for decision/analytical/narrow (unmapped modes)
     # Optional VISUALIZATION guidance appended to the compose directive when the answer-visuals flag is
     # on — pushes the answer toward comparison tables / ranked options / pros-cons, strictly from the
     # verified findings (never fabricated structure). Opaque prose threaded like `answer_format`.

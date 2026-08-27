@@ -906,6 +906,15 @@ async def run_react(
     #                                           an OPAQUE caller-supplied string (manifest field;
     #                                           kernel litmus: zero domain vocabulary here).
     #                                           None/"" → stage-4 routing never fires.
+    contract_compose: bool = False,            # EIGEN_CONTRACT_COMPOSE (voice ⟂ shape): when on, the
+    #                                           compose directive is RENDERED FROM the derived contract —
+    #                                           VOICE + the SHAPE for the contract's mode — instead of the
+    #                                           flat golden directive. The enumerative shape gets the
+    #                                           contract's concrete items+dimensions appended (structural).
+    #                                           Replaces answer_format at compose. OFF → byte-identical.
+    contract_compose_voice: str | None = None,
+    contract_compose_shapes: dict | None = None,     # {mode: opaque directive}; missing → *_default
+    contract_compose_default: str | None = None,     # shape for decision/analytical/unmapped modes
     suppress_authority: bool = False,          # per-call authority-neutralize (use-case lens): when True,
     #                                           the evidence-tier boost is dropped so opinion/discussion
     #                                           evidence isn't demoted below filings on foresight/wisdom
@@ -1269,7 +1278,7 @@ async def run_react(
     # the deep readers can never fire) OR REFLECTION is on (the web-coverage fan-out + intent steer route
     # on the contract's subject_kind/entities/axes, so they need it derived too).
     if ((question_contract in ("shadow", "steer")) or answer_profiles or deep_company or deep_person
-            or reflection in ("shadow", "steer")) \
+            or reflection in ("shadow", "steer") or contract_compose) \
             and (contract_prompt or "").strip():
         from eigen_kernel.research.contract import build_legs, derive_contract
         try:
@@ -2321,6 +2330,21 @@ async def run_react(
         _base_directive = answer_format
         if deep_synthesis and kind != "lookup" and deep_answer_format:
             _base_directive = deep_answer_format
+        # CONTRACT-RENDERED COMPOSE (EIGEN_CONTRACT_COMPOSE, voice ⟂ shape): the directive IS the derived
+        # contract — the universal VOICE plus the SHAPE for the contract's mode — REPLACING the flat
+        # golden/answer_format base. Shape follows the QUESTION, not a deployment flag. This is the single
+        # chokepoint every path composes through (follow-ups + reasoned both route here), so an enumerative
+        # ask ("build me a table of all X") renders a table instead of being flattened to a thesis. The
+        # kernel selects the shape by mode (structural) and, for enumerative, appends the contract's
+        # concrete items+dimensions — it never parses the opaque vertical prose. OFF → byte-identical.
+        if contract_compose and (contract_compose_voice or "").strip():
+            from eigen_kernel.research.contract import render_contract_directive
+            _base_directive = render_contract_directive(
+                voice=contract_compose_voice, shapes=contract_compose_shapes,
+                default=contract_compose_default,
+                mode=(_contract.mode if _contract is not None else ""),
+                entities=(_contract.entities if _contract is not None else None),
+                axes=(_contract.axes if _contract is not None else None))
         _compose_directive = _base_directive
         if _enum_compose:
             _ad = (enumerative_compose_addendum or "").strip()

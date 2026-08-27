@@ -117,6 +117,29 @@ async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str 
                     resolved_question=resolved_question, ambiguity_risk=ambiguity_risk, candidates=candidates)
 
 
+def render_contract_directive(*, voice: str | None, shapes: dict | None, default: str | None,
+                              mode: str, entities=None, axes=None) -> str:
+    """CONTRACT-RENDERED COMPOSE (voice ⟂ shape). Assemble the compose directive from the derived
+    contract: the universal VOICE + the SHAPE for `mode` (else `default`), and for an ENUMERATIVE shape
+    append the contract's concrete items+dimensions so the model builds the exact grid asked for.
+
+    Pure + structural (Rule 18): the kernel selects the shape by `mode` (a structural key) and interpolates
+    the item/axis LISTS; it never parses the opaque vertical prose. Voice and shape are ORTHOGONAL — the
+    voice never carries a shape verdict, so a shape never fights the voice (no stapled-on contradiction).
+    Returns the assembled directive (voice alone if no shape; "" if neither)."""
+    v = (voice or "").strip()
+    shape = ((shapes or {}).get(mode) or default or "").strip()
+    out = (v + "\n\n" + shape) if (v and shape) else (v or shape)
+    if mode == "enumerative":
+        items = [str(e).strip() for e in (entities or []) if str(e).strip()]
+        dims = [str(a).strip() for a in (axes or []) if str(a).strip()]
+        if items:
+            out += "\n\nITEMS to enumerate (one row each): " + "; ".join(items[:40]) + "."
+        if dims:
+            out += "\nDIMENSIONS (one column each): " + "; ".join(dims[:12]) + "."
+    return out
+
+
 def build_legs(contract: Contract | None, *, cap: int = 12,
                exclude: set[str] | frozenset[str] = frozenset()) -> list[str]:
     """Retrieval-leg queries for a contract, capped at `cap` total, deduped case-insensitively

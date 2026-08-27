@@ -636,6 +636,15 @@ def diligence_depth_enabled() -> bool:
     return os.environ.get("EIGEN_DILIGENCE_DEPTH", "").lower() in ("1", "true", "yes")
 
 
+def contract_compose_enabled() -> bool:
+    """Flag (default OFF, Rule 20 — MIGRATION seam): EIGEN_CONTRACT_COMPOSE. When ON, compose RENDERS the
+    derived question contract — the universal VOICE plus the SHAPE the contract asks for (enumerate /
+    explore / decide) — instead of the flat golden directive that imposed one fixed shape. Shape follows
+    the QUESTION (the contract), not deployment flags. Supersedes EIGEN_ANSWER_MODE_ROUTING + the golden
+    flat directive; once A/B'd, the old golden path + shape-flags get deleted. OFF → golden path unchanged."""
+    return os.environ.get("EIGEN_CONTRACT_COMPOSE", "").lower() in ("1", "true", "yes")
+
+
 def alias_resolver_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_ALIAS_RESOLVER. When ON, graph_explore loads the LLM-built
     surface-form alias map from rs_entity_alias and remaps each relationship node key
@@ -1207,7 +1216,15 @@ def build_default_service() -> ResearchService:
     # EIGEN_GOLDEN_ANSWER: engages only with structured answers + a vertical golden directive to swap in.
     # When ON it REPLACES answer_format with the single golden directive and suppresses every append below
     # (and, further down, forces the eight layer flags OFF). OFF → _golden is False → byte-identical.
-    _golden = golden_answer_enabled() and structured_answers() and bool(getattr(manifest, "golden_answer_directive", None))
+    # EIGEN_CONTRACT_COMPOSE (voice ⟂ shape): the successor to golden — compose renders the derived
+    # contract (VOICE + the SHAPE for its mode) instead of the flat golden directive. It reuses golden's
+    # layer-OFF discipline (the voice IS the golden voice; every other shaping layer stays off), so it
+    # sets `_golden` too; the actual directive is built in run_react from the contract, which overrides
+    # answer_format there. Requires the vertical to supply the voice.
+    _cc_compose = (contract_compose_enabled() and structured_answers()
+                   and bool(getattr(manifest, "contract_compose_voice", None)))
+    _golden = (_cc_compose or (golden_answer_enabled() and bool(getattr(manifest, "golden_answer_directive", None)))) \
+        and structured_answers()
     if structured_answers():
         answer_format = manifest.answer_format
         if clinical_synthesis():
@@ -1362,6 +1379,12 @@ def build_default_service() -> ResearchService:
         reflection=reflection_mode(),   # EIGEN_REFLECTION: on-demand web coverage fan-out + intent steer
         answer_mode_routing=answer_mode_routing_enabled(),
         enumerative_compose_addendum=getattr(manifest, "enumerative_compose_addendum", None),
+        # EIGEN_CONTRACT_COMPOSE (voice ⟂ shape): render the derived contract at compose (run_react builds
+        # VOICE + the SHAPE for the contract mode, overriding the flat directive).
+        contract_compose=_cc_compose,
+        contract_compose_voice=getattr(manifest, "contract_compose_voice", None),
+        contract_compose_shapes=getattr(manifest, "contract_compose_shapes", None),
+        contract_compose_default=getattr(manifest, "contract_compose_default", None),
         panel_specialists=getattr(manifest, "panel_specialists", ()),
         panel_default_ids=getattr(manifest, "panel_default_ids", ()),
         panel_synthesis_directive=getattr(manifest, "panel_synthesis_directive", None),
