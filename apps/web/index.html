@@ -2502,14 +2502,14 @@ function render(data, target, opts){
         </div>`:""}
         <div class="evpane" data-pane="ev">${cards}</div>
         ${gapsPane?`<div class="evpane" data-pane="gaps" hidden>${gapsHtml}${gapFoot}</div>`:""}
-        ${diagBoxMarkup(data)}
       </div>
     </details>`);
   }
   // no dossier to host it (unverified / error answer) → the gap panel stands alone
   if(GAP_ENABLED && !n) evBits.push(gapPanelMarkup(!data.grounded || (data.coverage_gaps||[]).length));
-  // no dossier to host it (unverified answer) → diagnostics stands alone, still collapsed
-  if(data.answer && !n) evBits.push(diagBoxMarkup(data));
+  // DIAGNOSTICS as a TOP-LEVEL disclosure under the answer (was nested inside Evidence, two levels deep
+  // and hard to find). Holds answer-shape (contract), sources used, and web search-source attribution.
+  if(data.answer) evBits.push(diagBoxMarkup(data));
   if(evBits.length) parts.push(`<div class="ansbox">${evBits.join("")}</div>`);
   // Top related public research — grounded, quality-ranked papers/preprints/filings (flag-gated).
   const rrm = relatedResearchMarkup(data);
