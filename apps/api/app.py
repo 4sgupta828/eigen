@@ -1199,9 +1199,9 @@ def build_default_service() -> ResearchService:
     sources["web"] = WebRetrievalSource(
         build_web(mode=mode, domains=getattr(manifest, "web_domains", ()),
                   recent=(freshness_ranking_enabled() or answer_contract_enabled())),
-        # WIDER FAN-OUT: pull more results per web query (8→12, env EIGEN_WEB_MAX_RESULTS) so Exa
-        # surfaces more of the relevant web per leg; the tier/span/rerank gates below keep precision.
-        max_results=int(os.environ.get("EIGEN_WEB_MAX_RESULTS", "12")),
+        # results per web query (env EIGEN_WEB_MAX_RESULTS). Kept at the original 8 — a 12 widening
+        # (× 2 providers × many legs) regressed research latency badly; revisit fan-out separately.
+        max_results=int(os.environ.get("EIGEN_WEB_MAX_RESULTS", "8")),
         # venue-authority facets + the corpus embedder: web evidence gets graded and reranked
         # by the same machinery as corpus evidence (authority tiers, recency, query relevance)
         domain_facets=getattr(manifest, "web_domain_facets", None),

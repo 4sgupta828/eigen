@@ -24,8 +24,8 @@ from eigen_kernel.contract.protocols import RetrievalSource
 
 _log = logging.getLogger(__name__)
 
-_DEFAULT_MAX_QUERIES = 12         # hard cap on web legs — credit/latency bound (widened 8→12 for reach)
-_DEFAULT_MAX_RESULTS_PER_QUERY = 6   # widened 4→6 so each query pulls more of the relevant web
+_DEFAULT_MAX_QUERIES = 8          # hard cap on web legs — credit/latency bound
+_DEFAULT_MAX_RESULTS_PER_QUERY = 4   # (dialed back from a 12×6 widening that regressed latency; revisit)
 _DEFAULT_MAX_CHARS = 6000
 _DEFAULT_MAX_CHUNKS_PER_PAGE = 3
 _DEFAULT_CONCURRENCY = 4          # gentler on the open-web provider (fewer simultaneous searches → fewer 429s)
