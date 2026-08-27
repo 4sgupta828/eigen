@@ -180,6 +180,12 @@ class WebRetrievalSource:
                 facets["source_domain"] = _host_of(r.url)
                 if year:
                     facets.setdefault("year", year)
+                # SEARCH-SOURCE ATTRIBUTION: which engine surfaced this page (+ all engines that did, for
+                # novelty). Rides on every block so cited web evidence can be attributed per provider.
+                _prov = getattr(r, "provider", "") or ""
+                if _prov:
+                    facets["web_provider"] = _prov
+                    facets["web_providers"] = ",".join(getattr(r, "providers", None) or (_prov,))
                 candidates.append(BlockHit(
                     document_id=r.url, block_id=bid, text=text,
                     score=float(1000 - ri * 10 - ci),      # provider rank primary, chunk index secondary

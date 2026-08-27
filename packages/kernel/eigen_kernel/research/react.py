@@ -659,6 +659,10 @@ class AnswerResult:
     # per-source contribution: which sources were retrieved vs. actually CITED in a
     # verified claim → shows what sources help answer (user-requested analytics).
     source_stats: dict[str, dict[str, int]] = field(default_factory=dict)
+    # SEARCH-SOURCE ATTRIBUTION: web engine -> {retrieved, cited, unique_cited} — which provider (exa/
+    # brave/…) surfaced the web evidence that actually LANDED in the answer (relevance = cited/retrieved;
+    # novelty = unique_cited, urls only that engine returned). Empty for non-web / single-provider runs.
+    web_providers: dict[str, dict[str, int]] = field(default_factory=dict)
     steps: int = 0
     atoms_gathered: int = 0
     retried_empty: bool = False          # the extract recovery re-ask fired (observability)
@@ -2818,6 +2822,29 @@ async def run_react(
         s = vc.source_key or "unknown"
         stats.setdefault(s, {"retrieved": 0, "cited": 0})["cited"] += 1
     result.source_stats = stats
+
+    # SEARCH-SOURCE ATTRIBUTION (web): per engine, how much of its evidence was RETRIEVED vs actually
+    # CITED (relevance/landing rate), and how many cited pages ONLY it surfaced (novelty). Reads the
+    # `web_provider`/`web_providers` facets that ride on each web atom + its cited claim. Empty when the
+    # web leg is single-provider or unused → no attribution noise.
+    def _row(p):
+        return _wp.setdefault(p, {"retrieved": 0, "cited": 0, "unique_cited": 0})
+    _wp: dict[str, dict[str, int]] = {}
+    for a in atoms.all():
+        p = (getattr(a, "facets", None) or {}).get("web_provider")
+        if p:
+            _row(p)["retrieved"] += 1
+    for vc in result.verified_claims:
+        f = getattr(vc, "facets", None) or {}
+        p = f.get("web_provider")
+        if not p:
+            continue
+        r = _row(p)
+        r["cited"] += 1
+        provs = [x for x in (f.get("web_providers") or p).split(",") if x]
+        if len(set(provs)) == 1:                 # only this engine returned the page → novel to it
+            r["unique_cited"] += 1
+    result.web_providers = _wp
 
     # Troubleshooting summary (flag): fold the captured trace into a compact, UI-ready shape. Pure
     # bookkeeping over data already in hand — no extra model calls; None unless collect_diagnostics.

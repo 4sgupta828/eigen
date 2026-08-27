@@ -89,6 +89,7 @@ class ExaWebSearch:
                 body=text or r.get("summary") or "",
                 published=r.get("publishedDate") or None,
                 highlights=tuple(h for h in (r.get("highlights") or []) if h and h.strip()),
+                provider="exa",
             ))
         # freshness: when a recency floor is active (constructor OR per-request), re-sort the (already
         # relevance-filtered) results NEWEST-FIRST so the very latest pages lead the atom pool — Exa

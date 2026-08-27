@@ -57,5 +57,6 @@ class BraveWebSearch:
                 snippet=desc[:400],
                 body=desc[:cap] or None,
                 published=(r.get("age") or r.get("page_age") or None),
+                provider="brave",
             ))
         return out

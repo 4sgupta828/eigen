@@ -53,6 +53,7 @@ class TavilyWebSearch:
                 snippet=r.get("content", ""),
                 body=body,
                 published=r.get("published_date") or None,
+                provider="tavily",
             ))
         # freshness: recency window active → re-sort newest-first so the latest pages lead the pool
         if _tr:

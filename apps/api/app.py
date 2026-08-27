@@ -1156,6 +1156,10 @@ class ResearchOut(BaseModel):
     derivations: list = []                # gated labeled derivations {label,kind,conclusion,basis,
     #                                       falsifier} (empty unless EIGEN_DERIVE is on) — the audit view
     diagnostics: dict | None = None       # troubleshooting trace (None unless the diag-trace flag is on)
+    question_contract: dict | None = None # the derived contract that shaped the answer {mode,entities,axes,
+    #                                       stance} — observability so the answer SHAPE decision is visible
+    web_providers: dict = {}              # web search-source attribution: provider -> {retrieved, cited,
+    #                                       unique_cited} — which engine (exa/brave/…) surfaced cited evidence
     freshness: dict | None = None         # {as_of,newest_year,oldest_year,n_dated,n_total,stale_warning}
     #                                       (None unless the freshness-ranking flag is on)
     related_research: list = []           # top related public research [{title,url,kind,venue,year,
@@ -2881,6 +2885,8 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                            "basis": list(d.basis), "falsifier": d.falsifier}
                           for d in (getattr(res, "derivations", []) or [])] if derive_enabled() else []),
             diagnostics=(getattr(res, "diagnostics", None) if diag_trace_enabled() else None),
+            question_contract=getattr(res, "question_contract", None),
+            web_providers=(getattr(res, "web_providers", {}) or {}),
             freshness=(getattr(res, "freshness", None) if freshness_ranking_enabled() else None),
             related_research=related,
             companies=companies,

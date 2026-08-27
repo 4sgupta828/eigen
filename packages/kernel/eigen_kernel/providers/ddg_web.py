@@ -92,6 +92,6 @@ class DuckDuckGoWebSearch:
                             pass
                     await asyncio.gather(*(_enrich(it) for it in items), return_exceptions=True)
                 return [WebResult(url=it["url"], title=it["title"], snippet=it["snippet"],
-                                  body=it["body"], published=None) for it in items]
+                                  body=it["body"], published=None, provider="ddg") for it in items]
         except Exception:   # noqa: BLE001 — DDG anti-bot / network → empty leg, never break the answer
             return []

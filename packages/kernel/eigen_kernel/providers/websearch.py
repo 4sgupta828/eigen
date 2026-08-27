@@ -22,6 +22,9 @@ class WebResult:
     body: str | None = None
     published: str | None = None       # ISO-ish publish date when the provider reports one
     highlights: tuple[str, ...] = ()   # query-aware extracts (Exa) — spans from ANYWHERE in the page
+    provider: str = ""                 # search-source attribution: which engine surfaced this (exa/brave/…)
+    providers: tuple[str, ...] = ()    # ALL engines that returned this URL (set by the composite on merge;
+    #                                    a single-element tuple ⇒ only one engine found it → NOVEL to it)
 
 
 @runtime_checkable
@@ -58,6 +61,14 @@ class CompositeWebSearch:
               for c in self._clients),
             return_exceptions=True)
         lists = [r for r in lists if isinstance(r, list)]
+        # url -> every provider that returned it (search-source attribution + novelty: a single-provider
+        # url is NOVEL to that engine). Built across ALL providers' lists before the dedup merge.
+        prov_by_url: dict[str, set] = {}
+        for lst in lists:
+            for hit in lst:
+                k = _norm_url(hit.url)
+                if k and getattr(hit, "provider", ""):
+                    prov_by_url.setdefault(k, set()).add(hit.provider)
         out: list[WebResult] = []
         seen: set[str] = set()
         for rank in range(max((len(r) for r in lists), default=0)):
@@ -67,6 +78,8 @@ class CompositeWebSearch:
                     key = _norm_url(hit.url)
                     if key and key not in seen:
                         seen.add(key)
+                        provs = prov_by_url.get(key) or ({hit.provider} if hit.provider else set())
+                        hit.providers = tuple(sorted(provs))
                         out.append(hit)
         return out
 
