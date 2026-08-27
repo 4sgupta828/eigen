@@ -112,18 +112,23 @@ def build_web(*, mode: ProviderMode | str | None = None,
             # DuckDuckGo (open-web breadth), fanned out concurrently + merged. Downstream tier-grading
             # + span-verification decide what's actually cited, so credible sources still lead while
             # DDG adds reach. With NO paid key, DDG alone runs the web leg (free).
+            # ADDITIVE composite: run EVERY keyed engine concurrently for maximal, diverse coverage
+            # (was `if Exa elif Tavily`, which left a working paid provider idle). The composite dedupes
+            # by URL and the tier/span/rerank gates still decide what's actually cited.
+            _has_brave = bool(os.environ.get("BRAVE_API_KEY"))
             clients = []
             if _has_exa:
-                clients.append(_exa())
+                clients.append(_exa())               # depth: full text + query-aware highlights
             if _has_tav:
-                # ADDITIVE (was `elif` — Tavily was SKIPPED whenever Exa was present, leaving a working
-                # paid provider idle). Run BOTH keyed engines concurrently for maximal, diverse web
-                # coverage; the composite dedupes by URL and the tier/span gates still decide citations.
                 clients.append(TavilyWebSearch(time_range="year" if recent else ""))
-            # DuckDuckGo: free open-web breadth, best-effort. NOTE: currently returns 0 in prod (DDG
-            # blocks datacenter-IP HTML scraping) — harmless (concurrent + fail-safe), kept for the
-            # keyless case and in case it recovers. With NO paid key it is the sole (free) leg.
-            clients.append(_ddg())
+            if _has_brave:
+                # Brave Search API — the free/cheap open-web BREADTH leg REPLACING DuckDuckGo, whose
+                # HTML scrape is blocked from datacenter IPs (returns 0 in prod). Real REST API, unblocked.
+                from eigen_kernel.providers.brave_web import BraveWebSearch
+                clients.append(BraveWebSearch())
+            if not clients:
+                # NO keyed provider at all → DuckDuckGo is the last-resort free leg (may be blocked).
+                clients.append(_ddg())
             inner = clients[0] if len(clients) == 1 else CompositeWebSearch(clients)
     return CassetteWebSearch(inner, cassette_root=cassette_root or default_cassette_root(),
                              namespace="web", mode=m)
