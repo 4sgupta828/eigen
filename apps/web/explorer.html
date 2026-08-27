@@ -320,17 +320,40 @@
     function visible(n){ return nodeVisible(n); }   // lens/focus-scoped (defined above)
     function neighbors(n){ const s=new Set([n]); links.forEach(l=>{ if(l.s===n)s.add(l.o); if(l.o===n)s.add(l.s); }); return s; }
 
-    // DRILL-DOWN uses a STATIC radial layout (no physics): the focused company centered, its
-    // neighbors fanned in a clean ring grouped by kind. Deterministic → zero jitter, reads instantly.
+    // DRILL-DOWN uses a STATIC radial layout (no physics): the focused company centered, its neighbors
+    // fanned in clean arcs GROUPED + TAGGED by relationship (Founders / Investors / Products / Tech used /
+    // Competitors / Categories / Customers), each arc labeled. Deterministic → zero jitter, reads instantly.
+    const REL_GROUPS=[
+      {label:"Founders",   kind:"person",     preds:["has_founder","key_person"]},
+      {label:"Investors",  kind:"investor",   preds:["has_investor"]},
+      {label:"Products",   kind:"product",    preds:["offers_product"]},
+      {label:"Tech used",  kind:"technology", preds:["uses_technology"]},
+      {label:"Competitors",kind:"company",    preds:["compared_to"]},
+      {label:"Categories", kind:"category",   preds:["operates_in_category"]},
+      {label:"Customers",  kind:"market",     preds:["targets_customer","ideal_customer_profile"]},
+    ];
+    let focusGroups=[];
     function radialLayout(c){
       c.x=0; c.y=0; c.vx=0; c.vy=0;
-      const nb=[]; links.forEach(l=>{ if(l.s===c) nb.push(l.o); else if(l.o===c) nb.push(l.s); });
-      const uniq=[...new Set(nb)];
-      const order=["person","investor","technology","product","category","market","company"];
-      uniq.sort((a,b)=>(order.indexOf(a.kind)-order.indexOf(b.kind))||a.name.localeCompare(b.name));
-      const N=uniq.length||1, R=Math.max(150, 30*Math.sqrt(N)+96);
-      uniq.forEach((n,i)=>{ const ang=-Math.PI/2 + (i/N)*Math.PI*2;
-        n.x=Math.cos(ang)*R; n.y=Math.sin(ang)*R; n.vx=0; n.vy=0; });
+      const groups=REL_GROUPS.map(g=>({label:g.label, kind:g.kind, members:[]}));
+      const seen=new Set();
+      links.forEach(l=>{ if(l.s!==c) return;
+        const gi=REL_GROUPS.findIndex(g=>g.preds.indexOf(l.p)>=0); if(gi<0) return;
+        if(seen.has(l.o.id)) return; seen.add(l.o.id); groups[gi].members.push(l.o); });
+      const active=groups.filter(g=>g.members.length);
+      const total=active.reduce((a,g)=>a+g.members.length,0)||1;
+      const GAP=0.17, usable=Math.PI*2 - GAP*Math.max(active.length,1);
+      let ang=-Math.PI/2 - (usable+GAP*active.length)/2 + GAP/2;   // start so the fan reads top-first
+      active.forEach(g=>{
+        const span=usable*(g.members.length/total), m=g.members.length;
+        const R=Math.max(160, 22*Math.sqrt(total)+110);
+        g.R=R; g.mid=ang+span/2;
+        g.members.forEach((n,i)=>{
+          const a = m===1 ? ang+span/2 : ang + span*0.06 + (i/(m-1))*span*0.88;
+          n.x=Math.cos(a)*R; n.y=Math.sin(a)*R; n.vx=0; n.vy=0; });
+        ang += span + GAP;
+      });
+      focusGroups=active;
     }
 
     function tick(){
@@ -382,6 +405,19 @@
           ctx.save(); ctx.translate(n.x,n.y); ctx.scale(1/view.k,1/view.k); ctx.fillText(t, 0, n.r*view.k+3); ctx.restore();
           ctx.globalAlpha=1; }
       });
+      // GROUP TAGS on drill-down: a labeled heading at each relationship arc so the company's world
+      // reads as "these are its Investors, these its Founders, these the Tech it uses", not a blob.
+      if(focusCompany && focusGroups.length){
+        focusGroups.forEach(g=>{
+          const lr=g.R+40, lx=Math.cos(g.mid)*lr, ly=Math.sin(g.mid)*lr;
+          const c2=g.kind==="company"?RIVAL:KIND[g.kind].c;
+          ctx.save(); ctx.translate(lx,ly); ctx.scale(1/view.k,1/view.k);
+          ctx.font='600 10.5px "IBM Plex Mono",monospace'; ctx.fillStyle=c2;
+          ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.globalAlpha=.95;
+          ctx.fillText(g.label.toUpperCase()+"  "+g.members.length, 0, 0);
+          ctx.globalAlpha=1; ctx.restore();
+        });
+      }
       ctx.restore();
     }
     // The render loop PAUSES when the layout is at rest and nothing is being interacted with, then
