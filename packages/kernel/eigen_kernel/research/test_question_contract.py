@@ -254,7 +254,9 @@ def test_flag_on_without_vertical_prompt_is_fully_off():
 
 def test_derivation_failure_in_steer_falls_back_to_todays_behavior():
     src = CountingSource(_source())
-    llm = RecordingLLM([SimpleNamespace(mode="banana", entities=[], axes=[])] + _base_script())
+    # BOTH derivation attempts fail (retry-on-None): an invalid mode on each → the fallback path.
+    llm = RecordingLLM([SimpleNamespace(mode="banana", entities=[], axes=[]),
+                        SimpleNamespace(mode="banana", entities=[], axes=[])] + _base_script())
     res = _run(llm, src, mode="steer")
     assert res.grounded
     assert src.searches == [("baseline metric reading cohort", 10)]   # no legs

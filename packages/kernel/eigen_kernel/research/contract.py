@@ -68,12 +68,24 @@ class _ContractOut(BaseModel):
 
 
 async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str | None,
-                          max_tokens: int = 400) -> Contract | None:
-    """ONE small LLM call → Contract, or None on ANY failure (no prompt, LLM error, invalid
-    mode) — the fail-safe is today's behavior, never a heuristic guess. An enumerative verdict
-    with zero entities cannot steer anything, so it degrades to exploratory (valid, inert)."""
+                          max_tokens: int = 400, attempts: int = 2) -> Contract | None:
+    """Derive the Contract, RETRYING once on a None result. A None means the derivation call errored or
+    emitted an invalid mode — a transient flake that would otherwise silently drop the answer to the thin
+    default shape (the muted-answer path). Two attempts make that rare; a genuine no-prompt/no-llm case
+    still returns None immediately (no wasted call). The per-attempt logic is `_derive_contract_once`."""
     if llm is None or not (derivation_prompt or "").strip() or not (question or "").strip():
         return None
+    for _ in range(max(1, int(attempts))):
+        c = await _derive_contract_once(question, llm, derivation_prompt, max_tokens)
+        if c is not None:
+            return c
+    return None
+
+
+async def _derive_contract_once(question: str, llm: LLMClient, derivation_prompt: str,
+                                max_tokens: int) -> Contract | None:
+    """ONE small LLM call → Contract, or None on ANY failure (LLM error, invalid mode) — the fail-safe
+    is today's behavior, never a heuristic guess."""
     try:
         # NO temperature override: the planner model runs with extended thinking, and the API
         # rejects temperature≠1 there — the bare except then silently killed EVERY derivation

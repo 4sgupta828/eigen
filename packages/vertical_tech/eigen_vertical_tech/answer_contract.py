@@ -50,8 +50,13 @@ asks for. Output JSON with:
     deliverable is a COMPLETE multi-item breakdown, not a single verdict.
   - "exploratory" — anything else: a focused/direct question, a how/why explanation, a single-subject
     diligence, a yes/no or build-vs-buy DECISION, "assess the moat", "what did X raise". These want a
-    direct reasoned answer, NOT a table. This is the DEFAULT — when unsure between the two, choose
-    "exploratory" (a wrongly-forced table is worse than a missed one).
+    direct reasoned answer, NOT a table.
+  DECISIVENESS RULE (do not waffle — the same question must classify the SAME way every time): if the
+  question asks for a SET of things — "all X", "every X", "list the X", "what are the X (plural)", "tools/
+  players/approaches/problems/options for …" — it is ENUMERATIVE, EVEN WHEN it ALSO asks HOW they work,
+  their LIMITS, EXAMPLES, or other analytical sub-questions ABOUT that set. Those analytical sub-questions
+  are NOT a reason to pick exploratory — they are the `axes` (the table COLUMNS). Only choose exploratory
+  when there is NO set to enumerate at all (a single subject, one focused question, a pure decision).
 - `entities`: if the question NAMES the specific items to enumerate (e.g. "compare Cursor, Copilot, and
   Cody"), list them (the row items). If the items are NOT named (e.g. "all problems", "every approach"),
   leave `entities` EMPTY — they will be discovered from the evidence. For a non-enumerative question,
