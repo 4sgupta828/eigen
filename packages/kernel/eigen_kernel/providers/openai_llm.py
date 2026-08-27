@@ -7,8 +7,9 @@ hence a distinct provider. Lazy-imports the SDK (optional dep, already used for 
 """
 from __future__ import annotations
 
-import json
 import os
+
+from . import _jsonsafe
 
 
 class OpenAIJsonLLM:
@@ -30,4 +31,4 @@ class OpenAIJsonLLM:
             model=model, response_format={"type": "json_object"},
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": user}])
-        return json.loads(resp.choices[0].message.content or "{}")
+        return _jsonsafe.loads(resp.choices[0].message.content)   # tolerant of invalid-\escape

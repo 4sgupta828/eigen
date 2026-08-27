@@ -22,6 +22,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
+from . import _jsonsafe
 from .llm import LLMResult
 
 DEFAULT_MODEL = os.environ.get("EIGEN_JUDGE_MODEL", "gpt-4o")
@@ -92,7 +93,7 @@ class OpenAILLMClient:
                 **common,
             )
             content = resp.choices[0].message.content
-            obj = json.loads(content or "{}")
+            obj = _jsonsafe.loads(content)   # tolerant of LLM invalid-\escape (markdown/LaTeX/paths)
             parsed = response_format.model_validate(obj)
         except Exception:
             # Fallback: some models reject json_schema mode (or the schema). Retry ONCE in plain
@@ -109,7 +110,7 @@ class OpenAILLMClient:
                 **common,
             )
             content = resp.choices[0].message.content
-            obj = json.loads(content or "{}")
+            obj = _jsonsafe.loads(content)   # tolerant of LLM invalid-\escape (markdown/LaTeX/paths)
             parsed = response_format.model_validate(obj)  # raise on parse error — caller fail-safes
 
         _ms = int((time.perf_counter() - _t0) * 1000)
