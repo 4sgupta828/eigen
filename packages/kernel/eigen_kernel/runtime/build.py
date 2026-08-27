@@ -115,8 +115,14 @@ def build_web(*, mode: ProviderMode | str | None = None,
             clients = []
             if _has_exa:
                 clients.append(_exa())
-            elif _has_tav:
+            if _has_tav:
+                # ADDITIVE (was `elif` — Tavily was SKIPPED whenever Exa was present, leaving a working
+                # paid provider idle). Run BOTH keyed engines concurrently for maximal, diverse web
+                # coverage; the composite dedupes by URL and the tier/span gates still decide citations.
                 clients.append(TavilyWebSearch(time_range="year" if recent else ""))
+            # DuckDuckGo: free open-web breadth, best-effort. NOTE: currently returns 0 in prod (DDG
+            # blocks datacenter-IP HTML scraping) — harmless (concurrent + fail-safe), kept for the
+            # keyless case and in case it recovers. With NO paid key it is the sole (free) leg.
             clients.append(_ddg())
             inner = clients[0] if len(clients) == 1 else CompositeWebSearch(clients)
     return CassetteWebSearch(inner, cassette_root=cassette_root or default_cassette_root(),
