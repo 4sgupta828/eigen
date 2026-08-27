@@ -109,9 +109,13 @@ async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str 
         ambiguity_risk = ""
     candidates = [c.strip() for c in (getattr(p, "candidates", None) or [])
                   if isinstance(c, str) and c.strip()]
-    if mode == "enumerative" and not entities:
-        mode = "exploratory"                   # nothing to enumerate → inert contract, not None,
-        #                                        so the derivation verdict stays observable in diag
+    if mode == "enumerative" and not entities and not axes:
+        mode = "exploratory"                   # no ROWS and no COLUMNS → nothing to tabulate → inert
+        #                                        contract (not None) so the verdict stays observable.
+    #  NOTE: enumerative WITH axes but no named entities is KEPT — a "build me a table of all X" ask
+    #  names the DIMENSIONS (axes) but not the items; the row entities are DISCOVERED from evidence at
+    #  compose (the contract-rendered enumerative shape). The old code demoted this to exploratory,
+    #  which is exactly why such asks never tabulated.
     return Contract(mode=mode, entities=entities, axes=axes, stance=stance, subject_kind=subject_kind,
                     intent=intent, intent_confidence=intent_confidence, answer_brief=answer_brief,
                     resolved_question=resolved_question, ambiguity_risk=ambiguity_risk, candidates=candidates)
@@ -161,12 +165,15 @@ def build_legs(contract: Contract | None, *, cap: int = 12,
     min(cap, 4). Entities on an exploratory contract are ignored."""
     if contract is None:
         return []
-    if contract.mode == "exploratory":
+    # exploratory, OR enumerative WITHOUT named entities (rows discovered from evidence) → AXIS-ONLY
+    # legs: each axis verbatim, no entity expansion. The enumerative-no-entities case ("table of all X",
+    # dimensions named but items not) fans out on the dimensions so the rows can be discovered.
+    if contract.mode == "exploratory" or (contract.mode == "enumerative" and not contract.entities):
         if not contract.axes:
             return []
         cap = min(cap, 4)
         axes: list[str] = contract.axes
-        entities: list[str] = []               # axis-only: no entity expansion for exploratory
+        entities: list[str] = []               # axis-only: no entity expansion
     elif contract.mode == "enumerative" and contract.entities:
         axes = contract.axes or [""]
         entities = contract.entities

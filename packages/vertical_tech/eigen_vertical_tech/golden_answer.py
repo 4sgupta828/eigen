@@ -228,11 +228,14 @@ SHAPE — ENUMERATE THE COMPLETE SET.
 - This question asks you to enumerate/list/tabulate the full set — completeness is the deliverable, and \
 for THIS question it OVERRIDES any instinct toward "a single straight answer" or "don't compile \
 everything": here you SHOULD lay out the whole grounded set.
+- ROWS: if a list of ITEMS is given below, use them as the rows. If NO items are given (the question \
+asked for "all X" / "every Y" without naming them), DISCOVER the natural items/categories FROM THE \
+EVIDENCE and make each one a row — the rows come from what the findings actually contain, never invented.
 - Produce a markdown TABLE (or, only if a table genuinely doesn't fit, a clean one-block-per-item list): \
 ONE ROW per item, ONE COLUMN per dimension named below. Every cell is either a grounded value with its \
 [n], or an explicit gap ("—" / "not found") — never left blank, never invented.
-- Cover EVERY item that has evidence, and name the ones that don't rather than dropping them. Do NOT \
-collapse the set to a thesis or a handful of examples.
+- Cover EVERY item the evidence supports; do NOT collapse the set to a thesis or a handful of examples. \
+If the evidence only supports a few rows, give those and say the coverage is partial.
 - Keep the plain grounded VOICE inside the cells (concise, cited, no source-narration). A single \
 one-line takeaway UNDER the table is welcome, but the table is the answer, not a preamble to it."""
 
@@ -246,8 +249,11 @@ bulleted structure or a small table where it makes the landscape easier to scan.
 - Where the evidence does point to a clear reading on a dimension, say so plainly; where it's genuinely \
 contested or thin, say that too instead of manufacturing a conclusion."""
 
-# mode -> shape. The kernel selects by the derived contract mode; anything unmapped falls to SHAPE_DEFAULT.
+# mode -> shape. Only ENUMERATIVE changes behavior (→ table). Everything else (exploratory — the
+# classifier's catch-all, which includes decision/analytical/how-why questions — and any unmapped mode)
+# falls through to SHAPE_DEFAULT: answer directly / reason to a conclusion, today's behavior. Mapping
+# exploratory → SHAPE_EXPLORATORY would wrongly turn normal analytical questions into landscape surveys,
+# so SHAPE_EXPLORATORY is reserved for an explicit future "map the landscape" signal, not used here.
 CONTRACT_SHAPES = {
     "enumerative": SHAPE_ENUMERATIVE,
-    "exploratory": SHAPE_EXPLORATORY,
 }

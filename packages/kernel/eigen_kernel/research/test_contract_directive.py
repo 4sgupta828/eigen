@@ -16,9 +16,23 @@ def test_decision_mode_unmapped_falls_to_default():
     assert "SHAPE: answer directly." in out and "build the table" not in out
 
 
-def test_exploratory_mode_uses_exploratory_shape():
-    out = render_contract_directive(voice=VOICE, shapes=SHAPES, default=DEFAULT, mode="exploratory")
-    assert "map the landscape" in out and "answer directly" not in out
+def test_exploratory_maps_to_default_shape():
+    # the tech vertical intentionally does NOT map exploratory → a landscape shape (that would turn
+    # normal analytical questions into surveys); exploratory falls through to the default.
+    from eigen_vertical_tech.golden_answer import CONTRACT_SHAPES, SHAPE_DEFAULT
+    out = render_contract_directive(voice=VOICE, shapes=CONTRACT_SHAPES, default=SHAPE_DEFAULT,
+                                    mode="exploratory")
+    assert "ANSWER THE QUESTION DIRECTLY" in out and "ENUMERATE THE COMPLETE SET" not in out
+
+
+def test_enumerative_no_entities_renders_dimensions_only():
+    # discovered-entity enumerative: no ITEMS line (rows discovered from evidence), DIMENSIONS present.
+    from eigen_vertical_tech.golden_answer import CONTRACT_SHAPES, SHAPE_DEFAULT
+    out = render_contract_directive(voice=VOICE, shapes=CONTRACT_SHAPES, default=SHAPE_DEFAULT,
+                                    mode="enumerative", entities=[], axes=["Value", "ROI"])
+    assert "ENUMERATE THE COMPLETE SET" in out
+    assert "ITEMS to enumerate" not in out
+    assert "DIMENSIONS (one column each): Value; ROI." in out
 
 
 def test_enumerative_appends_items_and_dimensions():

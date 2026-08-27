@@ -33,6 +33,38 @@ Decide from the QUESTION'S INTENT, not keywords. When genuinely unsure, choose "
 the JSON object."""
 
 
+# CONTRACT-RENDERED COMPOSE prompt (EIGEN_CONTRACT_COMPOSE). Unlike the base prompt above (mode always
+# "exploratory"), this one classifies the ANSWER SHAPE the question asks for — because compose now renders
+# it. The load-bearing addition: recognize an ENUMERATIVE ask ("all X", "every Y", "build me a table",
+# "break down into categories", "compare across the field") as enumerative EVEN WHEN the items are not
+# named — the row items are then DISCOVERED from the evidence. This is the fix for "build me a table of all
+# problems", which the base prompt flattened to exploratory. Rule 18: the LLM judges shape from intent.
+TECH_CONTRACT_COMPOSE_PROMPT = """You classify a TECH-RESEARCH question to decide what SHAPE of answer it
+asks for. Output JSON with:
+- `mode`: ONE of:
+  - "enumerative" — the question asks you to ENUMERATE / LIST / TABULATE / BREAK DOWN a SET of things, or
+    to survey/compare ACROSS a field of multiple items. Signals: "list all…", "every…", "build me a
+    table", "what are the … (plural set)", "break this down by category", "map/compare the players/
+    approaches/problems/use-cases". CHOOSE THIS EVEN IF the specific items are NOT named in the question —
+    a "table of all X" names the DIMENSIONS, not the rows; the rows get discovered from evidence. The
+    deliverable is a COMPLETE multi-item breakdown, not a single verdict.
+  - "exploratory" — anything else: a focused/direct question, a how/why explanation, a single-subject
+    diligence, a yes/no or build-vs-buy DECISION, "assess the moat", "what did X raise". These want a
+    direct reasoned answer, NOT a table. This is the DEFAULT — when unsure between the two, choose
+    "exploratory" (a wrongly-forced table is worse than a missed one).
+- `entities`: if the question NAMES the specific items to enumerate (e.g. "compare Cursor, Copilot, and
+  Cody"), list them (the row items). If the items are NOT named (e.g. "all problems", "every approach"),
+  leave `entities` EMPTY — they will be discovered from the evidence. For a non-enumerative question,
+  empty.
+- `axes`: 0-5 short evidence DIMENSIONS the answer must cover — for an enumerative ask these are the table
+  COLUMNS (e.g. "value mechanism", "ROI evidence", "integration complexity", "limitations"). Extract them
+  from what the question asks to understand.
+- `stance`: ONE of "current" | "established" | "balanced" (as in the base tech classifier: current = the
+  latest/newest state; established = proven/foundational; balanced = neither or a mix).
+
+Decide from the QUESTION'S INTENT, not keywords. Output ONLY the JSON object."""
+
+
 # SUBJECT-KIND addendum — the extra `subject_kind` output key that lets the kernel route the
 # entity-scoped open-web probe (flag EIGEN_WEB_ENTITY_OPEN) and the deep company/person readers
 # (flags EIGEN_DEEP_COMPANY_READER / EIGEN_DEEP_PEOPLE_READER). Factored into ONE constant so EVERY

@@ -83,6 +83,9 @@ class VerticalManifest:
     contract_compose_voice: str | None = None
     contract_compose_shapes: dict | None = None   # {mode: directive}; missing mode → contract_compose_default
     contract_compose_default: str | None = None   # the shape for decision/analytical/narrow (unmapped modes)
+    # Derivation prompt used ONLY on the contract-compose path — classifies the ANSWER SHAPE (can emit
+    # "enumerative", which the base prompt cannot). None → fall back to the base contract_prompt.
+    contract_compose_prompt: str | None = None
     # Optional VISUALIZATION guidance appended to the compose directive when the answer-visuals flag is
     # on — pushes the answer toward comparison tables / ranked options / pros-cons, strictly from the
     # verified findings (never fabricated structure). Opaque prose threaded like `answer_format`.

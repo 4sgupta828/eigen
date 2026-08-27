@@ -32,6 +32,7 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
                          WikidataConnector, WikipediaConnector, YcConnector)
 from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import (ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_CONTRACT_PROMPT_ENTITY,
+                              TECH_CONTRACT_COMPOSE_PROMPT,
                               TECH_LANDSCAPE_CONTRACT_PROMPT, TECH_LANDSCAPE_CONTRACT_PROMPT_ENTITY,
                               TECH_REFLECTION_ADDENDUM)
 from .company_reader import COMPANY_READER
@@ -146,6 +147,7 @@ def build_manifest() -> VerticalManifest:
         contract_compose_voice=GOLDEN_VOICE,
         contract_compose_shapes=CONTRACT_SHAPES,
         contract_compose_default=SHAPE_DEFAULT,
+        contract_compose_prompt=TECH_CONTRACT_COMPOSE_PROMPT,   # classifies enumerative shape
         # Enhanced A/B synthesis variant (reuses the kernel's enhanced-answer slot; same section set).
         clinical_answer_format=TECH_DILIGENCE_SYNTHESIS_FORMAT,
         # Concept/term glossary + grounded conceptual VISUALS (diagrams) + inline visual/chart/reasoning

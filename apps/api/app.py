@@ -1373,6 +1373,9 @@ def build_default_service() -> ResearchService:
         contract_prompt=_apply_reflection_addendum(
             (getattr(manifest, "landscape_contract_prompt", None)
              if landscape_coverage_enabled()
+             # contract-compose uses the SHAPE classifier (can emit "enumerative"); the base prompt can't.
+             else getattr(manifest, "contract_compose_prompt", None)
+             if (_cc_compose and getattr(manifest, "contract_compose_prompt", None))
              else getattr(manifest, "contract_prompt", None)),
             manifest),
         explore_legs=(True if landscape_coverage_enabled() else explore_legs_enabled()),

@@ -125,10 +125,26 @@ def test_derive_contract_no_prompt_is_none_without_llm_call():
     assert llm.prompts == []
 
 
-def test_derive_contract_enumerative_without_entities_degrades_to_exploratory():
-    llm = RecordingLLM([SimpleNamespace(mode="enumerative", entities=[], axes=["axis one"])])
+def test_derive_contract_enumerative_with_axes_no_entities_stays_enumerative():
+    # "build me a table of all X": the DIMENSIONS (axes) are named, the row items are not — they get
+    # discovered from evidence. This MUST stay enumerative (the old coercion-to-exploratory was the bug
+    # that made such asks never tabulate).
+    llm = RecordingLLM([SimpleNamespace(mode="enumerative", entities=[], axes=["value", "roi"])])
+    c = asyncio.run(derive_contract("q?", llm, _PROMPT))
+    assert c is not None and c.mode == "enumerative" and c.entities == [] and c.axes == ["value", "roi"]
+
+
+def test_derive_contract_enumerative_no_entities_no_axes_degrades_to_exploratory():
+    # nothing to tabulate — no rows AND no columns — still degrades to exploratory (inert).
+    llm = RecordingLLM([SimpleNamespace(mode="enumerative", entities=[], axes=[])])
     c = asyncio.run(derive_contract("q?", llm, _PROMPT))
     assert c is not None and c.mode == "exploratory" and c.entities == []
+
+
+def test_build_legs_enumerative_no_entities_uses_axis_only():
+    # discovered-entity enumerative → axis-only legs (like exploratory), so rows can be found.
+    c = Contract(mode="enumerative", entities=[], axes=["value", "roi", "limits"])
+    assert build_legs(c) == ["value", "roi", "limits"]
 
 
 # ---- build_legs: axis-only coverage first, then entity × axis round-robin, cap, dedupe --------
