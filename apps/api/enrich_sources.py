@@ -16,24 +16,54 @@ def _sha(s: str) -> str:
     return hashlib.sha256((s or "").encode("utf-8")).hexdigest()[:16]
 
 
-async def news_fetcher(company_name: str, *, web, max_results: int = 3) -> list[dict]:
+def _grounding_text(r, cap: int = 4500) -> str:
+    """Assemble the grounding text for ONE Exa result: the QUERY-AWARE highlights FIRST (the most
+    relevant sentences Exa already extracted — we pay for these, so use them), then the page body,
+    capped. Putting highlights first guarantees the discriminating span survives the cap even when
+    the body is long — the exact truncation-loss the highlights feature exists to prevent."""
+    body = (getattr(r, "body", None) or getattr(r, "snippet", "") or "").strip()
+    highlights = [h.strip() for h in (getattr(r, "highlights", None) or ()) if h and h.strip()]
+    parts: list[str] = []
+    if highlights:
+        parts.append("\n".join(highlights))
+    if body:
+        parts.append(body)
+    return ("\n\n".join(parts))[:cap]
+
+
+# NEWS recency floor: a diligence graph must reflect the CURRENT round, so bias news to recent pages
+# (Exa returns most-relevant, which lets a dense older overview out-rank this quarter's raise).
+_NEWS_RECENCY_DAYS = 540
+
+
+async def news_fetcher(company_name: str, *, web, max_results: int = 6) -> list[dict]:
     """Exa web search for funding/traction news about `company_name` → candidate NEWS docs
-    (source_key='news' → `analysis` tier). Each doc carries the page body as grounding text.
-    Fail-safe → []. NEWS is not a filing, so the pipeline attaches it to the targeted company."""
+    (source_key='news' → `analysis` tier). Each doc carries highlights+body as grounding text, biased
+    to RECENT pages (`_NEWS_RECENCY_DAYS`) and narrowed to the `news` category so press leads over
+    marketing. Fail-safe → []. NEWS is not a filing, so the pipeline attaches it to the company."""
+    query = (f"Latest funding rounds, investors, valuation, revenue and customer traction for "
+             f"{company_name}")
     try:
-        results = await web.search(
-            f"{company_name} startup funding round raised investors traction", max_results=max_results)
+        try:
+            results = await web.search(query, max_results=max_results,
+                                       recency_days=_NEWS_RECENCY_DAYS, category="news")
+        except TypeError:
+            # a web provider without the recency/category kwargs (e.g. the free fallback) → plain call
+            results = await web.search(query, max_results=max_results)
     except Exception:   # noqa: BLE001
         return []
     docs: list[dict] = []
+    seen: set = set()
     for r in (results or []):
-        body = (getattr(r, "body", None) or getattr(r, "snippet", "") or "").strip()
+        text = _grounding_text(r)
         url = getattr(r, "url", "") or ""
-        if not body:
+        if not text or url in seen:
             continue
+        seen.add(url)
         docs.append({
-            "source_key": "news", "document_id": "news:" + _sha(url or body),
-            "text": body[:4000], "facets": {"source_kind": "news", "url": url},
+            "source_key": "news", "document_id": "news:" + _sha(url or text),
+            "text": text, "facets": {"source_kind": "news", "url": url,
+                                     "published": getattr(r, "published", None) or ""},
         })
     return docs
 
@@ -42,11 +72,11 @@ _SITE_FACETS = ["product what it does", "technology how it works architecture",
                 "founders team leadership", "customers case studies", "pricing plans"]
 
 
-async def site_fetcher(company_name: str, *, web, domain: str = "", max_per_facet: int = 2) -> list[dict]:
+async def site_fetcher(company_name: str, *, web, domain: str = "", max_per_facet: int = 3) -> list[dict]:
     """Read the company's OWN site for DEPTH (product / technology / team / customers / pricing) —
-    the dimensions news + Form-D miss. Domain-scoped Exa searches; stamped `corp_eng` (SELF-REPORTED
-    tier — never outranks press/filings). Not a filing, so it attaches to the targeted company.
-    Fail-safe → []."""
+    the dimensions news + Form-D miss. Domain-scoped Exa searches carrying highlights+body; stamped
+    `corp_eng` (SELF-REPORTED tier — never outranks press/filings). Not a filing, so it attaches to
+    the targeted company. Fail-safe → []."""
     prefix = (f"site:{domain} " if domain else f"{company_name} ")
     docs: list[dict] = []
     seen: set = set()
@@ -56,14 +86,14 @@ async def site_fetcher(company_name: str, *, web, domain: str = "", max_per_face
         except Exception:   # noqa: BLE001
             continue
         for r in (results or []):
-            body = (getattr(r, "body", None) or getattr(r, "snippet", "") or "").strip()
+            text = _grounding_text(r)
             url = getattr(r, "url", "") or ""
-            if not body or url in seen:
+            if not text or url in seen:
                 continue
             seen.add(url)
             docs.append({
-                "source_key": "web", "document_id": "site:" + _sha(url or body),
-                "text": body[:4000],
+                "source_key": "web", "document_id": "site:" + _sha(url or text),
+                "text": text,
                 "facets": {"source_kind": "corp_eng", "web_role": "official", "url": url},
             })
     return docs

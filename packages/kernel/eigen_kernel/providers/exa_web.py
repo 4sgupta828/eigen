@@ -28,7 +28,7 @@ class ExaWebSearch:
 
     async def search(self, query: str, *, max_results: int = 8,
                      open_web: bool = False, recency_days: int | None = None,
-                     max_chars: int | None = None) -> list[WebResult]:
+                     max_chars: int | None = None, category: str = "") -> list[WebResult]:
         import httpx
         payload = {
             "query": query,
@@ -40,6 +40,10 @@ class ExaWebSearch:
             "contents": {"text": {"maxCharacters": int(max_chars) if max_chars is not None else 4000},
                          "highlights": {"numSentences": 5, "highlightsPerUrl": 2, "query": query}},
         }
+        # category narrows Exa to a result type ("news" / "company" / "financial report" / …) so a
+        # funding-news query returns press, not marketing pages. Optional; other providers ignore it.
+        if category:
+            payload["category"] = category
         # open_web (answer-contract, per request) → DROP the trusted-domain whitelist for open-web
         # discovery of the very latest (a lab's own announcement blog, a niche release page). The
         # tier classifier + span-verification still grade + gate whatever comes back.
