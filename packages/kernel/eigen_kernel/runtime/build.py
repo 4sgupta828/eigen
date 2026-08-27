@@ -116,10 +116,14 @@ def build_web(*, mode: ProviderMode | str | None = None,
             # (was `if Exa elif Tavily`, which left a working paid provider idle). The composite dedupes
             # by URL and the tier/span/rerank gates still decide what's actually cited.
             _has_brave = bool(os.environ.get("BRAVE_API_KEY"))
+            # Tavily is DISABLED by default (its key is currently out of credits → 402 on every call,
+            # wasting a leg + latency). Re-enable by setting EIGEN_ENABLE_TAVILY=1 once credits are
+            # restored — no code change needed then.
+            _tav_on = _has_tav and os.environ.get("EIGEN_ENABLE_TAVILY", "").lower() in ("1", "true", "yes")
             clients = []
             if _has_exa:
                 clients.append(_exa())               # depth: full text + query-aware highlights
-            if _has_tav:
+            if _tav_on:
                 clients.append(TavilyWebSearch(time_range="year" if recent else ""))
             if _has_brave:
                 # Brave Search API — the free/cheap open-web BREADTH leg REPLACING DuckDuckGo, whose
