@@ -578,6 +578,29 @@ class ClaimGraphStore:
                                  "company": r["sname"]})
         return promoted
 
+    async def distinct_object_forms(self, predicates: tuple[str, ...] | list[str], *,
+                                    tenant_id: str = "demo") -> list[tuple[str, str, str]]:
+        """Distinct grounded-value object forms for the given predicates → [(representative_surface,
+        object_norm, representative_quote)]. Surface = the MOST FREQUENT `object_value` for each norm;
+        quote = one active-evidence quote for that norm (structural, Rule 18). Feeds the LLM
+        alias-resolver — the surface forms are clustered, and the quote gives the pairwise same-entity
+        VERIFIER real context (panel: never merge on bare strings)."""
+        await self.ensure_schema()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT cl.object_norm norm,
+                          mode() WITHIN GROUP (ORDER BY cl.object_value) surface,
+                          min(ev.quote) quote
+                   FROM rs_claim cl
+                   JOIN rs_claim_evidence ev
+                     ON ev.claim_id = cl.claim_id AND ev.evidence_status = 'active'
+                   WHERE cl.tenant_id = $1 AND cl.predicate = ANY($2) AND cl.object_kind = 'value'
+                     AND cl.object_norm <> ''
+                   GROUP BY cl.object_norm""",
+                tenant_id, list(predicates))
+        return [(r["surface"] or r["norm"], r["norm"], r["quote"] or "") for r in rows]
+
     async def add_alias(self, alias: str, entity_id: str, source: str = "") -> str:
         """Register a normalized alias → entity mapping (exact-match resolution only)."""
         await self.ensure_schema()

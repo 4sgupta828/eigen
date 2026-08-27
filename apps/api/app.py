@@ -636,6 +636,14 @@ def diligence_depth_enabled() -> bool:
     return os.environ.get("EIGEN_DILIGENCE_DEPTH", "").lower() in ("1", "true", "yes")
 
 
+def alias_resolver_enabled() -> bool:
+    """Flag (default OFF, Rule 20): EIGEN_ALIAS_RESOLVER. When ON, graph_explore loads the LLM-built
+    surface-form alias map from rs_entity_alias and remaps each relationship node key
+    (`<kind>:<norm>` → the canonical entity + canonical display name) so aliases of one fund/tech
+    (a16z ≈ Andreessen Horowitz) collapse to ONE node. OFF → raw `<kind>:<norm>`, byte-identical."""
+    return os.environ.get("EIGEN_ALIAS_RESOLVER", "").lower() in ("1", "true", "yes")
+
+
 def crossviews_enabled() -> bool:
     """Flag (default OFF, Rule 20): EIGEN_CROSSVIEWS. When ON, the CROSSVIEWS surface is
     exposed — the grounded dynamic-table endpoints (`/crossviews/options`,
@@ -2012,6 +2020,17 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                      AND EXISTS (SELECT 1 FROM rs_claim_evidence ev
                                  WHERE ev.claim_id = cl.claim_id AND ev.evidence_status = 'active')""",
                 subj, tenant_id)
+            # ALIAS MAP (flag EIGEN_ALIAS_RESOLVER): LLM-built surface-form merges. rs_entity_alias has
+            # no tenant/kind column and alias_norm isn't unique, so we load (kind-from-id, name) and
+            # ABSTAIN on any collision below (panel guidance). Empty when the flag is OFF → OFF is a no-op.
+            alias_rows = []
+            if alias_resolver_enabled():
+                alias_rows = await conn.fetch(
+                    """SELECT a.alias_norm, a.entity_id, e.name, e.kind
+                       FROM rs_entity_alias a JOIN rs_entity e ON e.entity_id = a.entity_id
+                       WHERE e.tenant_id = $1 AND e.status = 'active'
+                         AND e.kind = ANY($2)""",
+                    tenant_id, ["investor", "product", "technology", "category", "market", "company"])
         finally:
             await conn.close()
         subj_name = {r["entity_id"]: r["name"] for r in top}
@@ -2037,18 +2056,33 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
         _REL_KINDS = {"investor", "product", "technology", "category", "market", "company"}
         rel_preds = {p: k for p, k in _pred_kind.items()
                      if k in _REL_KINDS and p not in ("has_founder", "key_person")}
+        # Collapse the alias map to (kind, alias_norm) → canonical, ABSTAINING on any norm that maps to
+        # >1 distinct canonical of the same kind (ambiguous → keep raw, the fail-safe). Kind-scoped so a
+        # norm that is a company alias never hijacks a technology edge (panel).
+        _alias_cands: dict = {}
+        _alias_name: dict = {}
+        for r in alias_rows:
+            _alias_cands.setdefault((r["kind"], r["alias_norm"]), set()).add(r["entity_id"])
+            _alias_name[r["entity_id"]] = r["name"]
+        alias_map = {k: next(iter(v)) for k, v in _alias_cands.items() if len(v) == 1}
         _seen = {(e["s"], e["p"], e["o"]) for e in edges}
         for r in val_rows:
             kind = rel_preds.get(r["predicate"])
             if not kind or not r["object_norm"]:
                 continue
-            nid = f"{kind}:{r['object_norm']}"
+            # ALIAS REMAP (before dedup, so variant spellings collapse to one edge): a canonical merge
+            # for THIS kind wins; otherwise the raw `<kind>:<norm>` node (byte-identical when flag OFF).
+            canon = alias_map.get((kind, r["object_norm"]))
+            if canon:
+                nid, oname = canon, (_alias_name.get(canon) or r["object_value"])
+            else:
+                nid, oname = f"{kind}:{r['object_norm']}", r["object_value"]
             k = (r["subject_id"], r["predicate"], nid)
             if k in _seen:
                 continue
             _seen.add(k)
             edges.append({"s": r["subject_id"], "sname": subj_name.get(r["subject_id"], r["subject_id"]),
-                          "p": r["predicate"], "o": nid, "oname": r["object_value"], "okind": kind})
+                          "p": r["predicate"], "o": nid, "oname": oname, "okind": kind})
         # PEOPLE edges: company -> per-company person node (founders/key-people), deduped by node id.
         for r in person_rows:
             pid = f"person:{r['subject_id']}:{r['object_norm']}"
