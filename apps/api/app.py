@@ -593,6 +593,15 @@ def _apply_reflection_addendum(base_prompt, manifest):
     return (base_prompt + add) if (base_prompt and add) else base_prompt
 
 
+def web_only_enabled() -> bool:
+    """Flag (default OFF, Rule 20) via EIGEN_WEB_ONLY: drop the CORPUS retrieval source entirely so the
+    web is the ONLY source. Makes answers current/fluid like ChatGPT (no stale-corpus / Wikipedia
+    domination) — at the cost of eigen's structured/authoritative depth (SEC filings, patents, papers,
+    GitHub). Also widens the web leg (max_results 25 vs 8) since the corpus-retrieval latency budget is
+    freed. OFF → corpus + web (byte-identical). Reversible with no redeploy (env flag)."""
+    return os.environ.get("EIGEN_WEB_ONLY", "").lower() in ("1", "true", "yes")
+
+
 def enum_entity_probe_enabled() -> bool:
     """Flag (default OFF, Rule 20) via EIGEN_ENUM_ENTITY_PROBE: for an enumerative "table of the main X"
     ask with no user-named items, the derivation ALSO proposes `probe_entities` (candidate row instances)
@@ -1209,7 +1218,8 @@ def build_default_service() -> ResearchService:
     sources: dict = {}
     connectors: dict = {}
     corpus_key = ""
-    if dsn:
+    _web_only = web_only_enabled()
+    if dsn and not _web_only:
         # Real pgvector corpus (empty until POST /ingest). One pg source, registered
         # under the vertical's corpus source key so gating/covers still align.
         covers = next((s.covers() for s in manifest.retrieval_sources.values()
@@ -1219,14 +1229,19 @@ def build_default_service() -> ResearchService:
         corpus_key = next(iter(manifest.retrieval_sources), "corpus")
         sources[corpus_key] = pg
         connectors = dict(manifest.connectors)
-    else:
+    elif not _web_only:
         sources = dict(manifest.retrieval_sources)      # fixture (in-memory) corpus
+    # EIGEN_WEB_ONLY: drop the corpus (both real + fixture) → web is the ONLY retrieval source. The
+    # answer becomes ChatGPT-like (current, fluid) at the cost of eigen's structured/authoritative depth
+    # (filings/patents/papers). Widen web breadth here since the corpus-retrieval latency budget is freed
+    # (25 default vs 8) so the web leg has ChatGPT-grade reach. OFF → byte-identical (corpus + web=8).
+    _web_max = int(os.environ.get("EIGEN_WEB_MAX_RESULTS", "25" if _web_only else "8"))
     sources["web"] = WebRetrievalSource(
         build_web(mode=mode, domains=getattr(manifest, "web_domains", ()),
-                  recent=(freshness_ranking_enabled() or answer_contract_enabled())),
-        # results per web query (env EIGEN_WEB_MAX_RESULTS). Kept at the original 8 — a 12 widening
-        # (× 2 providers × many legs) regressed research latency badly; revisit fan-out separately.
-        max_results=int(os.environ.get("EIGEN_WEB_MAX_RESULTS", "8")),
+                  recent=(freshness_ranking_enabled() or answer_contract_enabled() or _web_only)),
+        # results per web query (env EIGEN_WEB_MAX_RESULTS). 8 with corpus (a 12 widening × 2 providers
+        # × many legs regressed latency); web-only frees that budget → default 25 for ChatGPT-grade reach.
+        max_results=_web_max,
         # venue-authority facets + the corpus embedder: web evidence gets graded and reranked
         # by the same machinery as corpus evidence (authority tiers, recency, query relevance)
         domain_facets=getattr(manifest, "web_domain_facets", None),
