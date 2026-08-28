@@ -220,9 +220,36 @@ YC_QUERIES = [
 ]
 # --- USPTO patents (primary_filing granted / technical_signal application); needs EIGEN_USPTO_KEY ---
 USPTO_QUERIES = [
+    # AI/ML core
     "large language model","transformer neural network","attention mechanism","retrieval augmented generation",
     "neural network accelerator","AI inference chip","speech recognition model","diffusion image generation",
     "reinforcement learning","vector similarity search",
+    # FRONTIER DEEP-TECH (the patent gap is corpus-wide, not just AI — 174 blocks total): a spread per sector
+    # so the moat/IP axis has real coverage across quantum/semis/robotics/bio/climate/space/security/energy.
+    "quantum computing qubit","quantum error correction","semiconductor lithography","chiplet packaging",
+    "gallium nitride power device","autonomous robot navigation","surgical robotics","solid state battery",
+    "carbon capture materials","direct air capture","satellite propulsion","reusable rocket",
+    "mRNA vaccine platform","CRISPR gene editing","synthetic biology","post-quantum cryptography",
+    "confidential computing enclave","lidar sensor","solid oxide fuel cell","brain computer interface",
+]
+
+# --- NEWS / MARKET SIGNAL via GDELT (keyless; the connector RESTRICTS to reputable tech/business press —
+# TechCrunch, Bloomberg, Reuters, FT, The Information, The Verge, Ars Technica, Wired, Axios, Forbes, CNBC,
+# NYT). This IS the "startup news" layer (analysis tier, labeled): recent funding rounds, launches,
+# acquisitions, sector developments. news=288 blocks today → the market-signal gap. ---
+GDELT_QUERIES = [
+    # NOTE: GDELT rejects any <3-char keyword ("AI"/"ML") → spell them out. Keep queries 2-3 words so a
+    # full page (75) returns and enough survive the connector's reputable-domain post-filter.
+    # funding / deal flow
+    "startup funding round","venture capital funding","startup Series funding","startup acquisition",
+    "startup valuation billion","artificial intelligence funding",
+    # AI landscape
+    "foundation model company","coding assistant startup","enterprise artificial intelligence",
+    "open source language model","artificial intelligence chip","generative artificial intelligence",
+    # frontier sectors
+    "quantum computing company","semiconductor startup","robotics company funding","climate tech startup",
+    "fintech startup funding","biotech startup funding","defense tech startup","space startup launch",
+    "autonomous vehicle company","cybersecurity startup",
 ]
 
 # --- T3: GitHub org traction (technical_signal) ---
@@ -321,9 +348,13 @@ def build(tranche: str, limit: int | None) -> list[dict]:
                 jobs.append({"connector":"semantic_scholar","query":qy,"limit":limit or 20,"facets":f,"priority":500})
                 jobs.append({"connector":"crossref","query":qy,"limit":limit or 20,"facets":f,"priority":500})
                 jobs.append({"connector":"openreview","query":qy,"limit":limit or 10,"facets":f,"priority":500})
-    if tranche in ("uspto","all"):
+    if tranche in ("uspto","patents","all"):
         for qy in USPTO_QUERIES:
             jobs.append({"connector":"uspto","query":qy,"limit":limit or 25})
+    if tranche in ("gdelt","news","all"):
+        # reputable-press news (analysis tier); 6-month window so it's CURRENT market signal.
+        for qy in GDELT_QUERIES:
+            jobs.append({"connector":"gdelt","query":qy,"limit":limit or 40,"params":{"timespan":"6m"}})
     if tranche in ("wikipedia","all"):
         # tech + company/ecosystem history/genesis pages
         for qy in (list(WIKIDATA_NAMES) + DEEPTECH_TOPICS[:30]):
@@ -386,8 +417,9 @@ def build(tranche: str, limit: int | None) -> list[dict]:
 
 def main() -> int:
     _TRANCHES = ["depth","formd","openalex","arxiv","s2","crossref","wikidata","hn","reddit","lobsters",
-                 "hf","stackoverflow","openreview","companies_house","yc","uspto","wikipedia","nsf","nih",
-                 "expert","podcast","eng_blog","seminal","fulltext","github","recent","deeptech","all"]
+                 "hf","stackoverflow","openreview","companies_house","yc","uspto","patents","gdelt","news",
+                 "wikipedia","nsf","nih","expert","podcast","eng_blog","seminal","fulltext","github",
+                 "recent","deeptech","all"]
 
     def _tranche(v: str) -> str:
         # allow `deeptech:<sector>` (e.g. deeptech:quantum) for one-sector-at-a-time runs

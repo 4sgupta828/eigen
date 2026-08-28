@@ -18,9 +18,17 @@ from ._http import HttpStrategy
 API = "https://api.gdeltproject.org/api/v2/doc/doc"
 
 # Reputable tech/business outlets — keeps the news layer diligence-grade (analysis tier), not noise.
+# Applied as a POST-FILTER on returned articles (NOT an in-query `domainis:` clause): GDELT rejects a
+# query whose `(topic) (domainis:a OR ... )` clause is too long/complex (connection reset → 0 articles —
+# the reason this connector historically wrote NOTHING). Post-filtering is robust AND lets this list grow
+# freely without touching the query. Broadened to more quality tech/business/startup outlets.
 _DOMAINS = ["reuters.com", "bloomberg.com", "ft.com", "wsj.com", "cnbc.com", "techcrunch.com",
             "theinformation.com", "theverge.com", "arstechnica.com", "wired.com", "forbes.com",
-            "axios.com", "businessinsider.com", "nytimes.com"]
+            "axios.com", "businessinsider.com", "nytimes.com", "venturebeat.com", "techcabal.com",
+            "theregister.com", "engadget.com", "semafor.com", "restofworld.org", "sifted.eu",
+            "crunchbase.com", "news.crunchbase.com", "fortune.com", "economist.com", "zdnet.com",
+            "protocol.com", "thenextweb.com", "fastcompany.com", "qz.com"]
+_DOMAIN_SET = {d.lower() for d in _DOMAINS}
 
 
 class GdeltConnector:
@@ -43,14 +51,19 @@ class GdeltConnector:
             q = (window or {}).get("query", "").strip() or "artificial intelligence"
             limit = min(75, int((window or {}).get("limit", self._page_size)))
             span = (window or {}).get("timespan", "3m")
-            dom = " OR ".join(f"domainis:{d}" for d in _DOMAINS)
-            full = f"({q}) ({dom})"
-            url = (f"{API}?query={urllib.parse.quote(full)}&mode=ArtList&format=json"
-                   f"&maxrecords={limit}&sort=DateDesc&timespan={span}")
+            # Query the TOPIC ALONE (no in-query domain clause — that clause caused connection resets and
+            # 0 articles), OVER-FETCH the max (75), then POST-FILTER to reputable outlets. NOTE: GDELT
+            # rejects a query containing any <3-char keyword ("AI", "ML") with a non-JSON "keyword too
+            # short" body → the fail-soft below returns []; callers must spell short terms out
+            # ("artificial intelligence"), which the query sets already do.
+            url = (f"{API}?query={urllib.parse.quote(q)}&mode=ArtList&format=json"
+                   f"&maxrecords=75&sort=DateDesc&timespan={span}")
             try:
-                arts = (json.loads(await self.fetch_strategy.fetch(url)).get("articles") or [])[:limit]
-            except Exception:   # noqa: BLE001 — GDELT can return non-JSON on throttle; fail soft
-                arts = []
+                all_arts = json.loads(await self.fetch_strategy.fetch(url)).get("articles") or []
+            except Exception:   # noqa: BLE001 — GDELT returns non-JSON on a rejected/throttled query; fail soft
+                all_arts = []
+            # keep only reputable-press articles (diligence-grade, analysis tier), newest first, up to limit
+            arts = [a for a in all_arts if (a.get("domain") or "").lower() in _DOMAIN_SET][:limit]
             for a in arts:
                 self._by_url[news_doc.article_url(a)] = a
         return [EntityRef(source_key=self.key, native_id=news_doc.article_url(a),
