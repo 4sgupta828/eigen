@@ -192,14 +192,27 @@ TECH_LANDSCAPE_CONTRACT_PROMPT = """You classify a TECH-RESEARCH question and, f
 questions, plan its coverage. Output JSON with `mode`, `entities`, `axes`, `stance`.
 
 FIRST decide `mode`:
-- "enumerative" — the question asks to MAP A LANDSCAPE or examine a POPULATION: "examine all X",
-  "map the landscape", "cluster the companies/startups", "who is building X", "the whole market for X",
-  "list the players in X" — especially when it asks for many entities across several dimensions. For
-  these, set `entities` to the 6-10 CONCEPTUAL CATEGORIES the landscape breaks into (the economic
-  segments / sub-fields a knowledgeable analyst would use to partition it — NOT company names). These
-  categories are a search frame, not an answer: name the SEGMENTS, never specific companies/founders/
-  funding here. Set `axes` to the DIMENSIONS the question asks to compare across (e.g. moat,
-  differentiation, customer segment, funding, stage, founders) — 3-6 short phrases.
+- "enumerative" — the question asks to ENUMERATE / MAP / TABULATE / COMPARE a SET of things across
+  dimensions. There are TWO kinds, and they take DIFFERENT rows — decide which the question wants:
+  (A) LANDSCAPE / POPULATION MAP — "examine all X", "map the landscape", "cluster the companies/
+      startups", "who is building X", "the whole market for X", "where's the whitespace", a broad survey
+      of a FIELD's structure. Here the natural rows are CONCEPTUAL SEGMENTS: set `entities` to the 6-10
+      CATEGORIES the landscape breaks into (the economic segments / sub-fields a knowledgeable analyst
+      would use to partition it — NOT company names). These categories are a search frame, not an answer:
+      name the SEGMENTS, never specific companies/products/founders/funding here.
+  (B) NAMED-ENTITY COMPARISON TABLE — "build a table of the main/top/leading X", "compare Cursor,
+      Copilot, and Cody", "list the X and their pricing/model", "the main players and their <attributes>".
+      Here the user wants the CONCRETE NAMED INSTANCES (the actual products/companies/models/tools) each
+      as its OWN row — NOT lumped into segments. You usually CANNOT name them reliably from the question
+      alone (guessing risks inventing ones that don't exist), so LEAVE `entities` EMPTY — the concrete
+      rows get discovered from the retrieved evidence downstream. Only fill `entities` if the question
+      itself names the specific items to compare.
+  In BOTH cases set `axes` to the DIMENSIONS to compare across (e.g. pricing, underlying model, moat,
+  differentiation, stage, funding, founders) — 3-6 short phrases.
+  WHICH KIND? If the ask is to understand the STRUCTURE of a whole field or find the whitespace → (A),
+  category entities. If the ask is to LINE UP THE ACTUAL PLAYERS side by side with their attributes (a
+  "table of the main X", "compare the X") → (B), EMPTY entities (named rows discovered downstream). When
+  both could fit, prefer (B) UNLESS the question explicitly asks to map / segment / cluster the field.
 - "exploratory" — anything else (a normal question, a single-entity ask, a how/why, a lookup). Leave
   `entities` empty.
 

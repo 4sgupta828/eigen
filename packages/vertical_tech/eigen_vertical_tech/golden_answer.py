@@ -250,16 +250,27 @@ SHAPE — ENUMERATE THE COMPLETE SET.
 - This question asks you to enumerate/list/tabulate the full set — completeness is the deliverable, and \
 for THIS question it OVERRIDES any instinct toward "a single straight answer" or "don't compile \
 everything": here you SHOULD lay out the whole grounded set.
-- ROWS: if a list of ITEMS is given below, use them as the rows. If NO items are given (the question \
-asked for "all X" / "every Y" without naming them), DISCOVER the natural items/categories FROM THE \
-EVIDENCE and make each one a row — the rows come from what the findings actually contain, never invented.
-- Produce a markdown TABLE (or, only if a table genuinely doesn't fit, a clean one-block-per-item list): \
-ONE ROW per item, ONE COLUMN per dimension named below. Every cell is either a grounded value with its \
+- ROWS: if a list of ITEMS is given below, use them as the rows. If NO items are given, DISCOVER the \
+rows FROM THE EVIDENCE — and discover them as the CONCRETE NAMED INSTANCES the question is about (the \
+actual products, companies, models, tools, or players the findings name), ONE row per named instance. Do \
+NOT collapse the actual things into abstract CATEGORIES or segments ("general-purpose tools", \
+"autocomplete tools") when the user asked for the things themselves — a named-entity table with one row \
+per product IS the deliverable, not a taxonomy. (Use category rows ONLY when the given ITEMS above are \
+themselves categories — i.e. the question was an explicit landscape/whitespace map.) Rows come from what \
+the findings actually name, never invented.
+- Produce a real markdown TABLE: ONE ROW per item, ONE COLUMN per dimension named below. If the question \
+asked for a "table", you MUST render an actual markdown table — do not retreat to prose. (The ONLY \
+exception is when the items' attributes are genuinely non-columnar / heterogeneous — different fields per \
+item that can't share columns; then a clean one-block-per-item list is fine. Sparse data is NOT such an \
+exception — a table with honest gaps is exactly right.) Every cell is either a grounded value with its \
 [n], or an explicit gap ("—" / "not found") — never left blank, never invented.
-- DROP DEAD STRUCTURE. Do NOT ship a broken grid: if a whole COLUMN would be empty for every row, cut \
-that column instead of printing a wall of "—". If a ROW has nothing but the item name (no grounded cell \
-at all), leave it out of the table and instead name it in the coverage line below as "named but not \
-detailed". A table that is mostly dashes is a retrieval failure dressed as an answer — don't dress it up.
+- DROP DEAD STRUCTURE — BUT NEVER HIDE THE ENTITIES. If a whole COLUMN is empty for every row AND the \
+user did not explicitly ask for that dimension, cut it. But a column the user ASKED for STAYS even if \
+sparse — show the "—" gaps honestly and flag the thin coverage in the coverage line. NEVER re-bucket or \
+merge the named rows into broader CATEGORIES to make cells look full — an honest "—" against the real \
+product name is the point; a tidy category that hides WHICH product lacks the data is worse. A row that \
+is truly nothing but a name (no grounded cell in ANY column) may move to the coverage line as "named but \
+not detailed", but KEEP every row that has at least one grounded cell.
 - COVERAGE ACCOUNTING (mandatory, one line directly under the table). The rows come from the evidence \
 retrieved, which is a SAMPLE, not the whole market — say so honestly. State the coverage basis in one \
 line: what the row-set represents ("the players the evidence covers"), any well-known items you'd expect \
