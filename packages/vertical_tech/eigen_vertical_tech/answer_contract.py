@@ -152,7 +152,13 @@ TECH_CONTRACT_PROMPT_ENTITY = TECH_CONTRACT_PROMPT + _SUBJECT_KIND_ADDENDUM
 
 
 # Per-stance policy knobs (opaque to the kernel). See eigen_kernel/contract/manifest.py::answer_profiles.
-_CURRENT_RECENCY = {"min_rank": 0, "weight": 0.5, "horizon_years": 1}   # strong, short-horizon recency
+# CURRENCY FIX (3-panel: web starvation, not stale corpus — session had web cited 7/7 = 100% landing):
+# recency was too weak (weight 0.5, 1yr horizon) to lift a 2-day web hit over a similar 4-month Wikipedia
+# block. weight 1.0 + ~90-day horizon makes fresh MATHEMATICALLY dominate the cosine baseline (authority
+# is already suppressed for this stance, so Wikipedia only wins on volume — now the recency boost + tight
+# web floor + wider web reach fix that). Env-overridable so prod can tune without a redeploy.
+import os as _os
+_CURRENT_RECENCY = {"min_rank": 0, "weight": 1.0, "horizon_years": 0.25}   # strong, ~90-day-horizon recency
 
 ANSWER_PROFILES: dict = {
     "current": {
@@ -164,7 +170,14 @@ ANSWER_PROFILES: dict = {
         # leaderboards + trade press, which — with the deep discover→drill research below — already
         # reaches the newest models (GPT-5.6/Opus 5/Kimi K3/DeepSeek-V4-Pro) via CREDIBLE sources.
         "web_open": False,
-        "web_recency_days": 150,           # per-request web floor ≈ the current ~5 months
+        # WEB FLOOR: 150d (~5 months) was LOOSER than the 120d Exa baseline — for "what happened last
+        # week" it let stale-quarter pages fill the candidate set. Tighten to ~30d so the web leg returns
+        # THIS MONTH's deals/launches newest-first. Env-tunable (EIGEN_CURRENT_WEB_RECENCY_DAYS).
+        "web_recency_days": int(_os.environ.get("EIGEN_CURRENT_WEB_RECENCY_DAYS", "30")),
+        # WEB REACH: the main web leg is otherwise hard-capped at 8 results/query (too few — the binding
+        # constraint given 100% web landing). Raise it for CURRENT questions only (scoped via this profile,
+        # NOT the global EIGEN_WEB_MAX_RESULTS which regressed latency across all queries). Env-tunable.
+        "web_max_results": int(_os.environ.get("EIGEN_CURRENT_WEB_MAX", "30")),
         "max_steps": 14,                   # thorough: discover the leaderboard, then drill into each model
         "compose_claim_cap": 60,           # a landscape answer spans ~15 models, not a handful
         "planner_steer": (

@@ -1379,6 +1379,7 @@ async def run_react(
         if diag is not None:
             diag["reflection"] = dict(result.reflection)
     _web_recency_days = _profile.get("web_recency_days") if _ac else None
+    _web_max_results = _profile.get("web_max_results") if _ac else None   # per-profile web breadth (current)
     _web_open = bool(_ac and _profile.get("web_open"))   # drop the trusted-domain whitelist (open web)
     # entity-open (flag): a single-entity diligence question earns ONE additive open-web probe.
     # Eligibility is the LLM's subject_kind judgment (Rule 18), never a keyword match. subject_kind
@@ -1499,6 +1500,7 @@ async def run_react(
                 web_open=(_web_open or web_open_denoise),
                 web_denoise=web_open_denoise,
                 web_recency_days=_web_recency_days,
+                web_max_results=_web_max_results,
             )
             await emit({"type": "search", "query": _q, "variants": []})
             _legs = [("corpus", source.search(_base_req))]
@@ -1612,6 +1614,7 @@ async def run_react(
                         web_open=(_web_open or web_open_denoise),
                         web_denoise=web_open_denoise,
                         web_recency_days=_web_recency_days,
+                        web_max_results=_web_max_results,
                     )
                     await emit({"type": "search", "query": _hq, "variants": [],
                                 "hypothesis": _hi + 1, "stance": _stance})
@@ -1726,6 +1729,7 @@ async def run_react(
                 web_open=(_web_open or web_open_denoise),
                 web_denoise=web_open_denoise,
                 web_recency_days=_web_recency_days,   # web leg honors; corpus ignores
+                web_max_results=_web_max_results,   # per-profile web breadth (current stance)
             )
             # Corpus: agent reformulations → multi-query fusion (recall); else a single search.
             # aux (web): ONE call per step on the ORIGINAL query (no per-variant fan-out) — runs
