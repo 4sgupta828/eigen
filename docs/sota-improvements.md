@@ -89,11 +89,22 @@ empty — good honesty, but the row-set was evidence-bounded, not population-bou
 **Problem.** Diligence lives or dies on separating *demonstrated* from *claimed*, *deployment* from *demo*,
 *filing* from *blog*. The authority-tier machinery exists but it's unclear how sharply answers use it.
 
-**Fix:**
-- Make **proven-vs-unproven a first-class answer requirement** in the diligence persona/shape: every
-  capability claim tagged demonstrated / claimed / unverified, with the evidence tier that supports it.
-- Surface **evidence-tier per claim** in the UI (filing/benchmark/press/blog) so a VC can weight it.
-- The §7 eval scores this dimension explicitly — use the results to tune.
+**SHIPPED 2026-08-28 (commit 465858c, prod-verified) — the compose voice/shape now enforce it:**
+- **Evidence hierarchy in VOICE** — answers rank on a diligence ladder (filings/benchmarks/traction >
+  press > WEAK encyclopedias/blogs/forums); a weak source may never carry a hard investment claim alone.
+- **Vendor-claim vs independent-proof** is now a load-bearing VOICE clause — "the company claims" vs
+  "demonstrated in <benchmark>". *Prod-verified:* the Cursor answer flagged "$200M ARR … a company-reported
+  figure" and "independent benchmarks … absent here"; the tools table cited "median PR throughput gain
+  7.76% … far from the promised 3x" against vendor claims.
+- **Stance + key diligence question** close on strategic/default answers; **coverage accounting +
+  diligence takeaway + drop-dead-structure** on enumerative answers (the sample≠universe fix, §3).
+  *Prod-verified:* the tools answer named JetBrains AI / Tabnine / Replit AI as expected-but-missing and
+  marked the list partial.
+
+**Remaining:**
+- Surface **evidence-tier per claim** in the UI (filing/benchmark/press/blog) so a VC can weight it
+  (currently the weighting is silent inside the prose).
+- Held-out gold gate that scores claimed-vs-proven + coverage-honesty explicitly (the §2/§7 eval hole).
 
 ---
 
