@@ -291,6 +291,10 @@ class ResearchService:
     contract_compose_voice: str | None = None
     contract_compose_shapes: dict | None = None
     contract_compose_default: str | None = None
+    # EIGEN_ENUM_ENTITY_PROBE: for an enumerative "table of the main X" ask with no user-named items, the
+    # derivation proposes `probe_entities` that SEED targeted entity×axis retrieval (never rows). OFF →
+    # axis-only (byte-identical). Forwarded to run_react.
+    enum_entity_probe: bool = False
     graph_expander: object | None = None    # A9: async (question) -> {"legs":[{query,note}],"shadow":bool}|None
     #                                         — app-injected relationship-graph hook; None → byte-identical
     panel_specialists: tuple = ()           # Ask-Panel roster (vertical-supplied specialist configs)
@@ -807,6 +811,7 @@ class ResearchService:
             answer_mode_routing=self.answer_mode_routing,
             enumerative_compose_addendum=self.enumerative_compose_addendum,
             contract_compose=self.contract_compose,
+            enum_entity_probe=self.enum_entity_probe,
             contract_compose_voice=self.contract_compose_voice,
             contract_compose_shapes=self.contract_compose_shapes,
             contract_compose_default=self.contract_compose_default,
