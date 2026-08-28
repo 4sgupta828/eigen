@@ -173,7 +173,7 @@ ANSWER_PROFILES: dict = {
         # WEB FLOOR: 150d (~5 months) was LOOSER than the 120d Exa baseline — for "what happened last
         # week" it let stale-quarter pages fill the candidate set. Tighten to ~30d so the web leg returns
         # THIS MONTH's deals/launches newest-first. Env-tunable (EIGEN_CURRENT_WEB_RECENCY_DAYS).
-        "web_recency_days": int(_os.environ.get("EIGEN_CURRENT_WEB_RECENCY_DAYS", "30")),
+        "web_recency_days": int(_os.environ.get("EIGEN_CURRENT_WEB_RECENCY_DAYS", "14")),
         # WEB REACH: the main web leg is otherwise hard-capped at 8 results/query (too few — the binding
         # constraint given 100% web landing). Raise it for CURRENT questions only (scoped via this profile,
         # NOT the global EIGEN_WEB_MAX_RESULTS which regressed latency across all queries). Env-tunable.

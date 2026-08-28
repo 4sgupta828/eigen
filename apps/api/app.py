@@ -1235,7 +1235,7 @@ def build_default_service() -> ResearchService:
     # answer becomes ChatGPT-like (current, fluid) at the cost of eigen's structured/authoritative depth
     # (filings/patents/papers). Widen web breadth here since the corpus-retrieval latency budget is freed
     # (25 default vs 8) so the web leg has ChatGPT-grade reach. OFF → byte-identical (corpus + web=8).
-    _web_max = int(os.environ.get("EIGEN_WEB_MAX_RESULTS", "25" if _web_only else "8"))
+    _web_max = int(os.environ.get("EIGEN_WEB_MAX_RESULTS", "35" if _web_only else "8"))
     sources["web"] = WebRetrievalSource(
         build_web(mode=mode, domains=getattr(manifest, "web_domains", ()),
                   recent=(freshness_ranking_enabled() or answer_contract_enabled() or _web_only)),
