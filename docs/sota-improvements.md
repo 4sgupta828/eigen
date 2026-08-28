@@ -74,13 +74,26 @@ fatal for whitespace discovery and competitive-landscape diligence.
 empty — good honesty, but the row-set was evidence-bounded, not population-bounded. The graph holds only
 **89 companies across 10 clusters** — far short of a real market map.
 
-**Fix:**
-1. **Coverage accounting as a hard invariant** — every enumerative answer states its coverage basis
-   ("these are the players the evidence supports; N others named but not detailed; this is not exhaustive").
+**SHIPPED 2026-08-28 — the retrieval-starvation half (the Claude Code bug):**
+- Root cause found via user report: "table of the main AI coding assistants" DROPPED Claude Code
+  (436 corpus blocks — MORE than Copilot's 81, which was kept). NOT coverage. For an enumerative ask
+  with no user-named items, `build_legs` did AXIS-ONLY retrieval ("pricing"/"model" verbatim, cap 4) —
+  no per-entity search — so row membership was an accident of axis-query ranking; github-heavy flagships
+  got crowded out.
+- Fix (commit ad8a5c4, flag `EIGEN_ENUM_ENTITY_PROBE`, unanimous 3-panel option X): the derivation
+  proposes `probe_entities` (≤8 known named instances) which SEED targeted entity×axis retrieval legs
+  but are NEVER interpolated as rows — rows stay evidence-discovered, so a bad parametric guess can't
+  force a row. ≥1 targeted leg per candidate guaranteed; unioned across the 3 votes; 0 extra latency.
+
+**Remaining:**
+1. **Coverage accounting as a hard invariant** — DONE for enumerative answers (the coverage line +
+   naming expected-but-missing items shipped 465858c; prod-verified naming JetBrains/Tabnine/Replit).
 2. **Population source for enumeration** — for "all X in sector Y," enumerate rows from the **claim graph
    population** (a SELECT over the sector), not the retrieval sample. Wire the graph as the row source for
-   sector-scoped enumeration.
-3. **Scale the graph** (see §5) so the population is real.
+   sector-scoped enumeration. (probe-entities is the parametric complement; the graph is the grounded one.)
+3. **Scale the graph** (see §5) so the population is real — and the authentic-source ingest campaign
+   (Form D funding, USPTO patents, GDELT news, deeptech sectors, YC/Wikidata) to fill the thin axes the
+   new /admin coverage diagnostic surfaces (funding 1.4K, patents 174, news 288).
 
 ---
 
