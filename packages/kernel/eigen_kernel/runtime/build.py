@@ -141,8 +141,12 @@ def build_web(*, mode: ProviderMode | str | None = None,
                 # discoveries to full text via Exa /contents — so a Brave-found page becomes citable while
                 # Exa keeps crediting Brave for the discovery. The composite hydrates ONLY thin, already-
                 # deduped results (no new URL → no duplication). Fail-safe: hydration error keeps snippets.
+                # HYDRATION is behind EIGEN_WEB_HYDRATE (default OFF): the current per-leg implementation
+                # adds an Exa /contents round-trip to EVERY web leg (8-12), which pushed research past
+                # Railway's ~300s edge timeout (502s). Keep the capability but default-off until it's
+                # redesigned to hydrate ONCE post-retrieval (after all legs merge), not per-leg.
                 _hydrator = None
-                if _has_exa:
+                if _has_exa and os.environ.get("EIGEN_WEB_HYDRATE", "").lower() in ("1", "true", "yes"):
                     from eigen_kernel.providers.exa_web import ExaWebSearch as _ExaH
                     _h = _ExaH()
                     _hydrator = (lambda urls, q, _h=_h: _h.get_contents(urls, query=q))
