@@ -919,6 +919,12 @@ async def run_react(
     contract_compose_voice: str | None = None,
     contract_compose_shapes: dict | None = None,     # {mode: opaque directive}; missing → *_default
     contract_compose_default: str | None = None,     # shape for decision/analytical/unmapped modes
+    enum_entity_probe: bool = False,           # EIGEN_ENUM_ENTITY_PROBE: for an enumerative "table of the
+    #                                           main X" ask with no user-named items, use the contract's
+    #                                           model-proposed `probe_entities` to fire a TARGETED
+    #                                           entity×axis retrieval leg per candidate (fixes well-covered
+    #                                           flagships crowded out of axis-only retrieval). Seeds
+    #                                           RETRIEVAL only — never rows. OFF → axis-only (byte-identical).
     suppress_authority: bool = False,          # per-call authority-neutralize (use-case lens): when True,
     #                                           the evidence-tier boost is dropped so opinion/discussion
     #                                           evidence isn't demoted below filings on foresight/wisdom
@@ -1302,7 +1308,7 @@ async def run_react(
                 "axes": list(_contract.axes),
                 "stance": _contract.stance}
         _c_graph_qs = {(_l.get("query") or "").strip() for _l in (graph_legs or [])[:2]}
-        _c_queries = build_legs(_contract, cap=12, exclude=_c_graph_qs)
+        _c_queries = build_legs(_contract, cap=12, exclude=_c_graph_qs, probe=enum_entity_probe)
         if _contract is not None and _contract.mode == "exploratory" and not explore_legs:
             _c_queries = []                     # exploratory legs exist ONLY under the
             #                                     explore_legs flag — OFF must stay byte-identical

@@ -593,6 +593,25 @@ def _apply_reflection_addendum(base_prompt, manifest):
     return (base_prompt + add) if (base_prompt and add) else base_prompt
 
 
+def enum_entity_probe_enabled() -> bool:
+    """Flag (default OFF, Rule 20) via EIGEN_ENUM_ENTITY_PROBE: for an enumerative "table of the main X"
+    ask with no user-named items, the derivation ALSO proposes `probe_entities` (candidate row instances)
+    and retrieval fires a TARGETED entity×axis leg per candidate — the fix for a well-covered flagship
+    (e.g. Claude Code) being crowded out of axis-only retrieval. Seeds RETRIEVAL only, never rows. OFF →
+    the addendum isn't appended (derivation identical) and build_legs stays axis-only (byte-identical)."""
+    return os.environ.get("EIGEN_ENUM_ENTITY_PROBE", "").lower() in ("1", "true", "yes")
+
+
+def _apply_probe_addendum(base_prompt, manifest):
+    """When EIGEN_ENUM_ENTITY_PROBE is on, append the vertical's probe-entities addendum to the active
+    contract prompt so the ONE derivation call also proposes retrieval-seed candidates. OFF → base
+    unchanged (byte-identical). Missing base or addendum → base as-is."""
+    if not enum_entity_probe_enabled():
+        return base_prompt
+    add = getattr(manifest, "probe_entities_contract_addendum", None)
+    return (base_prompt + add) if (base_prompt and add) else base_prompt
+
+
 def explore_legs_enabled() -> bool:
     """Flag (default OFF, Rule 20 — exploratory-legs extension) via EIGEN_EXPLORE_LEGS: when ON
     (and EIGEN_QUESTION_CONTRACT=steer), EXPLORATORY questions' contract axes — 2-4 vertical-derived
@@ -1376,14 +1395,15 @@ def build_default_service() -> ResearchService:
         question_contract=("steer" if landscape_coverage_enabled() else
                            "shadow" if (_deep_company_reader or _deep_people_reader)
                            else question_contract_mode()),
-        contract_prompt=_apply_reflection_addendum(
+        contract_prompt=_apply_probe_addendum(_apply_reflection_addendum(
             (getattr(manifest, "landscape_contract_prompt", None)
              if landscape_coverage_enabled()
              # contract-compose uses the SHAPE classifier (can emit "enumerative"); the base prompt can't.
              else getattr(manifest, "contract_compose_prompt", None)
              if (_cc_compose and getattr(manifest, "contract_compose_prompt", None))
              else getattr(manifest, "contract_prompt", None)),
-            manifest),
+            manifest), manifest),
+        enum_entity_probe=enum_entity_probe_enabled(),
         explore_legs=(True if landscape_coverage_enabled() else explore_legs_enabled()),
         reflection=reflection_mode(),   # EIGEN_REFLECTION: on-demand web coverage fan-out + intent steer
         answer_mode_routing=answer_mode_routing_enabled(),

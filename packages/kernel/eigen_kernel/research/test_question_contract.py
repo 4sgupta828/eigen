@@ -109,6 +109,29 @@ def test_derive_contract_parses_and_normalizes():
     assert llm.systems == [_PROMPT]
 
 
+def test_derive_contract_parses_probe_entities_capped_and_deduped():
+    # enum-probe: probe_entities parsed, stripped, deduped case-insensitively, capped at 8 — entities stay
+    # empty (rows evidence-discovered). A vote can carry probe candidates without changing the row set.
+    llm = RecordingLLM([SimpleNamespace(mode="enumerative", entities=[], axes=["pricing"],
+        probe_entities=["Claude Code", " claude code ", "Cursor", "Copilot", "a", "b", "c", "d", "e", "f"])])
+    c = asyncio.run(derive_contract("q?", llm, _PROMPT))
+    assert c.entities == []                                     # rows still discovered from evidence
+    assert c.probe_entities[:3] == ["Claude Code", "Cursor", "Copilot"]  # dedup drops the case-variant
+    assert len(c.probe_entities) == 8                           # capped
+
+
+def test_derive_contract_unions_probe_entities_across_winning_votes():
+    # a terse winning-mode vote that omits a flagship must NOT drop it — union across winners.
+    llm = RecordingLLM([
+        SimpleNamespace(mode="enumerative", entities=[], axes=["pricing", "model"], probe_entities=["Cursor"]),
+        SimpleNamespace(mode="enumerative", entities=[], axes=["pricing"], probe_entities=["Claude Code"]),
+        SimpleNamespace(mode="enumerative", entities=[], axes=["pricing"], probe_entities=["Cursor"]),
+    ])
+    c = asyncio.run(derive_contract("q?", llm, _PROMPT, votes=3))
+    assert set(c.probe_entities) == {"Cursor", "Claude Code"}   # Claude Code survives the terser votes
+    assert c.axes == ["pricing", "model"]                       # richest winner still chosen for columns
+
+
 def test_derive_contract_invalid_mode_is_none():
     llm = RecordingLLM([SimpleNamespace(mode="banana", entities=["x"], axes=["y"])])
     assert asyncio.run(derive_contract("q?", llm, _PROMPT)) is None
@@ -165,6 +188,47 @@ def test_build_legs_enumerative_no_entities_uses_axis_only():
     # discovered-entity enumerative → axis-only legs (like exploratory), so rows can be found.
     c = Contract(mode="enumerative", entities=[], axes=["value", "roi", "limits"])
     assert build_legs(c) == ["value", "roi", "limits"]
+
+
+# ---- ENUM-PROBE (flag EIGEN_ENUM_ENTITY_PROBE): probe_entities SEED targeted retrieval, never rows -----
+
+def test_build_legs_probe_off_is_axis_only_byte_identical():
+    # probe_entities present but probe=False (flag off) → axis-only, exactly today's behavior.
+    c = Contract(mode="enumerative", entities=[], axes=["pricing", "model"],
+                 probe_entities=["Claude Code", "Cursor"])
+    assert build_legs(c) == ["pricing", "model"]
+    assert build_legs(c, probe=False) == ["pricing", "model"]
+
+
+def test_build_legs_probe_on_fires_axis_then_one_targeted_leg_per_entity():
+    # probe=True → axis-only legs FIRST (niche tools still surface), then ONE targeted leg per probe
+    # entity on the PRIMARY axis (each flagship guaranteed a search), then remaining axes entity-major.
+    c = Contract(mode="enumerative", entities=[], axes=["pricing", "model"],
+                 probe_entities=["Claude Code", "Cursor", "Copilot"])
+    legs = build_legs(c, cap=12, probe=True)
+    assert legs[:2] == ["pricing", "model"]                       # every axis covered first
+    assert legs[2:5] == ["Claude Code pricing", "Cursor pricing", "Copilot pricing"]  # ≥1 per entity
+    # a well-covered flagship gets its OWN targeted leg — the crowd-out fix
+    assert "Claude Code pricing" in legs
+    # then the second axis, entity-major
+    assert "Claude Code model" in legs and "Cursor model" in legs
+
+
+def test_build_legs_probe_needs_flag_entities_empty_and_axes():
+    # probe only fires for enumerative + no user-named entities + probe_entities + axes.
+    named = Contract(mode="enumerative", entities=["A"], axes=["x"], probe_entities=["B"])
+    assert build_legs(named, probe=True) == ["x", "A x"]          # user-named entities win; probe inert
+    no_axes = Contract(mode="enumerative", entities=[], axes=[], probe_entities=["B"])
+    assert build_legs(no_axes, probe=True) == []                 # no axes → nothing to probe
+
+
+def test_probe_entities_never_become_rows():
+    # render_contract_directive reads `entities`, NOT `probe_entities` — rows stay evidence-discovered.
+    from eigen_kernel.research.contract import render_contract_directive
+    out = render_contract_directive(voice="V", shapes={"enumerative": "S"}, default="D",
+                                    mode="enumerative", entities=[], axes=["pricing"])
+    assert "ITEMS to enumerate" not in out                       # no forced rows from a probe
+    assert "DIMENSIONS" in out
 
 
 # ---- build_legs: axis-only coverage first, then entity × axis round-robin, cap, dedupe --------

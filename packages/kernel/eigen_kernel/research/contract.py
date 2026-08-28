@@ -49,6 +49,14 @@ class Contract:
     resolved_question: str = ""            # faithful restatement — additive retrieval seed, NEVER a substitute
     ambiguity_risk: str = ""               # "high" | "medium" | "low" | "" — gates the disambiguation probe
     candidates: list[str] = field(default_factory=list)   # distinct candidate readings of an ambiguous subject
+    # PROBE ENTITIES (flag EIGEN_ENUM_ENTITY_PROBE; emitted only by a prompt that asks for the field, so a
+    # non-probe derivation leaves this inert → byte-identical). For an enumerative "table of the main X"
+    # ask where the items are NOT user-named, the model proposes the concrete candidate instances it knows
+    # (e.g. the main coding assistants) so retrieval can fire a TARGETED entity×axis leg for each — the fix
+    # for well-covered flagships being crowded out of axis-only retrieval. CRUCIAL SEPARATION: these seed
+    # RETRIEVAL only; they are NEVER interpolated as rows (render_contract_directive reads `entities`, not
+    # this), so the ROWS stay evidence-discovered and a bad parametric guess can never become a forced row.
+    probe_entities: list[str] = field(default_factory=list)
 
 
 class _ContractOut(BaseModel):
@@ -65,6 +73,7 @@ class _ContractOut(BaseModel):
     resolved_question: str = ""                  # reflection: faithful restatement (additive, never a substitute)
     ambiguity_risk: str = ""                     # reflection: high|medium|low|""; gates the disambiguation probe
     candidates: list[str] = []                   # reflection: distinct candidate readings of an ambiguous subject
+    probe_entities: list[str] = []               # enum-probe: candidate row instances to SEED retrieval (never rows)
 
 
 async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str | None,
@@ -87,9 +96,21 @@ async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str 
         return None
     from collections import Counter
     win_mode = Counter(c.mode for c in cs).most_common(1)[0][0]   # majority mode
+    winners = [c for c in cs if c.mode == win_mode]
     # among the winners, the richest (most axes, then most entities) — don't lose columns to a terse draw
-    return max((c for c in cs if c.mode == win_mode),
-               key=lambda c: (len(c.axes), len(c.entities)))
+    best = max(winners, key=lambda c: (len(c.axes), len(c.entities)))
+    # UNION probe_entities across ALL winning-mode votes (recall-biased): a well-covered flagship a terse
+    # vote happened to omit must not be dropped — any vote that named it seeds its targeted retrieval leg.
+    if any(c.probe_entities for c in winners):
+        merged: list[str] = []
+        seen_pe: set[str] = set()
+        for c in winners:
+            for e in c.probe_entities:
+                if e.strip().lower() not in seen_pe:
+                    seen_pe.add(e.strip().lower())
+                    merged.append(e)
+        best.probe_entities = merged[:8]
+    return best
 
 
 async def _derive_contract_once(question: str, llm: LLMClient, derivation_prompt: str,
@@ -131,6 +152,15 @@ async def _derive_contract_once(question: str, llm: LLMClient, derivation_prompt
         ambiguity_risk = ""
     candidates = [c.strip() for c in (getattr(p, "candidates", None) or [])
                   if isinstance(c, str) and c.strip()]
+    # PROBE ENTITIES (enum-probe): candidate row instances to SEED retrieval. Deduped case-insensitively,
+    # capped at 8 (latency: they fan out into targeted legs). Inert unless the prompt emitted them.
+    probe_entities: list[str] = []
+    _seen_pe: set[str] = set()
+    for e in (getattr(p, "probe_entities", None) or []):
+        if isinstance(e, str) and e.strip() and e.strip().lower() not in _seen_pe:
+            _seen_pe.add(e.strip().lower())
+            probe_entities.append(e.strip())
+    probe_entities = probe_entities[:8]
     if mode == "enumerative" and not entities and not axes:
         mode = "exploratory"                   # no ROWS and no COLUMNS → nothing to tabulate → inert
         #                                        contract (not None) so the verdict stays observable.
@@ -140,7 +170,8 @@ async def _derive_contract_once(question: str, llm: LLMClient, derivation_prompt
     #  which is exactly why such asks never tabulated.
     return Contract(mode=mode, entities=entities, axes=axes, stance=stance, subject_kind=subject_kind,
                     intent=intent, intent_confidence=intent_confidence, answer_brief=answer_brief,
-                    resolved_question=resolved_question, ambiguity_risk=ambiguity_risk, candidates=candidates)
+                    resolved_question=resolved_question, ambiguity_risk=ambiguity_risk, candidates=candidates,
+                    probe_entities=probe_entities)
 
 
 def render_contract_directive(*, voice: str | None, shapes: dict | None, default: str | None,
@@ -167,11 +198,18 @@ def render_contract_directive(*, voice: str | None, shapes: dict | None, default
 
 
 def build_legs(contract: Contract | None, *, cap: int = 12,
-               exclude: set[str] | frozenset[str] = frozenset()) -> list[str]:
+               exclude: set[str] | frozenset[str] = frozenset(), probe: bool = False) -> list[str]:
     """Retrieval-leg queries for a contract, capped at `cap` total, deduped case-insensitively
     against themselves and `exclude` (the graph-leg queries — the unified leg budget's other
     members). Structural expansion only — the meaning lives in the contract. None, or an
     exploratory contract without axes → [] (today's behavior).
+
+    ENUM-PROBE (flag, `probe=True`): for an enumerative "table of the main X" ask with NO user-named
+    entities but model-proposed `probe_entities`, fire axis-only legs FIRST (so tools NOT in the probe
+    list still surface) THEN one TARGETED "<entity> <primary-axis>" leg per probe entity — guaranteeing
+    every proposed flagship gets its own search before any second-axis fill, so a well-covered entity
+    (e.g. Claude Code) can't be crowded out of axis-only retrieval. Keeps the FULL cap (not min(cap,4)),
+    since it fans out per entity. `probe=False` → this branch is inert (byte-identical to today).
 
     ENUMERATIVE allocation (the act-001 starvation fix): FIRST one AXIS-ONLY leg per axis —
     evidence for a relationship axis often lives on the OTHER side's document (the interaction
@@ -187,6 +225,36 @@ def build_legs(contract: Contract | None, *, cap: int = 12,
     min(cap, 4). Entities on an exploratory contract are ignored."""
     if contract is None:
         return []
+    seen = {q.strip().lower() for q in exclude if q and q.strip()}
+    out: list[str] = []
+
+    def _add(q: str) -> bool:
+        """Append q if novel; return False once the cap is reached."""
+        q = q.strip()
+        key = q.lower()
+        if q and key not in seen:
+            seen.add(key)
+            out.append(q)
+        return len(out) < cap
+
+    # ENUM-PROBE (flag): enumerative, no user-named entities, but model-proposed probe_entities present.
+    # Axis-only legs first (niche non-probe tools still surface), then ONE targeted leg per probe entity
+    # (entity-major: guarantee each flagship a search), then remaining axes entity-major until cap.
+    _pe = [e for e in (getattr(contract, "probe_entities", None) or []) if e and e.strip()]
+    if (probe and contract.mode == "enumerative" and not contract.entities and _pe and contract.axes):
+        paxes = contract.axes
+        for axis in paxes:                     # cover every dimension first (rows can still be discovered)
+            if axis.strip() and not _add(axis):
+                return out
+        primary = paxes[0]
+        for e in _pe:                          # ≥1 TARGETED leg per probe entity before any second-axis fill
+            if not _add(f"{e} {primary}"):
+                return out
+        for axis in paxes[1:]:                 # then remaining axes, entity-major
+            for e in _pe:
+                if not _add(f"{e} {axis}"):
+                    return out
+        return out
     # exploratory, OR enumerative WITHOUT named entities (rows discovered from evidence) → AXIS-ONLY
     # legs: each axis verbatim, no entity expansion. The enumerative-no-entities case ("table of all X",
     # dimensions named but items not) fans out on the dimensions so the rows can be discovered.
@@ -201,17 +269,6 @@ def build_legs(contract: Contract | None, *, cap: int = 12,
         entities = contract.entities
     else:
         return []
-    seen = {q.strip().lower() for q in exclude if q and q.strip()}
-    out: list[str] = []
-
-    def _add(q: str) -> bool:
-        """Append q if novel; return False once the cap is reached."""
-        q = q.strip()
-        key = q.lower()
-        if q and key not in seen:
-            seen.add(key)
-            out.append(q)
-        return len(out) < cap
 
     for axis in axes:                      # axis-only legs: cover every REQUIRED dimension first
         if axis.strip() and not _add(axis):

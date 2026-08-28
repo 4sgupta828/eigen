@@ -101,6 +101,28 @@ the deep reader will research. For "general" leave `entities` as it was (the lan
 empty). Output ONLY the JSON object (WITH the extra `subject_kind` key alongside the others)."""
 
 
+# ENUM-PROBE addendum (flag EIGEN_ENUM_ENTITY_PROBE). Appended to whichever contract prompt is active when
+# the flag is on. For an ENUMERATIVE "table of the main X" ask where the user did NOT name the row items,
+# the classifier still leaves `entities` EMPTY (rows are evidence-discovered), but ADDITIONALLY proposes the
+# concrete named instances it KNOWS are the main/most-relevant items — so retrieval can fire a TARGETED
+# search for each and a well-covered flagship isn't crowded out of axis-only retrieval. These are RETRIEVAL
+# SEEDS, never the final rows. Rule 18 + grounding: proposing candidates is a judgment about the QUESTION's
+# subject space (safe — retrieval + the span-gate decide what's actually grounded and shown). OFF → the
+# field is never requested → derivation byte-identical.
+TECH_PROBE_ENTITIES_ADDENDUM = """
+
+ALSO, when `mode` is "enumerative" AND you left `entities` EMPTY (the user asked for a SET — "the main X",
+"all X", "top X" — without naming the specific items), add ONE more key to the SAME JSON object:
+- `probe_entities`: a list of the 3-8 CONCRETE, SPECIFICALLY-NAMED instances you know are the main / most
+  prominent / most relevant members of that set (the actual products, companies, models, or tools — e.g.
+  for "the main AI coding assistants": ["GitHub Copilot","Cursor","Claude Code","OpenAI Codex","Windsurf",
+  ...]). Name the REAL, well-known ones by their exact names — these seed a targeted search per item so a
+  prominent member isn't missed; do NOT invent names you're unsure exist. This does NOT change `entities`
+  (still empty — the final rows are discovered from the retrieved evidence, not from this list). For a
+  landscape/MAP ask (entities already set to CATEGORIES) or a non-enumerative ask, OMIT `probe_entities`
+  or leave it empty. Output ONLY the JSON object (WITH `probe_entities` when applicable)."""
+
+
 # REFLECTION addendum (flag EIGEN_REFLECTION). Appended to whichever contract prompt is active when
 # reflection is on, so the ONE derivation call ALSO returns the "heart of the question" — the user's real
 # underlying intent — used to steer retrieval + compose WITHOUT replacing the literal question. Rule 18 +
