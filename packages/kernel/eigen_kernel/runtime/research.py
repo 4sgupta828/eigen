@@ -295,6 +295,8 @@ class ResearchService:
     # derivation proposes `probe_entities` that SEED targeted entity×axis retrieval (never rows). OFF →
     # axis-only (byte-identical). Forwarded to run_react.
     enum_entity_probe: bool = False
+    # EIGEN_WEB_ONLY: research every question thoroughly from the web (no corpus fallback).
+    web_only: bool = False
     graph_expander: object | None = None    # A9: async (question) -> {"legs":[{query,note}],"shadow":bool}|None
     #                                         — app-injected relationship-graph hook; None → byte-identical
     panel_specialists: tuple = ()           # Ask-Panel roster (vertical-supplied specialist configs)
@@ -812,6 +814,7 @@ class ResearchService:
             enumerative_compose_addendum=self.enumerative_compose_addendum,
             contract_compose=self.contract_compose,
             enum_entity_probe=self.enum_entity_probe,
+            web_only=self.web_only,
             contract_compose_voice=self.contract_compose_voice,
             contract_compose_shapes=self.contract_compose_shapes,
             contract_compose_default=self.contract_compose_default,

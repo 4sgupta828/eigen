@@ -919,6 +919,11 @@ async def run_react(
     contract_compose_voice: str | None = None,
     contract_compose_shapes: dict | None = None,     # {mode: opaque directive}; missing → *_default
     contract_compose_default: str | None = None,     # shape for decision/analytical/unmapped modes
+    web_only: bool = False,                    # EIGEN_WEB_ONLY: the web is the ONLY source (no corpus), so
+    #                                           EVERY question must be researched thoroughly from the web —
+    #                                           append a research-hard planner steer + raise the step floor
+    #                                           so lookups/people/analytical questions don't stop after one
+    #                                           shallow pass (the "answers are too short" fix). OFF → no-op.
     enum_entity_probe: bool = False,           # EIGEN_ENUM_ENTITY_PROBE: for an enumerative "table of the
     #                                           main X" ask with no user-named items, use the contract's
     #                                           model-proposed `probe_entities` to fire a TARGETED
@@ -1157,6 +1162,8 @@ async def run_react(
         # → prefer benchmarked/peer-reviewed sources). "" → byte-identical. Not applied in extract mode.
         if _steer and mode != "extract":
             instr = instr + " " + _steer
+        if _wo_steer and mode != "extract":       # web-only: research every question thoroughly
+            instr = instr + " " + _wo_steer
         # REFLECTION intent steer: nudge the planner toward the user's REAL intent (WHAT to search).
         # "" → byte-identical. Not applied in extract mode.
         if _reflect_steer and mode != "extract":
@@ -1356,6 +1363,16 @@ async def run_react(
     _suppress_auth = bool(_ac and _profile.get("suppress_authority")) or bool(suppress_authority)
     _steer = (_profile.get("planner_steer") or "").strip() if _ac else ""
     _answer_dir = (_profile.get("answer_directive") or "").strip() if _ac else ""
+    # WEB-ONLY thoroughness: no corpus fallback, so research every question deeply — multiple sources per
+    # aspect, a separate search per sub-part/entity, and don't stop after a shallow first pass. This is the
+    # "some answers are too short" fix (lookups/people/analytical were stopping at ~1-2 searches).
+    _wo_steer = (
+        "The corpus is web-only, so RESEARCH THIS THOROUGHLY like a diligent analyst: for EACH distinct "
+        "part of the question and EACH named company/person/technology, issue a SEPARATE targeted search — "
+        "and gather MULTIPLE independent sources per aspect (numbers, dates, named investors, founders' "
+        "prior companies and education, benchmarks, specifics). Do NOT stop after a shallow first pass; a "
+        "comprehensive, well-sourced answer is the goal. Keep searching until each part is well covered."
+    ) if web_only else ""
     # REFLECTION intent steer (flag EIGEN_REFLECTION=steer): thread the inferred HEART-OF-INTENT into the
     # planner + compose so the answer lands on what the user REALLY wants — but ONLY when the derivation
     # was confident (high/medium). Low/empty confidence stays faithful to the literal question (the drift
@@ -1462,6 +1479,11 @@ async def run_react(
         compose_claim_cap = max(int(compose_claim_cap), int(_profile.get("compose_claim_cap") or 0))
         _log.info("answer-contract stance=%s recency=%s suppress_authority=%s web_open=%s entity_open=%s denoise=%s steps=%s cap=%s",
                   _contract.stance, bool(_eff_freshness), _suppress_auth, _web_open, _entity_open, web_open_denoise, max_steps, compose_claim_cap)
+    # WEB-ONLY: raise the step floor so non-current questions (which don't get the current profile's
+    # max_steps=14) still research the web thoroughly instead of stopping after ~1-2 searches.
+    if web_only:
+        max_steps = max(int(max_steps), 12)
+        compose_claim_cap = max(int(compose_claim_cap), 40)
 
     # EIGEN_PARAMETRIC_LED (T2): the DIRECTED VERIFY LOOP. When a `prior_draft` is present the model
     # has ALREADY drafted its answer's facts + structure; retrieval now VALIDATES each asserted FACT

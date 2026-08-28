@@ -1419,6 +1419,7 @@ def build_default_service() -> ResearchService:
              else getattr(manifest, "contract_prompt", None)),
             manifest), manifest),
         enum_entity_probe=enum_entity_probe_enabled(),
+        web_only=_web_only,
         explore_legs=(True if landscape_coverage_enabled() else explore_legs_enabled()),
         reflection=reflection_mode(),   # EIGEN_REFLECTION: on-demand web coverage fan-out + intent steer
         answer_mode_routing=answer_mode_routing_enabled(),
