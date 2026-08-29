@@ -124,8 +124,16 @@ ALSO, when `mode` is "enumerative" AND you left `entities` EMPTY (the user asked
   deliverable there. E.g. for "table of all notable recent AI/tech startups": ["OpenAI","Anthropic","xAI",
   "Mistral AI","Perplexity","Anysphere (Cursor)","Databricks","Anduril","ElevenLabs","Scale AI","Cohere",
   ...]. Name the ones a knowledgeable analyst would include; order by prominence. This does NOT change `entities`
-  (still empty — the final rows are discovered from the retrieved evidence, not from this list). For a
-  landscape/MAP ask (entities already set to CATEGORIES) or a non-enumerative ask, OMIT `probe_entities`
+  (still empty — the final rows are discovered from the retrieved evidence, not from this list).
+  RESPECT THE QUESTION'S TIME SCOPE — CRITICAL: if the question scopes to RECENT / LATEST / NEWEST / "last
+  N years" / "founded since <year>" / "this year", propose ONLY members you are confident FIT that window,
+  and deliberately UNDER-propose rather than pad with famous OLDER names. Your own knowledge is stale and
+  skews to well-known ESTABLISHED companies — for a "recent/newest startups" ask, listing GitHub, Notion,
+  Figma, Airtable, Stripe (all founded 5-15+ years ago) is WRONG; leave those out. The genuinely recent
+  members (this year's / last-2-years' startups) are ones you may NOT know — that's fine: propose the few
+  recent ones you're sure of, and the rest get DISCOVERED from the fresh web evidence downstream. Never
+  fill a recency-scoped roster with old prominent names just to reach 15-25.
+  For a landscape/MAP ask (entities already set to CATEGORIES) or a non-enumerative ask, OMIT `probe_entities`
   or leave it empty. Output ONLY the JSON object (WITH `probe_entities` when applicable)."""
 
 

@@ -1383,7 +1383,14 @@ async def run_react(
         "single list page to name the members, and NEVER omit an obvious major member just because one page "
         "didn't mention it — a knowledgeable analyst names them from expertise, then VERIFIES each against "
         "the web. Build the roster from knowledge, ground each row, mark any attribute you cannot verify. A "
-        "3-row table when you could name 20 members is the failure to avoid."
+        "3-row table when you could name 20 members is the failure to avoid. "
+        "RECENCY OVERRIDES MEMORY: if the question scopes to RECENT / LATEST / NEWEST / a recent time window "
+        "('last N years', 'this year', 'founded since <year>'), your own knowledge is STALE and skews to "
+        "well-known OLDER members — do NOT lead with those. Instead search explicitly for the CURRENT members "
+        "('newest / latest / recently founded / <year> <members>', 'recently launched <members>') and let the "
+        "FRESH web evidence name the roster. Verify each candidate actually fits the time window before "
+        "including it; drop members that clearly predate it, however famous. The point of live web search is "
+        "to surface what's CURRENT — not to re-list the established names you already knew."
     ) if web_only else ""
     # REFLECTION intent steer (flag EIGEN_REFLECTION=steer): thread the inferred HEART-OF-INTENT into the
     # planner + compose so the answer lands on what the user REALLY wants — but ONLY when the derivation

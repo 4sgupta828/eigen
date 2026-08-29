@@ -271,6 +271,15 @@ NOT collapse the actual things into abstract CATEGORIES or segments ("general-pu
 per product IS the deliverable, not a taxonomy. (Use category rows ONLY when the given ITEMS above are \
 themselves categories — i.e. the question was an explicit landscape/whitespace map.) Rows come from what \
 the findings actually name, never invented.
+- RESPECT THE TIME / RECENCY SCOPE. If the question scopes to RECENT / LATEST / NEWEST / "founded in the \
+last N years" / "since <year>" / "this year", the rows must FIT that window. EXCLUDE any entity that \
+clearly falls outside it — an established company founded 5-15+ years ago (e.g. GitHub 2008, Notion 2013, \
+Figma 2012, Airtable 2012, Stripe 2010) is NOT a "recent startup" and does NOT belong in a "last 3 years" \
+table, even if it's prominent and the evidence has its numbers. If you cannot verify a candidate's \
+founding date against the evidence, either leave it OUT or add a "founded" column and mark it — never \
+silently pad a recency-scoped table with famous OLD names. Prefer the genuinely recent members the FRESH \
+web evidence surfaces over well-known older ones. A "recent startups" table full of decade-old companies \
+has failed the question's core constraint.
 - Produce a real markdown TABLE: ONE ROW per item, ONE COLUMN per dimension named below. If the question \
 asked for a "table", you MUST render an actual markdown table — do not retreat to prose. (The ONLY \
 exception is when the items' attributes are genuinely non-columnar / heterogeneous — different fields per \
