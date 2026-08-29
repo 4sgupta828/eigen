@@ -110,14 +110,19 @@ def test_derive_contract_parses_and_normalizes():
 
 
 def test_derive_contract_parses_probe_entities_capped_and_deduped():
-    # enum-probe: probe_entities parsed, stripped, deduped case-insensitively, capped at 8 — entities stay
-    # empty (rows evidence-discovered). A vote can carry probe candidates without changing the row set.
+    # enum-probe: probe_entities parsed, stripped, deduped case-insensitively, capped at ENUM_PROBE_ENTITY_CAP
+    # (24, for a rich comparison-table roster) — entities stay empty (rows evidence-discovered).
+    from eigen_kernel.research.contract import ENUM_PROBE_ENTITY_CAP
     llm = RecordingLLM([SimpleNamespace(mode="enumerative", entities=[], axes=["pricing"],
         probe_entities=["Claude Code", " claude code ", "Cursor", "Copilot", "a", "b", "c", "d", "e", "f"])])
     c = asyncio.run(derive_contract("q?", llm, _PROMPT))
     assert c.entities == []                                     # rows still discovered from evidence
     assert c.probe_entities[:3] == ["Claude Code", "Cursor", "Copilot"]  # dedup drops the case-variant
-    assert len(c.probe_entities) == 8                           # capped
+    assert len(c.probe_entities) == 9                           # 10 in, 1 case-dup dropped, 9 < cap → all kept
+    # cap check: >cap entities are truncated
+    many = RecordingLLM([SimpleNamespace(mode="enumerative", entities=[], axes=["x"],
+        probe_entities=[f"co{i}" for i in range(40)])])
+    assert len(asyncio.run(derive_contract("q?", many, _PROMPT)).probe_entities) == ENUM_PROBE_ENTITY_CAP
 
 
 def test_derive_contract_unions_probe_entities_across_winning_votes():
@@ -200,18 +205,16 @@ def test_build_legs_probe_off_is_axis_only_byte_identical():
     assert build_legs(c, probe=False) == ["pricing", "model"]
 
 
-def test_build_legs_probe_on_fires_axis_then_one_targeted_leg_per_entity():
-    # probe=True → axis-only legs FIRST (niche tools still surface), then ONE targeted leg per probe
-    # entity on the PRIMARY axis (each flagship guaranteed a search), then remaining axes entity-major.
+def test_build_legs_probe_on_fires_axis_then_one_bundled_leg_per_entity():
+    # probe=True → a few axis-only legs FIRST (discovery), then ONE BUNDLED leg per probe entity
+    # ("<entity> <all axes>") — one comprehensive search per named company so a big roster fits the budget.
     c = Contract(mode="enumerative", entities=[], axes=["pricing", "model"],
                  probe_entities=["Claude Code", "Cursor", "Copilot"])
-    legs = build_legs(c, cap=12, probe=True)
-    assert legs[:2] == ["pricing", "model"]                       # every axis covered first
-    assert legs[2:5] == ["Claude Code pricing", "Cursor pricing", "Copilot pricing"]  # ≥1 per entity
-    # a well-covered flagship gets its OWN targeted leg — the crowd-out fix
-    assert "Claude Code pricing" in legs
-    # then the second axis, entity-major
-    assert "Claude Code model" in legs and "Cursor model" in legs
+    legs = build_legs(c, cap=30, probe=True)
+    assert legs[:2] == ["pricing", "model"]                       # a few axis-only legs first
+    assert legs[2:] == ["Claude Code pricing model", "Cursor pricing model", "Copilot pricing model"]
+    # each named company gets its OWN comprehensive leg — the roster fix
+    assert "Claude Code pricing model" in legs
 
 
 def test_build_legs_probe_needs_flag_entities_empty_and_axes():

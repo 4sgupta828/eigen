@@ -112,12 +112,18 @@ empty). Output ONLY the JSON object (WITH the extra `subject_kind` key alongside
 TECH_PROBE_ENTITIES_ADDENDUM = """
 
 ALSO, when `mode` is "enumerative" AND you left `entities` EMPTY (the user asked for a SET — "the main X",
-"all X", "top X" — without naming the specific items), add ONE more key to the SAME JSON object:
-- `probe_entities`: a list of the 3-8 CONCRETE, SPECIFICALLY-NAMED instances you know are the main / most
-  prominent / most relevant members of that set (the actual products, companies, models, or tools — e.g.
-  for "the main AI coding assistants": ["GitHub Copilot","Cursor","Claude Code","OpenAI Codex","Windsurf",
-  ...]). Name the REAL, well-known ones by their exact names — these seed a targeted search per item so a
-  prominent member isn't missed; do NOT invent names you're unsure exist. This does NOT change `entities`
+"all X", "top X", "a table of X", "compare the X" — without naming the specific items), add ONE more key:
+- `probe_entities`: a list of the CONCRETE, SPECIFICALLY-NAMED instances you know are the most prominent
+  members of that set (the actual products, companies, models, or tools — e.g. for "the main AI coding
+  assistants": ["GitHub Copilot","Cursor","Claude Code","OpenAI Codex","Windsurf",...]). Name the REAL,
+  well-known ones by their exact names — these seed a targeted search per item so a prominent member isn't
+  missed; do NOT invent names you're unsure exist.
+  HOW MANY: for a narrow "the main X" ask, 5-10 is fine. But for a TABLE / COMPARE / "all X" ask that wants
+  a many-row comparison, propose a RICH roster — 15-25 of the most notable members, RANKED IN DESCENDING
+  ORDER OF PROMINENCE (biggest / most-funded / most-notable first), because a rich named roster IS the
+  deliverable there. E.g. for "table of all notable recent AI/tech startups": ["OpenAI","Anthropic","xAI",
+  "Mistral AI","Perplexity","Anysphere (Cursor)","Databricks","Anduril","ElevenLabs","Scale AI","Cohere",
+  ...]. Name the ones a knowledgeable analyst would include; order by prominence. This does NOT change `entities`
   (still empty — the final rows are discovered from the retrieved evidence, not from this list). For a
   landscape/MAP ask (entities already set to CATEGORIES) or a non-enumerative ask, OMIT `probe_entities`
   or leave it empty. Output ONLY the JSON object (WITH `probe_entities` when applicable)."""
@@ -244,10 +250,14 @@ FIRST decide `mode`:
       itself names the specific items to compare.
   In BOTH cases set `axes` to the DIMENSIONS to compare across (e.g. pricing, underlying model, moat,
   differentiation, stage, funding, founders) — 3-6 short phrases.
-  WHICH KIND? If the ask is to understand the STRUCTURE of a whole field or find the whitespace → (A),
-  category entities. If the ask is to LINE UP THE ACTUAL PLAYERS side by side with their attributes (a
-  "table of the main X", "compare the X") → (B), EMPTY entities (named rows discovered downstream). When
-  both could fit, prefer (B) UNLESS the question explicitly asks to map / segment / cluster the field.
+  WHICH KIND? DECISIVE RULE: if the requested OUTPUT is a COMPARISON TABLE whose rows are companies/
+  products/players and whose columns are METRICS/ATTRIBUTES (ARR, customers, funding, valuation, team,
+  market share, pricing, model…), the rows are NAMED ENTITIES → case (B), `entities` EMPTY. This holds
+  EVEN when the ask says "all X" or "every X" or names a whole population ("a table of all startups in the
+  last 3 years, compared on ARR/customers/funding") — a metric-comparison table wants named companies,
+  NOT economic segments. Case (A) categories is ONLY for an ask that explicitly wants to MAP / SEGMENT /
+  CLUSTER the field or find the WHITESPACE / market STRUCTURE ("map the AI landscape", "what are the
+  segments of X"). When both could fit, prefer (B). Never lump a metric-comparison table into (A).
 - "exploratory" — anything else (a normal question, a single-entity ask, a how/why, a lookup). Leave
   `entities` empty.
 

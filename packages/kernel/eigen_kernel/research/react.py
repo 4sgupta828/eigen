@@ -1315,7 +1315,11 @@ async def run_react(
                 "axes": list(_contract.axes),
                 "stance": _contract.stance}
         _c_graph_qs = {(_l.get("query") or "").strip() for _l in (graph_legs or [])[:2]}
-        _c_queries = build_legs(_contract, cap=12, exclude=_c_graph_qs, probe=enum_entity_probe)
+        # cap 12 → 30: a probe ROSTER (15-25 named companies for a comparison table) needs one targeted
+        # leg per company; at cap 12 the axis-only legs crowded the roster down to ~7 sourced companies.
+        # build_legs still caps non-probe modes tightly (min(cap,4) for axis-only); only the probe branch
+        # spends the wider budget (one bundled query per named company).
+        _c_queries = build_legs(_contract, cap=30, exclude=_c_graph_qs, probe=enum_entity_probe)
         if _contract is not None and _contract.mode == "exploratory" and not explore_legs:
             _c_queries = []                     # exploratory legs exist ONLY under the
             #                                     explore_legs flag — OFF must stay byte-identical
@@ -2963,13 +2967,24 @@ async def run_react(
     return result
 
 
+# A figure the compose EXPLICITLY tagged as an unverified estimate, e.g. "~$4.2B (est., unverified)" or
+# "10k customers (est., unverified)". These ride the semantic gate's existing analytical-read exemption
+# (grounding_gate.py) and are DELIBERATELY exempt from the hard-token audit too (user-authorized flagged
+# estimates for private-company columns). ONLY a figure carrying this exact marker is exempt — every
+# other figure stays fully audited, so unlabeled fabrication is still stripped.
+_ESTIMATE_SPAN_RE = re.compile(
+    r"[~≈]?\$?\d[\d.,]*\s*[BMKkbmt%]?[A-Za-z ]{0,24}?\(\s*est\.?,?\s*unverified\s*\)", re.I)
+
+
 def _unsupported_prose_tokens(prose: str, verified: list["VerifiedClaim"]) -> set[str]:
     """Hard tokens (number/dose/date/%) in the composed PROSE that appear in NO verified finding's
     text/quote — i.e. figures the prose introduced that the evidence doesn't support. Structural
     (Rule 18); the compose fail-note has none, so a failed compose reports nothing. Inline citation
-    markers [n] are STRIPPED first (they're references, not figures)."""
+    markers [n] are STRIPPED first (they're references, not figures); figures EXPLICITLY tagged
+    '(est., unverified)' are stripped too (authorized flagged estimates — see _ESTIMATE_SPAN_RE)."""
     if not prose:
         return set()
     clean = re.sub(r"\[\d+\]", " ", prose)          # citation refs are not evidence figures
+    clean = _ESTIMATE_SPAN_RE.sub(" ", clean)       # flagged estimates are exempt (labeled non-facts)
     src = " ".join((vc.text + " " + vc.quote) for vc in verified)
     return extract_hard_tokens(clean) - extract_hard_tokens(src)

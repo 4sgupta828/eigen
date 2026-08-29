@@ -21,6 +21,11 @@ from pydantic import BaseModel
 from eigen_kernel.providers.llm import LLMClient
 
 
+# ROSTER cap: probe_entities seed a comparison-table roster (one grounded search per named company);
+# 24 supports a rich 15-25 row table (was 8, which capped tables at a handful of rows).
+ENUM_PROBE_ENTITY_CAP = 24
+
+
 @dataclass
 class Contract:
     mode: str                                  # "enumerative" | "exploratory"
@@ -109,7 +114,7 @@ async def derive_contract(question: str, llm: LLMClient, derivation_prompt: str 
                 if e.strip().lower() not in seen_pe:
                     seen_pe.add(e.strip().lower())
                     merged.append(e)
-        best.probe_entities = merged[:8]
+        best.probe_entities = merged[:ENUM_PROBE_ENTITY_CAP]
     return best
 
 
@@ -160,7 +165,7 @@ async def _derive_contract_once(question: str, llm: LLMClient, derivation_prompt
         if isinstance(e, str) and e.strip() and e.strip().lower() not in _seen_pe:
             _seen_pe.add(e.strip().lower())
             probe_entities.append(e.strip())
-    probe_entities = probe_entities[:8]
+    probe_entities = probe_entities[:ENUM_PROBE_ENTITY_CAP]
     if mode == "enumerative" and not entities and not axes:
         mode = "exploratory"                   # no ROWS and no COLUMNS → nothing to tabulate → inert
         #                                        contract (not None) so the verdict stays observable.
@@ -238,22 +243,21 @@ def build_legs(contract: Contract | None, *, cap: int = 12,
         return len(out) < cap
 
     # ENUM-PROBE (flag): enumerative, no user-named entities, but model-proposed probe_entities present.
-    # Axis-only legs first (niche non-probe tools still surface), then ONE targeted leg per probe entity
-    # (entity-major: guarantee each flagship a search), then remaining axes entity-major until cap.
+    # ROSTER build: a FEW axis-only legs (discover members not in the roster), then ONE BUNDLED leg per
+    # probe entity ("<entity> <all axes>") — one comprehensive search per named company grabs ALL its
+    # attributes at once, so a 15-25 company roster fits the leg budget (one leg each) instead of N×M
+    # legs that truncate the roster to ~7. probe_entities are ranked by prominence upstream, so the wide
+    # budget targets the most prominent companies first.
     _pe = [e for e in (getattr(contract, "probe_entities", None) or []) if e and e.strip()]
     if (probe and contract.mode == "enumerative" and not contract.entities and _pe and contract.axes):
-        paxes = contract.axes
-        for axis in paxes:                     # cover every dimension first (rows can still be discovered)
-            if axis.strip() and not _add(axis):
+        paxes = [a.strip() for a in contract.axes if a.strip()]
+        for axis in paxes[:3]:                 # a few axis-only legs (discovery) — leave budget for the roster
+            if not _add(axis):
                 return out
-        primary = paxes[0]
-        for e in _pe:                          # ≥1 TARGETED leg per probe entity before any second-axis fill
-            if not _add(f"{e} {primary}"):
+        _axis_bundle = " ".join(paxes)[:120]   # all dimensions in one query per company
+        for e in _pe:                          # ONE bundled targeted leg per named company
+            if not _add(f"{e} {_axis_bundle}" if _axis_bundle else e):
                 return out
-        for axis in paxes[1:]:                 # then remaining axes, entity-major
-            for e in _pe:
-                if not _add(f"{e} {axis}"):
-                    return out
         return out
     # exploratory, OR enumerative WITHOUT named entities (rows discovered from evidence) → AXIS-ONLY
     # legs: each axis verbatim, no entity expansion. The enumerative-no-entities case ("table of all X",

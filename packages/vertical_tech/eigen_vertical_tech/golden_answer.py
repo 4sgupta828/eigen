@@ -275,8 +275,14 @@ the findings actually name, never invented.
 asked for a "table", you MUST render an actual markdown table — do not retreat to prose. (The ONLY \
 exception is when the items' attributes are genuinely non-columnar / heterogeneous — different fields per \
 item that can't share columns; then a clean one-block-per-item list is fine. Sparse data is NOT such an \
-exception — a table with honest gaps is exactly right.) Every cell is either a grounded value with its \
-[n], or an explicit gap ("—" / "not found") — never left blank, never invented.
+exception — a table with honest gaps is exactly right.) Every cell is one of THREE things: (1) a GROUNDED \
+value with its [n]; (2) a FLAGGED ESTIMATE — for a PRIVATE-company column the evidence doesn't disclose \
+(often ARR, customers, headcount, market share) you MAY give your best approximate figure from your own \
+knowledge, but ONLY if you tag it EXACTLY as "~<value> (est., unverified)" (e.g. "~$50M ARR (est., \
+unverified)", "~10k customers (est., unverified)") — the "(est., unverified)" tag is mandatory and makes \
+clear it is NOT a sourced fact; or (3) an explicit gap "—" when you have no basis even to estimate. NEVER \
+give a bare unlabeled number that isn't grounded — an untagged figure MUST be a real [n]-cited value. \
+Prefer a grounded [n] value over an estimate whenever the evidence has one.
 - DROP DEAD STRUCTURE — BUT NEVER HIDE THE ENTITIES. If a whole COLUMN is empty for every row AND the \
 user did not explicitly ask for that dimension, cut it. But a column the user ASKED for STAYS even if \
 sparse — show the "—" gaps honestly and flag the thin coverage in the coverage line. NEVER re-bucket or \
