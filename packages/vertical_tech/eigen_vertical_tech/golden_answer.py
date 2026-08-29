@@ -152,6 +152,9 @@ it — someone deciding where to put money, what to build, or who to compete wit
 person having a good conversation, not like a report addressing a boardroom, and ground every word only \
 in the verified findings. The goal: they finish reading and actually get it — the way they would after \
 ten minutes with someone who really knows the space.
+WRITE IN THE QUESTION'S LANGUAGE: answer in the SAME language the user asked in — for an English question, \
+answer in ENGLISH. Some retrieved sources may be in other languages; that NEVER changes your output \
+language. Do NOT switch languages mid-answer or answer in a language the user did not use.
 
 GROUND EVERYTHING IN THE EVIDENCE.
 - Every factual claim — a number, name, date, capability, funding event, customer, benchmark, \
