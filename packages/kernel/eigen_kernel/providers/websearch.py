@@ -48,13 +48,20 @@ class CompositeWebSearch:
     classifier + span gate still grade + verify whatever is actually cited. Provider-major interleave
     so EVERY provider gets representation (breadth), not just the first one's list."""
 
-    def __init__(self, clients: list, *, hydrator=None, thin_chars: int = 800):
+    def __init__(self, clients: list, *, hydrator=None, thin_chars: int = 800,
+                 prominence_sort: bool = True):
         self._clients = [c for c in clients if c is not None]
         # HYDRATOR (Brave-discovers → Exa-hydrates): async (urls, query) -> {url: (body, highlights)}.
         # Turns a SNIPPET-only provider's discoveries into groundable full text. Applied ONLY to thin,
         # already-deduped results, so it never adds a URL (no duplication) — it fills content in place.
         self._hydrator = hydrator
         self._thin_chars = int(thin_chars)
+        # PROMINENCE: a URL returned by MULTIPLE independent engines (Exa AND Brave) is more authoritative/
+        # widely-reported than a single-engine find — cross-engine agreement is a prominence prior the
+        # composite already computes (hit.providers) but never used. When on, stable-sort the merged list
+        # by agreement-count desc (interleave order preserved as tiebreak) so the most-agreed URLs survive
+        # downstream top-k truncation. Grounding/currency untouched (ordering only over the same evidence).
+        self._prominence_sort = bool(prominence_sort)
 
     async def search(self, query: str, *, max_results: int = 10,
                      open_web: bool = False, recency_days: int | None = None,
@@ -103,6 +110,10 @@ class CompositeWebSearch:
                         got = hy.get(h.url) or by_norm.get(_norm_url(h.url))
                         if got:
                             h.body, h.highlights = got[0], tuple(got[1] or ())
+        # PROMINENCE: bubble cross-engine-agreed URLs to the top (stable → interleave order kept within a
+        # tier). Only bites when ≥2 engines are live (Exa+Brave); single-engine → all len 1 → no-op.
+        if self._prominence_sort:
+            out.sort(key=lambda h: len(getattr(h, "providers", ()) or ()), reverse=True)
         return out
 
 

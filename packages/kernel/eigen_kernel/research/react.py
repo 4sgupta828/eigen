@@ -1371,7 +1371,12 @@ async def run_react(
         "part of the question and EACH named company/person/technology, issue a SEPARATE targeted search — "
         "and gather MULTIPLE independent sources per aspect (numbers, dates, named investors, founders' "
         "prior companies and education, benchmarks, specifics). Do NOT stop after a shallow first pass; a "
-        "comprehensive, well-sourced answer is the goal. Keep searching until each part is well covered."
+        "comprehensive, well-sourced answer is the goal. Keep searching until each part is well covered. "
+        "PROMINENCE: when the question is about recent DEALS, FUNDING ROUNDS, ACQUISITIONS, or asks for a "
+        "SET / the top / the biggest / notable items, ALSO issue explicit MAGNITUDE-oriented searches — "
+        "e.g. 'largest AI funding rounds this month', 'biggest AI acquisitions 2026', 'AI startup billion "
+        "dollar round' — so the MOST PROMINENT, most-reported items surface, not just a semantic sample. "
+        "A neutral 'recent X' query alone returns a sample; searching for the BIGGEST returns the headliners."
     ) if web_only else ""
     # REFLECTION intent steer (flag EIGEN_REFLECTION=steer): thread the inferred HEART-OF-INTENT into the
     # planner + compose so the answer lands on what the user REALLY wants — but ONLY when the derivation
