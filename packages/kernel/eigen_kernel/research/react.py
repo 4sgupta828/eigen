@@ -1332,10 +1332,18 @@ async def run_react(
                                        "axes": list(_contract.axes)}),
                          "legs": [{"query": q} for q in _c_queries]}
         if question_contract == "steer" and _c_queries:
+            # CONTRACT/PROBE legs (incl. the enum ROSTER — up to cap-30 per-entity legs) run against the
+            # WEB (aux_source) when it exists, else the primary source. The roster is inherently a web task
+            # (find each named company on the live web), and routing it to web AVOIDS hammering the corpus
+            # with 30 pgvector queries over the full block table — the hybrid-mode (corpus+web) latency
+            # explosion. In WEB-ONLY, aux_source is None so this falls to `source` (which IS web) →
+            # byte-identical to before. In HYBRID, the corpus still contributes via the bounded main loop;
+            # only the roster fan-out moves to web. The web leg honors the current-stance recency/breadth.
+            _c_leg_source = aux_source if aux_source is not None else source
             async def _c_fetch(q: str) -> list:
                 try:
                     _cv = await asyncio.to_thread(lambda _q=q: list(embedder.embed([_q])[0]))
-                    return await source.search(RetrievalRequest(
+                    return await _c_leg_source.search(RetrievalRequest(
                         query=q, tenant_id=tenant_id, workspace_id=workspace_id,
                         query_embedding=_cv, k=4, facets=dict(facets or {}),
                         exclude_facets=dict(exclude_facets or {})))
