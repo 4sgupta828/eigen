@@ -126,13 +126,15 @@ ALSO, when `mode` is "enumerative" AND you left `entities` EMPTY (the user asked
   ...]. Name the ones a knowledgeable analyst would include; order by prominence. This does NOT change `entities`
   (still empty — the final rows are discovered from the retrieved evidence, not from this list).
   RESPECT THE QUESTION'S TIME SCOPE — CRITICAL: if the question scopes to RECENT / LATEST / NEWEST / "last
-  N years" / "founded since <year>" / "this year", propose ONLY members you are confident FIT that window,
-  and deliberately UNDER-propose rather than pad with famous OLDER names. Your own knowledge is stale and
-  skews to well-known ESTABLISHED companies — for a "recent/newest startups" ask, listing GitHub, Notion,
-  Figma, Airtable, Stripe (all founded 5-15+ years ago) is WRONG; leave those out. The genuinely recent
-  members (this year's / last-2-years' startups) are ones you may NOT know — that's fine: propose the few
-  recent ones you're sure of, and the rest get DISCOVERED from the fresh web evidence downstream. Never
-  fill a recency-scoped roster with old prominent names just to reach 15-25.
+  N years" / "founded since <year>" / "this year", propose the notable RECENT members that FIT the window —
+  and you DO know many. Redirect from famous-ESTABLISHED to famous-RECENT: for "recent AI/tech startups"
+  (roughly 2021-onward) propose the recent prominent ones like ["Anthropic","Mistral AI","Perplexity",
+  "xAI","Anysphere (Cursor)","ElevenLabs","Cognition","Sierra","Harvey","Glean","Safe Superintelligence",
+  "Thinking Machines","Physical Intelligence","Decagon","Suno",...] — NOT older established names (GitHub,
+  Notion, Figma, Airtable, Stripe, founded 5-15+ years ago), which do NOT fit and must be left out. Still
+  aim for a RICH 15-25 roster of recent members ranked by prominence — do NOT go empty; you know plenty of
+  recent notable startups. The very newest ones you may not know get DISCOVERED from the fresh web evidence
+  and ADD to your roster.
   For a landscape/MAP ask (entities already set to CATEGORIES) or a non-enumerative ask, OMIT `probe_entities`
   or leave it empty. Output ONLY the JSON object (WITH `probe_entities` when applicable)."""
 
