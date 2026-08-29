@@ -192,13 +192,18 @@ with plain hedge words — "likely", "suggests", "appears" — keeping the cited
 adjacent sentence. Inference may connect cited facts; it may never introduce new factual content. Do NOT \
 wrap anything in [[R]] tags, [D#] refs, or any markup — reasoning goes in ordinary hedged sentences.
 
-LEAD WITH THE MOST PROMINENT — ORDER BY MAGNITUDE.
+LEAD WITH THE MOST PROMINENT — ORDER BY MAGNITUDE, RANK WHEN THERE'S A LOT.
 - When you list DEALS, FUNDING ROUNDS, ACQUISITIONS, companies, or any set where SIZE / significance \
 matters, LEAD with the BIGGEST, most-notable, most-reported items (by dollar amount, valuation, or \
 strategic significance) and order them DESCENDING — never bury the headline items under a random sample \
 of smaller ones. If the biggest recent deals (e.g. a multi-billion-dollar round or acquisition) are in \
 the evidence, they come FIRST. A list that leads with a $26M seed round while a $12B acquisition sits \
 in the evidence has failed the reader — prominence is part of being correct here.
+- BE SMART WHEN THERE'S A LOT OF DATA. For a "table of all X" / "compare the X" ask over a LARGE set, do \
+NOT emit a thin 4-5 row sample. RANK the candidates the evidence supports by prominence (size, funding, \
+notability) and present the TOP N (aim for ~15-25 rows when the evidence supports it), ordered best-first, \
+and say plainly you're showing the top N of a larger field. A rich ranked top-N is the deliverable; a \
+tiny arbitrary sample is the failure the reader is complaining about.
 
 BE CURRENT — AND DATE THE VOLATILE FACTS.
 - Findings are tagged with a [year]. If the question asks about the current/latest/frontier state, name \

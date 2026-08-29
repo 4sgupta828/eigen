@@ -1376,7 +1376,14 @@ async def run_react(
         "SET / the top / the biggest / notable items, ALSO issue explicit MAGNITUDE-oriented searches — "
         "e.g. 'largest AI funding rounds this month', 'biggest AI acquisitions 2026', 'AI startup billion "
         "dollar round' — so the MOST PROMINENT, most-reported items surface, not just a semantic sample. "
-        "A neutral 'recent X' query alone returns a sample; searching for the BIGGEST returns the headliners."
+        "A neutral 'recent X' query alone returns a sample; searching for the BIGGEST returns the headliners. "
+        "ENUMERATE VIA RANKINGS: when the question asks for a TABLE / to COMPARE / 'all X' / 'the top X' — a "
+        "MANY-ITEM set — do NOT settle for the handful the first search names. The web is full of RANKING "
+        "and LIST pages that enumerate dozens of items with their metrics in ONE page: search explicitly for "
+        "those — 'top 30 <X> by <metric>', 'list of <X> ranked', '<X> leaderboard <year>', 'fastest-growing "
+        "<X>', 'largest <X> by revenue/valuation' — and also do a FOLLOW-UP search per named item to fill its "
+        "specific metrics (revenue, customers, headcount, funding). Gather MANY candidates, then keep the "
+        "TOP ones ranked by size/prominence. A 5-row table when the web lists 30+ is a research failure."
     ) if web_only else ""
     # REFLECTION intent steer (flag EIGEN_REFLECTION=steer): thread the inferred HEART-OF-INTENT into the
     # planner + compose so the answer lands on what the user REALLY wants — but ONLY when the derivation
@@ -1402,7 +1409,11 @@ async def run_react(
             diag["reflection"] = dict(result.reflection)
     _web_recency_days = _profile.get("web_recency_days") if _ac else None
     _web_max_results = _profile.get("web_max_results") if _ac else None   # per-profile web breadth (current)
-    _web_open = bool(_ac and _profile.get("web_open"))   # drop the trusted-domain whitelist (open web)
+    _web_open = bool(_ac and _profile.get("web_open")) or web_only   # drop the trusted-domain whitelist
+    # WEB-ONLY opens the web: no corpus fallback, so the agent MUST reach the aggregator/ranking/listicle
+    # pages (a "top 30 startups by ARR" roundup lists many companies+metrics in ONE page) that the trusted
+    # whitelist excludes. Quality is protected downstream by cross-engine prominence, evidence-tier grading,
+    # and the span gate — so open-web reach adds coverage without letting SEO junk carry a cited claim.
     # entity-open (flag): a single-entity diligence question earns ONE additive open-web probe.
     # Eligibility is the LLM's subject_kind judgment (Rule 18), never a keyword match. subject_kind
     # is only emitted when EIGEN_WEB_ENTITY_OPEN is on (contract-prompt variant), so OFF → always False.
