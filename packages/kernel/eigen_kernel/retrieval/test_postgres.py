@@ -4,7 +4,7 @@ Skipped unless EIGEN_TEST_PG_DSN points at a pgvector-enabled Postgres, so the
 offline suite stays green without a DB. Mirrors the in-memory guarantees against
 the real backend + checks ranking parity.
 
-    EIGEN_TEST_PG_DSN=postgresql://strata:strata@localhost:5433/eigen_test \
+    EIGEN_TEST_PG_DSN=postgresql://eigen:eigen@localhost:5433/eigen_test \
       .venv/bin/python -m pytest .../test_postgres.py -q
 
 Each test runs its whole async body in ONE event loop (an asyncpg pool is bound

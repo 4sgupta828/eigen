@@ -15,7 +15,7 @@ LLM call fires. Asserts the grounded end-to-end wiring:
 NO network / NO live LLM — the FAKE llm proves WIRING + the citation gate; real compose
 QUALITY (no uncited proper nouns) is the live eval (Task 5).
 
-    EIGEN_CORPUS_DSN=postgresql://strata:strata@localhost:5433/eigen_test \
+    EIGEN_CORPUS_DSN=postgresql://eigen:eigen@localhost:5433/eigen_test \
       /Users/sgupta/eigen/.venv/bin/python -m pytest \
         apps/api/test_population_route_integration.py -q
 """

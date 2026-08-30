@@ -21,7 +21,7 @@ grounding) — that is the extractor's own held-out concern (Task 2a's tests) an
 eval (Task 5). We monkeypatch the extractor (not two LLM layers) precisely to keep this
 test about the job.
 
-    EIGEN_CORPUS_DSN=postgresql://strata:strata@localhost:5433/eigen_test \
+    EIGEN_CORPUS_DSN=postgresql://eigen:eigen@localhost:5433/eigen_test \
       /Users/sgupta/eigen/.venv/bin/python -m pytest apps/api/test_claim_extract_job.py -q
 """
 from __future__ import annotations

@@ -13,7 +13,7 @@ via TestClient:
 The /crossviews/agent LLM turn is covered offline (test_crossviews_agent.py); here we
 prove the grounded DB + persistence WIRING, no live model.
 
-    EIGEN_CORPUS_DSN=postgresql://strata:strata@localhost:5433/eigen_cv_ep_test \
+    EIGEN_CORPUS_DSN=postgresql://eigen:eigen@localhost:5433/eigen_cv_ep_test \
       /Users/sgupta/eigen/.venv/bin/python -m pytest \
         apps/api/test_crossviews_endpoints.py -q
 """

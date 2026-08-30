@@ -5,7 +5,7 @@ Skipped unless EIGEN_CORPUS_DSN points at a Postgres (mirrors
 `test_claimgraph_integration.py`). Uses unique per-run ids and never TRUNCATEs, so it is
 safe against a populated claim graph.
 
-    EIGEN_CORPUS_DSN=postgresql://strata:strata@localhost:5433/eigen_canon_test \
+    EIGEN_CORPUS_DSN=postgresql://eigen:eigen@localhost:5433/eigen_canon_test \
       /Users/sgupta/eigen/.venv/bin/python -m pytest apps/api/test_canonicalize_integration.py -q
 """
 from __future__ import annotations

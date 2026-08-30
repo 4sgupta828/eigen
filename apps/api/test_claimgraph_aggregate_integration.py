@@ -5,7 +5,7 @@ Skipped unless EIGEN_CORPUS_DSN points at a Postgres (mirrors
 `population_claims`: grounded counts, stale-evidence exclusion, and cap +
 truncation reporting (no silent truncation).
 
-    EIGEN_CORPUS_DSN=postgresql://strata:strata@localhost:5433/eigen_test \
+    EIGEN_CORPUS_DSN=postgresql://eigen:eigen@localhost:5433/eigen_test \
       /Users/sgupta/eigen/.venv/bin/python -m pytest \
         apps/api/test_claimgraph_aggregate_integration.py -q
 

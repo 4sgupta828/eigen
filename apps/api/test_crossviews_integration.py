@@ -6,7 +6,7 @@ edge + a category, then asserts the three new store reads (`predicate_coverage`,
 `founder_rows`, `category_member_companies`) AND `build_grid` for all three row_kinds
 produce grounded, cited grids.
 
-    EIGEN_CORPUS_DSN=postgresql://strata:strata@localhost:5433/eigen_cv_test \
+    EIGEN_CORPUS_DSN=postgresql://eigen:eigen@localhost:5433/eigen_cv_test \
       /Users/sgupta/eigen/.venv/bin/python -m pytest \
         apps/api/test_crossviews_integration.py -q
 

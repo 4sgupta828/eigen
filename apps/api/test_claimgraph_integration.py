@@ -3,7 +3,7 @@
 Skipped unless EIGEN_CORPUS_DSN points at a Postgres, so the offline suite stays
 green without a DB (mirrors `eigen_kernel/retrieval/test_postgres.py`).
 
-    EIGEN_CORPUS_DSN=postgresql://strata:strata@localhost:5433/eigen_test \
+    EIGEN_CORPUS_DSN=postgresql://eigen:eigen@localhost:5433/eigen_test \
       /Users/sgupta/eigen/.venv/bin/python -m pytest apps/api/test_claimgraph_integration.py -q
 
 Each test runs its whole async body in ONE event loop (an asyncpg pool is bound to
