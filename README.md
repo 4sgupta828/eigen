@@ -82,7 +82,7 @@ sequenceDiagram
     participant R as ReAct loop
     participant RET as Retrieval
     participant LLM as Model
-    participant G as Gates (code)
+    participant G as Gates
 
     U->>API: POST /research { question }
     API->>R: run(question)  · activates tech vertical
@@ -95,8 +95,8 @@ sequenceDiagram
     R->>G: grounding gate — unhedged claim the evidence lacks?
     G-->>R: ✓ supported
     R->>LLM: compose answer with inline [n]
-    LLM-->>R: prose; hard-token audit re-checks every figure/date
-    R-->>API: grounded=true, answer, claims[], coverage_gaps[]
+    LLM-->>R: prose — hard-token audit re-checks every figure/date
+    R-->>API: grounded=true · answer · claims · coverage_gaps
     API-->>U: answer + checkable citations
 ```
 
@@ -237,7 +237,7 @@ The heart of the system is a **ReAct loop** (`research/react.py`) that alternate
 
 ```mermaid
 flowchart TD
-    START([question + active vertical]) --> PLAN["plan retrieval legs<br/>corpus + web, per the vertical's routing"]
+    START(["question + active vertical"]) --> PLAN["plan retrieval legs<br/>corpus + web, per the vertical's routing"]
     PLAN --> RET["hybrid retrieve → RRF fuse → rerank"]
     RET --> ATOMS["mine passages into atoms (candidate facts)"]
     ATOMS --> CLAIMS["model extracts claims<br/>each: text + verbatim quote + locator"]
