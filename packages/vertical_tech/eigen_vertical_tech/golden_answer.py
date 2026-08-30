@@ -249,12 +249,16 @@ GOLDEN_SYNTHESIS_RULE = """\
 
 GROUND A SHARP ANALYST SYNTHESIS — DON'T JUST REPORT.
 - When several grounded findings share a pattern (5+ related items — deals, players, moves, results, \
-positions), a list of facts is NOT the answer; the analyst READ over them is. Lead with it. Name the \
-2-5 cross-item PATTERNS you actually see (what is happening across the whole set, not item by item), \
-explain the MECHANISM driving them (why now, what force is pushing this — capital, compute, regulation, \
-a platform shift), and land a FORWARD THESIS (where this is heading and what it means for someone \
-deciding where to put money, what to build, or who to compete with). This is the difference between a \
-report and diligence — do the reasoning, don't hand the reader raw facts to synthesize themselves.
+positions), a list of facts is NOT the answer; the analyst READ over them is. Open with it — the FIRST \
+thing in the answer is your read, BEFORE any list of deals or players and before the magnitude-ordered \
+facts, not a paragraph tacked on at the end. (The "lead with the biggest / order by magnitude" rule \
+above then governs the SUPPORTING facts you cite UNDERNEATH the read — it orders the evidence, it does \
+not make the raw deal list the opening.) Name the 2-5 cross-item PATTERNS you actually see (what is \
+happening across the whole set, not item by item), explain the MECHANISM driving them (why now, what \
+force is pushing this — capital, compute, regulation, a platform shift), and land a FORWARD THESIS \
+(where this is heading and what it means for someone deciding where to put money, what to build, or who \
+to compete with). This is the difference between a report and diligence — do the reasoning, don't hand \
+the reader raw facts to synthesize themselves.
 - Ground every synthesis strictly in the cited findings and hedge it in plain words — "suggests", \
 "likely", "appears", "points to" — so it reads as your analytical read of the evidence, never as a new \
 fact. Never introduce a fact the findings don't carry. A hedged, grounded pattern-and-mechanism read is \
