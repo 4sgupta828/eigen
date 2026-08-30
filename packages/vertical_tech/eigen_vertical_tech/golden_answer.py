@@ -12,6 +12,18 @@ Panel-forged (Codex + Gemini + code-grounded subagent). All domain vocabulary li
 litmus: the kernel threads this opaque string exactly like `answer_format`).
 """
 
+import os
+
+# EIGEN_GOLDEN_SYNTHESIS (Rule 20, default OFF). When ON, the golden compose is DEMANDED to lead with a
+# grounded analyst SYNTHESIS — the cross-item pattern + mechanism + forward thesis — instead of reporting a
+# list of facts and closing with a light takeaway. Panel-forged fix (Codex + Gemini + code-grounded
+# subagent, 2026-08-30) for the depth/insight gap vs GPT: the golden path forces the deep-synthesis /
+# intelligence-core / derive / reasoning-read layers OFF, and the compose directive never DEMANDED the
+# analyst move, so answers read as grounded reporting, not insight. The synthesis rides the grounding-gate
+# labeled-analytical-read exemption (hedged "suggests/likely/appears", every premise cited) — no grounding
+# is loosened. OFF path is byte-identical to the prior compose. Read at import (manifest builds at startup).
+_GOLDEN_SYNTHESIS = os.environ.get("EIGEN_GOLDEN_SYNTHESIS", "").lower() in ("1", "true", "yes")
+
 GOLDEN_ANSWER_DIRECTIVE = """\
 You are a sharp, plain-spoken expert explaining something to a smart colleague who just asked you \
 about it — someone deciding where to put money, what to build, or who to compete with. Talk to them \
@@ -229,6 +241,28 @@ heading-per-subtopic that turns the answer into a document. Keep [n] citations u
 - NEVER expose the machinery: no "hypothesis", "H1/H2", "the findings show", "Finding 3", "confidence \
 score", no [[R]] tags or [D#] refs, no narration of how you assembled the answer."""
 
+# GROUNDED ANALYST SYNTHESIS — the depth/insight demand. Appended to GOLDEN_VOICE only when
+# EIGEN_GOLDEN_SYNTHESIS is ON. This is the one move that closes the gap to GPT: reason OVER the evidence,
+# don't summarize it. Kept as ordinary hedged prose so it rides the grounding-gate analytical-read
+# exemption (no [[R]] machinery, which the voice bans).
+GOLDEN_SYNTHESIS_RULE = """\
+
+GROUND A SHARP ANALYST SYNTHESIS — DON'T JUST REPORT.
+- When several grounded findings share a pattern (5+ related items — deals, players, moves, results, \
+positions), a list of facts is NOT the answer; the analyst READ over them is. Lead with it. Name the \
+2-5 cross-item PATTERNS you actually see (what is happening across the whole set, not item by item), \
+explain the MECHANISM driving them (why now, what force is pushing this — capital, compute, regulation, \
+a platform shift), and land a FORWARD THESIS (where this is heading and what it means for someone \
+deciding where to put money, what to build, or who to compete with). This is the difference between a \
+report and diligence — do the reasoning, don't hand the reader raw facts to synthesize themselves.
+- Ground every synthesis strictly in the cited findings and hedge it in plain words — "suggests", \
+"likely", "appears", "points to" — so it reads as your analytical read of the evidence, never as a new \
+fact. Never introduce a fact the findings don't carry. A hedged, grounded pattern-and-mechanism read is \
+SUBSTANCE, not speculation — it is the most valuable thing on the page, so it goes FIRST, not last."""
+
+if _GOLDEN_SYNTHESIS:
+    GOLDEN_VOICE = GOLDEN_VOICE + "\n" + GOLDEN_SYNTHESIS_RULE
+
 # SHAPE — one per contract mode. Mutually exclusive (selected by mode), so a shape never fights the voice.
 # DEFAULT (decision / analytical / narrow-factual): lead with the answer, reason to it. Today's behavior.
 SHAPE_DEFAULT = """\
@@ -256,6 +290,21 @@ read and say what it rests on. Then, in one line, name the single thing still un
 partner would most want to verify before acting on it (the key diligence question). Ground both in the \
 cited evidence — a stance the findings support, not a hot take. (Skip this for a purely factual ask \
 where a stance would be nonsense — "what did X raise" just wants the number.)"""
+
+# When EIGEN_GOLDEN_SYNTHESIS is ON, broaden LAND A STANCE to current-landscape / "what is happening"
+# questions: they are the ones GPT answers with a sharp synthesis and Eigen was answering with a recap.
+_DEFAULT_STANCE_DEFAULT = """\
+- LAND A STANCE. For a strategic, comparative, or assessment question ("is the moat real", "who wins", \
+"build or buy", "is this proven"),"""
+_DEFAULT_STANCE_SYNTH = """\
+- LAND A STANCE — AND SYNTHESIZE. For a strategic, comparative, assessment, OR current-landscape / "what \
+is happening" / "what's the state of X" question ("is the moat real", "who wins", "build or buy", "is \
+this proven", "what's going on in <space>"), when the evidence carries several related findings, don't \
+recap them and don't trail off into balanced mush — name the cross-finding pattern and the mechanism \
+behind it, then commit to the best-supported read (hedged, grounded in [n]). For any such question,"""
+
+if _GOLDEN_SYNTHESIS:
+    SHAPE_DEFAULT = SHAPE_DEFAULT.replace(_DEFAULT_STANCE_DEFAULT, _DEFAULT_STANCE_SYNTH, 1)
 
 # ENUMERATIVE: the question asks for the FULL SET across dimensions. Completeness IS the deliverable —
 # this exhaustiveness deliberately OVERRIDES the default's "single straight answer / don't compile
@@ -314,6 +363,40 @@ line). A table alone is data, not diligence — end with the SO-WHAT the reader 
 what evidence, where the real value/whitespace sits, and the one or two things still unproven that a \
 partner would want to verify before acting. Ground it in the rows above ([n]); do not free-speculate. \
 The table is the body; this is why it matters."""
+
+# When EIGEN_GOLDEN_SYNTHESIS is ON, the enumerative table is NOT the conclusion: the answer must OPEN with
+# an analyst read over the whole set (named patterns + mechanism), the table is the evidence, and it CLOSES
+# on a forward thesis. Panel-forged (Codex + Gemini, 2026-08-30): the prior shape led with the grid and
+# buried a light takeaway at the end, producing grounded reporting rather than insight.
+_ENUM_LEAD_SYNTH = """\
+- OPEN WITH A STRATEGIC SYNTHESIS OVER THE WHOLE SET — before the table, not after it. In 2-4 sentences, \
+name the 2-5 cross-item PATTERNS the rows reveal (what is actually happening across the field — e.g. \
+"three simultaneous land-grabs", a wave of consolidation, a capital surge into one layer) and the \
+MECHANISM driving them (why now — what force: capital, compute, a platform shift, regulation). Reason \
+over the rows; do not walk them one by one. Hedge this read in plain words ("suggests", "likely", \
+"appears"), ground it in the cited rows below, and introduce no fact the table doesn't carry. This \
+analyst read is the most valuable thing on the page — it goes FIRST, then the table backs it up.
+"""
+_ENUM_CLOSE_DEFAULT = """\
+- CLOSE WITH THE DILIGENCE TAKEAWAY (one short grounded paragraph or 2-3 bullets under the coverage \
+line). A table alone is data, not diligence — end with the SO-WHAT the reader needs: who's ahead and on \
+what evidence, where the real value/whitespace sits, and the one or two things still unproven that a \
+partner would want to verify before acting. Ground it in the rows above ([n]); do not free-speculate. \
+The table is the body; this is why it matters."""
+_ENUM_CLOSE_SYNTH = """\
+- CLOSE ON A FORWARD THESIS (2-3 sentences or bullets under the coverage line). You opened with the \
+pattern and mechanism; now land where this is HEADING and what it means for a decision — who is ahead and \
+on what evidence, where the real value/whitespace sits, and the one or two things still unproven that a \
+partner would most want to verify before acting. Hedge the forward read ("likely", "points to"), ground \
+it strictly in the rows above ([n]), and add no new fact. The table is the evidence; the open and this \
+close are the diligence."""
+
+if _GOLDEN_SYNTHESIS:
+    SHAPE_ENUMERATIVE = SHAPE_ENUMERATIVE.replace(
+        "SHAPE — ENUMERATE THE COMPLETE SET.\n",
+        "SHAPE — ENUMERATE THE COMPLETE SET.\n" + _ENUM_LEAD_SYNTH,
+        1,
+    ).replace(_ENUM_CLOSE_DEFAULT, _ENUM_CLOSE_SYNTH, 1)
 
 # EXPLORATORY: open/survey question — map the landscape across the axes, don't force one verdict.
 SHAPE_EXPLORATORY = """\
