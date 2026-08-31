@@ -115,9 +115,19 @@ The confidence label is *assigned by the gate, never self-declared*, and a deriv
 | Portfolio monitoring | Flag when new filings/patents change a thesis |
 | Multi-vertical research | A licensed "grounded research" platform per domain |
 
-## 11. To understand the space
+## 11. The provocation
 
-Retrieval-augmented generation · attributed QA (**AIS**) · reciprocal-rank fusion · financial NLP · the faithfulness/hallucination literature for long-form generation · the distinction between *reporting* and *reasoning* in machine-generated analysis.
+> **Frontier models made reasoning cheap and provenance expensive — so the industry optimized reasoning. For anyone whose job is to be *accountable* for a claim, that's exactly backwards.** An analyst who can't cite a source isn't an analyst; they're a rumor with a spreadsheet. As generation collapses toward free, the scarce and priced good flips — from "can it write the memo" to "can you defend every line of it under questioning" — and defensibility is a code problem, not a model problem. The next uncomfortable step: verifying every *sentence* is grounded is not the same as verifying the *conclusion follows*. A memo can be 100% cited and still reason its way to a wrong recommendation. Grounded quotation is table stakes; grounded *derivation* — auditable reasoning that a gate, not the model, certifies — is the actual frontier, and almost nobody is building it.
+
+## 12. Further reading (high-quality references)
+
+- **Lewis et al. (2020)** — "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks." *NeurIPS.*
+- **Cormack, Clarke & Büttcher (2009)** — "Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods." *SIGIR.* The fusion Eigen uses.
+- **Liu et al. (2023)** — "Lost in the Middle: How Language Models Use Long Contexts." *TACL.* Why retrieval placement decides answers.
+- **Bohnet et al. (2022)** — "Attributed Question Answering: Evaluation and Modeling for Attributed LLMs."
+- **Rashkin et al. (2023)** — "Measuring Attribution in NLG Models" (**AIS**). *Computational Linguistics.*
+- **Wei et al. (2022)** — "Chain-of-Thought Prompting Elicits Reasoning in LLMs." *NeurIPS.* The capability the demotion ladder tries to *ground*.
+- Background: financial NLP · the reporting-vs-reasoning distinction in machine-generated analysis.
 
 ---
 
