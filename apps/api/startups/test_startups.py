@@ -242,3 +242,13 @@ def test_same_round_from_several_articles_counts_once():
     assert len(d) == 1 and d[0]["event_date"] == date(2025, 7, 1) and d[0]["lead"] == "initialized" and d[0]["investors"] == ["y_combinator"]
     facts = derive.derive_facts({}, [dict(e, event_date=e["event_date"].isoformat()) for e in evs], [], [], [], {}, today=date(2026, 9, 6))
     assert {f["key"]: f for f in facts}["total_disclosed_funding"]["number"] == 4.2e6
+
+
+def test_low_coverage_key_keeps_a_must_when_the_requested_value_is_common():
+    # after filing-only companies joined, tech area is "known" for 42% — but fintech is carried by 574 startups
+    c, notes = cp.build_contract({"text": "fintech", "must": {"tech_area": ["fintech"], "founder_count": {"min": 2}, "metro": ["new_york"]}},
+                                 coverage={"tech_area": 0.42, "founder_count": 0.42, "metro": 0.35},
+                                 value_counts={"tech_area": {"fintech": 574}, "founder_count": {"1": 1784, "2": 3236}, "metro": {"new_york": 700}})
+    assert c.must == {"tech_area": ["fintech"], "founder_count": {"min": 2.0}, "metro": ["new_york"]} and notes == []
+    c, notes = cp.build_contract({"text": "x", "must": {"metro": ["lagos"]}}, coverage={"metro": 0.35}, value_counts={"metro": {"lagos": 3}})
+    assert c.must == {} and c.prefer == {"metro": ["lagos"]}          # a rare value on a sparse key: a preference

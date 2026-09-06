@@ -159,8 +159,11 @@ class StartupIntake:
             order = list(k.values) if k.values else [b[0] for b in k.bands]
             have = {v: n for v, n in opts}
             opts = [(v, int(have.get(v, (counts.get(q.name) or {}).get(v, 0)))) for v in order]
-        elif k is not None and k.type.value == "categorical" and not opts:
-            opts = [(v, int((counts.get(q.name) or {}).get(v, 0))) for v in k.values]
+        elif k is not None and k.type.value == "categorical":
+            # the whole vocabulary, most common first (the kernel's top-6 is too few for a 15-value key like tech area)
+            have = {v: n for v, n in opts}
+            allc = {v: int(have.get(v, (counts.get(q.name) or {}).get(v, 0))) for v in k.values}
+            opts = sorted(allc.items(), key=lambda kv: (-kv[1], k.values.index(kv[0])))
         return {"kind": "key", "name": q.name, "key": q.name, "words": words, "hint": hint, "klass": q.klass,
                 "options": [[v, option_label(q.name, v), int(n), option_hint(q.name, v)] for v, n in opts],
                 "skip": SKIP_WORDS.get(q.name, "Skip"), "free_text": True,

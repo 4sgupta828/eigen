@@ -14,6 +14,8 @@ from eigen_kernel.facets import Contract, validate_contract
 from .schema import KIND, LOW_COVERAGE_DEFAULT_PREFER, SCHEMA, STAGES
 
 COVERAGE_FLOOR = 0.5
+MIN_MUST_SUPPORT = 25       # a categorical must stays a must when at least this many startups carry the requested values
+MIN_RANGE_SUPPORT = 200     # a numeric must stays a must when at least this many startups have any value for the key
 
 
 def system_prompt() -> str:
@@ -95,6 +97,14 @@ def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dic
         rate = cov.get(key, 0.0) if cov else None
         low = key in LOW_COVERAGE_DEFAULT_PREFER or (rate is not None and rate < COVERAGE_FLOOR)
         label = SCHEMA.key(key).label
+        vals0 = must[key]
+        # a low known-rate only matters when the REQUESTED values are rare: a must on a category hundreds of startups
+        # carry keeps its promise even when most of the index says nothing about the key
+        if low and key not in LOW_COVERAGE_DEFAULT_PREFER and vc.get(key):
+            if isinstance(vals0, list) and sum(int(vc[key].get(v, 0)) for v in vals0) >= MIN_MUST_SUPPORT:
+                low = False
+            elif isinstance(vals0, dict) and sum(int(n) for v, n in vc[key].items() if v != "unknown") >= MIN_RANGE_SUPPORT:
+                low = False
         if low:
             vals = must[key]
             if isinstance(vals, dict) and key not in LOW_COVERAGE_DEFAULT_PREFER:
