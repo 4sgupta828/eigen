@@ -32,7 +32,7 @@ Rules: only the keys and values listed below. A must is only what the brief stat
 must_not. Numeric keys take a range in their unit: money keys in USD (so "$5M" is 5000000), last_round_months in months
 ("12–24 months ago" → min 12, max 24), founded in years, founder_count / headcount / hiring in counts. "seed to series A" →
 must stage [seed, series_a] and center seed span 1. Stage words: pre_seed seed series_a series_b series_c series_d_plus growth.
-Do not invent values the brief does not imply. Keys:
+A stage (or a center) ONLY when the brief names one (seed, series A, …) — "startups" alone is not a stage. Do not invent values the brief does not imply. Keys:
 {keys}"""
 
 
@@ -68,7 +68,14 @@ def _clean_map(m, *, numeric_ok: bool) -> dict:
     return out
 
 
-def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dict | None = None, limit: int = 60) -> tuple[Contract, list[str]]:
+_STAGE_WORDS = re.compile(r"\b(pre[- ]?seed|seed|series [a-f]\b|growth[- ]stage|late[- ]stage|early[- ]stage)", re.I)
+
+
+def brief_names_a_stage(text: str) -> bool:
+    return bool(_STAGE_WORDS.search(text or ""))
+
+
+def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dict | None = None, limit: int = 60, brief: str = "") -> tuple[Contract, list[str]]:
     """Model JSON → validated Contract + notes. `coverage` = known-rate per key (0..1) from the index (a key
     absent from it is known for nobody); `value_counts` = index-wide count per key per value, so a must on a
     value no startup carries yet is downgraded instead of silently returning nothing."""
@@ -77,6 +84,11 @@ def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dic
     prefer = _clean_map(out.get("prefer"), numeric_ok=False)
     avoid = _clean_map(out.get("avoid"), numeric_ok=False)
     exclude = _clean_map(out.get("must_not"), numeric_ok=False)
+    # a STAGE only when the brief names one — the model tends to assume "startups" means seed / series A
+    if brief and not brief_names_a_stage(brief):
+        must.pop("stage", None); prefer.pop("stage", None); avoid.pop("stage", None)
+        if isinstance(out.get("center"), dict) and out["center"].get("key") == "stage":
+            out = {**out, "center": None}
     cov = coverage or {}
     vc = value_counts or {}
     for key in list(must):
@@ -138,4 +150,4 @@ async def compile_brief(llm_json, text: str, *, coverage: dict | None = None, va
         out = {}
     if not out.get("text"):
         out["text"] = re.sub(r"\s+", " ", text)[:200]
-    return build_contract(out, coverage=coverage, value_counts=value_counts, limit=limit)
+    return build_contract(out, coverage=coverage, value_counts=value_counts, limit=limit, brief=text)
