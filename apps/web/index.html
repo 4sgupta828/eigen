@@ -5487,14 +5487,28 @@ function wireEngineHops(root, t){
   if(inp) inp.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); addFree(); } });
 })();
 
+// The landing's mission block lives inside #out; a thread render clears #out, so New chat restores it from this copy.
+const MISSION_HTML = (() => { const m = document.getElementById("mission"); return m ? m.outerHTML : ""; })();
 function newConversation(){
+  // a question in flight is cancelled first — otherwise its answer lands in the fresh thread
+  if(typeof CURRENT_ABORT !== "undefined" && CURRENT_ABORT && typeof cancelResearch === "function"){ try{ cancelResearch(); }catch(e){} }
   THREAD = {session_id:null, turns:[]};
   GUIDED_REFINED = false;
   document.body.classList.remove("chatting"); out.style.paddingBottom = "";   // back to landing layout
-  out.innerHTML = "";
-  q.value=""; q.style.height="auto";
+  out.innerHTML = MISSION_HTML;                                                // the landing again, not an empty pane
+  q.value=""; q.style.height="auto"; if(typeof syncComposerPad === "function") syncComposerPad();
   if(APP_MODE === "panel"){ closePanel(); return; }   // New chat from panel → back to Q&A landing
   if(APP_MODE === "triage"){ TRIAGE = {transcript: [], busy: false, refined: "", register: "", urgent: false}; setMode("qa"); return; }
+  if(APP_MODE === "startups"){                          // a fresh Startup search: results, rail, map and notes cleared
+    if(window.SU && SU.reset) SU.reset();
+    try{ history.replaceState(null, "", "#startups"); }catch(e){}
+    window.scrollTo({top:0}); q.focus(); return;
+  }
+  if(APP_MODE === "guided"){                            // a fresh Guided intake from its opening question
+    if(window.SG) SG.enter(true);
+    try{ history.replaceState(null, "", "#guided"); }catch(e){}
+    window.scrollTo({top:0}); q.focus(); return;
+  }
   try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
   q.setAttribute("placeholder", pickPlaceholder());  // fresh question each New chat
   window.scrollTo({top:0}); q.focus();
@@ -6842,7 +6856,12 @@ async function enter(params){
   else if(h.get("b")){ q.value=h.get("b"); runCompile(h.get("b")); }
 }
 function runContract(contract, brief){ STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.brief=brief||""; if(brief) q.value=brief; STATE.merge=contract.merge||{mode:"merged"}; STATE.mergeOff=[]; renderNotes([]); renderMapBar(); return runEvaluate(contract); }
-window.SU = { search: runCompile, enter, onAuth, runContract };
+function reset(){
+  STATE.data=null; STATE.contract=null; STATE.draft=null; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.mergeOff=[]; STATE.brief=""; STATE.open=null; STATE.busy=false;
+  renderNotes([]); renderMapBar(); $("#su-rail").innerHTML=""; $("#su-results").innerHTML=""; const mp=$("#su-mapsPanel"); if(mp) mp.hidden=true;
+  renderCoverage();
+}
+window.SU = { search: runCompile, enter, onAuth, runContract, reset };
 
 })();
 </script>
