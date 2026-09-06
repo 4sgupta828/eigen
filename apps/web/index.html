@@ -6768,7 +6768,7 @@ function cardHtml(row){
     ${fit?`<div class="c-row">${fit}</div>`:""}
     ${gaps.length?`<div class="su-gaps">gaps: ${esc(gaps.join(" · "))}</div>`:""}
     ${why?`<div class="c-why">${esc(why)}</div>`:""}
-    <div class="c-acts"><button type="button" data-open="${esc(id)}">${STATE.open===id?"▴ hide evidence":"▾ evidence"}</button><a href="/?q=${encodeURIComponent("Diligence "+(co.name||id))}" target="_blank" rel="noopener">◉ Diligence in Q&amp;A</a></div>
+    <div class="c-acts"><button type="button" data-open="${esc(id)}">${STATE.open===id?"▴ hide evidence":"▾ evidence"}</button></div>
     <div class="drawer" id="drawer-${esc(id)}" ${STATE.open===id?"":"hidden"}></div>
   </div>`;
 }
