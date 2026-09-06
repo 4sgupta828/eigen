@@ -573,3 +573,15 @@ a round name; only press does.
 DeepSeek returned 402 Insufficient Balance twice (2026-09-05 and 2026-09-06 evening); prod runs
 `EIGEN_STARTUP_LLM_PROVIDER=openai` (gpt-4o-mini). When DeepSeek is out of credit, compile silently degrades to a
 text-only contract — switch the variable rather than leave it.
+
+### 2026-09-06 (night) — Guided mode for startups (roster's intake, adapted)
+- A third tab, ◍ Guided, between Quick Q&A and ◆ Startups. Opening words → the brief compiler → questions gated on the
+  index's counts (kernel `facets/intake.py`, ported): REQUIRED tech area and stage (stage lands as the CENTRE, never a
+  must); OPTIONAL funding floor, country, last-round window, founder count, program, customer, model, hiring, metro —
+  asked only when the current slice is spread on the key and the budget remains (2 + 2). Chips carry live counts over
+  the slice; typed answers go through one small model read; "Search now" ends it; the ready card shows the plain
+  reading, the contract chips, the pool and advice; ◆ Search hands the contract to the Startups rail.
+- Compiler hardening found on the way: a stage only when the brief names one; every named area / place / program /
+  figure must land under a key (rules + two worked examples in the prompt for gpt-4o-mini); bare numbers become a
+  floor or a band; a must on a sparse key stays a must when the requested values are common (≥ 25 startups) —
+  the filing-only companies had dragged tech area / metro / program below the 50 % coverage line.

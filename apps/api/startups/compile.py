@@ -34,7 +34,15 @@ Rules: only the keys and values listed below. A must is only what the brief stat
 must_not. Numeric keys take a range in their unit: money keys in USD (so "$5M" is 5000000), last_round_months in months
 ("12–24 months ago" → min 12, max 24), founded in years, founder_count / headcount / hiring in counts. "seed to series A" →
 must stage [seed, series_a] and center seed span 1. Stage words: pre_seed seed series_a series_b series_c series_d_plus growth.
-A stage (or a center) ONLY when the brief names one (seed, series A, …) — "startups" alone is not a stage. Do not invent values the brief does not imply. Keys:
+A stage (or a center) ONLY when the brief names one (seed, series A, …) — "startups" alone is not a stage. EVERY area, place, program,
+investor, founder count, funding figure or hiring condition the brief names MUST appear under a key (never only in `text`).
+Money is "raised" / "funding" → total_disclosed_funding unless the brief says "last round". Do not invent values the brief does not imply.
+Examples:
+  brief: "robotics startups in Boston that raised over $5M"
+  → {{"text": "robotics startups", "must": {{"tech_area": ["robotics"], "metro": ["boston"], "total_disclosed_funding": {{"min": 5000000}}}}, "must_not": {{}}, "prefer": {{}}, "avoid": {{}}, "center": null, "rank_by": "match", "notes": []}}
+  brief: "seed to series A fintech startups from YC with 2 founders, not in the US"
+  → {{"text": "fintech startups", "must": {{"tech_area": ["fintech"], "program": ["yc"], "founder_count": ["2"], "stage": ["seed", "series_a"]}}, "must_not": {{"country": ["us"]}}, "prefer": {{}}, "avoid": {{}}, "center": {{"key": "stage", "value": "seed", "span": 1}}, "rank_by": "match", "notes": []}}
+Keys:
 {keys}"""
 
 
@@ -57,6 +65,20 @@ def _clean_map(m, *, numeric_ok: bool) -> dict:
             if rng:
                 out[k.key] = rng
             continue
+        if isinstance(vals, (int, float)) and not isinstance(vals, bool) and k.type.value == "numeric":
+            # a bare number on a numeric key: a band when it names one (founder_count 2 → "2"), else a floor ("over 5M")
+            band = str(int(vals)) if float(vals).is_integer() else ""
+            if band and band in {b[0] for b in k.bands}:
+                out[k.key] = [band]
+            elif numeric_ok:
+                out[k.key] = {"min": float(vals)}
+            continue
+        if isinstance(vals, str) and k.type.value == "numeric" and numeric_ok:
+            from .extract import parse_money
+            n = parse_money(vals)
+            if n is not None:
+                out[k.key] = {"min": float(n)}
+                continue
         vs = vals if isinstance(vals, list) else [vals]
         keep = []
         for v in vs:
