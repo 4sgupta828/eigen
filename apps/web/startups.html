@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Eigen · Startups</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+  // Startup Search moved INTO the main shell as a mode (2026-09-06). Old links keep working:
+  //   /startups            → /#startups          /startups#b=<brief>  → /#startups?b=<brief>
+  //   /startups#map=<id>&share=<tok> → /#startups?map=<id>&share=<tok>
+  var h = location.hash.replace(/^#/, "");
+  location.replace("/#startups" + (h ? "?" + h : ""));
+</script>
+</head><body>Redirecting to <a href="/#startups">Eigen · Startups</a>…</body></html>
