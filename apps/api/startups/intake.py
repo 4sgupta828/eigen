@@ -136,10 +136,17 @@ def _usd(x) -> str:
 
 
 class StartupIntake:
-    def __init__(self, *, llm_json: Callable[[str, str], Awaitable[dict]] | None, counts_fn: Callable[[dict, dict], Awaitable[dict]], compile_fn):
+    def __init__(self, *, llm_json: Callable[[str, str], Awaitable[dict]] | None, counts_fn: Callable[[dict, dict], Awaitable[dict]], compile_fn,
+                 slice_fn=None, coverage_fn=None):
         self.llm_json = llm_json
         self.counts_fn = counts_fn          # async (must, exclude) → counts per key (with "_total")
         self.compile_fn = compile_fn        # async (text) → (Contract, notes)
+        self.slice_fn = slice_fn            # async (must, exclude) → bounded pool size (the structural probe); None = no probes
+        self.coverage_fn = coverage_fn      # async () → {"known_rate": {...}}
+
+    def user_keys(self, st: IntakeState) -> set:
+        """The user's OWN constraints: keys they answered in the intake (never relaxed by any index-aware rule)."""
+        return {k for k in st.asked if k in ((st.contract or {}).get("must") or {})}
 
     # ---------------- pieces ----------------
     async def _counts(self, st: IntakeState) -> dict:
@@ -227,11 +234,42 @@ class StartupIntake:
         return out
 
     async def _ready(self, st: IntakeState, counts: dict, transcript: list, notes: list) -> dict:
+        from . import contract_search as cs
         c = Contract.from_dict(st.contract)
         if validate_contract(c, SCHEMA):
             c = Contract(kind=KIND, text=c.text, limit=c.limit); st.contract = c.to_dict()
-        return {"understood": understood_words(st.contract, st.answers), "contract": st.contract, "pool": self._pool(counts), "counts": counts,
-                "advice": self._advice(counts), "notes": notes, "answers": dict(st.answers), "transcript_audit": transcript[-TRANSCRIPT_CAP:]}
+        uk = self.user_keys(st)
+        aware_notes: list = []
+        recipes_out: list = []
+        diagnostics: list = []
+        if self.slice_fn is not None:
+            # INDEX-AWARE (spec §12 step 1): a compiled must that collapses the pool ranks instead — never the user's own
+            cov = {}
+            if self.coverage_fn is not None:
+                try:
+                    cov = (await self.coverage_fn()).get("known_rate") or {}
+                except Exception:   # noqa: BLE001
+                    cov = {}
+            c, aware_notes = await cs.index_aware(c, user_keys=uk, slice_fn=self.slice_fn, coverage=cov)
+            if aware_notes:
+                st.contract = c.to_dict()
+                counts = await self._counts(st)
+            # the READINGS the merged search will run, each with its measured pool (the card shows them as toggles)
+            from eigen_kernel.facets.contract_search import recipes as _recipes
+            ladder = _recipes(c, user_keys=uk, relaxable_keys=set(cs.RELAXABLE_KEYS), readings=[], default_keys=set(cs.LADDER_DEFAULT_KEYS))
+            exclude = (c.scope or {}).get("exclude") or {}
+            for r in ladder:
+                try:
+                    n = await self.slice_fn(dict(r.contract.must), exclude)
+                except Exception:   # noqa: BLE001
+                    n = None
+                recipes_out.append({"name": r.name, "why": r.why, "pool": n, "must": r.contract.must, "prefer": r.contract.prefer})
+            diagnostics = await cs.u_diagnostics(c, user_keys=uk, slice_fn=self.slice_fn)
+        handoff = {**st.contract, "merge": {"mode": "merged", "user_keys": sorted(uk)}}
+        note_lines = [f"{n.get('key', '').replace('_', ' ')}: {n.get('why')} — it ranks instead of filtering" for n in aware_notes]
+        return {"understood": understood_words(st.contract, st.answers), "contract": handoff, "pool": self._pool(counts), "counts": counts,
+                "advice": self._advice(counts), "notes": list(notes) + note_lines, "answers": dict(st.answers), "user_keys": sorted(uk),
+                "recipes": recipes_out, "diagnostics": diagnostics, "transcript_audit": transcript[-TRANSCRIPT_CAP:]}
 
     # ---------------- the turn ----------------
     async def step(self, *, state: dict | None = None, message: str = "", answer: dict | None = None, search_now_flag: bool = False) -> dict:

@@ -130,20 +130,36 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
             raise HTTPException(status_code=401, detail="sign in to save maps")
         return u
 
-    async def _evaluate(c: Contract) -> dict:
+    async def _evaluate_core(c: Contract, counts: bool = True) -> dict:
         errs = validate_contract(c, SCHEMA)
         if errs:
             raise HTTPException(status_code=400, detail="; ".join(errs))
         exclude = dict((c.scope or {}).get("exclude") or {})
-        out = await evaluate(c, _Bound(store, exclude, providers.embed), SCHEMA, WEIGHTS)
+        out = await evaluate(c, _Bound(store, exclude, providers.embed), SCHEMA, WEIGHTS, depth=({"counts": False} if not counts else None))
         rows = [x for x in out["rows"] if not _excluded(x, exclude)]
         hydrated = await store.companies_by_ids([x["id"] for x in rows])
         for i, x in enumerate(rows):
             x["company"] = hydrated.get(x["id"], {})
             x["rank"] = i + 1
-        total = out["counts"].pop("_total", None)
+        total = (out.get("counts") or {}).pop("_total", None)
         out["rows"] = rows
         out["coverage"]["matched"] = total
+        return out
+
+    async def _slice(must: dict, exclude: dict) -> int:
+        return await store.slice_size(must, exclude=exclude)
+
+    async def _evaluate(c: Contract, merge: dict | None = None) -> dict:
+        """Single evaluate, or — with words and a model — roster's MERGED search: recipes probed, fused, the head judged blind."""
+        from . import contract_search as cs
+        merge = merge or {}
+        mode = merge.get("mode") or ("merged" if (c.text and providers.llm_json) else "single")
+        if mode == "merged" and c.text and providers.llm_json:
+            out = await cs.merged_search(c, user_keys=set(merge.get("user_keys") or []), evaluate_fn=_evaluate_core, slice_fn=_slice, llm_json=providers.llm_json, off=merge.get("off"), top=int(c.limit))
+            out["coverage"]["matched"] = (out.get("coverage") or {}).get("matched")
+        else:
+            out = await _evaluate_core(c)
+        rows = out["rows"]
         out["coverage"]["index"] = await store.coverage()
         out["labels"] = labels()
         if not rows:
@@ -171,7 +187,7 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
     @r.post("/startups/intake/step")
     async def intake_step(body: IntakeIn) -> dict:
         from .intake import StartupIntake
-        svc = StartupIntake(llm_json=providers.llm_json, counts_fn=_counts_for_intake, compile_fn=_compile_for_intake)
+        svc = StartupIntake(llm_json=providers.llm_json, counts_fn=_counts_for_intake, compile_fn=_compile_for_intake, slice_fn=_slice, coverage_fn=lambda: store.coverage())
         out = await svc.step(state=body.state, message=body.message, answer=body.answer, search_now_flag=body.search_now)
         out["labels"] = labels()
         return out
@@ -207,8 +223,9 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         m = await store.get_map(map_id, owner_id=(u or {}).get("id"), share_token=share or None)
         if not m:
             raise HTTPException(status_code=404, detail="no such map")
+        from .contract_search import merge_options
         c = Contract.from_dict(body.contract); c.kind = KIND
-        out = await _evaluate(c)
+        out = await _evaluate(c, merge_options(body.contract))
         out["map"] = {"id": m["id"], "title": m["title"], "revision": m["revision"], "owner": m["owner"]}
         return out
 
@@ -248,9 +265,10 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
 
     @r.post("/startups/evaluate")
     async def evaluate_contract(body: EvaluateIn) -> dict:
+        from .contract_search import merge_options
         c = Contract.from_dict(body.contract)
         c.kind = KIND
-        return await _evaluate(c)
+        return await _evaluate(c, merge_options(body.contract))
 
     @r.get("/startups/coverage")
     async def coverage() -> dict:

@@ -220,6 +220,7 @@
   .sg-pool{font-size:.86rem;color:var(--muted);margin:.3rem 0 .5rem;} .sg-pool b{color:var(--ink);}
   .sg-advice{font-size:.78rem;color:var(--muted);line-height:1.5;margin:.4rem 0 0;padding-left:1.1rem;} .sg-notes{font-size:.76rem;color:var(--gap);margin:.2rem 0;}
   .sg-busy{font-size:.8rem;color:var(--muted);margin:.4rem 0;}
+  .sg-readings{margin:.5rem 0 .2rem;} .sg-reading{font-size:.8rem;line-height:1.5;color:var(--ink);padding:.15rem 0;border-top:1px dashed var(--hair);} .sg-reading .c-dom{font-family:var(--mono);font-size:.66rem;color:var(--muted);}
   @media (max-width:560px){ .sg-opt{flex:1 1 auto;text-align:center;} .sg-msg{max-width:100%;} }
   /* ===== Startup Search — an inline MODE of the shell (body[data-mode="startups"]) ===== */
   body[data-mode="startups"] #startupsbody{display:block;}
@@ -231,6 +232,12 @@
   #startupsbody .frail-done{color:var(--verified);} #startupsbody .frail-done b{color:var(--verified);} #startupsbody .su-note{color:var(--muted);font-size:.74rem;}
   #startupsbody .su-diff{display:inline-block;margin-left:.4rem;font-size:.74rem;color:var(--muted);} #startupsbody .su-diff summary{cursor:pointer;color:var(--gold);display:inline;}
   #startupsbody .card{position:relative;}
+  #startupsbody .su-recipe{flex:none;font:inherit;font-size:.72rem;padding:.25rem .6rem;min-height:36px;border:1px solid var(--gold);border-radius:999px;background:rgba(var(--gold-rgb),.10);color:var(--gold-strong);cursor:pointer;white-space:nowrap;}
+  #startupsbody .su-recipe b{margin-left:.3rem;color:var(--muted);font-weight:600;} #startupsbody .su-recipe.off{border-style:dashed;background:transparent;color:var(--muted);}
+  #startupsbody .su-mergesum{font-size:.78rem;color:var(--ink);} #startupsbody .su-weak{color:var(--gap);font-weight:600;}
+  #startupsbody .su-fitpill{font-size:.68rem;font-weight:600;padding:.1rem .5rem;border-radius:999px;border:1px solid var(--hair);color:var(--muted);}
+  #startupsbody .su-fitpill.fit-yes{color:var(--verified);border-color:var(--verified);background:rgba(19,122,84,.08);}
+  #startupsbody .su-fitpill.fit-partial{color:var(--gap);border-color:var(--gap);} #startupsbody .su-fitpill.fit-no{color:var(--warn);border-color:var(--warn);text-decoration:line-through;}
   #startupsbody .su-newflag{position:absolute;top:-1px;right:-1px;z-index:2;font-family:var(--mono);font-size:.58rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
     color:var(--on-accent);background:var(--gold);padding:.18rem .55rem .2rem;border-radius:0 12px 0 10px;box-shadow:0 1px 3px rgba(0,0,0,.18);pointer-events:none;}
   #startupsbody .card.is-new{border-color:rgba(var(--gold-rgb),.6);}
@@ -6500,6 +6507,8 @@ window.addEventListener("hashchange", ()=>{
     return `<div class="sg-ready"><div class="sg-ready-h">Here's what I'll search — adjust it in the rail after, or start over</div>
       <div class="sg-understood">${esc(r.understood)}</div><div class="sg-chips">${chipsHtml(r.contract||{})}</div>
       <div class="sg-pool"><b>${r.pool||0}</b> startups match every must right now.</div>
+      ${(r.recipes||[]).length?`<div class="sg-readings"><div class="sg-ready-h">Readings the search will merge — each measured against the index</div>${r.recipes.map(x=>`<div class="sg-reading"><b>${esc(x.name==="strict"?"strict — as read":x.name==="default"?"compiled reading ranks instead":x.name==="loose"?"every relaxable filter ranks":x.name.replace(/^relaxed:/,"without ").replace(/_/g," "))}</b> · ${x.pool!=null?(x.pool>=2001?"2000+":x.pool)+" in its pool":"not measured"} <span class="c-dom">${esc(x.why)}</span></div>`).join("")}</div>`:""}
+      ${(r.diagnostics||[]).length?`<div class="sg-notes">${r.diagnostics.map(d=>`your must <b>${esc(d.label)}: ${esc(d.values)}</b> leaves ${d.pool_with} — without it ${d.pool_without>=2001?"2000+":d.pool_without}`).join("<br>")}</div>`:""}
       ${(r.notes||[]).length?`<div class="sg-notes">${r.notes.map(n=>esc(n)).join("<br>")}</div>`:""}
       <div class="sg-actions"><button type="button" class="sg-btn primary" id="sg-go">◆ Search these startups</button><button type="button" class="sg-btn" id="sg-restart">Start over</button></div>
       ${(r.advice||[]).length?`<ul class="sg-advice">${r.advice.map(a=>`<li>${esc(a)}</li>`).join("")}</ul>`:""}</div>`;
@@ -6669,7 +6678,13 @@ function railHtml(){
   const apply = STATE.busy ? `<div class="frail-apply"><span class="su-spin"></span><b>Applying…</b> re-evaluating the index with your changes</div>`
                 : n ? `<div class="frail-apply"><b>${n} change${n===1?"":"s"} pending</b> — nothing runs until you apply. <button type="button" class="btn primary" id="apply">Apply</button><button type="button" class="btn" id="reset">Reset</button></div>`
                   : `<div class="frail-apply">${diffLine || "Tap chips to stage changes, then apply once."} ${lowMust}</div>`;
-  return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Navigate</b> · ${d.coverage.matched ?? 0} match every must ${rank}<span style="margin-left:auto;">● must · ▲ prefer · ▼ avoid</span></div>${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
+  const mg = d.merge; let mergeLine = "";
+  if(mg){
+    const rec = (mg.recipes||[]).map(x => { const off=(STATE.mergeOff||[]).includes(x.name); const nm = x.name==="strict"?"strict":x.name==="default"?"compiled reading ranks":x.name==="loose"?"all relaxable rank":x.name.replace(/^relaxed:/,"without ").replace(/_/g," ").replace(/^reading:/,"reading "); return `<button type="button" class="su-recipe${off?" off":""}" data-recipe="${esc(x.name)}" title="${esc(x.why)} — ${x.pool!=null?x.pool+" in its pool":""} · ${x.head_fits||0} judged fits · tap to switch ${off?"on":"off"}">${off?"◌ ":"● "}${esc(nm)}${x.pool!=null?`<b>${x.pool>=2001?"2000+":x.pool}</b>`:""}</button>`; }).join("");
+    const offNote = (STATE.mergeOff||[]).length ? ` <button type="button" class="su-recipe" id="su-recipes-all">all readings on</button>` : "";
+    mergeLine = `<div class="frail-row su-merge"><span class="frail-k" title="one blind model read of the top of the merged list, against your words">Model read</span><span class="su-mergesum">${mg.graded?`<b>${mg.fits}</b> of ${mg.graded} graded fit · ${mg.partials} partial · ${mg.nos} not${mg.weak?` · <span class="su-weak">weak — sharpen the words or loosen a must</span>`:""}`:"ungraded"}</span></div><div class="frail-row"><span class="frail-k" title="the readings merged into this list — switch one off to re-run without it">Readings</span>${rec}${offNote}</div>`;
+  }
+  return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Navigate</b> · ${d.coverage.matched ?? 0} match every must ${rank}<span style="margin-left:auto;">● must · ▲ prefer · ▼ avoid</span></div>${mergeLine}${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
 }
 function pill(m,key,text,v){ const g=m==="must"?"●":m==="prefer"?"▲":"▼"; return `<span class="fpill">${g} ${esc(klabel(key))}: ${esc(text)}<button type="button" data-off="${esc(key)}" data-value="${esc(v)}" data-mode="${m}" title="remove">✕</button></span>`; }
 function rangeLabel(key, r){ const u=((STATE.labels||{}).units||{})[key]||""; const f=x=>u==="usd"?usd(x):String(x); return (r.min!=null?"≥ "+f(r.min):"")+(r.min!=null&&r.max!=null?" · ":"")+(r.max!=null?"≤ "+f(r.max):"")+(u&&u!=="usd"?" "+u:""); }
@@ -6680,6 +6695,7 @@ $("#su-rail").addEventListener("click", e=>{
   const off=e.target.closest("[data-off]"); if(off){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); if(off.dataset.value==="__range__"){ delete c[off.dataset.mode][off.dataset.off]; STATE.draft=c; } else STATE.draft=edit(c, off.dataset.off, off.dataset.value, "off"); renderRail(); return; }
   const ux=e.target.closest("[data-unexclude]"); if(ux){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); const ex=(c.scope||{}).exclude||{}; ex[ux.dataset.unexclude]=(ex[ux.dataset.unexclude]||[]).filter(v=>v!==ux.dataset.value); if(!ex[ux.dataset.unexclude].length) delete ex[ux.dataset.unexclude]; c.scope=Object.keys(ex).length?{exclude:ex}:{}; STATE.draft=c; renderRail(); return; }
   const uc=e.target.closest("[data-uncenter]"); if(uc){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); c.center=null; STATE.draft=c; renderRail(); return; }
+  const rc=e.target.closest(".su-recipe"); if(rc){ if(rc.id==="su-recipes-all"){ STATE.mergeOff=[]; } else { const n=rc.dataset.recipe; const off=new Set(STATE.mergeOff||[]); if(off.has(n)) off.delete(n); else off.add(n); STATE.mergeOff=[...off]; } runEvaluate(STATE.draft||STATE.contract, {diff:true}); return; }
   if(e.target.id==="apply"){ runEvaluate(STATE.draft, {diff:true}); return; }
   if(e.target.id==="reset"){ STATE.draft=null; renderRail(); return; }
   if(e.target.id==="su-shownew"){ const nw=new Set((STATE.lastDiff||{}).added||[]); STATE.data.rows=STATE.data.rows.slice().sort((x,y)=>(nw.has(y.id)?1:0)-(nw.has(x.id)?1:0)); STATE.newFirst=true; renderRail(); renderResults(); $("#su-results").scrollIntoView({block:"start",behavior:"smooth"}); return; }
@@ -6716,6 +6732,7 @@ function cardHtml(row){
   if((co.crawl||{}).failed && (co.crawl.failed||[]).length && !(co.crawl.pages||[]).length) gaps.push("site could not be read");
   if(id.startsWith("cik:")) gaps.push("no website on record (known from SEC filings only)");
   const why=(row.reasons||[]).slice(0,3).join(" · ");
+  const fit = row.fit ? `<span class="su-fitpill fit-${esc(row.fit)}" title="${esc((row.fit_why||"")+" — a model read against your words, not a fact"+(row.found_by&&Object.keys(row.found_by).length?" · found by "+Object.keys(row.found_by).map(k=>k.replace(/^relaxed:/,"without ").replace(/_/g," ")).join(", "):""))}">${row.fit==="yes"?"reads as a fit":row.fit==="partial"?"partial fit":"not a fit"} · model</span>` : "";
   const isNew = !!(STATE.lastDiff && STATE.lastDiff.added.includes(id));
   return `<div class="card${STATE.open===id?" su-open":""}${isNew?" is-new":""}" data-id="${esc(id)}">${isNew?`<span class="su-newflag" title="Not in the previous result">new</span>`:""}
     <div class="c-head"><a class="c-name" href="${esc(co.website||(id.startsWith("cik:")?"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK="+id.slice(4):"https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id.startsWith("cik:")?"SEC CIK "+id.slice(4):id)}</span>${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
@@ -6724,6 +6741,7 @@ function cardHtml(row){
     ${(what||who.length)?`<div class="c-row">${what}${who.join("")}</div>`:""}
     ${people}
     ${sig.length?`<div class="c-row">${sig.join("")}</div>`:""}
+    ${fit?`<div class="c-row">${fit}</div>`:""}
     ${gaps.length?`<div class="su-gaps">gaps: ${esc(gaps.join(" · "))}</div>`:""}
     ${why?`<div class="c-why">${esc(why)}</div>`:""}
     <div class="c-acts"><button type="button" data-open="${esc(id)}">${STATE.open===id?"▴ hide evidence":"▾ evidence"}</button><a href="/?q=${encodeURIComponent("Diligence "+(co.name||id))}" target="_blank" rel="noopener">◉ Diligence in Q&amp;A</a></div>
@@ -6782,7 +6800,7 @@ async function runCompile(text){
   try{
     const r=await fetch("/startups/compile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text})});
     if(!r.ok){ toast("could not compile: "+(await r.text()).slice(0,120)); return; }
-    const d=await r.json(); renderNotes(d.notes); STATE.brief=text; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; renderMapBar(); await runEvaluate(d.contract);
+    const d=await r.json(); renderNotes(d.notes); STATE.brief=text; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.merge={mode:"merged"}; STATE.mergeOff=[]; renderMapBar(); await runEvaluate(d.contract);
     history.replaceState(null,"","#startups?b="+encodeURIComponent(text));
   } finally { STATE.busy=false; document.body.classList.remove("su-busy"); }
 }
@@ -6794,9 +6812,12 @@ async function runEvaluate(contract, opts){
   try{
     const m=STATE.map;
     const url = m ? `/startups/maps/${m.id}/navigate${m.share?"?share="+encodeURIComponent(m.share):""}` : "/startups/evaluate";
-    const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json",...authHeaders()},body:JSON.stringify({contract})});
+    if(contract && contract.merge) STATE.merge = contract.merge;                       // merge options ride every re-run (rail edits included)
+    const payload = {...contract, merge: {...(STATE.merge||{mode:"merged"}), off: (STATE.mergeOff||[])}};
+    const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json",...authHeaders()},body:JSON.stringify({contract: payload})});
     if(!r.ok){ toast("evaluate failed: "+(await r.text()).slice(0,120)); STATE.lastDiff=null; return; }
     const d=await r.json(); STATE.data=d; STATE.contract=d.contract; STATE.draft=null; STATE.labels=d.labels; STATE.open=null;
+    STATE.merge = STATE.merge || {mode:"merged"};
     if(prev){
       const was = new Map(prev.map(x=>[x.id, x])), now = new Set(d.rows.map(x=>x.id));
       const added = d.rows.filter(x=>!was.has(x.id)), removed = prev.filter(x=>!now.has(x.id));
@@ -6820,7 +6841,7 @@ async function enter(params){
   if(h.get("map")){ await openMap(h.get("map"), h.get("share")||""); }
   else if(h.get("b")){ q.value=h.get("b"); runCompile(h.get("b")); }
 }
-function runContract(contract, brief){ STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.brief=brief||""; if(brief) q.value=brief; renderNotes([]); renderMapBar(); return runEvaluate(contract); }
+function runContract(contract, brief){ STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.brief=brief||""; if(brief) q.value=brief; STATE.merge=contract.merge||{mode:"merged"}; STATE.mergeOff=[]; renderNotes([]); renderMapBar(); return runEvaluate(contract); }
 window.SU = { search: runCompile, enter, onAuth, runContract };
 
 })();

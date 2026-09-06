@@ -585,3 +585,19 @@ text-only contract — switch the variable rather than leave it.
   figure must land under a key (rules + two worked examples in the prompt for gpt-4o-mini); bare numbers become a
   floor or a band; a must on a sparse key stays a must when the requested values are common (≥ 25 startups) —
   the filing-only companies had dragged tech area / metro / program below the 50 % coverage line.
+
+### 2026-09-07 — contract search (roster's guided-intake §12, adapted): merge, don't pick; judge the head
+- Kernel: roster's current evaluator (with words the pool is the SEMANTIC NEIGHBOURHOOD — no enumerate union, which
+  was the source of unrelated rows; prefer legs; relevance bands first) and `facets/contract_search.py` (recipes ·
+  collapsing-must rule · co-occurrence readings · RRF fusion · blind ids · verdict order · head precision), tests ported.
+- App `startups/contract_search.py`: index-aware step (a compiled must — never the user's — that leaves < 20 while its
+  removal multiplies the pool ≥ 5×, on a relaxable key, ranks instead); recipes strict / default / relaxed:<key> /
+  loose probed by a bounded slice size; survivors evaluated; RRF (k = 60); ONE blind judge over the top 40 (row shape:
+  name · one-liner · areas · sells to · stage · funding · HQ · founders · program · evidence; yes / partial / no, ≤ 8
+  words; ≈ $0.003 on gpt-4o-mini); order = fits, partials, ungraded tail, then the 'no' rows; WEAK = < 3 fits.
+- `/startups/evaluate` runs merged by default whenever the contract has words (`merge.mode = single` opts out;
+  `merge.off` switches readings off; `merge.user_keys` = the user's own constraints, never relaxed). Rail edits carry
+  the merge options; the rail shows "Model read: N of 40 graded fit" and the readings as toggles; cards carry a
+  labelled fit pill ("reads as a fit · model") with the verdict's reason and which readings found the row.
+- Guided READY: index-aware notes, the readings with their measured pools, U diagnostics ("your must metro: boston
+  leaves 3 — without it 400"); the hand-off contract carries `merge` so the Startups mode runs the merged search.

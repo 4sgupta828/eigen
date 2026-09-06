@@ -562,6 +562,17 @@ class StartupStore:
     async def noise_floor(self, kind: str, text: str) -> float | None:
         return None
 
+    async def slice_size(self, must: dict, *, exclude: dict | None = None, cap: int = 2001) -> int:
+        """A LIMIT-bounded size of the must-slice — the structural probe recipes are measured with (tens of ms)."""
+        await self.ensure_schema()
+        pool = await self.pool()
+        args: list = []
+        cl = self._must_sql(must, args, exclude=exclude)
+        where = " AND ".join(["c.status = 'active'"] + cl)
+        args.append(cap)
+        async with pool.acquire() as conn:
+            return int(await conn.fetchval(f"SELECT count(*) FROM (SELECT 1 FROM su_company c WHERE {where} LIMIT ${len(args)}) t", *args) or 0)
+
 
 def _snapshot(rows: list[dict]) -> list[dict]:
     """What a map remembers per row: identity, the one-liner, score / rank, and the facet tokens — never the

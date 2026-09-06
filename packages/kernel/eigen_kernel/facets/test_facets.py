@@ -200,3 +200,89 @@ def test_via_relation_facets_filter_and_count_like_own_facets():
     out = _run(evaluate(Contract(kind="thing", text="q", must={"maker_tier": ["a"]}, limit=10), store, s, FacetWeights()))
     assert [r["id"] for r in out["rows"]] == ["t1"] and out["counts"]["maker_tier"] == {"a": 1}
     assert count_rows(_rows(), s, "thing")["maker_tier"] == {"a": 1, UNKNOWN: 4}
+
+
+def test_with_text_the_pool_is_the_semantic_neighbourhood_only():
+    """A must + text never pulls unrelated rows in through the enumerate leg (prod 2026-09-05: rank_by level put
+    'Store Manager' first because enumerate added it with sim 0)."""
+    import asyncio
+    from eigen_kernel.facets import Contract, FacetKey, FacetSchema, FacetType, InMemoryFacetStore, evaluate
+    sch = FacetSchema(keys=(FacetKey(key="lv", type=FacetType.ordinal, kinds=("e",), values=("a", "b", "c")), FacetKey(key="c", type=FacetType.set, kinds=("e",))))
+    rows = [{"id": "r1", "kind": "e", "sim": 0.9, "facets": {"lv": ["a"], "c": ["us"]}}, {"id": "r2", "kind": "e", "sim": 0.0, "facets": {"lv": ["c"], "c": ["us"]}}]
+    class Store(InMemoryFacetStore):
+        async def semantic(self, kind, text, must, *, cap=400):
+            return [dict(r) for r in self._filtered(kind, must) if float(r.get("sim") or 0) > 0][:cap]
+    out = asyncio.new_event_loop().run_until_complete(evaluate(Contract(kind="e", text="q", must={"c": ["us"]}, rank_by="lv"), Store(rows, sch), sch))
+    assert [r["id"] for r in out["rows"]] == ["r1"] and out["coverage"]["legs"]["enumerate"] == 0
+    out2 = asyncio.new_event_loop().run_until_complete(evaluate(Contract(kind="e", must={"c": ["us"]}, rank_by="lv"), Store(rows, sch), sch))
+    assert [r["id"] for r in out2["rows"]] == ["r2", "r1"]                                  # no text → enumerate, ordinal desc
+
+
+def test_an_empty_slice_names_the_must_that_empties_it():
+    import asyncio
+    from eigen_kernel.facets import Contract, FacetKey, FacetSchema, FacetType, InMemoryFacetStore, evaluate
+    sch = FacetSchema(keys=(FacetKey(key="lv", type=FacetType.ordinal, kinds=("e",), values=("a", "b", "c")),
+                            FacetKey(key="ct", type=FacetType.categorical, kinds=("e",), values=("x", "y")),
+                            FacetKey(key="m", type=FacetType.set, kinds=("e",))))
+    rows = [{"id": f"r{i}", "kind": "e", "sim": 0.5, "facets": {"lv": ["a"], "ct": ["x"], "m": ["p"]}} for i in range(20)]
+    rows += [{"id": "z", "kind": "e", "sim": 0.5, "facets": {"lv": ["c"], "ct": ["y"], "m": ["q"]}}]
+    st = InMemoryFacetStore(rows, sch)
+    out = asyncio.new_event_loop().run_until_complete(evaluate(Contract(kind="e", must={"lv": ["a"], "ct": ["y"], "m": ["p"]}), st, sch))
+    assert out["rows"] == []
+    d = out["coverage"]["diagnosis"]
+    assert d["pool"] == 0 and d["keys"][0]["key"] == "ct" and d["keys"][0]["without"] == 20 and d["keys"][0]["alone"] == 1
+    assert {k["key"] for k in d["keys"]} == {"lv", "ct", "m"}
+    ok = asyncio.new_event_loop().run_until_complete(evaluate(Contract(kind="e", must={"lv": ["a"]}), st, sch))
+    assert "diagnosis" not in ok["coverage"]                                           # a healthy slice is not diagnosed
+
+
+def test_weak_results_are_diagnosed_and_flagged():
+    import asyncio
+    from eigen_kernel.facets import Contract, FacetKey, FacetSchema, FacetType, InMemoryFacetStore, evaluate
+    sch = FacetSchema(keys=(FacetKey(key="ct", type=FacetType.categorical, kinds=("e",), values=("x", "y")),))
+    rows = [{"id": f"r{i}", "kind": "e", "sim": 0.42, "facets": {"ct": ["x"]}} for i in range(6)]          # barely above the floor → weak
+    out = asyncio.new_event_loop().run_until_complete(evaluate(Contract(kind="e", text="q", must={"ct": ["x"]}), InMemoryFacetStore(rows, sch), sch))
+    assert out["rows"] and out["coverage"]["weak"] and out["coverage"]["diagnosis"]["reason"] == "weak"
+    strong = [dict(r, sim=0.7) for r in rows]
+    out2 = asyncio.new_event_loop().run_until_complete(evaluate(Contract(kind="e", text="q", must={"ct": ["x"]}), InMemoryFacetStore(strong, sch), sch))
+    assert not out2["coverage"]["weak"] and "diagnosis" not in out2["coverage"]
+
+
+def test_preference_points_are_bounded_but_a_strong_preference_can_lift_a_close_row():
+    import asyncio
+    from eigen_kernel.facets import Contract, FacetKey, FacetSchema, FacetType, FacetWeights, InMemoryFacetStore, evaluate
+    sch = FacetSchema(keys=(FacetKey(key="ev", type=FacetType.categorical, kinds=("e",), values=("r", "p")), FacetKey(key="fd", type=FacetType.categorical, kinds=("e",), values=("m", "s"))))
+    rows = [{"id": "close", "kind": "e", "sim": 0.55, "facets": {"fd": ["s"]}},                     # 60 %
+            {"id": "far_pref", "kind": "e", "sim": 0.46, "facets": {"ev": ["r", "p"]}},             # 24 % + two small hits
+            {"id": "near_field", "kind": "e", "sim": 0.53, "facets": {"fd": ["m"]}}]                # 52 % + the strong field hit
+    w = FacetWeights(prefer={"ev": 0.10, "fd": 0.25})
+    out = asyncio.new_event_loop().run_until_complete(evaluate(Contract(kind="e", text="q", prefer={"ev": ["r", "p"], "fd": ["m"]}), InMemoryFacetStore(rows, sch), sch, w))
+    ids = [r["id"] for r in out["rows"]]
+    assert ids[-1] == "far_pref"                       # 24 + 10 = 34 never passes 60
+    assert ids[0] == "near_field"                      # 52 + 12.5 = 64.5 passes 60: a strong preference lifts a close row
+
+
+def test_a_preferred_value_reaches_the_pool_through_its_own_leg():
+    import asyncio
+    from eigen_kernel.facets import Contract, FacetKey, FacetSchema, FacetType, InMemoryFacetStore, evaluate
+    sch = FacetSchema(keys=(FacetKey(key="fd", type=FacetType.categorical, kinds=("e",), values=("m", "s")),))
+    rows = [{"id": f"s{i}", "kind": "e", "sim": 0.7 - i * 0.0005, "facets": {"fd": ["s"]}} for i in range(300)]
+    rows.append({"id": "mkt", "kind": "e", "sim": 0.50, "facets": {"fd": ["m"]}})                  # outside the nearest 200
+    calls = []
+    class Store(InMemoryFacetStore):
+        async def semantic(self, kind, text, must, *, cap=400):
+            calls.append((dict(must), cap)); return await super().semantic(kind, text, must, cap=cap)
+    out = asyncio.new_event_loop().run_until_complete(evaluate(Contract(kind="e", text="q", prefer={"fd": ["m"]}, limit=10), Store(rows, sch), sch))
+    assert any(m.get("fd") == ["m"] for m, _ in calls) and out["coverage"]["legs"]["prefer"] >= 1
+    assert out["coverage"]["pool"] == 201                                                  # the nearest 200 plus the marketing row its own leg brought in
+
+
+def test_weak_diagnosis_reports_the_best_match_without_each_must():
+    import asyncio
+    from eigen_kernel.facets import Contract, FacetKey, FacetSchema, FacetType, InMemoryFacetStore, diagnose_musts
+    sch = FacetSchema(keys=(FacetKey(key="ct", type=FacetType.categorical, kinds=("e",), values=("x", "y")), FacetKey(key="m", type=FacetType.set, kinds=("e",))))
+    rows = [{"id": "good", "kind": "e", "sim": 0.6, "facets": {"ct": ["y"], "m": ["a"]}}, {"id": "meh", "kind": "e", "sim": 0.42, "facets": {"ct": ["x"], "m": ["a"]}}]
+    st = InMemoryFacetStore(rows, sch)
+    d = asyncio.new_event_loop().run_until_complete(diagnose_musts(Contract(kind="e", text="q", must={"ct": ["x"], "m": ["a"]}), lambda k, m: st.counts(k, m, sch), sch,
+                                                                    semantic_fn=lambda k, t, m: st.semantic(k, t, m)))
+    assert d["keys"][0]["key"] == "ct" and d["keys"][0]["best_without"] == 80 and d["keys"][1]["best_without"] == 8
