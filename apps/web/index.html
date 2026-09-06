@@ -206,7 +206,11 @@
   #startupsbody{--warn:#B8483A;}
   #startupsbody .frail-done{color:var(--verified);} #startupsbody .frail-done b{color:var(--verified);} #startupsbody .su-note{color:var(--muted);font-size:.74rem;}
   #startupsbody .su-diff{display:inline-block;margin-left:.4rem;font-size:.74rem;color:var(--muted);} #startupsbody .su-diff summary{cursor:pointer;color:var(--gold);display:inline;}
-  #startupsbody .su-new{font-family:var(--mono);font-size:.6rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--on-accent);background:var(--verified);border-radius:4px;padding:.05rem .35rem;}
+  #startupsbody .card{position:relative;}
+  #startupsbody .su-newflag{position:absolute;top:-1px;right:-1px;z-index:2;font-family:var(--mono);font-size:.58rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
+    color:var(--on-accent);background:var(--gold);padding:.18rem .55rem .2rem;border-radius:0 12px 0 10px;box-shadow:0 1px 3px rgba(0,0,0,.18);pointer-events:none;}
+  #startupsbody .card.is-new{border-color:rgba(var(--gold-rgb),.6);}
+  #startupsbody .su-new{font-family:var(--mono);font-size:.58rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--on-accent);background:var(--gold);border-radius:4px;padding:.05rem .35rem;}
   #startupsbody .frail.busy{opacity:.75;} #startupsbody .frail-apply .su-spin{margin-right:.4rem;}
 
   
@@ -6547,7 +6551,7 @@ function railHtml(){
   // WHAT CHANGED (roster's model, owner 2026-09-06): the delta against the rows shown before this Apply, "new" badges,
   // and a "show the new first" button; the pool (matched-every-must) before → after.
   const df = STATE.lastDiff;
-  const diffLine = (!n && df) ? `<span class="frail-done">Applied ✓ — ${STATE.data.rows.length} shown${df.added.length?` · <b>${df.added.length} new</b>`:""}${df.removedNames.length?` · ${df.removedNames.length} dropped`:""}${!df.added.length && !df.removedNames.length ? " · same rows, order may differ" : ""}${(df.matchedBefore!=null && df.matchedAfter!=null && df.matchedBefore!==df.matchedAfter)?` · pool ${df.matchedBefore} → ${df.matchedAfter}`:""}</span>${df.removedNames.length?` <details class="su-diff"><summary>what dropped</summary>${esc(df.removedNames.slice(0,30).join(", "))}${df.removedNames.length>30?" …":""}</details>`:""}${df.added.length && !STATE.newFirst ? ` <span class="su-note">(badged <span class="su-new">new</span>)</span> <button type="button" class="btn" id="su-shownew">Show the ${df.added.length} new first</button>` : ""}` : "";
+  const diffLine = (!n && df) ? `<span class="frail-done">Applied ✓ — ${STATE.data.rows.length} shown${df.added.length?` · <b>${df.added.length} new</b>`:""}${df.removedNames.length?` · ${df.removedNames.length} dropped`:""}${!df.added.length && !df.removedNames.length ? " · same rows, order may differ" : ""}${(df.matchedBefore!=null && df.matchedAfter!=null && df.matchedBefore!==df.matchedAfter)?` · pool ${df.matchedBefore} → ${df.matchedAfter}`:""}</span>${df.removedNames.length?` <details class="su-diff"><summary>what dropped</summary>${esc(df.removedNames.slice(0,30).join(", "))}${df.removedNames.length>30?" …":""}</details>`:""}${df.added.length && !STATE.newFirst ? ` <span class="su-note">(corner flag)</span> <button type="button" class="btn" id="su-shownew">Show the ${df.added.length} new first</button>` : ""}` : "";
   const apply = STATE.busy ? `<div class="frail-apply"><span class="su-spin"></span><b>Applying…</b> re-evaluating the index with your changes</div>`
                 : n ? `<div class="frail-apply"><b>${n} change${n===1?"":"s"} pending</b> — nothing runs until you apply. <button type="button" class="btn primary" id="apply">Apply</button><button type="button" class="btn" id="reset">Reset</button></div>`
                   : `<div class="frail-apply">${diffLine || "Tap chips to stage changes, then apply once."} ${lowMust}</div>`;
@@ -6597,8 +6601,9 @@ function cardHtml(row){
   const gaps=[]; if(!total && !scale) gaps.push("no funding source found"); if(!stage) gaps.push("no stated round"); if(!founders.length) gaps.push("founders not found");
   if((co.crawl||{}).failed && (co.crawl.failed||[]).length && !(co.crawl.pages||[]).length) gaps.push("site could not be read");
   const why=(row.reasons||[]).slice(0,3).join(" · ");
-  return `<div class="card${STATE.open===id?" su-open":""}" data-id="${esc(id)}">
-    <div class="c-head"><a class="c-name" href="${esc(co.website||("https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id)}</span>${(STATE.lastDiff&&STATE.lastDiff.added.includes(id))?`<span class="su-new">new</span>`:""}${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
+  const isNew = !!(STATE.lastDiff && STATE.lastDiff.added.includes(id));
+  return `<div class="card${STATE.open===id?" su-open":""}${isNew?" is-new":""}" data-id="${esc(id)}">${isNew?`<span class="su-newflag" title="Not in the previous result">new</span>`:""}
+    <div class="c-head"><a class="c-name" href="${esc(co.website||("https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id)}</span>${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
     ${co.one_liner?`<div class="su-line">${esc(co.one_liner)}</div>`:""}
     ${money.length?`<div class="c-row">${money.join("")}</div>`:""}
     ${(what||who.length)?`<div class="c-row">${what}${who.join("")}</div>`:""}
