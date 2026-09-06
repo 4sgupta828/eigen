@@ -204,6 +204,10 @@
   #startupsbody .su-toolbar{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin:.2rem 0 .4rem;}
   #startupsbody .su-toolbar button{font-family:var(--mono);font-size:.72rem;letter-spacing:.04em;padding:.4rem .8rem;border:1px solid var(--hair);border-radius:999px;background:var(--panel);color:var(--muted);min-height:36px;cursor:pointer;}
   #startupsbody{--warn:#B8483A;}
+  #startupsbody .frail-done{color:var(--verified);} #startupsbody .frail-done b{color:var(--verified);} #startupsbody .su-note{color:var(--muted);font-size:.74rem;}
+  #startupsbody .su-diff{display:inline-block;margin-left:.4rem;font-size:.74rem;color:var(--muted);} #startupsbody .su-diff summary{cursor:pointer;color:var(--gold);display:inline;}
+  #startupsbody .su-new{font-family:var(--mono);font-size:.6rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--on-accent);background:var(--verified);border-radius:4px;padding:.05rem .35rem;}
+  #startupsbody .frail.busy{opacity:.75;} #startupsbody .frail-apply .su-spin{margin-right:.4rem;}
 
   
   
@@ -6540,8 +6544,13 @@ function railHtml(){
   const rank=`<label>rank by <select id="rank"><option value="match"${(c.rank_by||"match")==="match"?" selected":""}>match</option>${rankable.map(k=>`<option value="${esc(k)}"${c.rank_by===k?" selected":""}>${esc(klabel(k))}</option>`).join("")}</select></label>`;
   const n=pending();
   const lowMust = Object.keys(c.must||{}).filter(k => rate[k]!=null && rate[k]<0.5).map(k => `<span class="fpill warn" title="a must on a mostly-unknown key filters by absence">⚠ ${esc(klabel(k))} is known for ${Math.round(rate[k]*100)}% of startups — this must drops the rest</span>`).join("");
-  const apply = n ? `<div class="frail-apply"><b>${n} change${n===1?"":"s"} pending</b> — nothing runs until you apply. <button type="button" class="btn primary" id="apply">Apply</button><button type="button" class="btn" id="reset">Reset</button></div>`
-                  : `<div class="frail-apply">Tap chips to stage changes, then apply once. ${lowMust}</div>`;
+  // WHAT CHANGED (roster's model, owner 2026-09-06): the delta against the rows shown before this Apply, "new" badges,
+  // and a "show the new first" button; the pool (matched-every-must) before → after.
+  const df = STATE.lastDiff;
+  const diffLine = (!n && df) ? `<span class="frail-done">Applied ✓ — ${STATE.data.rows.length} shown${df.added.length?` · <b>${df.added.length} new</b>`:""}${df.removedNames.length?` · ${df.removedNames.length} dropped`:""}${!df.added.length && !df.removedNames.length ? " · same rows, order may differ" : ""}${(df.matchedBefore!=null && df.matchedAfter!=null && df.matchedBefore!==df.matchedAfter)?` · pool ${df.matchedBefore} → ${df.matchedAfter}`:""}</span>${df.removedNames.length?` <details class="su-diff"><summary>what dropped</summary>${esc(df.removedNames.slice(0,30).join(", "))}${df.removedNames.length>30?" …":""}</details>`:""}${df.added.length && !STATE.newFirst ? ` <span class="su-note">(badged <span class="su-new">new</span>)</span> <button type="button" class="btn" id="su-shownew">Show the ${df.added.length} new first</button>` : ""}` : "";
+  const apply = STATE.busy ? `<div class="frail-apply"><span class="su-spin"></span><b>Applying…</b> re-evaluating the index with your changes</div>`
+                : n ? `<div class="frail-apply"><b>${n} change${n===1?"":"s"} pending</b> — nothing runs until you apply. <button type="button" class="btn primary" id="apply">Apply</button><button type="button" class="btn" id="reset">Reset</button></div>`
+                  : `<div class="frail-apply">${diffLine || "Tap chips to stage changes, then apply once."} ${lowMust}</div>`;
   return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Navigate</b> · ${d.coverage.matched ?? 0} match every must ${rank}<span style="margin-left:auto;">● must · ▲ prefer · ▼ avoid</span></div>${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
 }
 function pill(m,key,text,v){ const g=m==="must"?"●":m==="prefer"?"▲":"▼"; return `<span class="fpill">${g} ${esc(klabel(key))}: ${esc(text)}<button type="button" data-off="${esc(key)}" data-value="${esc(v)}" data-mode="${m}" title="remove">✕</button></span>`; }
@@ -6553,8 +6562,9 @@ $("#su-rail").addEventListener("click", e=>{
   const off=e.target.closest("[data-off]"); if(off){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); if(off.dataset.value==="__range__"){ delete c[off.dataset.mode][off.dataset.off]; STATE.draft=c; } else STATE.draft=edit(c, off.dataset.off, off.dataset.value, "off"); renderRail(); return; }
   const ux=e.target.closest("[data-unexclude]"); if(ux){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); const ex=(c.scope||{}).exclude||{}; ex[ux.dataset.unexclude]=(ex[ux.dataset.unexclude]||[]).filter(v=>v!==ux.dataset.value); if(!ex[ux.dataset.unexclude].length) delete ex[ux.dataset.unexclude]; c.scope=Object.keys(ex).length?{exclude:ex}:{}; STATE.draft=c; renderRail(); return; }
   const uc=e.target.closest("[data-uncenter]"); if(uc){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); c.center=null; STATE.draft=c; renderRail(); return; }
-  if(e.target.id==="apply"){ runEvaluate(STATE.draft); return; }
+  if(e.target.id==="apply"){ runEvaluate(STATE.draft, {diff:true}); return; }
   if(e.target.id==="reset"){ STATE.draft=null; renderRail(); return; }
+  if(e.target.id==="su-shownew"){ const nw=new Set((STATE.lastDiff||{}).added||[]); STATE.data.rows=STATE.data.rows.slice().sort((x,y)=>(nw.has(y.id)?1:0)-(nw.has(x.id)?1:0)); STATE.newFirst=true; renderRail(); renderResults(); $("#su-results").scrollIntoView({block:"start",behavior:"smooth"}); return; }
 });
 $("#su-rail").addEventListener("dblclick", e=>{ const chip=e.target.closest(".fchip"); if(chip && chip.dataset.key==="stage" && chip.dataset.value!=="unknown"){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); c.center={key:"stage", value:chip.dataset.value, span:1}; STATE.draft=c; renderRail(); } });
 $("#su-rail").addEventListener("change", e=>{ if(e.target.id==="rank"){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); c.rank_by=e.target.value; STATE.draft=c; renderRail(); } });
@@ -6588,7 +6598,7 @@ function cardHtml(row){
   if((co.crawl||{}).failed && (co.crawl.failed||[]).length && !(co.crawl.pages||[]).length) gaps.push("site could not be read");
   const why=(row.reasons||[]).slice(0,3).join(" · ");
   return `<div class="card${STATE.open===id?" su-open":""}" data-id="${esc(id)}">
-    <div class="c-head"><a class="c-name" href="${esc(co.website||("https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id)}</span>${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
+    <div class="c-head"><a class="c-name" href="${esc(co.website||("https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id)}</span>${(STATE.lastDiff&&STATE.lastDiff.added.includes(id))?`<span class="su-new">new</span>`:""}${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
     ${co.one_liner?`<div class="su-line">${esc(co.one_liner)}</div>`:""}
     ${money.length?`<div class="c-row">${money.join("")}</div>`:""}
     ${(what||who.length)?`<div class="c-row">${what}${who.join("")}</div>`:""}
@@ -6652,19 +6662,31 @@ async function runCompile(text){
   try{
     const r=await fetch("/startups/compile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text})});
     if(!r.ok){ toast("could not compile: "+(await r.text()).slice(0,120)); return; }
-    const d=await r.json(); renderNotes(d.notes); STATE.brief=text; STATE.map=null; renderMapBar(); await runEvaluate(d.contract);
+    const d=await r.json(); renderNotes(d.notes); STATE.brief=text; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; renderMapBar(); await runEvaluate(d.contract);
     history.replaceState(null,"","#startups?b="+encodeURIComponent(text));
   } finally { STATE.busy=false; document.body.classList.remove("su-busy"); }
 }
 async function runEvaluate(contract, opts){
+  opts = opts || {};
+  const prev = (opts.diff && STATE.data) ? STATE.data.rows : null;          // an Apply: remember what was showing
+  STATE.newFirst=false;
   STATE.busy=true; renderRail();
   try{
     const m=STATE.map;
     const url = m ? `/startups/maps/${m.id}/navigate${m.share?"?share="+encodeURIComponent(m.share):""}` : "/startups/evaluate";
     const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json",...authHeaders()},body:JSON.stringify({contract})});
-    if(!r.ok){ toast("evaluate failed: "+(await r.text()).slice(0,120)); return; }
+    if(!r.ok){ toast("evaluate failed: "+(await r.text()).slice(0,120)); STATE.lastDiff=null; return; }
     const d=await r.json(); STATE.data=d; STATE.contract=d.contract; STATE.draft=null; STATE.labels=d.labels; STATE.open=null;
+    if(prev){
+      const was = new Map(prev.map(x=>[x.id, x])), now = new Set(d.rows.map(x=>x.id));
+      const added = d.rows.filter(x=>!was.has(x.id)), removed = prev.filter(x=>!now.has(x.id));
+      STATE.lastDiff = {added: added.map(x=>x.id), addedNames: added.map(x=>(x.company||{}).name||x.id), removedNames: removed.map(x=>(x.company||{}).name||x.id),
+                        kept: d.rows.length-added.length, matchedBefore: (STATE.prevMatched ?? null), matchedAfter: d.coverage.matched, at: Date.now()};
+      toast(`Applied ✓ — ${d.rows.length} shown · ${added.length} new · ${removed.length} dropped`);
+    } else STATE.lastDiff = null;
+    STATE.prevMatched = d.coverage.matched;
     renderCoverage(); renderRail(); renderResults();
+    if(prev){ const el=$("#su-rail"); if(el) el.scrollIntoView({block:"start", behavior:"smooth"}); }
   } finally { STATE.busy=false; renderRail(); }
 }
 $("#su-examples").innerHTML = EXAMPLES.map(x=>`<button type="button" class="su-ex">${esc(x)}</button>`).join("");
