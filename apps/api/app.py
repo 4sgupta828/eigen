@@ -1017,9 +1017,15 @@ class TriageIn(BaseModel):
     wrap_up: bool = False
 
 
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
 class RegisterIn(BaseModel):
     name: str
     email: str
+    password: str = ""              # required when accounts are on (roster's model: password sign-in)
     profession: str = ""            # self-declared (Physician / NP-PA / Pharmacist / Student / …)
     country: str = ""
     npi: str = ""                   # optional (US) — structurally verified against the CMS registry
@@ -1721,6 +1727,39 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
     if video_enabled():
         app.include_router(build_video_router(attach_video=_attach_video))
 
+    # Startup Search — a DETACHED feature (apps/api/startups/): its own tables, sources, extractor and UI page,
+    # mounted only behind EIGEN_STARTUP_SEARCH so OFF is a true no-op. docs/specs/startup-search.md.
+    from api.startups.routes import startup_search_enabled
+    _su_dsn = os.environ.get("EIGEN_CORPUS_DSN")
+    if startup_search_enabled() and _su_dsn:
+        from api.startups import pipeline as _su_pipeline
+        from api.startups.routes import build_router as _su_router
+        from api.startups.store import StartupStore as _SuStore
+        _su_state: dict = {}
+
+        async def _su_pool():
+            if "pool" not in _su_state:
+                import asyncpg
+                _su_state["pool"] = await asyncpg.create_pool(_su_dsn, min_size=1, max_size=4)
+            return _su_state["pool"]
+        async def _su_user(token: str):
+            """The signed-in user for a bearer token, or None (never raises) — Startup Maps are per account."""
+            if not accounts_enabled() or not token:
+                return None
+            st = _accounts()
+            if st is None:
+                return None
+            try:
+                return await st.user_by_token(token)
+            except Exception:   # noqa: BLE001
+                return None
+        app.include_router(_su_router(_SuStore(_su_pool), _su_pipeline.Providers.from_env(), dsn=_su_dsn,
+                                      admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""), user_of=_su_user))
+
+        @app.get("/startups", response_class=HTMLResponse)
+        def startups_page(accept_encoding: str = Header(default="")):
+            return _html_response("startups.html", accept_encoding)
+
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok"}
@@ -1745,6 +1784,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "search_facets": ui.search_facets() if ui else [],
             "console": console,
             "video_enabled": video_enabled(),
+            "startup_search_enabled": startup_search_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "structured_answers": structured_answers(),
             "clinical_synthesis": clinical_synthesis() and structured_answers(),
             "evidence_select": bool(getattr(svc, "evidence_select", False)),
@@ -3936,18 +3976,63 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             raise HTTPException(status_code=400, detail="invalid email")
         if len((body.name or "").strip()) < 2:
             raise HTTPException(status_code=400, detail="name required")
+        # Register needs a password, and an existing email cannot be re-claimed without proving it
+        # (sign in instead) — roster's model.
+        if not (body.password or ""):
+            raise HTTPException(status_code=400, detail="password required")
+        if await store.email_exists(body.email):
+            raise HTTPException(status_code=409, detail="an account with this email already exists — sign in")
         npi_ok = False
         if body.npi.strip():
             from api.accounts import verify_npi
             npi_ok = await verify_npi(body.npi)
+        from api.accounts import hash_password
+        pw_hash, pw_salt = hash_password(body.password)
         try:
             user, token = await store.register(
                 email=body.email, name=body.name, profession=body.profession[:80],
                 country=body.country[:40], npi=body.npi.strip()[:16], npi_verified=npi_ok,
-                disclaimer_ack=body.disclaimer_ack)
+                disclaimer_ack=body.disclaimer_ack, pw_hash=pw_hash, pw_salt=pw_salt)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"registration failed: {e}") from e
         return {"user": user, "token": token}
+
+    @app.post("/auth/login")
+    async def auth_login(body: LoginIn) -> dict:
+        """Sign in with email + password → a fresh per-device bearer token (stored by the FE)."""
+        if not accounts_enabled():
+            raise HTTPException(status_code=404, detail="accounts are not enabled")
+        store = _accounts()
+        if store is None:
+            raise HTTPException(status_code=503, detail="no account store configured")
+        try:
+            res = await store.login(email=body.email, password=body.password)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"login failed: {e}") from e
+        if res is None:
+            raise HTTPException(status_code=401, detail="incorrect email or password")
+        user, token = res
+        return {"user": user, "token": token}
+
+    @app.post("/auth/logout")
+    async def auth_logout(x_eigen_token: str = Header(default="")) -> dict:
+        if accounts_enabled():
+            store = _accounts()
+            if store is not None:
+                await store.logout(x_eigen_token)
+        return {"ok": True}
+
+    @app.get("/me")
+    async def me(x_eigen_token: str = Header(default="")) -> dict:
+        if not accounts_enabled():
+            raise HTTPException(status_code=404, detail="accounts are not enabled")
+        store = _accounts()
+        if store is None:
+            raise HTTPException(status_code=503, detail="no account store configured")
+        user = await store.user_by_token(x_eigen_token)
+        if user is None:
+            raise HTTPException(status_code=401, detail="sign in first")
+        return {"user": user}
 
     @app.post("/feedback")
     async def post_feedback(body: FeedbackIn, x_eigen_token: str = Header(default="")) -> dict:

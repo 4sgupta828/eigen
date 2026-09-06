@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS eigen_user (
     UNIQUE (vertical, email)
 );
 CREATE INDEX IF NOT EXISTS idx_nu_token ON eigen_user (token_hash);
+-- PASSWORD sign-in (roster's model): PBKDF2-HMAC-SHA256 hash + salt, set at registration, verified at login.
+ALTER TABLE eigen_user ADD COLUMN IF NOT EXISTS pw_hash TEXT;
+ALTER TABLE eigen_user ADD COLUMN IF NOT EXISTS pw_salt TEXT;
 CREATE TABLE IF NOT EXISTS eigen_feedback (
     id          TEXT PRIMARY KEY,
     vertical    TEXT NOT NULL,
@@ -83,6 +86,28 @@ _NPI_API = "https://npiregistry.cms.hhs.gov/api/?version=2.1&number="
 
 def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+import hmac as _hmac   # noqa: E402
+
+_PBKDF2_ITER = 240_000
+
+
+def hash_password(password: str) -> tuple[str, str]:
+    """(pw_hash_hex, pw_salt_hex) via PBKDF2-HMAC-SHA256, 240k iterations, 16-byte random salt."""
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _PBKDF2_ITER)
+    return dk.hex(), salt.hex()
+
+
+def verify_password(password: str, pw_hash_hex: str, pw_salt_hex: str) -> bool:
+    """Constant-time verify. Always runs the KDF (the caller passes a dummy salt for unknown users)."""
+    try:
+        salt = bytes.fromhex(pw_salt_hex or "00" * 16)
+    except ValueError:
+        salt = b"\x00" * 16
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _PBKDF2_ITER)
+    return _hmac.compare_digest(dk.hex(), pw_hash_hex or "")
 
 
 async def verify_npi(npi: str) -> bool:
@@ -130,9 +155,15 @@ class AccountStore:
             await conn.execute(_DDL)
         self._ready = True
 
+    async def email_exists(self, email: str) -> bool:
+        await self._ensure()
+        async with (await self._get_pool()).acquire() as conn:
+            return bool(await conn.fetchval("SELECT 1 FROM eigen_user WHERE vertical=$1 AND email=$2",
+                                            self._vertical, email.lower().strip()))
+
     async def register(self, *, email: str, name: str, profession: str = "", country: str = "",
                        npi: str = "", npi_verified: bool = False,
-                       disclaimer_ack: bool = False) -> tuple[dict[str, Any], str]:
+                       disclaimer_ack: bool = False, pw_hash: str = "", pw_salt: str = "") -> tuple[dict[str, Any], str]:
         """Upsert-on-email; rotates the token every call (re-registering re-claims the account —
         acceptable at alpha, see module docstring). Returns (public user dict, RAW token — shown once)."""
         await self._ensure()
@@ -142,18 +173,21 @@ class AccountStore:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO eigen_user (id, vertical, email, name, profession, country, npi,
-                                            npi_verified, token_hash, disclaimer_ack_at)
-                   VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9, CASE WHEN $10 THEN now() END)
+                                            npi_verified, token_hash, disclaimer_ack_at, pw_hash, pw_salt)
+                   VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9, CASE WHEN $10 THEN now() END,
+                           NULLIF($11,''), NULLIF($12,''))
                    ON CONFLICT (vertical, email) DO UPDATE SET
                      name=EXCLUDED.name, profession=EXCLUDED.profession, country=EXCLUDED.country,
                      npi=COALESCE(EXCLUDED.npi, eigen_user.npi),
                      npi_verified=(eigen_user.npi_verified OR EXCLUDED.npi_verified),
                      token_hash=EXCLUDED.token_hash,
                      disclaimer_ack_at=COALESCE(eigen_user.disclaimer_ack_at, EXCLUDED.disclaimer_ack_at),
+                     pw_hash=COALESCE(EXCLUDED.pw_hash, eigen_user.pw_hash),
+                     pw_salt=COALESCE(EXCLUDED.pw_salt, eigen_user.pw_salt),
                      last_seen=now()
                    RETURNING id, email, name, profession, country, npi_verified, created_at""",
                 uid, self._vertical, email.lower().strip(), name.strip(), profession.strip(),
-                country.strip(), npi.strip(), npi_verified, _hash(token), disclaimer_ack)
+                country.strip(), npi.strip(), npi_verified, _hash(token), disclaimer_ack, pw_hash, pw_salt)
         # PER-DEVICE: this registration's token is ADDED to the user's active set (the legacy
         # column above still rotates for back-compat, but auth checks this table first — so the
         # previous device's token, if it's in the table, keeps working).
@@ -169,6 +203,39 @@ class AccountStore:
                 "profession": row["profession"], "country": row["country"],
                 "verified": row["npi_verified"]}
         return user, token
+
+    async def login(self, *, email: str, password: str) -> tuple[dict[str, Any], str] | None:
+        """Verify email + password (constant time) and issue a new per-device token. None on bad
+        credentials or on an account without a password (a token-only legacy registrant)."""
+        await self._ensure()
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """SELECT id, email, name, profession, country, npi_verified, pw_hash, pw_salt
+                   FROM eigen_user WHERE vertical=$1 AND email=$2""", self._vertical, email.lower().strip())
+        ok = verify_password(password, (row["pw_hash"] if row else "") or "", (row["pw_salt"] if row else "") or "")
+        if not row or not row["pw_hash"] or not ok:
+            return None
+        token = secrets.token_urlsafe(32)
+        async with pool.acquire() as conn:
+            await conn.execute("INSERT INTO eigen_user_token (token_hash, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", _hash(token), row["id"])
+            await conn.execute(
+                """DELETE FROM eigen_user_token WHERE user_id=$1 AND token_hash NOT IN (
+                     SELECT token_hash FROM eigen_user_token WHERE user_id=$1
+                     ORDER BY created_at DESC LIMIT $2)""", row["id"], _MAX_TOKENS_PER_USER)
+            await conn.execute("UPDATE eigen_user SET last_seen=now() WHERE id=$1", row["id"])
+        user = {"id": row["id"], "email": row["email"], "name": row["name"], "profession": row["profession"],
+                "country": row["country"], "verified": row["npi_verified"]}
+        return user, token
+
+    async def logout(self, token: str) -> None:
+        if not token:
+            return
+        await self._ensure()
+        h = _hash(token)
+        async with (await self._get_pool()).acquire() as conn:
+            await conn.execute("DELETE FROM eigen_user_token WHERE token_hash=$1", h)
+            await conn.execute("UPDATE eigen_user SET token_hash='' WHERE token_hash=$1", h)
 
     async def user_by_token(self, token: str) -> dict[str, Any] | None:
         if not token:
