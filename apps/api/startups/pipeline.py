@@ -331,9 +331,123 @@ async def run_derive(store: StartupStore, *, ids: list[str] | None = None, jid: 
     return {"derived": n, "facts": nf}
 
 
+# ------------------------------------------------------------------ funding news (Brave + model), Form D issuers as companies
+BRAVE_USD_PER_QUERY = 0.005
+
+
+async def run_news(store: StartupStore, prov: Providers, *, limit: int = 200, max_usd: float = 2.0, batch: int = 20, jid: int | None = None) -> dict:
+    """Round name / amount / lead / investors from funding headlines. Companies without a stated round first,
+    the better-evidenced ones (a filing, a team, open roles) before the rest. Spend = Brave queries (+ a tiny model cost)."""
+    from .sources import news
+    await store.ensure_schema()
+    if not prov.llm_json:
+        return {"error": "no llm provider"}
+    proj = {"companies": limit, "projected_usd": round(limit * BRAVE_USD_PER_QUERY + limit * 0.0005, 2)}
+    if proj["projected_usd"] > max_usd:
+        return {"refused": True, "projection": proj, "max_usd": max_usd}
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""SELECT c.id, c.name, c.website, c.hq FROM su_company c
+                                   WHERE c.status = 'active' AND c.id NOT LIKE 'cik:%' AND (c.crawl->>'news_at') IS NULL
+                                     AND NOT EXISTS (SELECT 1 FROM su_financing f WHERE f.company_id = c.id AND f.kind = 'press')
+                                   ORDER BY (EXISTS (SELECT 1 FROM su_formd d WHERE d.company_id = c.id)) DESC,
+                                            (EXISTS (SELECT 1 FROM su_fact x WHERE x.company_id = c.id AND x.key = 'hiring')) DESC, c.updated_at DESC LIMIT $1""", limit)
+    n_q = n_hit = n_ev = 0
+    items: list[dict] = []
+    async def flush():
+        nonlocal n_ev
+        if not items:
+            return
+        try:
+            out = await prov.llm_json(news.NEWS_SYSTEM, news.news_payload(items))
+        except Exception:   # noqa: BLE001
+            out = {}
+        evs = news.validate_news(out if isinstance(out, dict) else {}, items)
+        for i, b in enumerate(items):
+            for ev in evs.get(i, []):
+                await store.upsert_financing(b["id"], ev); n_ev += 1
+            async with pool.acquire() as conn:
+                await conn.execute("UPDATE su_company SET crawl = crawl || jsonb_build_object('news_at', $2::text, 'news_hits', $3::int) WHERE id = $1", b["id"], date.today().isoformat(), len(b["articles"]))
+            if evs.get(i):
+                await derive_one(store, b["id"])
+        items.clear()
+    for r in rows:
+        arts = await asyncio.get_event_loop().run_in_executor(None, lambda r=r: news.brave_funding_news(r["name"], r["website"]))
+        n_q += 1
+        if arts:
+            n_hit += 1
+            items.append({"id": r["id"], "name": r["name"], "website": r["website"], "hq": r["hq"], "articles": arts})
+        else:
+            async with pool.acquire() as conn:
+                await conn.execute("UPDATE su_company SET crawl = crawl || jsonb_build_object('news_at', $2::text, 'news_hits', 0) WHERE id = $1", r["id"], date.today().isoformat())
+        if len(items) >= batch:
+            await flush()
+        if jid and n_q % 25 == 0:
+            await _progress(store, jid, {"queried": n_q, "with_news": n_hit, "events": n_ev, "of": len(rows)})
+        await asyncio.sleep(1.0)      # Brave: one request per second
+    await flush()
+    return {"queried": n_q, "with_news": n_hit, "events": n_ev, "projection": proj}
+
+
+_TECHISH = {"other technology": None, "computers": "hardware_semis", "telecommunications": "other", "biotechnology": "bio_health",
+            "other health care": "bio_health", "medical device": "bio_health", "pharmaceuticals": "bio_health", "energy": "climate_energy",
+            "other energy": "climate_energy", "business services": None, "aerospace": "space_defense"}
+
+
+async def run_formd_companies(store: StartupStore, *, since: str = "2022-01-01", min_usd: float = 2_000_000, limit: int = 20000, jid: int | None = None) -> dict:
+    """The unmatched operating Form D issuers in technology-ish industry groups that sold ≥ `min_usd` since `since`
+    become companies keyed `cik:<n>` — legal identity, filing-backed funding and officers, no site yet."""
+    from .sources.yc import _geo
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        issuers = await conn.fetch("""SELECT cik, max(entity_name) AS entity_name, max(city) AS city, max(state) AS state, max(industry) AS industry,
+                                             max(year_inc) AS year_inc, sum(sold_usd) FILTER (WHERE NOT is_amendment) AS sold, max(sale_date) AS last_sale
+                                      FROM su_formd WHERE is_operating AND company_id IS NULL AND cik <> '' AND lower(industry) = ANY($1)
+                                        AND sale_date >= $2::date GROUP BY cik HAVING coalesce(sum(sold_usd) FILTER (WHERE NOT is_amendment), 0) >= $3
+                                      ORDER BY sold DESC NULLS LAST LIMIT $4""", list(_TECHISH), date.fromisoformat(since), float(min_usd), limit)
+    # an issuer whose name matches an existing (site-keyed) company is left to the match job — never a duplicate node
+    async with pool.acquire() as conn:
+        known = {formd.name_norm(r["name"]) for r in await conn.fetch("SELECT name FROM su_company WHERE id NOT LIKE 'cik:%'")}
+        known |= {formd.name_norm(r["legal_name"]) for r in await conn.fetch("SELECT legal_name FROM su_company WHERE legal_name <> ''")}
+    known.discard("")
+    n = skipped = 0
+    for it in issuers:
+        if formd.name_norm(it["entity_name"]) in known:
+            skipped += 1
+            continue
+        cid = f"cik:{it['cik']}"
+        hq = ", ".join(x for x in (it["city"], it["state"]) if x)
+        await store.upsert_company({"id": cid, "name": it["entity_name"], "legal_name": it["entity_name"], "cik": it["cik"], "hq": hq, "sources": ["formd"],
+                                    "one_liner": f"{(it['industry'] or 'Private').strip()} company in {hq} (from SEC Form D filings; no website on record yet)"})
+        facts = [{"key": "status", "value": "active", "quote": "Active issuer on SEC Form D", "source_url": f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={it['cik']}"}]
+        area = _TECHISH.get((it["industry"] or "").lower())
+        if area:
+            facts.append({"key": "tech_area", "value": area, "quote": f"Industry group: {it['industry']} (Form D)", "source_url": facts[0]["source_url"], "confidence": 0.5})
+        if it["year_inc"]:
+            facts.append({"key": "founded", "number": float(it["year_inc"]), "display": str(it["year_inc"]), "quote": f"Year of incorporation: {it['year_inc']} (Form D)", "source_url": facts[0]["source_url"]})
+        for key, val in _geo(hq):
+            facts.append({"key": key, "value": val, "quote": f"Issuer address: {hq} (Form D)", "source_url": facts[0]["source_url"]})
+        await store.replace_facts(cid, "formd", facts, keys=["status", "tech_area", "founded", "country", "metro"])
+        async with pool.acquire() as conn:
+            fil = await conn.fetch("SELECT accession, file_num, sold_usd, offering_usd, sale_date, filing_date FROM su_formd WHERE cik = $1 AND is_operating", it["cik"])
+            await conn.execute("UPDATE su_formd SET company_id = $2, match_method = 'issuer' WHERE cik = $1 AND is_operating", it["cik"], cid)
+        for f in fil:
+            await store.upsert_financing(cid, {"kind": "formd", "file_num": f["file_num"] or f["accession"], "accession": f["accession"], "round_name": "",
+                                               "amount_usd": f["sold_usd"], "offering_usd": f["offering_usd"], "event_date": f["sale_date"] or f["filing_date"],
+                                               "source_url": formd.edgar_url({"cik": it["cik"], "accession": f["accession"]}),
+                                               "quote": f"Total amount sold: ${(f['sold_usd'] or 0):,.0f}; date of first sale {f['sale_date']} (Form D {f['accession']})"})
+        await derive_one(store, cid)
+        n += 1
+        if jid and n % 200 == 0:
+            await _progress(store, jid, {"companies": n, "of": len(issuers)})
+    return {"companies": n, "skipped_name_match": skipped, "of": len(issuers)}
+
+
 # ------------------------------------------------------------------ runner (background thread, own loop + pool)
-RUNNERS = {"yc": run_yc, "embed": run_embed, "formd": run_formd, "match": run_match, "crawl": run_crawl, "extract": run_extract, "derive": run_derive}
-NEEDS_PROV = {"yc", "embed", "match", "extract"}
+RUNNERS = {"yc": run_yc, "embed": run_embed, "formd": run_formd, "match": run_match, "crawl": run_crawl, "extract": run_extract, "derive": run_derive,
+           "news": run_news, "formd_companies": run_formd_companies}
+NEEDS_PROV = {"yc", "embed", "match", "extract", "news"}
 
 
 async def start_job(store: StartupStore, dsn: str, kind: str, params: dict, *, providers: Providers | None = None) -> int:

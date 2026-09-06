@@ -216,3 +216,29 @@ def test_compile_downgrades_values_absent_from_the_index_and_zero_coverage_keys(
     assert c.must == {"tech_area": ["bio_health"], "hiring": {"min": 1.0}}   # agents dropped (0 in the index); the explicit range stays
     assert c.prefer == {"founder_count": ["2"]}                    # a categorical key nobody has yet → preference
     assert any("open roles" in n.lower() for n in notes) and len(notes) == 3
+
+
+def test_news_validation_gates_quote_figure_round_and_subject():
+    from api.startups.sources import news
+    batch = [{"id": "acme.ai", "name": "Acme", "website": "", "hq": "", "articles": [
+        {"title": "Acme raises $12M Series A led by Index Ventures", "snippet": "The AI infra startup Acme announced a $12 million Series A.", "url": "https://press/acme-a", "published": "2 months ago"},
+        {"title": "Acme in talks to raise Series B", "snippet": "", "url": "https://press/acme-b", "published": ""}]}]
+    out = {"items": [{"i": 0, "events": [
+        {"round_name": "series a", "amount": "$12M", "currency": "USD", "date": "2026-07", "lead": "Index Ventures", "investors": ["Index Ventures", "a16z"], "quote": "Acme raises $12M Series A led by Index Ventures", "modality": "realized"},
+        {"round_name": "series b", "amount": "$40M", "currency": "USD", "date": "", "lead": "", "investors": [], "quote": "Acme in talks to raise Series B", "modality": "intent"},
+        {"round_name": "seed", "amount": "$3M", "currency": "USD", "date": "", "lead": "", "investors": [], "quote": "Acme closed a $3M seed", "modality": "realized"}]}]}
+    evs = news.validate_news(out, batch)
+    assert len(evs[0]) == 1                                     # intent dropped; invented quote dropped
+    ev = evs[0][0]
+    assert ev["round_name"] == "series_a" and ev["amount_usd"] == 12e6 and ev["lead"] == "index_ventures" and ev["source_url"] == "https://press/acme-a"
+    assert ev["event_date"].isoformat().startswith("2026-07")
+
+
+def test_same_round_from_several_articles_counts_once():
+    from api.startups.sources import news
+    evs = [{"kind": "press", "round_name": "seed", "amount_usd": 4.2e6, "event_date": date(2025, 11, 1), "investors": [], "lead": "initialized"},
+           {"kind": "press", "round_name": "seed", "amount_usd": 4.2e6, "event_date": date(2025, 7, 1), "investors": ["y_combinator"], "lead": ""}]
+    d = news.dedup_events(evs)
+    assert len(d) == 1 and d[0]["event_date"] == date(2025, 7, 1) and d[0]["lead"] == "initialized" and d[0]["investors"] == ["y_combinator"]
+    facts = derive.derive_facts({}, [dict(e, event_date=e["event_date"].isoformat()) for e in evs], [], [], [], {}, today=date(2026, 9, 6))
+    assert {f["key"]: f for f in facts}["total_disclosed_funding"]["number"] == 4.2e6

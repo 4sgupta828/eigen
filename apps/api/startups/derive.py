@@ -42,7 +42,13 @@ def derive_facts(company: dict, financing: list[dict], filings: list[dict], foun
         if cur is None or (f.get("filing_date") or date.min) >= (cur.get("filing_date") or date.min):
             by_file[fn] = f
     filing_events = [{"kind": "formd", "amount": f.get("sold_usd"), "date": f.get("sale_date") or f.get("filing_date"), "src": f} for f in by_file.values()]
-    stated = [e for e in fin if e.get("kind") in ("press", "site")]
+    # one stated event per (round, amount) across press + site (several sources report the same round)
+    stated, seen = [], set()
+    for e in sorted((e for e in fin if e.get("kind") in ("press", "site")), key=lambda e: (e.get("event_date") is None, e.get("event_date") or date.max)):
+        k = (e.get("round_name") or "", round(float(e["amount_usd"]) / 1e5) if e.get("amount_usd") else None)
+        if k in seen and (k[0] or k[1] is not None):
+            continue
+        seen.add(k); stated.append(e)
     stated_events = []
     for e in stated:
         d = e.get("event_date")

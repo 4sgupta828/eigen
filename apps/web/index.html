@@ -6600,10 +6600,11 @@ function cardHtml(row){
   const people = founders.length ? `<div class="c-people"><b>${founders.length} founder${founders.length>1?"s":""}</b> · ${esc(founders.slice(0,4).map(f=>f.name+(f.title?" ("+f.title.slice(0,28)+")":"")).join(", "))}${fpc.length?` · from ${esc(fpc.slice(0,3).join(", "))}`:""}</div>` : "";
   const gaps=[]; if(!total && !scale) gaps.push("no funding source found"); if(!stage) gaps.push("no stated round"); if(!founders.length) gaps.push("founders not found");
   if((co.crawl||{}).failed && (co.crawl.failed||[]).length && !(co.crawl.pages||[]).length) gaps.push("site could not be read");
+  if(id.startsWith("cik:")) gaps.push("no website on record (known from SEC filings only)");
   const why=(row.reasons||[]).slice(0,3).join(" · ");
   const isNew = !!(STATE.lastDiff && STATE.lastDiff.added.includes(id));
   return `<div class="card${STATE.open===id?" su-open":""}${isNew?" is-new":""}" data-id="${esc(id)}">${isNew?`<span class="su-newflag" title="Not in the previous result">new</span>`:""}
-    <div class="c-head"><a class="c-name" href="${esc(co.website||("https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id)}</span>${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
+    <div class="c-head"><a class="c-name" href="${esc(co.website||(id.startsWith("cik:")?"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK="+id.slice(4):"https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id.startsWith("cik:")?"SEC CIK "+id.slice(4):id)}</span>${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
     ${co.one_liner?`<div class="su-line">${esc(co.one_liner)}</div>`:""}
     ${money.length?`<div class="c-row">${money.join("")}</div>`:""}
     ${(what||who.length)?`<div class="c-row">${what}${who.join("")}</div>`:""}
