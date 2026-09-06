@@ -234,7 +234,10 @@
   #startupsbody .card{position:relative;}
   #startupsbody .su-recipe{flex:none;font:inherit;font-size:.72rem;padding:.25rem .6rem;min-height:36px;border:1px solid var(--gold);border-radius:999px;background:rgba(var(--gold-rgb),.10);color:var(--gold-strong);cursor:pointer;white-space:nowrap;}
   #startupsbody .su-recipe b{margin-left:.3rem;color:var(--muted);font-weight:600;} #startupsbody .su-recipe.off{border-style:dashed;background:transparent;color:var(--muted);}
-  #startupsbody .su-mergesum{font-size:.78rem;color:var(--ink);} #startupsbody .su-weak{color:var(--gap);font-weight:600;}
+  #startupsbody .su-mergesum{font-size:.78rem;color:var(--ink);}
+  #startupsbody .su-relaxed{display:inline-flex;align-items:center;gap:.25rem;min-height:30px;padding:.15rem .55rem;border:1px solid rgba(var(--gold-rgb),.5);border-radius:999px;color:var(--ink);font-size:.74rem;white-space:nowrap;}
+  #startupsbody .su-relaxed.yours{border-style:dashed;} #startupsbody .su-relaxed i{color:var(--muted);font-style:normal;font-size:.68rem;}
+  #startupsbody .su-relaxedrow{flex-wrap:wrap;} #startupsbody .su-weak{color:var(--gap);font-weight:600;}
   #startupsbody .su-fitpill{font-size:.68rem;font-weight:600;padding:.1rem .5rem;border-radius:999px;border:1px solid var(--hair);color:var(--muted);}
   #startupsbody .su-fitpill.fit-yes{color:var(--verified);border-color:var(--verified);background:rgba(19,122,84,.08);}
   #startupsbody .su-fitpill.fit-partial{color:var(--gap);border-color:var(--gap);} #startupsbody .su-fitpill.fit-no{color:var(--warn);border-color:var(--warn);text-decoration:line-through;}
@@ -6692,13 +6695,20 @@ function railHtml(){
   const apply = STATE.busy ? `<div class="frail-apply"><span class="su-spin"></span><b>Applying…</b> re-evaluating the index with your changes</div>`
                 : n ? `<div class="frail-apply"><b>${n} change${n===1?"":"s"} pending</b> — nothing runs until you apply. <button type="button" class="btn primary" id="apply">Apply</button><button type="button" class="btn" id="reset">Reset</button></div>`
                   : `<div class="frail-apply">${diffLine || "Tap chips to stage changes, then apply once."} ${lowMust}</div>`;
+  const rx = (d.relaxed||[]).filter(n => n.rule === "relaxed"); let relaxedLine = "";
+  if(rx.length){
+    const sum = (d.relaxed||[]).find(n => n.rule === "relax_summary") || {};
+    const strict = sum.strict_slice != null ? `${sum.strict_slice >= 2001 ? "2000+" : sum.strict_slice} matched every filter` : "few matched every filter";
+    const item = n => `<span class="su-relaxed${n.user?" yours":""}">${n.range ? "≥/≤ " : "▲ "}<b>${esc(klabel(n.key))}</b> ${n.values ? esc(n.values.map(v=>label(n.key, v)).join(" / ")) : esc(rangeLabel(n.key, n.range||{}))}${n.range ? " — no longer filters" : ""}${n.user ? " <i>(your chip)</i>" : ""}</span>`;
+    relaxedLine = `<div class="frail-row su-relaxedrow"><span class="frail-k" title="too few matched every filter, so the least important ones now rank first instead — tap a chip to make it a must again">Showing more</span><span class="su-mergesum">${esc(strict)} — these now rank first instead of filtering: </span>${rx.map(item).join("")}</div>`;
+  }
   const mg = d.merge; let mergeLine = "";
   if(mg){
     const rec = (mg.recipes||[]).map(x => { const off=(STATE.mergeOff||[]).includes(x.name); const nm = x.name==="strict"?"strict":x.name==="default"?"compiled reading ranks":x.name==="loose"?"all relaxable rank":x.name.replace(/^relaxed:/,"without ").replace(/_/g," ").replace(/^reading:/,"reading "); return `<button type="button" class="su-recipe${off?" off":""}" data-recipe="${esc(x.name)}" title="${esc(x.why)} — ${x.pool!=null?x.pool+" in its pool":""} · ${x.head_fits||0} judged fits · tap to switch ${off?"on":"off"}">${off?"◌ ":"● "}${esc(nm)}${x.pool!=null?`<b>${x.pool>=2001?"2000+":x.pool}</b>`:""}</button>`; }).join("");
     const offNote = (STATE.mergeOff||[]).length ? ` <button type="button" class="su-recipe" id="su-recipes-all">all readings on</button>` : "";
     mergeLine = `<div class="frail-row su-merge"><span class="frail-k" title="one blind model read of the top of the merged list, against your words">Model read</span><span class="su-mergesum">${mg.graded?`<b>${mg.fits}</b> of ${mg.graded} graded fit · ${mg.partials} partial · ${mg.nos} not${mg.weak?` · <span class="su-weak">weak — sharpen the words or loosen a must</span>`:""}`:"ungraded"}</span></div><div class="frail-row"><span class="frail-k" title="the readings merged into this list — switch one off to re-run without it">Readings</span>${rec}${offNote}</div>`;
   }
-  return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Navigate</b> · ${d.coverage.matched ?? 0} match every must ${rank}<span style="margin-left:auto;">● must · ▲ prefer · ▼ avoid</span></div>${mergeLine}${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
+  return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Navigate</b> · ${d.coverage.matched ?? 0} match every must ${rank}<span style="margin-left:auto;">● must · ▲ prefer · ▼ avoid</span></div>${relaxedLine}${mergeLine}${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
 }
 function pill(m,key,text,v){ const g=m==="must"?"●":m==="prefer"?"▲":"▼"; return `<span class="fpill">${g} ${esc(klabel(key))}: ${esc(text)}<button type="button" data-off="${esc(key)}" data-value="${esc(v)}" data-mode="${m}" title="remove">✕</button></span>`; }
 function rangeLabel(key, r){ const u=((STATE.labels||{}).units||{})[key]||""; const f=x=>u==="usd"?usd(x):String(x); return (r.min!=null?"≥ "+f(r.min):"")+(r.min!=null&&r.max!=null?" · ":"")+(r.max!=null?"≤ "+f(r.max):"")+(u&&u!=="usd"?" "+u:""); }
@@ -6827,7 +6837,7 @@ async function runEvaluate(contract, opts){
     const m=STATE.map;
     const url = m ? `/startups/maps/${m.id}/navigate${m.share?"?share="+encodeURIComponent(m.share):""}` : "/startups/evaluate";
     if(contract && contract.merge) STATE.merge = contract.merge;                       // merge options ride every re-run (rail edits included)
-    const payload = {...contract, merge: {...(STATE.merge||{mode:"merged"}), off: (STATE.mergeOff||[])}};
+    const payload = {...contract, merge: {...(STATE.merge||{mode:"merged"}), off: (STATE.mergeOff||[]), relax: !opts.diff && !opts.noRelax}};
     const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json",...authHeaders()},body:JSON.stringify({contract: payload})});
     if(!r.ok){ toast("evaluate failed: "+(await r.text()).slice(0,120)); STATE.lastDiff=null; return; }
     const d=await r.json(); STATE.data=d; STATE.contract=d.contract; STATE.draft=null; STATE.labels=d.labels; STATE.open=null;

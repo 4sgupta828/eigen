@@ -16,7 +16,8 @@ import hashlib
 from typing import Awaitable, Callable
 
 from eigen_kernel.facets import Contract
-from eigen_kernel.facets.contract_search import blind, collapsing_musts, head_precision, order_by_verdicts, recipes, resolve_blind_id, rrf_fuse, survivors
+from eigen_kernel.facets.contract_search import (blind, collapsing_musts, demote, head_precision, order_by_verdicts, recipes, relax_steps, resolve_blind_id,
+                                                  rrf_fuse, survivors)
 
 from .schema import KIND, SCHEMA, VALUE_LABELS
 
@@ -26,6 +27,14 @@ RELAXABLE_KEYS = ("metro", "investor", "lead_investor", "founder_prior_company",
 LADDER_DEFAULT_KEYS = ("customer", "business_model", "founder_count", "hiring")
 JUDGE_HEAD, JUDGE_BATCHES, MERGE_RRF_K, WEAK_FITS = 40, 3, 60, 3
 SCARCITY, MIN_RATIO = 20, 5.0
+# SMART RELAXING (roster 2026-09-06, adapted): too few results → musts relax to preferences, LEAST important first, the
+# compile's before the user's own, until the pool is a good size. The thesis (tech area) and the scope (country) never
+# relax — a different area is not "more results". Numeric floors relax last and by removal (a preference cannot hold a
+# range); the note says so. Sized to a 14k index (roster: 200 / 30 on 400k).
+RELAX_ORDER = ("hiring_function", "hiring", "business_model", "customer", "founder_prior_company", "lead_investor", "investor", "program",
+               "founder_count", "last_round_months", "metro", "total_disclosed_funding", "last_round_amount", "financing_scale", "arr", "stage")
+RELAX_NEVER = ("tech_area", "country")
+RELAX_MIN_SLICE, RELAX_TARGET_ROWS, RELAX_MAX_EVALUATES = 30, 12, 3
 
 
 def _lab(k: str, v) -> str:
@@ -85,6 +94,65 @@ async def u_diagnostics(c: Contract, *, user_keys: set, slice_fn) -> list[dict]:
     return out
 
 
+def relax_steps_all(c: Contract, *, user_keys: set) -> list[tuple[str, bool]]:
+    """Every must on a key in RELAX_ORDER — list values and numeric floors alike — least important first, the
+    compile's before the user's own; the thesis and the scope (RELAX_NEVER) never."""
+    rank = {k: i for i, k in enumerate(RELAX_ORDER)}
+    uk = set(user_keys or ())
+    keys = [k for k in c.must if k in rank and k not in RELAX_NEVER and c.must.get(k)]
+    compiled = sorted([k for k in keys if k not in uk], key=lambda k: rank[k])
+    own = sorted([k for k in keys if k in uk], key=lambda k: rank[k])
+    return [(k, False) for k in compiled] + [(k, True) for k in own]
+
+
+def demote_any(c: Contract, key: str) -> Contract:
+    """A list must → prefer (kernel demote); a numeric floor → removed (a preference cannot hold a range)."""
+    if isinstance(c.must.get(key), dict):
+        n = Contract.from_dict(c.to_dict()); n.must.pop(key, None); return n
+    return demote(c, key)
+
+
+async def relax_to_enough(c: Contract, *, user_keys: set, slice_fn, evaluate_fn) -> tuple[dict, list[dict]]:
+    """Cheap first: the must-slice is probed and relaxed until it holds RELAX_MIN_SLICE; then the search runs and,
+    while it returns fewer than RELAX_TARGET_ROWS rows, one more must relaxes per evaluate (≤ RELAX_MAX_EVALUATES).
+    Every relaxation is a note; a relaxed must still ranks first; nothing becomes an avoid."""
+    notes: list[dict] = []
+    steps = relax_steps_all(c, user_keys=set(user_keys or ()))
+    cur = Contract.from_dict(c.to_dict())
+    exclude = (cur.scope or {}).get("exclude") or {}
+    strict_slice = await _safe_size(slice_fn, cur.must, exclude) if cur.must else None
+
+    def _relax_one() -> bool:
+        nonlocal cur
+        if not steps:
+            return False
+        key, is_user = steps.pop(0)
+        vals = cur.must.get(key)
+        cur = demote_any(cur, key)
+        notes.append({"rule": "relaxed", "key": key, "values": (vals if isinstance(vals, list) else None), "range": (vals if isinstance(vals, dict) else None),
+                      "user": is_user, "action": ("must → prefer" if isinstance(vals, list) else "floor dropped")})
+        return True
+
+    size = strict_slice
+    while size is not None and size < RELAX_MIN_SLICE and steps:
+        if not _relax_one():
+            break
+        size = await _safe_size(slice_fn, cur.must, exclude) if cur.must else None
+        notes[-1]["slice_after"] = size
+    out = await evaluate_fn(cur, counts=True)
+    n_eval = 1
+    while len(out.get("rows") or []) < RELAX_TARGET_ROWS and steps and n_eval < RELAX_MAX_EVALUATES:
+        if not _relax_one():
+            break
+        out = await evaluate_fn(cur, counts=True)
+        n_eval += 1
+        notes[-1]["rows_after"] = len(out.get("rows") or [])
+    if notes:
+        notes.append({"rule": "relax_summary", "strict_slice": strict_slice, "final_slice": size, "rows": len(out.get("rows") or []),
+                      "relaxed_keys": [n["key"] for n in notes if n.get("rule") == "relaxed"], "user_relaxed": [n["key"] for n in notes if n.get("rule") == "relaxed" and n.get("user")]})
+    return out, notes
+
+
 # ---------------------------------------------------------------- the judge (startup vocabulary)
 def judge_prompt() -> str:
     return ("You judge, row by row, whether each of these STARTUPS fits the BRIEF (an investor's own words, then what is REQUIRED and what is "
@@ -132,7 +200,7 @@ def merge_options(cdict: dict | None) -> dict:
     m = (cdict or {}).get("merge") if isinstance((cdict or {}).get("merge"), dict) else {}
     mode = str(m.get("mode") or "").lower() or None
     return {"mode": mode if mode in ("merged", "single") else None, "off": [str(x) for x in (m.get("off") or []) if str(x)][:8],
-            "user_keys": [str(x) for x in (m.get("user_keys") or []) if str(x)][:20]}
+            "user_keys": [str(x) for x in (m.get("user_keys") or []) if str(x)][:20], "relax": bool(m.get("relax"))}
 
 
 async def merged_search(c: Contract, *, user_keys: set, evaluate_fn: Callable[..., Awaitable[dict]], slice_fn, llm_json, off: list[str] | None = None, top: int = 60) -> dict:

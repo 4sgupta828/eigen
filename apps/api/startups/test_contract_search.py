@@ -73,3 +73,22 @@ def test_judge_row_and_brief_shapes():
     assert line.startswith("[r1] Acme · inference for banks · areas: AI infra, fintech · sells to: — · stage: seed · funding: $12.0M disclosed · HQ: Bay Area/US · founders: Jane · program: Y Combinator")
     b = cs.judge_brief("ai infra for banks", {"must": {"tech_area": ["ai_infra"], "total_disclosed_funding": {"min": 5e6}}, "prefer": {"program": ["yc"]}, "scope": {"exclude": {"country": ["us"]}}, "center": {"key": "stage", "value": "seed"}})
     assert "REQUIRED: tech area: AI infra; total disclosed funding: min 5e+06; not country: US" in b and "PREFERRED: program: Y Combinator" in b and "STAGE: around seed" in b
+
+
+def test_relaxing_goes_least_important_first_compiled_before_the_users_and_never_the_thesis():
+    from eigen_kernel.facets import Contract
+    c = Contract(kind=KIND, text="x", must={"tech_area": ["robotics"], "metro": ["boston"], "customer": ["enterprise"], "hiring": {"min": 1.0}, "total_disclosed_funding": {"min": 5e6}})
+    steps = cs.relax_steps_all(c, user_keys={"customer"})
+    assert steps == [("hiring", False), ("metro", False), ("total_disclosed_funding", False), ("customer", True)]   # least important first; tech_area never
+    calls = []
+    async def sl(must, exclude):
+        calls.append(sorted(must)); n = len(must)
+        return {5: 2, 4: 8, 3: 25, 2: 900}.get(n, 900)                    # each relaxation grows the slice
+    async def ev(contract, counts=True):
+        return {"rows": [{"id": str(i)} for i in range(15 if len(contract.must) <= 2 else 4)], "counts": {}, "coverage": {}, "contract": contract.to_dict()}
+    out, notes = run(cs.relax_to_enough(c, user_keys={"customer"}, slice_fn=sl, evaluate_fn=ev))
+    relaxed = [n["key"] for n in notes if n["rule"] == "relaxed"]
+    assert relaxed[:2] == ["hiring", "metro"] and "tech_area" not in relaxed
+    assert notes[-1]["rule"] == "relax_summary" and notes[-1]["strict_slice"] == 2 and len(out["rows"]) >= 12
+    final = Contract.from_dict(out["contract"])
+    assert final.prefer.get("metro") == ["boston"] and "hiring" not in final.must and final.must["tech_area"] == ["robotics"]

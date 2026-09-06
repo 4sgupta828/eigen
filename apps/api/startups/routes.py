@@ -154,11 +154,30 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         from . import contract_search as cs
         merge = merge or {}
         mode = merge.get("mode") or ("merged" if (c.text and providers.llm_json) else "single")
+        user_keys = set(merge.get("user_keys") or [])
+        relaxed: list = []
+        if merge.get("relax") and c.must:
+            # SMART RELAXING (first searches only; a rail Apply runs the chips as set): too few results → the least
+            # important musts rank instead of filtering, until the pool is a good size
+            if mode == "merged" and c.text and providers.llm_json:
+                async def _probe_eval(contract, counts=True):
+                    return await _evaluate_core(Contract.from_dict({**contract.to_dict(), "limit": 60}), counts=False)
+                probe, relaxed = await cs.relax_to_enough(c, user_keys=user_keys, slice_fn=_slice, evaluate_fn=_probe_eval)
+                if relaxed:
+                    c = Contract.from_dict(probe.get("contract") or c.to_dict()); c.limit = int(merge.get("limit") or 60)
+            else:
+                out, relaxed = await cs.relax_to_enough(c, user_keys=user_keys, slice_fn=_slice, evaluate_fn=_evaluate_core)
+                out["relaxed"] = relaxed
+                rows = out["rows"]
+                out["coverage"]["index"] = await store.coverage()
+                out["labels"] = labels()
+                return out
         if mode == "merged" and c.text and providers.llm_json:
-            out = await cs.merged_search(c, user_keys=set(merge.get("user_keys") or []), evaluate_fn=_evaluate_core, slice_fn=_slice, llm_json=providers.llm_json, off=merge.get("off"), top=int(c.limit))
+            out = await cs.merged_search(c, user_keys=user_keys, evaluate_fn=_evaluate_core, slice_fn=_slice, llm_json=providers.llm_json, off=merge.get("off"), top=int(c.limit))
             out["coverage"]["matched"] = (out.get("coverage") or {}).get("matched")
         else:
             out = await _evaluate_core(c)
+        out["relaxed"] = relaxed
         rows = out["rows"]
         out["coverage"]["index"] = await store.coverage()
         out["labels"] = labels()

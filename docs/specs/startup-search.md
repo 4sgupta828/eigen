@@ -601,3 +601,13 @@ text-only contract — switch the variable rather than leave it.
   labelled fit pill ("reads as a fit · model") with the verdict's reason and which readings found the row.
 - Guided READY: index-aware notes, the readings with their measured pools, U diagnostics ("your must metro: boston
   leaves 3 — without it 400"); the hand-off contract carries `merge` so the Startups mode runs the merged search.
+
+### 2026-09-07 — smart relaxing (roster §12.12b, adapted)
+Too few results → musts relax to PREFERENCES, least important first, the compile's before the user's own chips, until the
+pool is a good size: the must-slice is probed and relaxed until it holds 30, then the search runs and while it returns
+fewer than 12 rows one more must relaxes per evaluate (≤ 3). Order (least → most important): hiring function, hiring,
+business model, customer, founders' prior company, lead investor, investor, program, founder count, last-round window,
+metro, funding floors, stage. The thesis (tech area) and the scope (country) never relax; a numeric floor relaxes by
+removal (a preference cannot hold a range) and the note says so. First searches only (a compile, a Guided hand-off) —
+a rail Apply runs the chips exactly as set. The rail's "Showing more" block names each relaxed filter (the user's own
+marked); its chip already sits at ▲ prefer so one tap restores it.
