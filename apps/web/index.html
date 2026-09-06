@@ -197,6 +197,30 @@
   .authtabs{display:flex;border:1px solid var(--hair);border-radius:999px;overflow:hidden;margin:.2rem 0 .5rem;}
   .authtabs .authtab{flex:1;font:inherit;font-size:.86rem;padding:.55rem .6rem;min-height:40px;border:0;background:transparent;color:var(--muted);cursor:pointer;}
   .authtabs .authtab[aria-selected="true"]{background:var(--gold);color:var(--on-accent);font-weight:600;}
+  /* ===== Guided startup search — a MODE of the shell (body[data-mode="guided"]); roster's intake look ===== */
+  #guidedbody{display:none;} body[data-mode="guided"] #guidedbody{display:block;} body[data-mode="guided"] #out, body[data-mode="guided"] #effort{display:none !important;}
+  .sg-lead{font-size:.9rem;color:var(--muted);line-height:1.5;margin:.4rem 0 .6rem;}
+  .sg-thread{display:flex;flex-direction:column;gap:.35rem;margin:.3rem 0;}
+  .sg-msg{max-width:88%;padding:.5rem .8rem;border-radius:12px;font-size:.9rem;line-height:1.45;}
+  .sg-msg.user{align-self:flex-end;background:rgba(var(--gold-rgb),.12);color:var(--ink);} .sg-msg.bot{align-self:flex-start;background:var(--panel2);color:var(--ink);border:1px solid var(--hair);}
+  .sg-q{background:var(--panel2);border:1px solid var(--hair);border-radius:13px;padding:.75rem .9rem;margin:.4rem 0 .2rem;}
+  .sg-q-words{font-size:.95rem;line-height:1.45;color:var(--ink);} .sg-q-hint{font-size:.76rem;color:var(--muted);margin-top:.2rem;line-height:1.45;}
+  .sg-opts{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.6rem;}
+  .sg-opt{font:inherit;font-size:.82rem;min-height:40px;padding:.4rem .8rem;border:1px solid var(--hair);border-radius:999px;background:var(--panel);color:var(--ink);cursor:pointer;}
+  .sg-opt b{font-weight:600;color:var(--muted);margin-left:.3rem;} .sg-opt:hover{border-color:var(--gold);} .sg-opt.quiet{color:var(--muted);}
+  .sg-opt.sel{border-color:var(--gold);background:rgba(var(--gold-rgb),.14);color:var(--gold-strong);font-weight:600;}
+  .sg-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.6rem;}
+  .sg-btn{font:inherit;font-size:.84rem;min-height:40px;padding:.45rem .95rem;border:1px solid var(--hair);border-radius:999px;background:var(--panel);color:var(--ink);cursor:pointer;}
+  .sg-btn.primary{background:var(--gold);color:var(--on-accent);border-color:var(--gold);font-weight:700;}
+  .sg-ready{background:var(--panel2);border:1px solid var(--hair);border-radius:14px;padding:1.1rem 1.15rem;margin-top:1rem;}
+  .sg-ready-h{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:.5rem;}
+  .sg-understood{font-size:.95rem;line-height:1.5;color:var(--ink);} .sg-chips{display:flex;flex-wrap:wrap;gap:.3rem;margin:.6rem 0;}
+  .sg-chip{font-size:.72rem;padding:.2rem .55rem;border-radius:999px;border:1px solid var(--hair);background:var(--panel);}
+  .sg-chip.must{border-color:var(--gold);color:var(--gold-strong);font-weight:600;} .sg-chip.prefer{border-color:var(--verified);color:var(--verified);} .sg-chip.center{box-shadow:0 0 0 2px rgba(var(--gold-rgb),.35);} .sg-chip.not{border-color:var(--gap);color:var(--gap);}
+  .sg-pool{font-size:.86rem;color:var(--muted);margin:.3rem 0 .5rem;} .sg-pool b{color:var(--ink);}
+  .sg-advice{font-size:.78rem;color:var(--muted);line-height:1.5;margin:.4rem 0 0;padding-left:1.1rem;} .sg-notes{font-size:.76rem;color:var(--gap);margin:.2rem 0;}
+  .sg-busy{font-size:.8rem;color:var(--muted);margin:.4rem 0;}
+  @media (max-width:560px){ .sg-opt{flex:1 1 auto;text-align:center;} .sg-msg{max-width:100%;} }
   /* ===== Startup Search — an inline MODE of the shell (body[data-mode="startups"]) ===== */
   body[data-mode="startups"] #startupsbody{display:block;}
   body[data-mode="startups"] #out, body[data-mode="startups"] #effort{display:none !important;}
@@ -1506,6 +1530,7 @@
       <button type="button" class="mbtn" data-mode="triage" role="tab" aria-selected="false" hidden>◍ Guided</button>
       <button type="button" class="mbtn" data-mode="qa" role="tab" aria-selected="true">Quick Q&amp;A</button>
       <button type="button" class="mbtn" data-mode="panel" role="tab" aria-selected="false">◈ Expert Panel</button>
+      <button type="button" class="mbtn" id="guidedTab" role="tab" aria-selected="false" hidden title="Guided — shape the startup search with a few questions">◍ Guided</button>
       <button type="button" class="mbtn" id="startupsTab" role="tab" aria-selected="false" hidden title="Startup Search — cards over a grounded startup index">◆ Startups</button>
     </div>
   </div>
@@ -1620,6 +1645,7 @@
 
 <section class="panelbody" id="panelbody" hidden aria-label="Expert panel"></section>
   <section class="triagebody" id="triagebody" hidden aria-label="Guided intake"></section>
+<section id="guidedbody" aria-label="Guided startup search"></section>
 <section id="startupsbody" aria-label="Startup search">
 
   <div class="su-toolbar"><button type="button" id="su-saveMap">☆ Save as map</button><button type="button" id="su-myMaps">🗺 My maps</button><button type="button" id="su-covLink">Coverage</button></div>
@@ -1940,6 +1966,7 @@ async function loadConfig(){
       const tbtn = $("#modeswitch .mbtn[data-mode='triage']"); if(tbtn) tbtn.hidden = !TRIAGE_ENABLED;
       // Startup Search is a separate page (a detached feature) — the tab navigates rather than switching mode.
       const sbtn = $("#startupsTab"); if(sbtn){ sbtn.hidden = !STARTUPS_ENABLED; sbtn.dataset.mode = "startups"; }
+      const gbtn = $("#guidedTab"); if(gbtn){ gbtn.hidden = !STARTUPS_ENABLED; gbtn.dataset.mode = "guided"; }
       wireModeSwitch($("#modeswitch"));
     }
     VISION_ENABLED = !!c.vision_enabled;
@@ -3739,6 +3766,7 @@ $("#ask").addEventListener("submit", e=>{
   if(APP_MODE === "triage"){ submitTriage(question); return; }        // guided intake → next clarifying turn
   if(APP_MODE === "panel"){ submitPanelIntake(question); return; }   // panel mode → convene / follow-up
   if(APP_MODE === "startups"){ if(question && window.SU) SU.search(question); return; }   // startup search → compile + evaluate
+  if(APP_MODE === "guided"){ if(window.SG) SG.send(question); return; }                      // guided → one intake turn
   if(CURRENT_ABORT) return;               // a question is in flight — Enter/submit is a no-op (use Stop)
   if(!question && ATTACHMENTS.length){    // attachment-only ask (e.g. a converted long paste IS the question)
     askQuestion("Analyze the attached material; if it contains a question, answer it.", {skipRefine: true});
@@ -3920,7 +3948,7 @@ function wireModeSwitch(el){
 // intake box are shared; only the answer surface (and Q&A-only control rows) swap. Typed text is preserved.
 function setMode(mode, opts){
   opts = opts || {};
-  mode = (mode === "panel" || mode === "triage" || (mode === "startups" && STARTUPS_ENABLED)) ? mode : "qa";
+  mode = (mode === "panel" || mode === "triage" || ((mode === "startups" || mode === "guided") && STARTUPS_ENABLED)) ? mode : "qa";
   APP_MODE = mode;
   GUIDED_REFINED = false;   // any mode change clears the stale "skip refine" flag (routeTriage re-sets it)
   document.body.dataset.mode = mode;
@@ -3929,7 +3957,7 @@ function setMode(mode, opts){
   $("#modeswitch").querySelectorAll(".mbtn").forEach(b =>
     b.setAttribute("aria-selected", b.dataset.mode === mode ? "true" : "false"));
   ATTN_BOX = "#attns"; renderAttachments();   // one intake box → one attachment surface
-  const clearModeHash = () => { if(/^#(panel|triage|startups)/.test(location.hash) || location.hash.indexOf("#p/") === 0)
+  const clearModeHash = () => { if(/^#(panel|triage|startups|guided)/.test(location.hash) || location.hash.indexOf("#p/") === 0)
     history.replaceState(null, "", location.pathname + location.search); };
   if(mode === "panel"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -3939,6 +3967,13 @@ function setMode(mode, opts){
     // resume an in-progress conference (toggling modes preserves it, like Q&A preserves its thread)
     if(!opts.fresh && PANEL_THREAD && (PANEL_THREAD.turns||[]).length){ renderPanelConversation(); }
     else renderPanelLanding(opts.prefill !== undefined ? opts.prefill : (PANEL_CASE || ""));
+    q.focus();
+  } else if(mode === "guided"){
+    document.body.classList.remove("chatting"); out.style.paddingBottom = "";
+    $("#heading").textContent = "Let's shape the startup search";
+    q.setAttribute("placeholder", "Describe what you're looking for, in your own words…");
+    if(location.hash !== "#guided") history.pushState(null, "", "#guided");
+    if(window.SG) SG.enter(!!opts.fresh);
     q.focus();
   } else if(mode === "startups"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -6219,6 +6254,7 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel s
   else if(location.hash === "#panel" && ASK_PANEL_ENABLED){ openPanel(""); }
   else if(location.hash === "#triage" && TRIAGE_ENABLED){ setMode("triage"); }
   else if(location.hash.indexOf("#startups") === 0 && STARTUPS_ENABLED){ setMode("startups", {params: new URLSearchParams(location.hash.split("?")[1] || "")}); }
+  else if(location.hash === "#guided" && STARTUPS_ENABLED){ setMode("guided"); }
   else if(location.hash === "#graph"){ openGraphConsole(); }
   else if(location.hash === "#ingest"){ openIngest(); }
   else if(location.hash === "#terms"){ openTermsPage(); }
@@ -6431,6 +6467,84 @@ window.addEventListener("hashchange", ()=>{
     card.querySelector(".fx-x").addEventListener("click", () => card.remove());
   }
 })();
+// ===== Guided startup search — roster's intake, adapted: opening words → compile → a few questions gated on the
+// index's counts → a ready card the user ratifies → hand-off to the Startups mode with the contract =====
+(function(){
+  const box = () => $("#guidedbody");
+  const G = { state: null, last: null, ready: null, busy: false, sel: new Set() };
+  const L = () => (G.last && G.last.labels) || {};
+  const lab = (key, v) => ((L().values||{})[v]) || String(v).replace(/_/g, " ");
+  const klab = (key) => ((L().keys||{})[key]) || key;
+  function msgHtml(m){ return `<div class="sg-msg ${m.role==="user"?"user":"bot"}">${esc(m.text)}</div>`; }
+  function questionHtml(p){
+    const opts = (p.options||[]).map(o => `<button type="button" class="sg-opt" data-name="${esc(p.name)}" data-value="${esc(String(o[0]))}" title="${esc(o[3]||"")}">${esc(String(o[1]||o[0]))}${o[2] ? `<b>${o[2]}</b>` : ""}</button>`).join("")
+      + (p.skip ? `<button type="button" class="sg-opt quiet" data-name="${esc(p.name)}" data-value="__skip__">${esc(p.skip)}</button>` : "");
+    const answer = (p.options||[]).length ? `<button type="button" class="sg-btn primary sg-answer" hidden>Answer ✓</button>` : "";
+    const now = G.state && G.state.kernel && G.state.kernel.contract && Object.keys(G.state.kernel.contract).length ? `<button type="button" class="sg-btn sg-now">Search now with what I have</button>` : "";
+    const hint = p.hint || ((p.options||[]).length ? (p.multi ? "tap one or more, then Answer — or type" : "tap one — or type") : "");
+    return `<div class="sg-q"><div class="sg-q-words">${esc(p.words)}</div>${hint?`<div class="sg-q-hint">${esc(hint)}</div>`:""}${opts?`<div class="sg-opts">${opts}</div>`:""}<div class="sg-actions">${answer}${now}</div></div>`;
+  }
+  function chipsHtml(c){
+    const out = [];
+    for(const [k, vs] of Object.entries(c.must||{})){
+      if(Array.isArray(vs)) vs.forEach(v => out.push(`<span class="sg-chip must">● ${esc(klab(k))}: ${esc(lab(k, v))}</span>`));
+      else out.push(`<span class="sg-chip must">● ${esc(klab(k))} ${vs.min!=null?"≥ "+esc(fmtNum(k, vs.min)):""}${vs.min!=null&&vs.max!=null?" · ":""}${vs.max!=null?"≤ "+esc(fmtNum(k, vs.max)):""}</span>`);
+    }
+    for(const [k, vs] of Object.entries((c.scope||{}).exclude||{})) vs.forEach(v => out.push(`<span class="sg-chip not">✕ not ${esc(klab(k))}: ${esc(lab(k, v))}</span>`));
+    for(const [k, vs] of Object.entries(c.prefer||{})) (Array.isArray(vs)?vs:[]).forEach(v => out.push(`<span class="sg-chip prefer">▲ ${esc(klab(k))}: ${esc(lab(k, v))}</span>`));
+    if(c.center) out.push(`<span class="sg-chip center">◎ centred on ${esc(lab("stage", c.center.value))}</span>`);
+    return out.join("") || `<span class="sg-chip">no filters — the words alone rank</span>`;
+  }
+  function fmtNum(k, x){ const u = ((L().units||{})[k]||""); if(u==="usd"){ x=Number(x); return x>=1e9?"$"+(x/1e9).toFixed(1)+"B":x>=1e6?"$"+Math.round(x/1e6)+"M":x>=1e3?"$"+Math.round(x/1e3)+"k":"$"+x; } return String(x)+(u?" "+u:""); }
+  function readyHtml(r){
+    return `<div class="sg-ready"><div class="sg-ready-h">Here's what I'll search — adjust it in the rail after, or start over</div>
+      <div class="sg-understood">${esc(r.understood)}</div><div class="sg-chips">${chipsHtml(r.contract||{})}</div>
+      <div class="sg-pool"><b>${r.pool||0}</b> startups match every must right now.</div>
+      ${(r.notes||[]).length?`<div class="sg-notes">${r.notes.map(n=>esc(n)).join("<br>")}</div>`:""}
+      <div class="sg-actions"><button type="button" class="sg-btn primary" id="sg-go">◆ Search these startups</button><button type="button" class="sg-btn" id="sg-restart">Start over</button></div>
+      ${(r.advice||[]).length?`<ul class="sg-advice">${r.advice.map(a=>`<li>${esc(a)}</li>`).join("")}</ul>`:""}</div>`;
+  }
+  function render(){
+    const b = box(); if(!b) return;
+    const transcript = (G.state && G.state.transcript) || [];
+    const pending = G.last && G.last.question;
+    const lead = transcript.length ? "" : `<div class="sg-lead">Guided search. Tell me the thesis in your own words; I'll ask only what changes the results, show you the pool as it narrows, then hand you a search you can adjust chip by chip.</div>`;
+    const shown = (pending && transcript.length && transcript[transcript.length-1].role === "assistant" && transcript[transcript.length-1].text === pending.words) ? transcript.slice(0, -1) : transcript;
+    b.innerHTML = lead + `<div class="sg-thread">${shown.map(msgHtml).join("")}</div>` + (G.busy ? `<div class="sg-busy"><span class="su-spin"></span>thinking…</div>` : "")
+      + (G.ready ? readyHtml(G.ready) : (pending ? questionHtml(pending) : ""));
+    G.sel = new Set();
+    const ans = b.querySelector(".sg-answer");
+    const sync = () => { if(ans){ ans.hidden = !G.sel.size; ans.textContent = G.sel.size > 1 ? `Answer with ${G.sel.size} ✓` : "Answer ✓"; } };
+    b.querySelectorAll(".sg-opt").forEach(o => o.addEventListener("click", () => {
+      const val = o.dataset.value, name = o.dataset.name;
+      if(val === "__skip__"){ send("", {answer: {name, value: "__skip__"}}); return; }
+      if(!(pending && pending.multi)){ send("", {answer: {name, value: val}}); return; }
+      if(G.sel.has(val)) G.sel.delete(val); else G.sel.add(val);
+      o.classList.toggle("sel", G.sel.has(val)); sync();
+    }));
+    if(ans) ans.addEventListener("click", () => { const vals=[...G.sel]; if(!vals.length) return; send("", {answer: {name: pending.name, value: vals.length>1?vals:vals[0]}}); });
+    const now = b.querySelector(".sg-now"); if(now) now.addEventListener("click", () => send("", {search_now: true}));
+    const go = $("#sg-go"); if(go) go.addEventListener("click", () => { const r=G.ready; setMode("startups"); if(window.SU) SU.runContract(r.contract, (G.state&&G.state.opening)||""); });
+    const rs = $("#sg-restart"); if(rs) rs.addEventListener("click", () => { G.state=null; G.last=null; G.ready=null; render(); q.value=""; q.focus(); });
+    b.scrollIntoView({block:"nearest"});
+  }
+  async function send(message, extra){
+    extra = extra || {};
+    if(G.busy) return;
+    G.busy = true; G.ready = null; render();
+    try{
+      const r = await fetch("/startups/intake/step", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({state: G.state, message: message||"", answer: extra.answer||null, search_now: !!extra.search_now})});
+      if(!r.ok){ G.busy=false; render(); alert("Couldn't take that turn — try again."); return; }
+      const d = await r.json();
+      G.state = d.state; G.last = d; G.ready = d.ready || null;
+      if(message) { q.value = ""; if(typeof autoGrow==="function") autoGrow(); }
+    }catch(e){ alert("Couldn't take that turn — try again."); }
+    finally{ G.busy = false; render(); }
+  }
+  function enter(fresh){ if(fresh || !G.last){ G.state=null; G.last=null; G.ready=null; send(""); } else render(); }
+  window.SG = { send: (t) => send(t), enter };
+})();
+
 // ===== Startup Search — inline mode (ported from apps/web/startups.html; ids/classes prefixed su-) =====
 (function(){
 
@@ -6706,7 +6820,8 @@ async function enter(params){
   if(h.get("map")){ await openMap(h.get("map"), h.get("share")||""); }
   else if(h.get("b")){ q.value=h.get("b"); runCompile(h.get("b")); }
 }
-window.SU = { search: runCompile, enter, onAuth };
+function runContract(contract, brief){ STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.brief=brief||""; if(brief) q.value=brief; renderNotes([]); renderMapBar(); return runEvaluate(contract); }
+window.SU = { search: runCompile, enter, onAuth, runContract };
 
 })();
 </script>

@@ -88,6 +88,13 @@ class _Bound:
         return None
 
 
+class IntakeIn(BaseModel):
+    state: dict | None = None
+    message: str = ""
+    answer: dict | None = None
+    search_now: bool = False
+
+
 class MapIn(BaseModel):
     title: str = ""
     brief: str = ""
@@ -148,6 +155,25 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
                 else:
                     why[key] = {v: ic.get(key, {}).get(v, 0) for v in vals}
             out["coverage"]["why_empty"] = why
+        return out
+
+    # ---- Guided search: roster's intake adapted — one turn per call, state rides the request (spec §1 of guided-intake, startups)
+    async def _counts_for_intake(must: dict, exclude: dict) -> dict:
+        c = await store.counts(KIND, must, SCHEMA, exclude=exclude)
+        return c
+
+    async def _compile_for_intake(text: str):
+        cov = (await store.coverage()).get("known_rate", {})
+        if not providers.llm_json:
+            return Contract(kind=KIND, text=text[:200]), ["no language model configured — the words alone rank"]
+        return await compile_mod.compile_brief(providers.llm_json, text, coverage=cov, value_counts=await index_counts(store))
+
+    @r.post("/startups/intake/step")
+    async def intake_step(body: IntakeIn) -> dict:
+        from .intake import StartupIntake
+        svc = StartupIntake(llm_json=providers.llm_json, counts_fn=_counts_for_intake, compile_fn=_compile_for_intake)
+        out = await svc.step(state=body.state, message=body.message, answer=body.answer, search_now_flag=body.search_now)
+        out["labels"] = labels()
         return out
 
     # ---- Startup Maps: a saved search is a durable, per-account artifact (contract + snapshot + revisions + share link)

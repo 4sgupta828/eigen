@@ -201,3 +201,42 @@ def test_accounts_and_maps_end_to_end():
             assert c.delete(f"/startups/maps/{m['id']}", headers={"x-eigen-token": tok}).json()["deleted"] is True
     finally:
         pipeline.Providers.from_env = real
+
+
+def test_guided_intake_route_end_to_end():
+    """/startups/intake/step over the real store: opening → tech-area question with live counts → answer → … → ready."""
+    from fastapi.testclient import TestClient
+    os.environ.update({"EIGEN_STARTUP_SEARCH": "1", "EIGEN_CORPUS_DSN": DSN, "EIGEN_ACTIVE_VERTICAL": "tech", "EIGEN_PROVIDER_MODE": "replay", "EIGEN_INGEST_IN_API": "false"})
+    from api.startups import pipeline
+    from api.app import create_app
+
+    async def seed():
+        s, pool = await _store()
+        for i, area in enumerate(["ai_infra", "ai_infra", "fintech"]):
+            await s.upsert_company({"id": f"g{i}.ai", "name": f"G{i}", "website": f"https://g{i}.ai", "one_liner": "x", "sources": ["yc"]})
+            await s.replace_facts(f"g{i}.ai", "yc", [{"key": "tech_area", "value": area}, {"key": "country", "value": "us" if i else "uk"}])
+        await pool.close()
+    _run(seed())
+
+    async def fake_llm(system, user):
+        if "compile a venture investor" in system:
+            return {"text": "ai companies", "must": {}, "prefer": {}}
+        return {"answers": {}, "free_text": "", "search_now": False}
+    real = pipeline.Providers.from_env
+    pipeline.Providers.from_env = classmethod(lambda cls: pipeline.Providers(llm_json=fake_llm, embed=_fake_embed))
+    try:
+        with TestClient(create_app()) as c:
+            r = c.post("/startups/intake/step", json={}).json()
+            assert r["stage"] == "opening"
+            r = c.post("/startups/intake/step", json={"state": r["state"], "message": "ai companies"}).json()
+            assert r["stage"] == "questions" and r["question"]["name"] == "tech_area"
+            opts = {o[0]: o[2] for o in r["question"]["options"]}
+            assert opts.get("ai_infra", 0) >= 2 and "labels" in r
+            r = c.post("/startups/intake/step", json={"state": r["state"], "answer": {"name": "tech_area", "value": "ai_infra"}}).json()
+            assert r["question"]["name"] == "stage" and [o[0] for o in r["question"]["options"]][0] == "pre_seed"
+            r = c.post("/startups/intake/step", json={"state": r["state"], "search_now": True}).json()
+            assert r["stage"] == "ready" and r["ready"]["contract"]["must"]["tech_area"] == ["ai_infra"] and r["ready"]["pool"] >= 2
+            ev = c.post("/startups/evaluate", json={"contract": r["ready"]["contract"]}).json()
+            assert {x["id"] for x in ev["rows"]} >= {"g0.ai", "g1.ai"}
+    finally:
+        pipeline.Providers.from_env = real
