@@ -285,6 +285,15 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         await store.ensure_schema()
         return await _ra.attach(store, body.rows)
 
+    @r.post("/admin/startups/jobs/{job_id}/cancel")
+    async def cancel_job(job_id: int, x_admin_token: str = Header(default="")) -> dict:
+        """Ask a running job to stop at its next progress report."""
+        _admin(x_admin_token)
+        pool = await store.pool()
+        async with pool.acquire() as conn:
+            n = await conn.execute("UPDATE su_job SET status = 'cancelling', updated_at = now() WHERE id = $1 AND status = 'running'", job_id)
+        return {"job_id": job_id, "cancelling": n.endswith("1")}
+
     @r.get("/admin/startups/jobs")
     async def jobs(x_admin_token: str = Header(default="")) -> dict:
         _admin(x_admin_token)

@@ -66,10 +66,28 @@ async def _job(store: StartupStore, kind: str, params: dict) -> int:
         return int(await conn.fetchval("INSERT INTO su_job (kind, params, status) VALUES ($1, $2::jsonb, 'running') RETURNING id", kind, json.dumps(params)))
 
 
+class JobCancelled(Exception):
+    """Raised inside a job when its row was set to 'cancelling' (POST /admin/startups/jobs/{id}/cancel)."""
+
+
 async def _progress(store: StartupStore, jid: int, progress: dict, status: str = "running", error: str = "") -> None:
+    """Record progress; when the operator asked for a cancel, stop the job here (every long loop reports progress)."""
     pool = await store.pool()
     async with pool.acquire() as conn:
+        cur = await conn.fetchval("SELECT status FROM su_job WHERE id = $1", jid)
+        if cur == "cancelling" and status == "running":
+            await conn.execute("UPDATE su_job SET progress = $2::jsonb, status = 'cancelled', updated_at = now() WHERE id = $1", jid, json.dumps(progress))
+            raise JobCancelled(jid)
         await conn.execute("UPDATE su_job SET progress = $2::jsonb, status = $3, error = $4, updated_at = now() WHERE id = $1", jid, json.dumps(progress), status, error[:2000])
+
+
+async def orphan_running_jobs(store: StartupStore) -> int:
+    """Jobs run on threads of the API process: after a restart a 'running' row is a zombie. Called at startup."""
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        n = await conn.execute("UPDATE su_job SET status = 'orphaned', error = 'the API process restarted while this job ran; re-launch it (jobs resume where they left off)', updated_at = now() WHERE status IN ('running', 'cancelling')")
+    return int(n.split()[-1]) if n else 0
 
 
 def embed_text(c: dict) -> str:
@@ -254,7 +272,7 @@ async def run_crawl(store: StartupStore, *, ids: list[str] | None = None, limit:
         await store.save_pages(r["id"], [{k: p[k] for k in ("url", "kind", "sha", "text")} for p in pages], meta)
         n_ok += 1 if pages else 0
         n_fail += 0 if pages else 1
-        if jid and (n_ok + n_fail) % 10 == 0:
+        if jid and (n_ok + n_fail) % 5 == 0:
             await _progress(store, jid, {"crawled": n_ok, "failed": n_fail, "of": len(rows)})
     return {"crawled": n_ok, "failed": n_fail}
 
@@ -384,7 +402,7 @@ async def run_news(store: StartupStore, prov: Providers, *, limit: int = 200, ma
                 await conn.execute("UPDATE su_company SET crawl = crawl || jsonb_build_object('news_at', $2::text, 'news_hits', 0, 'news_provider', $3::text) WHERE id = $1", r["id"], date.today().isoformat(), provider)
         if len(items) >= batch:
             await flush()
-        if jid and n_q % 25 == 0:
+        if jid and n_q % 10 == 0:
             await _progress(store, jid, {"queried": n_q, "with_news": n_hit, "events": n_ev, "of": len(rows)})
         await asyncio.sleep(5.5 if provider == "gdelt" else 1.0)      # GDELT: one request per 5 s; Brave: one per second
     await flush()
@@ -472,6 +490,8 @@ async def start_job(store: StartupStore, dsn: str, kind: str, params: dict, *, p
                 kw = dict(params); kw["jid"] = jid
                 out = await (fn(tstore, prov, **kw) if kind in NEEDS_PROV else fn(tstore, **kw))
                 await _progress(tstore, jid, out, status="done")
+            except JobCancelled:
+                _log.info("startup job %s (%s) cancelled", kind, jid)
             except Exception as e:   # noqa: BLE001
                 _log.exception("startup job %s failed", kind)
                 await _progress(tstore, jid, {}, status="failed", error=f"{e}\n{traceback.format_exc()[-1500:]}")

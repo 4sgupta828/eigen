@@ -1753,8 +1753,19 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 return await st.user_by_token(token)
             except Exception:   # noqa: BLE001
                 return None
-        app.include_router(_su_router(_SuStore(_su_pool), _su_pipeline.Providers.from_env(), dsn=_su_dsn,
+        _su_store = _SuStore(_su_pool)
+        app.include_router(_su_router(_su_store, _su_pipeline.Providers.from_env(), dsn=_su_dsn,
                                       admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""), user_of=_su_user))
+
+        @app.on_event("startup")
+        async def _su_orphan_jobs():
+            """A restart kills the job threads: mark their rows so waiters and operators see it, not 'running' forever."""
+            try:
+                n = await _su_pipeline.orphan_running_jobs(_su_store)
+                if n:
+                    logging.getLogger(__name__).warning("startups: %d job(s) orphaned by this restart", n)
+            except Exception:   # noqa: BLE001 — never block startup
+                pass
 
         @app.get("/startups", response_class=HTMLResponse)
         def startups_page(accept_encoding: str = Header(default="")):
