@@ -57,6 +57,39 @@ def brave_funding_news(name: str, website: str = "", *, api_key: str | None = No
     return uniq[:max_results]
 
 
+GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
+
+
+def gdelt_funding_news(name: str, website: str = "", *, max_results: int = 10, timeout: float = 25.0) -> list[dict]:
+    """The FREE leg: GDELT's article list (titles only, no snippet) for a funding query — one request every 5 s is the
+    published limit, so the job paces itself. [{title, snippet:'', url, published}]; [] on any failure or throttle."""
+    if not name:
+        return []
+    import urllib.parse, urllib.request
+    q = f'"{name}" (raises OR raised OR funding OR "Series A" OR "Series B" OR seed OR "led by")'
+    params = {"query": q, "mode": "artlist", "format": "json", "maxrecords": str(max(1, min(int(max_results), 25))), "timespan": "36m", "sort": "datedesc"}
+    req = urllib.request.Request(f"{GDELT_URL}?{urllib.parse.urlencode(params)}", headers={"User-Agent": "EigenStartupSearch/0.1 (sandeepgupta828@gmail.com)", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            if r.status != 200:
+                return []
+            data = json.loads(r.read().decode("utf-8", "ignore") or "{}")
+    except Exception:   # noqa: BLE001 — throttled or down → nothing
+        return []
+    out, seen = [], set()
+    for a in (data.get("articles") or []):
+        title = _clean(a.get("title"))
+        text = title.lower()
+        if not any(w in text for w in _STOP) or name.lower().split()[0] not in text:
+            continue
+        url = a.get("url") or ""
+        if url in seen or not url:
+            continue
+        seen.add(url)
+        out.append({"title": title[:300], "snippet": "", "url": url, "published": (a.get("seendate") or "")[:8]})
+    return out[:max_results]
+
+
 NEWS_SYSTEM = """You read funding-news headlines and snippets about startups and return the FINANCING EVENTS they state, as strict
 JSON: {"items": [{"i": <index>, "events": [{"round_name": "pre-seed|seed|series a|series b|series c|series d|growth|", "amount": "<as written, e.g. $12M>",
 "currency": "USD|EUR|GBP|other", "date": "YYYY-MM|", "lead": "<lead investor slug or empty>", "investors": ["<slugs>"], "quote": "<VERBATIM title or snippet that states it>", "modality": "realized|intent"}]}]}

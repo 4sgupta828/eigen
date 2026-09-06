@@ -335,23 +335,24 @@ async def run_derive(store: StartupStore, *, ids: list[str] | None = None, jid: 
 BRAVE_USD_PER_QUERY = 0.005
 
 
-async def run_news(store: StartupStore, prov: Providers, *, limit: int = 200, max_usd: float = 2.0, batch: int = 20, jid: int | None = None) -> dict:
+async def run_news(store: StartupStore, prov: Providers, *, limit: int = 200, max_usd: float = 2.0, batch: int = 20, provider: str = "brave", jid: int | None = None) -> dict:
     """Round name / amount / lead / investors from funding headlines. Companies without a stated round first,
     the better-evidenced ones (a filing, a team, open roles) before the rest. Spend = Brave queries (+ a tiny model cost)."""
     from .sources import news
     await store.ensure_schema()
     if not prov.llm_json:
         return {"error": "no llm provider"}
-    proj = {"companies": limit, "projected_usd": round(limit * BRAVE_USD_PER_QUERY + limit * 0.0005, 2)}
+    per_query = BRAVE_USD_PER_QUERY if provider == "brave" else 0.0        # GDELT is free (and slow: 5 s between requests)
+    proj = {"companies": limit, "provider": provider, "projected_usd": round(limit * per_query + limit * 0.0005, 2)}
     if proj["projected_usd"] > max_usd:
         return {"refused": True, "projection": proj, "max_usd": max_usd}
     pool = await store.pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""SELECT c.id, c.name, c.website, c.hq FROM su_company c
-                                   WHERE c.status = 'active' AND c.id NOT LIKE 'cik:%' AND (c.crawl->>'news_at') IS NULL
+                                   WHERE c.status = 'active' AND c.id NOT LIKE 'cik:%' AND coalesce(c.crawl->>'news_provider', '') <> $2
                                      AND NOT EXISTS (SELECT 1 FROM su_financing f WHERE f.company_id = c.id AND f.kind = 'press')
                                    ORDER BY (EXISTS (SELECT 1 FROM su_formd d WHERE d.company_id = c.id)) DESC,
-                                            (EXISTS (SELECT 1 FROM su_fact x WHERE x.company_id = c.id AND x.key = 'hiring')) DESC, c.updated_at DESC LIMIT $1""", limit)
+                                            (EXISTS (SELECT 1 FROM su_fact x WHERE x.company_id = c.id AND x.key = 'hiring')) DESC, c.updated_at DESC LIMIT $1""", limit, provider)
     n_q = n_hit = n_ev = 0
     items: list[dict] = []
     async def flush():
@@ -367,24 +368,25 @@ async def run_news(store: StartupStore, prov: Providers, *, limit: int = 200, ma
             for ev in evs.get(i, []):
                 await store.upsert_financing(b["id"], ev); n_ev += 1
             async with pool.acquire() as conn:
-                await conn.execute("UPDATE su_company SET crawl = crawl || jsonb_build_object('news_at', $2::text, 'news_hits', $3::int) WHERE id = $1", b["id"], date.today().isoformat(), len(b["articles"]))
+                await conn.execute("UPDATE su_company SET crawl = crawl || jsonb_build_object('news_at', $2::text, 'news_hits', $3::int, 'news_provider', $4::text) WHERE id = $1", b["id"], date.today().isoformat(), len(b["articles"]), provider)
             if evs.get(i):
                 await derive_one(store, b["id"])
         items.clear()
     for r in rows:
-        arts = await asyncio.get_event_loop().run_in_executor(None, lambda r=r: news.brave_funding_news(r["name"], r["website"]))
+        fetch = news.gdelt_funding_news if provider == "gdelt" else news.brave_funding_news
+        arts = await asyncio.get_event_loop().run_in_executor(None, lambda r=r: fetch(r["name"], r["website"]))
         n_q += 1
         if arts:
             n_hit += 1
             items.append({"id": r["id"], "name": r["name"], "website": r["website"], "hq": r["hq"], "articles": arts})
         else:
             async with pool.acquire() as conn:
-                await conn.execute("UPDATE su_company SET crawl = crawl || jsonb_build_object('news_at', $2::text, 'news_hits', 0) WHERE id = $1", r["id"], date.today().isoformat())
+                await conn.execute("UPDATE su_company SET crawl = crawl || jsonb_build_object('news_at', $2::text, 'news_hits', 0, 'news_provider', $3::text) WHERE id = $1", r["id"], date.today().isoformat(), provider)
         if len(items) >= batch:
             await flush()
         if jid and n_q % 25 == 0:
             await _progress(store, jid, {"queried": n_q, "with_news": n_hit, "events": n_ev, "of": len(rows)})
-        await asyncio.sleep(1.0)      # Brave: one request per second
+        await asyncio.sleep(5.5 if provider == "gdelt" else 1.0)      # GDELT: one request per 5 s; Brave: one per second
     await flush()
     return {"queried": n_q, "with_news": n_hit, "events": n_ev, "projection": proj}
 
