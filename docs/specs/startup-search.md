@@ -516,3 +516,60 @@ Built as a DETACHED feature (owner's call: "completely new, done right, reuse ro
   evidence-beam animation (a beam sweeps a shelf of public documents; the company mark at the centre lights as grounded),
   frozen under `prefers-reduced-motion`.
 - Identity modal: Sign in / Create account tabs; no country, no NPI.
+
+---
+
+## 13. Data plan (2026-09-06) — where coverage stands and what comes next
+
+### Coverage now (prod)
+
+| Dimension | Known | Share of 6,159 |
+|---|---|---|
+| founders named | 6,095 | 99% |
+| headcount · founded · HQ metro | 5,930 · 5,140 · 5,017 | 96% · 84% · 82% |
+| filing-backed funding (Form D matched) | 711 | 11.5% |
+| open roles (roster's ATS boards) | 907 | 15% |
+| customers · business model (site extraction, 875 sites) | 434 · 502 | 7% · 8% |
+| stated round · investors · lead investor | 67 · 66 · 29 | ≈ 1% |
+| ARR (self-reported) · revenue range (filing) | 25 · 35 | < 1% |
+
+The population is YC only. Money and backers are the gap: startup sites rarely state rounds; Form D never states
+a round name; only press does.
+
+### Running now (launched 2026-09-06, all free of model spend)
+
+1. **Crawl every remaining YC site** (`crawl`, limit 5,000; ~10 h at the polite pace). Extraction of those sites is a
+   separate, gated step (below).
+2. **Form D issuers as companies** (`formd_companies`): unmatched operating issuers in technology-ish industry groups
+   (Other Technology, Computers, Biotechnology, Health Care, Medical Device, Pharmaceuticals, Energy, Aerospace,
+   Business Services, Telecommunications) with ≥ $2M sold since 2022 → `cik:<n>` companies with filing-backed
+   funding, officers (never founders), city/state, incorporation year; a name match to an existing company is left to
+   the match job. Filing-only cards link to EDGAR and say "no website on record".
+3. **Funding-news probe** (`news`, 200 companies, ≈ $1): Brave query per company; titles + snippets to the model in
+   batches; every event quotes an article verbatim with the figure and the round word inside; one round reported by
+   several articles collapses to one event (also in derive, so totals never double). The probe's hit rate decides the
+   full run below.
+
+### Gated on the owner's go (over the $10 line)
+
+| Run | Yields | Cost | Order |
+|---|---|---|---|
+| Extract the remaining ~4,800 YC sites (`extract`, 600 per job) | founders' prior companies, customers, business model, stated rounds where a site states them | ≈ $50 (gpt-4o-mini) or ≈ $58 (DeepSeek) | after the crawl lands |
+| News leg for all YC companies (`news`) | stage, lead, investors where press exists | ≈ $31 Brave + < $2 model | after the probe's hit rate is in |
+| News + site crawl for the new `cik:` companies (no website on record → a website-discovery step first) | identity for the filing-only population | to be projected once their count is known | later |
+
+### Next sources, in order of leverage (not built yet)
+
+1. **VC / accelerator portfolio pages** (`portfolio` connector, curated URL list): the fund asserting its own
+   portfolio → `investor{role=portfolio_affiliation}` / `program`; adds ~10k non-YC startups with a website.
+2. **SBIR / NSF / NIH RePORTER / USAspending** (`awards`): non-dilutive funding and government pull for deep tech;
+   NSF and NIH connectors already exist in the tech vertical.
+3. **Website discovery for `cik:` companies**: one search per issuer (name + city) → domain → then the site crawl and
+   news legs apply to them.
+4. **GitHub org / PatentsView (granted) / OpenAlex** for `open_source`, `patents_granted`, founder scholarly background.
+5. **Refresh cadence**: ATS boards monthly (free), sites quarterly (content-hash gated), Form D quarterly, news monthly.
+
+### Provider state
+DeepSeek returned 402 Insufficient Balance twice (2026-09-05 and 2026-09-06 evening); prod runs
+`EIGEN_STARTUP_LLM_PROVIDER=openai` (gpt-4o-mini). When DeepSeek is out of credit, compile silently degrades to a
+text-only contract — switch the variable rather than leave it.
