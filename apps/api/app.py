@@ -1771,6 +1771,31 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         def startups_page(accept_encoding: str = Header(default="")):
             return _html_response("startups.html", accept_encoding)
 
+    # Voices — first-person startup content (founder/investor essays + podcast chapter pointers).
+    # A MODE over the existing kernel corpus, not a new store: its rows are ordinary rs_block rows
+    # written by the show_notes / founder_essay connectors. Flag-gated; OFF is a true no-op.
+    # docs/specs/voices.md.
+    from api.voices.routes import build_router as _vo_router, voices_enabled
+    _vo_dsn = os.environ.get("EIGEN_CORPUS_DSN")
+    if voices_enabled() and _vo_dsn:
+        _vo_state: dict = {}
+
+        async def _vo_pool():
+            if "pool" not in _vo_state:
+                import asyncpg
+                _vo_state["pool"] = await asyncpg.create_pool(_vo_dsn, min_size=1, max_size=4)
+            return _vo_state["pool"]
+
+        async def _vo_pg():
+            """The corpus index the voice connectors write into. dim follows the configured embedder
+            so the table matches the rest of the corpus even when we ingest without vectors."""
+            if "pg" not in _vo_state:
+                _vo_state["pg"] = PostgresRetrievalSource(_vo_dsn, dim=1536, table="rs_block")
+            return _vo_state["pg"]
+
+        app.include_router(_vo_router(_vo_pool, manifest=load_active_vertical(), pg_source_of=_vo_pg,
+                                      admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", "")))
+
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok"}
