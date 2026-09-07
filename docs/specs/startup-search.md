@@ -623,3 +623,16 @@ marked); its chip already sits at ▲ prefer so one tap restores it.
   (CIK, financing, filings; the cik: row is suppressed). Source `lookup` on the card says the site was found by name.
 - Rejected on measurement: DuckDuckGo HTML (blocked), GDELT (429s), Wikidata (≈ 500 recent software companies), Show HN
   (side projects). Search-API discovery (Brave) stays the better route when its credits are allowed.
+
+### 2026-09-07 — survive an outage; a founder is a person
+- **The words can fail; the filters must not.** OpenAI's embeddings answered `429 credit_balance_exhausted`,
+  which made `/startups/evaluate` return 500 — an outage in one leg took the whole search down. The bound store now
+  catches an embedding failure and falls back to `enumerate`, so the typed contract still selects companies; the
+  multi-recipe merged path falls back to a single evaluate. The response carries `coverage.degraded` and the rail
+  says the words cannot rank, filters only. Search NEVER returns a 500 because a model is unavailable
+  (`test_search_survives_an_embedding_outage`).
+- **A founder row names a person.** Prod held three collective rows ("Founding Team", "Founders and operators from …").
+  `extract.is_person_name` rejects collective words and sentence-length strings. It is deliberately narrow: mononyms,
+  nicknames in quotes or parentheses and post-nominal letters are all real founder names in the index, so a stricter
+  "two capitalised tokens" rule would have deleted 129 real founders. The three rows are replaced on the next
+  extraction pass for those companies.
