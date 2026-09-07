@@ -6826,6 +6826,7 @@ function renderCoverage(){
   const kr=cov.known_rate||{}; const pct=k=>kr[k]!=null?Math.round(kr[k]*100)+"%":"—";
   const parts=[`<span><b>${cov.companies||0}</b> startups indexed</span>`, `<span>funding known <b>${pct("total_disclosed_funding")}</b></span>`, `<span>stated round <b>${pct("stage")}</b></span>`, `<span>founders <b>${pct("founder_count")}</b></span>`, `<span>ARR <b>${pct("arr")}</b></span>`, `<span>filings matched <b>${(cov.formd||{}).matched||0}</b></span>`];
   if(d) parts.push(`<span><b>${d.coverage.matched??0}</b> satisfy every must · showing ${d.rows.length}</span>`);
+  if(d && d.coverage && d.coverage.degraded) parts.push(`<span class="warn" title="a model provider is unavailable — results are filtered by the chips but not ranked by the words">⚠ ${esc(d.coverage.degraded)}</span>`);
   box.innerHTML=parts.join("<span style='color:var(--hair)'>|</span>");
 }
 function renderNotes(notes){ $("#su-notes").innerHTML = (notes&&notes.length) ? `<div class="notes">How your brief was read:<ul style="margin:.2rem 0 0 1rem;padding:0">${notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul></div>` : ""; }

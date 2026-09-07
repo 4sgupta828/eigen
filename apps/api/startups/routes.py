@@ -76,9 +76,16 @@ class _Bound:
     async def enumerate(self, kind, must, *, cap=400):
         return await self._s.enumerate(kind, must, cap=cap, exclude=self._x)
 
+    degraded: str = ""
+
     async def semantic(self, kind, text, must, *, cap=400):
-        rows = await self._s.semantic(kind, text, must, cap=cap, exclude=self._x, embed=self._e) if self._e else []
-        # no embedder, or nothing embedded yet → the words cannot rank, but the musts still filter: enumerate instead
+        rows = []
+        if self._e:
+            try:
+                rows = await self._s.semantic(kind, text, must, cap=cap, exclude=self._x, embed=self._e)
+            except Exception as e:   # noqa: BLE001 — an embedding provider outage (no credits, rate limit) must never 500 a search
+                self.degraded = f"embeddings unavailable ({type(e).__name__}): the words cannot rank — filters only"
+        # no embedder, nothing embedded yet, or the provider is down → the words cannot rank, but the musts still filter
         return rows or await self._s.enumerate(kind, must, cap=cap, exclude=self._x)
 
     async def counts(self, kind, must, schema, *, depth=None):
@@ -135,7 +142,10 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         if errs:
             raise HTTPException(status_code=400, detail="; ".join(errs))
         exclude = dict((c.scope or {}).get("exclude") or {})
-        out = await evaluate(c, _Bound(store, exclude, providers.embed), SCHEMA, WEIGHTS, depth=({"counts": False} if not counts else None))
+        bound = _Bound(store, exclude, providers.embed)
+        out = await evaluate(c, bound, SCHEMA, WEIGHTS, depth=({"counts": False} if not counts else None))
+        if bound.degraded:
+            out["coverage"]["degraded"] = bound.degraded
         rows = [x for x in out["rows"] if not _excluded(x, exclude)]
         hydrated = await store.companies_by_ids([x["id"] for x in rows])
         for i, x in enumerate(rows):
@@ -173,7 +183,13 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
                 out["labels"] = labels()
                 return out
         if mode == "merged" and c.text and providers.llm_json:
-            out = await cs.merged_search(c, user_keys=user_keys, evaluate_fn=_evaluate_core, slice_fn=_slice, llm_json=providers.llm_json, off=merge.get("off"), top=int(c.limit))
+            try:
+                out = await cs.merged_search(c, user_keys=user_keys, evaluate_fn=_evaluate_core, slice_fn=_slice, llm_json=providers.llm_json, off=merge.get("off"), top=int(c.limit))
+            except HTTPException:
+                raise
+            except Exception as e:   # noqa: BLE001 — the merged path must never be the reason a search fails outright
+                out = await _evaluate_core(c)
+                out["coverage"]["degraded"] = (out["coverage"].get("degraded") or "") + f" merged search unavailable ({type(e).__name__})"
             out["coverage"]["matched"] = (out.get("coverage") or {}).get("matched")
         else:
             out = await _evaluate_core(c)

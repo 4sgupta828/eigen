@@ -240,3 +240,29 @@ def test_guided_intake_route_end_to_end():
             assert {x["id"] for x in ev["rows"]} >= {"g0.ai", "g1.ai"}
     finally:
         pipeline.Providers.from_env = real
+
+
+def test_search_survives_an_embedding_outage():
+    """No credits on the embedding provider → filters still work and the response says the words cannot rank."""
+    from fastapi.testclient import TestClient
+    os.environ.update({"EIGEN_STARTUP_SEARCH": "1", "EIGEN_CORPUS_DSN": DSN, "EIGEN_ACTIVE_VERTICAL": "tech", "EIGEN_PROVIDER_MODE": "replay", "EIGEN_INGEST_IN_API": "false"})
+    from api.startups import pipeline
+    from api.app import create_app
+
+    def broken_embed(texts):
+        raise RuntimeError("credit_balance_exhausted")
+
+    async def fake_llm(system, user):
+        raise RuntimeError("credit_balance_exhausted")
+    real = pipeline.Providers.from_env
+    pipeline.Providers.from_env = classmethod(lambda cls: pipeline.Providers(llm_json=fake_llm, embed=broken_embed))
+    try:
+        with TestClient(create_app()) as c:
+            r = c.post("/startups/evaluate", json={"contract": {"kind": "company", "text": "ai infra", "must": {"tech_area": ["ai_infra"]}, "merge": {"mode": "merged", "relax": True}}})
+            assert r.status_code == 200, r.text
+            d = r.json()
+            assert d["rows"] and "embeddings unavailable" in (d["coverage"].get("degraded") or "")
+            r2 = c.post("/startups/compile", json={"text": "ai infra startups"})
+            assert r2.status_code == 200 and r2.json()["contract"]["text"]           # compile degrades to a text-only contract, never a 500
+    finally:
+        pipeline.Providers.from_env = real
