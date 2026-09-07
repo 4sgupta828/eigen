@@ -18,6 +18,8 @@ import logging
 
 from eigen_kernel.runtime.ingest import ingest_connector_to_postgres
 
+from eigen_vertical_tech.show_notes_doc import guest_from_title
+
 from .bind import bind_guest, facet_patch
 
 log = logging.getLogger(__name__)
@@ -92,4 +94,37 @@ async def bind_guests(pool, *, table: str = "rs_block", limit: int = 500) -> dic
             await conn.execute(
                 f"UPDATE {table} SET facets = facets || $2::jsonb WHERE document_id = $1",
                 r["document_id"], json.dumps(patch))
+    return stats
+
+
+async def refresh_guests(pool, *, table: str = "rs_block", limit: int = 5000) -> dict:
+    """Re-derive every episode's guest from its title with the CURRENT extractor.
+
+    Blocks are keyed by a hash of their text, so a re-ingest only refreshes facets for episodes the
+    feed still lists. Episodes that scrolled out keep whatever the extractor said the day they
+    landed — which is how "Arm CEO Rene" and "Chasing Trillion" survived as people. This pass fixes
+    them in place and clears any binding derived from a wrong name so the binder can run again.
+    """
+    import json
+    stats = {"episodes": 0, "changed": 0, "cleared": 0}
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"SELECT DISTINCT document_id, document_title, facets->>'guest' AS guest "
+            f"FROM {table} WHERE source_key = 'show_notes' LIMIT $1", int(limit))
+        stats["episodes"] = len(rows)
+        for r in rows:
+            want = guest_from_title(r["document_title"] or "")
+            if want == (r["guest"] or ""):
+                continue
+            stats["changed"] += 1
+            if want:
+                await conn.execute(
+                    f"UPDATE {table} SET facets = (facets - 'person' - 'bind_basis' - 'company_id' "
+                    f"  - 'company_name') || $2::jsonb WHERE document_id = $1",
+                    r["document_id"], json.dumps({"guest": want}))
+            else:
+                stats["cleared"] += 1
+                await conn.execute(
+                    f"UPDATE {table} SET facets = facets - 'guest' - 'person' - 'bind_basis' "
+                    f"  - 'company_id' - 'company_name' WHERE document_id = $1", r["document_id"])
     return stats

@@ -123,3 +123,26 @@ def test_the_binder_attaches_the_right_company_and_refuses_the_wrong_one():
             assert n == 0
         await pool.close()
     _run(go())
+
+
+def test_refresh_guests_repairs_a_stale_or_wrong_name():
+    """Blocks are keyed by text hash, so a re-ingest never touches an episode the feed has dropped.
+    Without this pass, a name the old extractor got wrong ('Arm CEO Rene') stays a 'person' forever."""
+    async def go():
+        import json as _json
+        from api.voices.ingest import refresh_guests
+        pool, pg = await _setup()
+        await _ingest(pg)
+        async with pool.acquire() as c:
+            await c.execute("UPDATE rs_block SET facets = facets || $1::jsonb "
+                            "WHERE source_key = 'show_notes'",
+                            _json.dumps({"guest": "Arm CEO Rene", "person": "Arm CEO Rene",
+                                         "company_id": "wrong.com"}))
+            stats = await refresh_guests(pool)
+            assert stats["changed"] >= 1
+            f = await c.fetchval("SELECT facets FROM rs_block WHERE source_key='show_notes' LIMIT 1")
+            facets = _json.loads(f) if isinstance(f, str) else f
+            assert facets["guest"] == "Ryan Petersen"        # re-derived from the title
+            assert "person" not in facets and "company_id" not in facets   # the bad binding is gone
+        await pool.close()
+    _run(go())

@@ -12,7 +12,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from .ingest import bind_guests, ingest_voices
+from .ingest import bind_guests, ingest_voices, refresh_guests
 from .search import build_query, moment
 
 
@@ -96,6 +96,8 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
             raise HTTPException(status_code=401, detail="admin token required")
         if body.kind == "bind":
             return {"kind": "bind", "result": await bind_guests(await pool_of())}
+        if body.kind == "refresh_guests":
+            return {"kind": "refresh_guests", "result": await refresh_guests(await pool_of())}
         if body.kind == "ingest":
             if manifest is None or pg_source_of is None:
                 raise HTTPException(status_code=503, detail="ingest not configured")
