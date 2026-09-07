@@ -24,11 +24,13 @@ from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
 from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnector, EdgarConnector,
                          EngBlogConnector,
-                         ExpertFeedConnector, GdeltConnector, GithubConnector, HackerNewsConnector,
+                         ExpertFeedConnector, FounderEssayConnector, GdeltConnector,
+                         GithubConnector, HackerNewsConnector,
                          HuggingFaceConnector, LobstersConnector, NihReporterConnector, NsfConnector,
                          OpenAlexConnector,
                          OpenReviewConnector, PatentsViewConnector, PodcastConnector, RedditConnector,
-                         SemanticScholarConnector, StackExchangeConnector, UsptoConnector,
+                         SemanticScholarConnector, ShowNotesConnector, StackExchangeConnector,
+                         UsptoConnector,
                          WikidataConnector, WikipediaConnector, YcConnector)
 from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import (ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_CONTRACT_PROMPT_ENTITY,
@@ -116,6 +118,10 @@ def build_manifest() -> VerticalManifest:
             "expert_feed": ExpertFeedConnector(),
             "eng_blog": EngBlogConnector(),
             "podcast": PodcastConnector(),
+            # First-person startup content: essays by named founders/investors/operators, and
+            # timestamped chapter POINTERS into their podcast episodes (never transcripts we made).
+            "founder_essay": FounderEssayConnector(),
+            "show_notes": ShowNotesConnector(),
             "github": GithubConnector(),
             "patentsview": PatentsViewConnector(),
             "gdelt": GdeltConnector(),

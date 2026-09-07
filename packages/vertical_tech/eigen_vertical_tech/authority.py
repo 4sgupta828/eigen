@@ -12,7 +12,13 @@ from __future__ import annotations
 
 # higher = stronger evidence
 _RANK: dict[str, int] = {
-    "sentiment_signal": 1,     # HN / social / forum tone — perception, NOT fact
+    "pointer": 0,              # NOT EVIDENCE. A publisher-written navigation aid — a podcast chapter
+    #                            title ("13:00 Why we nearly died") tells a listener WHERE to listen,
+    #                            never WHAT was said. It is indexed so a question can find the moment
+    #                            and is barred from supporting any claim. Rank 0 is the same floor as
+    #                            an unclassified hit, stated EXPLICITLY here so the bar is a decision
+    #                            in the policy rather than a silent fall-through.
+    "sentiment_signal": 1,     # HN / social / forum tone — perception, NOT fact     # HN / social / forum tone — perception, NOT fact
     "technical_signal": 2,     # arXiv preprints, GitHub activity (unreviewed / self-reported)
     "expert_analysis": 3,      # a NAMED expert's interpretation/foresight — essays, newsletters,
     #                            recorded expert discussion. Above an unreviewed preprint's self-claim,
@@ -36,3 +42,10 @@ class TechAuthorityPolicy:
         # Only an audited filing / granted patent is normative for a factual claim.
         # Sentiment is deliberately excluded — it is never controlling.
         return evidence_kind == "primary_filing"
+
+    def is_evidence(self, evidence_kind: str) -> bool:
+        """False for a navigation POINTER. A chapter title is metadata a producer wrote about an
+        episode, not speech from the episode, so it may be retrieved and displayed but may never
+        support a claim. Everything else — including the weakest sentiment signal — is evidence of
+        something, if only of what was said."""
+        return evidence_kind != "pointer"

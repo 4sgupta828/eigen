@@ -56,6 +56,14 @@ def classify(source_key: str, facets: dict[str, str] | None, title: str = "", te
     if src_kind == "corp_eng" or sk == "eng_blog":
         return "technical_signal"
 
+    # 3a-bis) POINTER — a publisher-written podcast CHAPTER title. Founder/investor shows do not
+    # publish transcripts (measured: zero <podcast:transcript> across 20VC, Lenny's, Invest Like the
+    # Best, a16z, My First Million, Indie Hackers), but they do write timestamped chapter lists. A
+    # chapter is a navigation aid — where to listen — and is NOT speech, so it is never evidence.
+    # STRUCTURAL: reads the source_kind the connector stamped, judges nothing.
+    if src_kind == "chapter_pointer" or sk == "show_notes":
+        return "pointer"
+
     # 3b) EXPERT ANALYSIS — a NAMED expert's interpretation/foresight (essays, newsletters, recorded
     # expert/practitioner discussion). Opinion above an unreviewed preprint, below fact-checked press;
     # never controlling. STRUCTURAL: reads the source_kind the connector stamped, judges nothing.
