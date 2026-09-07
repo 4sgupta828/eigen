@@ -173,3 +173,8 @@ def test_a_moment_always_offers_somewhere_to_go():
                                    "episode_url": "https://cdn.fm/ep.mp3"}})
     # an audio enclosure takes a media fragment, so the player opens at the moment itself
     assert ep["url"] == "https://cdn.fm/ep.mp3#t=935" and ep["t_start"] == 935
+
+
+def test_a_moment_nobody_can_open_ranks_below_one_they_can():
+    sql, _ = search.build_query(q="fundraising")
+    assert "facets ? 'url' OR facets ? 'episode_url'" in sql and "0.7" in sql

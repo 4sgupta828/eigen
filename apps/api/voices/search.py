@@ -148,7 +148,11 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         # Normalisation 1 divides the rank by 1 + log(length). Without it a 4,000-character essay
         # that mentions a word twice outranks a chapter titled exactly that word, and the podcast
         # moments — the thing this mode exists to surface — never appear at all.
-        rank = f"ts_rank(tsv, to_tsquery('english', ${n}), 1)"
+        # A moment nobody can open is worth less than one they can. Older items that scrolled out of
+        # their feed before the parser learned to read enclosures have no address and can never get
+        # one, so they are demoted rather than deleted — the words are still worth finding.
+        rank = (f"ts_rank(tsv, to_tsquery('english', ${n}), 1) * "
+                f"CASE WHEN (facets ? 'url' OR facets ? 'episode_url') THEN 1.0 ELSE 0.7 END")
         order = f"{rank} DESC, created_at DESC NULLS LAST"
         # An essay block can be thousands of characters, so the head of it is rarely the part that
         # answered the question. ts_headline returns the passage that actually matched.

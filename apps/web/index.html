@@ -7026,7 +7026,10 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       const open = m.url
         ? '<a class="vo-open" href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">'
           + (m.kind === "chapter" ? "Listen from " + stamp(m.t_start) : "Read the whole thing") + " &rarr;</a>"
-        : '<span class="vo-nolink">This feed publishes no episode link \u2014 search the show for this title.</span>';
+        : '<span class="vo-nolink">' + (m.kind === "chapter"
+            ? "No episode link in this feed \u2014 search the show for this title."
+            : "No link was published with this piece \u2014 search its title on the author\u2019s site.")
+          + "</span>";
       el.innerHTML =
           (pts ? "<h5>" + esc(d.heading || "What it says") + "</h5><div class=\"vo-sum\"><ul>" + pts + "</ul></div>" : "")
         + (d.note ? '<div class="vo-reg">' + esc(d.note) + "</div>" : "")
