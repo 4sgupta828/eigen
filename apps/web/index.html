@@ -232,6 +232,9 @@
   #startupsbody .frail-done{color:var(--verified);} #startupsbody .frail-done b{color:var(--verified);} #startupsbody .su-note{color:var(--muted);font-size:.74rem;}
   #startupsbody .su-diff{display:inline-block;margin-left:.4rem;font-size:.74rem;color:var(--muted);} #startupsbody .su-diff summary{cursor:pointer;color:var(--gold);display:inline;}
   #startupsbody .card{position:relative;}
+  #startupsbody .su-fl{color:var(--ink);text-decoration:none;} #startupsbody .su-fl:hover{text-decoration:underline;}
+  #startupsbody .su-in{display:inline-block;font-weight:700;font-size:.6rem;color:#fff;background:#0A66C2;border-radius:3px;padding:0 .3rem;line-height:1.4;vertical-align:middle;}
+  #startupsbody .su-find{font-size:.68rem;color:var(--gold);white-space:nowrap;}
   #startupsbody .su-recipe{flex:none;font:inherit;font-size:.72rem;padding:.25rem .6rem;min-height:36px;border:1px solid var(--gold);border-radius:999px;background:rgba(var(--gold-rgb),.10);color:var(--gold-strong);cursor:pointer;white-space:nowrap;}
   #startupsbody .su-recipe b{margin-left:.3rem;color:var(--muted);font-weight:600;} #startupsbody .su-recipe.off{border-style:dashed;background:transparent;color:var(--muted);}
   #startupsbody .su-mergesum{font-size:.78rem;color:var(--ink);}
@@ -6728,6 +6731,15 @@ $("#su-rail").addEventListener("dblclick", e=>{ const chip=e.target.closest(".fc
 $("#su-rail").addEventListener("change", e=>{ if(e.target.id==="rank"){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); c.rank_by=e.target.value; STATE.draft=c; renderRail(); } });
 
 // ---------- cards
+// A founder's name links to their LinkedIn when a source states it (YC profile, the company's own team page); otherwise a
+// clearly labelled "find on LinkedIn" search (name + company + title + linkedin — roster's proxy), never a guessed profile.
+function linkedinSearchUrl(name, company, title){ const bits=[name, company, (title||"").split(" ").slice(0,3).join(" ")].filter(Boolean); return "https://www.google.com/search?q="+encodeURIComponent(bits.join(" ").slice(0,160)+" linkedin"); }
+function founderHtml(f, company){
+  const li=(f.links||{}).linkedin, x=(f.links||{}).twitter;
+  const name = li ? `<a class="su-fl" href="${esc(li)}" target="_blank" rel="noopener noreferrer" title="LinkedIn profile (stated by the source)">${esc(f.name)} <span class="su-in">in</span></a>`
+                  : `<span>${esc(f.name)}</span> <a class="su-fl su-find" href="${esc(linkedinSearchUrl(f.name, company, f.title))}" target="_blank" rel="noopener noreferrer" title="No profile link on record — a LinkedIn search for this name and company">find on LinkedIn ⌕</a>`;
+  return name + (f.title ? ` <span class="c-dom">(${esc(f.title.slice(0,28))})</span>` : "") + (x ? ` <a class="su-fl" href="${esc(x)}" target="_blank" rel="noopener noreferrer" title="X / Twitter">𝕏</a>` : "");
+}
 function factsOf(co){ const by={}; for(const f of (co.facts||[])){ (by[f.key]=by[f.key]||[]).push(f); } return by; }
 function pick(by, key){ const a=by[key]||[]; const pref=["formd","derived","press","yc","site","ats"]; a.sort((x,y)=>pref.indexOf(x.provenance)-pref.indexOf(y.provenance)); return a[0]; }
 function provGlyph(f){ if(!f) return ""; const p=f.basis==="self_reported"?"site":(f.basis==="inferred_from_filing"||f.basis==="filing"||f.basis==="filings"||f.basis==="filing_range")?"formd":(f.basis==="stated_round"?"press":f.provenance); return `<span class="glyph" title="${esc(PROV_TITLE[p]||p)}">${GL[p]||"·"}</span>`; }
@@ -6751,7 +6763,7 @@ function cardHtml(row){
   const what=areas.map(a=>`<span class="su-tag">${esc(label("tech_area",a))}</span>`).join("") + (country.length||metro.length?`<span class="su-tag">${esc((metro[0]?label("metro",metro[0])+", ":"")+(country[0]?label("country",country[0]):""))}</span>`:"") + (founded?`<span class="su-tag">est. ${esc(founded.display)}</span>`:"") + (hc?`<span class="su-tag">${esc(hc.display)} people</span>`:"") + (status&&status.value!=="active"?`<span class="su-tag" style="color:var(--warn)">${esc(label("status",status.value))}</span>`:"");
   const sig=[]; if(hiring) sig.push(`<span class="su-tag sig" title="${esc(hiring.quote)}">⚙ ${esc(hiring.display)}${hf.length?" · "+esc(hf.slice(0,3).join(", ")):""}</span>`);
   if(ev) sig.push(`<span class="su-tag sig">${esc(label("evidence_strength",ev.value))}</span>`);
-  const people = founders.length ? `<div class="c-people"><b>${founders.length} founder${founders.length>1?"s":""}</b> · ${esc(founders.slice(0,4).map(f=>f.name+(f.title?" ("+f.title.slice(0,28)+")":"")).join(", "))}${fpc.length?` · from ${esc(fpc.slice(0,3).join(", "))}`:""}</div>` : "";
+  const people = founders.length ? `<div class="c-people"><b>${founders.length} founder${founders.length>1?"s":""}</b> · ${founders.slice(0,4).map(f=>founderHtml(f, co.name||id)).join(", ")}${fpc.length?` · from ${esc(fpc.slice(0,3).join(", "))}`:""}</div>` : "";
   const gaps=[]; if(!total && !scale) gaps.push("no funding source found"); if(!stage) gaps.push("no stated round"); if(!founders.length) gaps.push("founders not found");
   if((co.crawl||{}).failed && (co.crawl.failed||[]).length && !(co.crawl.pages||[]).length) gaps.push("site could not be read");
   if(id.startsWith("cik:")) gaps.push("no website on record (known from SEC filings only)");
@@ -6796,7 +6808,7 @@ function drawerHtml(co){
   const facts=(co.facts||[]).slice().sort((a,b)=>a.key.localeCompare(b.key));
   const rows=facts.map(f=>`<div class="fact"><div class="k">${esc(klabel(f.key))}</div><div class="v"><span class="prov ${esc(f.provenance)}" title="${esc(PROV_TITLE[f.provenance]||f.provenance)}">${esc(f.provenance)}${f.basis?" · "+esc(f.basis.replace(/_/g," ")):""}</span><b>${esc(f.display||label(f.key,f.value))}</b>${f.as_of?` <span class="src">as of ${esc(String(f.as_of).slice(0,10))}</span>`:""}${f.quote?`<q>${esc(f.quote.slice(0,400))}</q>`:""}${f.source_url?`<a class="src" href="${esc(f.source_url)}" target="_blank" rel="noopener">${esc(f.source_url.slice(0,80))}</a>`:""}</div></div>`).join("");
   const fin=(co.financing||[]).map(e=>`<div class="fact"><div class="k">${esc(e.kind==="formd"?"Form D filing":(e.round_name?label("stage",e.round_name):"stated round"))}</div><div class="v"><b>${e.amount_usd?esc(usd(e.amount_usd)):"amount not stated"}</b>${e.event_date?" · "+esc(e.event_date):""}${e.lead?" · led by "+esc(e.lead):""}${(e.investors||[]).length?" · "+esc(e.investors.join(", ")):""}${e.quote?`<q>${esc(e.quote.slice(0,300))}</q>`:""}${e.source_url?`<a class="src" href="${esc(e.source_url)}" target="_blank" rel="noopener">${esc(e.source_url.slice(0,80))}</a>`:""}</div></div>`).join("");
-  const fo=(co.founders||[]).map(f=>`<div class="fact"><div class="k">${esc(f.name)}</div><div class="v"><span class="prov ${esc(f.provenance)}">${esc(f.provenance)}</span><b>${esc(f.title||"founder")}</b>${(f.prior_companies||[]).length?" · previously "+esc(f.prior_companies.join(", ")):""}${f.quote?`<q>${esc(f.quote.slice(0,300))}</q>`:""}</div></div>`).join("");
+  const fo=(co.founders||[]).map(f=>`<div class="fact"><div class="k">${founderHtml(f, co.name||co.id)}</div><div class="v"><span class="prov ${esc(f.provenance)}">${esc(f.provenance)}</span><b>${esc(f.title||"founder")}</b>${(f.prior_companies||[]).length?" · previously "+esc(f.prior_companies.join(", ")):""}${f.bio?`<q>${esc(f.bio.slice(0,400))}</q>`:(f.quote?`<q>${esc(f.quote.slice(0,300))}</q>`:"")}</div></div>`).join("");
   const filings=(co.filings||[]).map(f=>`<div class="fact"><div class="k">${esc(f.filing_date||"")}</div><div class="v"><b>${esc(f.entity_name)}</b> · ${f.sold_usd?esc(usd(f.sold_usd))+" sold":"amount n/a"}${f.is_amendment?" (amendment)":""} · ${esc(f.city)}, ${esc(f.state)} · matched by ${esc(f.match_method)}${f.revenue_range?" · revenue: "+esc(f.revenue_range):""}${(f.officers||[]).length?`<q>officers on the filing (not founders): ${esc(f.officers.slice(0,6).map(o=>o.name+" — "+(o.roles||[]).join("/")).join("; "))}</q>`:""}</div></div>`).join("");
   const crawl=co.crawl||{}; const pages=(crawl.pages||[]).map(p=>p.kind).join(", "); const failed=(crawl.failed||[]).map(p=>p.kind+" "+(p.error||p.status)).join(", ");
   const cust=(crawl.customers||[]).map(c=>c.name).join(", ");

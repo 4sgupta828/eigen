@@ -95,8 +95,9 @@ def to_company(rec: dict) -> dict | None:
             continue
         name = str(f.get("full_name") or f.get("name") or "").strip()
         if name:
-            founders.append({"name": name, "title": str(f.get("title") or "")[:120], "prior_companies": [], "source_url": src_url,
-                             "quote": f"{name}, {f.get('title') or 'founder'} — Y Combinator company profile"})
+            links = {k: str(f.get(src) or "").strip() for k, src in (("linkedin", "linkedin_url"), ("twitter", "twitter_url")) if str(f.get(src) or "").strip().startswith("http")}
+            founders.append({"name": name, "title": str(f.get("title") or "")[:120], "prior_companies": [], "source_url": src_url, "links": links,
+                             "bio": str(f.get("founder_bio") or "")[:1500], "quote": f"{name}, {f.get('title') or 'founder'} — Y Combinator company profile"})
     company = {"id": cid, "name": str(rec.get("name") or "").strip(), "website": website, "one_liner": str(rec.get("one_liner") or "").strip(),
                "description": str(rec.get("long_description") or "").strip()[:4000], "hq": loc, "yc_slug": slug, "yc_batch": str(rec.get("batch") or ""),
                "aliases": [str(x) for x in (rec.get("former_names") or []) if x], "sources": ["yc"]}

@@ -92,6 +92,8 @@ CREATE TABLE IF NOT EXISTS su_founder (
     quote        text NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_su_founder_name ON su_founder (company_id, lower(name));
+ALTER TABLE su_founder ADD COLUMN IF NOT EXISTS links jsonb NOT NULL DEFAULT '{}';   -- {linkedin, twitter, github, site} — direct profile links when a source states them
+ALTER TABLE su_founder ADD COLUMN IF NOT EXISTS bio text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS su_page (
     company_id   text NOT NULL REFERENCES su_company(id) ON DELETE CASCADE,
@@ -295,13 +297,35 @@ class StartupStore:
             for f in founders:
                 if not (f.get("name") or "").strip():
                     continue
-                await conn.execute("""INSERT INTO su_founder (company_id, name, title, prior_companies, provenance, source_url, quote)
-                                      VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (company_id, lower(name)) DO UPDATE SET
+                links = {k: str(v)[:300] for k, v in (f.get("links") or {}).items() if v}
+                await conn.execute("""INSERT INTO su_founder (company_id, name, title, prior_companies, provenance, source_url, quote, links, bio)
+                                      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) ON CONFLICT (company_id, lower(name)) DO UPDATE SET
                                       title = CASE WHEN EXCLUDED.title <> '' THEN EXCLUDED.title ELSE su_founder.title END,
                                       prior_companies = (SELECT ARRAY(SELECT DISTINCT unnest(su_founder.prior_companies || EXCLUDED.prior_companies))),
-                                      provenance = EXCLUDED.provenance, source_url = EXCLUDED.source_url, quote = EXCLUDED.quote""",
+                                      provenance = EXCLUDED.provenance, source_url = EXCLUDED.source_url, quote = EXCLUDED.quote,
+                                      links = su_founder.links || EXCLUDED.links, bio = CASE WHEN EXCLUDED.bio <> '' THEN EXCLUDED.bio ELSE su_founder.bio END""",
                                    cid, f["name"].strip()[:120], (f.get("title") or "")[:120], list(f.get("prior_companies") or []),
-                                   provenance, (f.get("source_url") or "")[:1000], (f.get("quote") or "")[:800])
+                                   provenance, (f.get("source_url") or "")[:1000], (f.get("quote") or "")[:800], json.dumps(links), (f.get("bio") or "")[:1500])
+
+    async def set_founder_links(self, cid: str, by_name: dict[str, dict]) -> int:
+        """Merge profile links into the company's founders by (lower) name; returns how many founders gained a link."""
+        if not by_name:
+            return 0
+        pool = await self.pool()
+        n = 0
+        async with pool.acquire() as conn:
+            for name, links in by_name.items():
+                links = {k: str(v)[:300] for k, v in (links or {}).items() if v}
+                if not links:
+                    continue
+                r = await conn.execute("UPDATE su_founder SET links = links || $3::jsonb WHERE company_id = $1 AND lower(name) = lower($2)", cid, name, json.dumps(links))
+                n += int(r.endswith("1"))
+        return n
+
+    async def founders(self, cid: str) -> list[dict]:
+        pool = await self.pool()
+        async with pool.acquire() as conn:
+            return [_row(r) for r in await conn.fetch("SELECT name, title, links FROM su_founder WHERE company_id = $1", cid)]
 
     async def save_pages(self, cid: str, pages: list[dict], crawl_meta: dict) -> None:
         pool = await self.pool()
@@ -410,7 +434,7 @@ class StartupStore:
                 return None
             facts = await conn.fetch("SELECT key, value, number, display, provenance, basis, source_url, quote, as_of, confidence FROM su_fact WHERE company_id = $1 ORDER BY key, provenance", cid)
             fin = await conn.fetch("SELECT kind, file_num, accession, round_name, amount_usd, offering_usd, event_date, investors, lead, source_url, quote FROM su_financing WHERE company_id = $1 ORDER BY event_date NULLS LAST", cid)
-            fo = await conn.fetch("SELECT name, title, prior_companies, provenance, source_url, quote FROM su_founder WHERE company_id = $1", cid)
+            fo = await conn.fetch("SELECT name, title, prior_companies, provenance, source_url, quote, links, bio FROM su_founder WHERE company_id = $1", cid)
             fd = await conn.fetch("SELECT accession, entity_name, city, state, filing_date, sale_date, sold_usd, offering_usd, revenue_range, is_amendment, match_method, officers FROM su_formd WHERE company_id = $1 ORDER BY filing_date", cid)
         out = dict(c)
         out["crawl"] = json.loads(out["crawl"]) if isinstance(out["crawl"], str) else (out["crawl"] or {})
@@ -427,7 +451,7 @@ class StartupStore:
         async with pool.acquire() as conn:
             rows = await conn.fetch("SELECT id, name, website, one_liner, hq, yc_batch, sources, crawl, extracted_at FROM su_company WHERE id = ANY($1)", ids)
             facts = await conn.fetch("SELECT company_id, key, value, number, display, provenance, basis, source_url, quote, as_of FROM su_fact WHERE company_id = ANY($1)", ids)
-            fo = await conn.fetch("SELECT company_id, name, title, prior_companies, provenance FROM su_founder WHERE company_id = ANY($1)", ids)
+            fo = await conn.fetch("SELECT company_id, name, title, prior_companies, provenance, links FROM su_founder WHERE company_id = ANY($1)", ids)
         out = {r["id"]: {**_row(r), "facts": [], "founders": []} for r in rows}
         for f in facts:
             out.get(f["company_id"], {}).setdefault("facts", []).append(_row(f))
@@ -599,7 +623,7 @@ def _row(r) -> dict:
     for k, v in dict(r).items():
         if isinstance(v, (date, datetime)):
             out[k] = v.isoformat()
-        elif isinstance(v, str) and k in ("officers",) :
+        elif isinstance(v, str) and k in ("officers", "links"):
             try:
                 out[k] = json.loads(v)
             except Exception:   # noqa: BLE001

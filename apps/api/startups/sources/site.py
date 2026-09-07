@@ -114,3 +114,29 @@ def crawl(website: str, *, max_pages: int = MAX_PAGES, min_gap: float = 2.0) -> 
         pages.append({"kind": kind, "url": url, "final_url": f.final_url, "status": f.status, "text": t, "html": f.text,
                       "title": http.html_title(f.text), "sha": _sha(t)})
     return {"domain": domain, "pages": pages, "failed": failed}
+
+
+_LI = re.compile(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/in/([A-Za-z0-9\-_%.]+)/?", re.I)
+_X = re.compile(r"https?://(?:www\.)?(?:twitter|x)\.com/([A-Za-z0-9_]{2,30})/?(?![\w/])", re.I)
+
+
+def founder_links(pages: list[dict], founders: list[dict]) -> dict[str, dict]:
+    """{founder name → {linkedin, twitter}} from profile links on the company's pages: a LinkedIn slug that carries the
+    founder's first and last name tokens (or an anchor whose text is the name) is that founder's; nothing is guessed."""
+    out: dict[str, dict] = {}
+    html_all = "\n".join(p.get("html") or "" for p in pages)
+    anchors = http.links(html_all, "https://x/") if html_all else []
+    for f in founders:
+        name = str(f.get("name") or "").strip()
+        toks = [t for t in re.sub(r"[^a-z ]", " ", name.lower()).split() if len(t) > 1]
+        if len(toks) < 2:
+            continue
+        first, last = toks[0], toks[-1]
+        li = next((m.group(0) for m in _LI.finditer(html_all) if first in m.group(1).lower() and last in m.group(1).lower()), None)
+        if not li:
+            li = next((href for href, text in anchors if _LI.match(href or "") and name.lower() in (text or "").lower()), None)
+        x = next((href for href, text in anchors if _X.match(href or "") and name.lower() in (text or "").lower()), None)
+        links = {k: v for k, v in (("linkedin", li), ("twitter", x)) if v}
+        if links:
+            out[name] = links
+    return out

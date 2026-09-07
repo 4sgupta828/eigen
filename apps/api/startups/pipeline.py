@@ -277,6 +277,13 @@ async def run_crawl(store: StartupStore, *, ids: list[str] | None = None, limit:
         meta = {"at": date.today().isoformat(), "pages": [{"kind": p["kind"], "url": p["url"], "chars": len(p["text"])} for p in pages],
                 "failed": res["failed"], "ats": {"board": list(board) if board else None, "roles": [{"title": x["title"], "location": x["location"], "department": x["department"], "url": x["url"]} for x in roles[:200]]}}
         await store.save_pages(r["id"], [{k: p[k] for k in ("url", "kind", "sha", "text")} for p in pages], meta)
+        if pages:
+            try:
+                fl = site.founder_links(pages, await store.founders(r["id"]))
+                if fl:
+                    await store.set_founder_links(r["id"], fl)
+            except Exception:   # noqa: BLE001 — links are an aid
+                pass
         n_ok += 1 if pages else 0
         n_fail += 0 if pages else 1
         if jid and (n_ok + n_fail) % 5 == 0:

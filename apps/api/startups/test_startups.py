@@ -275,3 +275,12 @@ def test_registrable_domain_never_raises_on_garbage():
             http.registrable_domain(bad)
         except Exception as e:   # noqa: BLE001
             raise AssertionError(f"registrable_domain raised on {bad!r}: {e}")
+
+
+def test_founder_links_from_pages_match_by_name_never_guess():
+    from api.startups.sources import site
+    pages = [{"html": '<a href="https://www.linkedin.com/in/jane-doe-123/">Jane</a> <a href="https://twitter.com/janedoe">Jane Doe on X</a> <a href="https://www.linkedin.com/in/someone-else/">Bob Ray</a>'}]
+    out = site.founder_links(pages, [{"name": "Jane Doe"}, {"name": "Bob Ray"}, {"name": "Cher"}])
+    assert out["Jane Doe"] == {"linkedin": "https://www.linkedin.com/in/jane-doe-123/", "twitter": "https://twitter.com/janedoe"}
+    assert out["Bob Ray"] == {"linkedin": "https://www.linkedin.com/in/someone-else/"}      # the anchor text names him
+    assert "Cher" not in out
