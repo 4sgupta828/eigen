@@ -1,6 +1,6 @@
 # Voices — first-person startup content as a mode
 
-**Status:** design, panel-reviewed, measured. Build not started.
+**Status:** Phase 1 built and deployed behind `EIGEN_VOICES`. Panel-reviewed, measured.
 **Owner ask (2026-09-07):** "Another mode: podcasts / videos / posts from founders, investors, influencers,
 all about startups, tech and learnings from wins, losses, evolutions, hard-won battles. Content FROM THE
 SOURCE vs. search of meta information. Tech-wide or vertical/industry specific. Build a corpus, surface it
@@ -128,3 +128,42 @@ by a model from chapter titles and essay passages rather than guessed by keyword
 
 **Explicitly not built:** machine transcription (cost and ToS), YouTube caption scraping (closed), and any
 title-only podcast index (the panel's "shallow and useless" trap).
+
+
+## 8. Build status (2026-09-07)
+
+Phase 1 is built, tested and deployed. Nothing in it spends a model credit.
+
+**Vertical (vocabulary).**
+- `connectors/show_notes.py` + `show_notes_doc.py` — 15 curated shows, each kept only after measuring
+  its chapter yield. One block per chapter, carrying an offset and a deep link. The chapter-only
+  contract is enforced in `discover_entities` on every path, fixtures included, so an episode with no
+  chapter list never becomes an entity.
+- `connectors/founder_essay.py` — 15 full-text feeds, each stamped with the writer and a `voice_role`
+  of founder, investor, operator or analyst.
+- `evidence_kind.py` + `authority.py` — a new `pointer` tier at rank 0 with `is_evidence()` False.
+  This is the structural bar that stops a producer's chapter title from ever supporting a claim.
+
+**Kernel (mechanics, still domain-free).**
+- `ingest_connector_to_postgres(embedder=None)` — ingest without vectors. `rs_block.tsv` is a
+  generated column, so the rows are searchable the moment they land and embeddings backfill later.
+
+**App.**
+- `apps/api/voices/` — `search.py` (moments, `is_quotable`, `ts_headline` snippets), `bind.py` (the
+  attribution gates), `ingest.py` (chapter-safe splitting: `target_chars=0`, `min_chars=1`),
+  `routes.py` (search, per-company, sources, admin jobs), all behind `EIGEN_VOICES`.
+- `apps/web/index.html` — the Voices mode and the "from the founders" strip on startup cards.
+
+**Verified against the live feeds locally:** 30 episodes produced 531 chapter blocks, 30 essays
+produced 104 blocks, zero embeddings were written, and keyword search returned timestamped moments
+for "pivot", "layoffs" and "hiring first sales".
+
+**Tests:** 12 in `apps/api/voices/` (3 against a real Postgres), 12 in the vertical. The eval traps
+from §6 that are testable without a corpus are pinned: the body-mention that must not bind, the
+collective that is not a person, the common-word company that must not attach, and the chapter that
+must never be quotable.
+
+**Known gaps, honestly.** Semantic ranking is absent until credits return. Theme facets (pivot,
+layoffs, pricing) are not extracted yet, so a query relies on the publisher's own words. Some essay
+feeds put navigation chrome in the item body, which occasionally surfaces a block of post titles.
+Video remains metadata-only.
