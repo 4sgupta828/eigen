@@ -100,6 +100,28 @@ def user_payload(company: dict, pages: list[dict], roles: list[dict]) -> str:
     return json.dumps(doc, ensure_ascii=False)
 
 
+_COLLECTIVE = {
+    "team", "teams", "founders", "cofounders", "co-founders", "leadership", "management",
+    "staff", "crew", "everyone", "employees", "people", "folks", "us", "we", "company",
+}
+
+
+def is_person_name(name: str) -> bool:
+    """A founder row must name a PERSON. 'Founding Team', 'Our Founders', a sentence about
+    the team — not people. Kept deliberately narrow: mononyms, nicknames in quotes or
+    parentheses and post-nominal letters are all real founder names we have seen."""
+    name = (name or "").strip()
+    if not name:
+        return False
+    parts = [p for p in re.split(r"[\s,]+", name) if p]
+    if not parts or len(parts) > 8:
+        return False
+    low = [p.lower().strip(".&()\"'’") for p in parts]
+    if any(p in _COLLECTIVE for p in low):
+        return False
+    return bool(re.search(r"[A-Za-z]", name))
+
+
 def validate(out: dict, pages: list[dict], roles: list[dict], *, as_of: date | None = None) -> dict:
     """The model's JSON → {facts, founders, financing, metrics, customers, one_liner, role_functions}, every item gated."""
     text = norm("\n".join(p.get("text") or "" for p in pages))
@@ -139,7 +161,7 @@ def validate(out: dict, pages: list[dict], roles: list[dict], *, as_of: date | N
         if not isinstance(f, dict) or not quote_in(str(f.get("quote") or ""), text):
             continue
         name = str(f.get("name") or "").strip()
-        if not name or norm(name) not in text:
+        if not name or not is_person_name(name) or norm(name) not in text:
             continue
         founders.append({"name": name[:120], "title": str(f.get("title") or "")[:120],
                          "prior_companies": [_slug(x) for x in (f.get("prior_companies") or []) if _slug(x)][:6],

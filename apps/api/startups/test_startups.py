@@ -64,6 +64,20 @@ def test_extract_founder_not_founding_engineer_and_prior_company():
     assert res["founders"][0]["prior_companies"] == ["stripe"]
 
 
+def test_extract_founder_must_be_a_person_not_a_collective():
+    for good in ('Jane Doe', 'Darius "Bubs" Monsef', 'Robert', 'Raymond (George) Kennedy',
+                 'Charles Whitby, CISSP, PCIP, CRISC', 'Lars Gjardar Musæus'):
+        assert extract.is_person_name(good), good                    # real founder names we have in the index
+    for bad in ("Founding Team", "The Team", "Our Founders", "Leadership Team", "",
+                "Founders and operators from Hugging Face, Silo AI, Supercell, Dropbox, Slack, and Wolt."):
+        assert not extract.is_person_name(bad), bad
+    res = _validate({"founders": [{"name": "Founding Team", "title": "founders", "prior_companies": [],
+                                   "quote": "Jane Doe, co-founder and CEO, previously at Stripe"},
+                                  {"name": "Jane Doe", "title": "co-founder", "prior_companies": [],
+                                   "quote": "Jane Doe, co-founder and CEO, previously at Stripe"}]})
+    assert [f["name"] for f in res["founders"]] == ["Jane Doe"]
+
+
 def test_extract_arr_only_from_arr_metric_and_self_reported():
     res = _validate({"metrics": [{"kind": "arr", "amount": "$5M", "currency": "USD", "period": "", "quote": "Our ARR is $5M"},
                                  {"kind": "run_rate", "amount": "$12M", "currency": "USD", "period": "", "quote": "We raised $12M in our Series A led by a16z"}]})
