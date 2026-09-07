@@ -231,24 +231,44 @@
     border:1px solid var(--hair);background:var(--panel2);color:var(--dim);cursor:pointer;min-height:34px;}
   .vo-chip[aria-pressed="true"]{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
   .vo-note{font-family:var(--mono);font-size:.68rem;color:var(--dim);margin:.5rem 0 0;line-height:1.5;}
-  .vo-cards{display:grid;gap:.7rem;margin:1rem 0 2rem;}
-  .vo-card{border:1px solid var(--hair);border-radius:12px;padding:.85rem .95rem;background:var(--panel2);}
-  .vo-card h4{margin:0 0 .35rem;font-size:.95rem;line-height:1.4;font-weight:600;}
-  .vo-meta{font-family:var(--mono);font-size:.67rem;color:var(--dim);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;}
-  .vo-kind{border:1px solid var(--hair);border-radius:999px;padding:.1rem .5rem;letter-spacing:.05em;text-transform:uppercase;font-size:.6rem;}
-  .vo-kind.chapter{color:var(--dim);}
-  .vo-kind.essay{color:var(--gold);border-color:var(--gold);}
-  .vo-reg{font-family:var(--mono);font-size:.64rem;color:var(--dim);margin-top:.45rem;font-style:italic;}
-  .vo-card a.vo-open{display:inline-block;margin-top:.5rem;font-family:var(--mono);font-size:.7rem;color:var(--gold);
-    text-decoration:none;border:1px solid var(--gold);border-radius:999px;padding:.3rem .7rem;min-height:34px;line-height:1.6;}
+  .vo-cards{display:grid;gap:.75rem;margin:1rem 0 2rem;}
+  /* Two kinds of card, two registers, two colours. An essay is someone's own words (warm, gold-keyed);
+     a podcast moment is a signpost into a recording (cool, blue-keyed). The reader should be able to
+     tell them apart before reading a word — they are not the same kind of thing. */
+  .vo-card{border:1px solid var(--hair);border-left:3px solid var(--hair);border-radius:12px;
+    background:var(--panel2);overflow:hidden;transition:border-color .15s ease,background .15s ease;}
+  .vo-card.essay{border-left-color:var(--gold);background:color-mix(in srgb, var(--gold) 4%, var(--panel2));}
+  .vo-card.chapter{border-left-color:#5b8def;background:color-mix(in srgb, #5b8def 5%, var(--panel2));}
+  .vo-head{padding:.8rem .95rem;cursor:pointer;display:block;width:100%;text-align:left;border:0;background:none;color:inherit;font:inherit;}
+  .vo-head:hover{background:rgba(127,127,127,.06);}
+  .vo-card h4{margin:.4rem 0 .35rem;font-size:.95rem;line-height:1.45;font-weight:600;}
+  .vo-meta{font-family:var(--mono);font-size:.66rem;color:var(--dim);display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;}
+  .vo-kind{border-radius:999px;padding:.12rem .5rem;letter-spacing:.06em;text-transform:uppercase;font-size:.58rem;border:1px solid currentColor;}
+  .vo-card.chapter .vo-kind{color:#5b8def;}
+  .vo-card.essay .vo-kind{color:var(--gold);}
+  .vo-when{margin-left:auto;}
+  .vo-src{font-size:.72rem;color:var(--dim);margin-top:.4rem;line-height:1.4;}
+  .vo-reg{font-family:var(--mono);font-size:.62rem;color:var(--dim);margin-top:.5rem;font-style:italic;}
+  .vo-body{padding:0 .95rem .85rem;border-top:1px dashed var(--hair);margin-top:.2rem;}
+  .vo-body h5{margin:.7rem 0 .3rem;font-family:var(--mono);font-size:.63rem;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--dim);font-weight:600;}
+  .vo-sum{font-size:.84rem;line-height:1.55;}
+  .vo-sum ul{margin:.3rem 0 0 1rem;padding:0;} .vo-sum li{margin:.22rem 0;}
+  .vo-full{font-size:.8rem;line-height:1.55;color:var(--dim);max-height:15rem;overflow:auto;}
+  .vo-actions{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:.7rem;}
+  .vo-card a.vo-open{display:inline-block;font-family:var(--mono);font-size:.68rem;text-decoration:none;
+    border:1px solid currentColor;border-radius:999px;padding:.32rem .7rem;min-height:34px;line-height:1.7;}
+  .vo-card.essay a.vo-open{color:var(--gold);} .vo-card.chapter a.vo-open{color:#5b8def;}
+  .vo-nolink{font-family:var(--mono);font-size:.64rem;color:var(--dim);}
   .vo-strip{margin:.7rem 0 0;border-top:1px dashed var(--hair);padding-top:.6rem;}
   .vo-strip .vo-slabel{font-family:var(--mono);font-size:.64rem;color:var(--dim);letter-spacing:.05em;text-transform:uppercase;}
   .vo-strip a{display:block;font-size:.78rem;color:var(--ink);text-decoration:none;margin-top:.3rem;line-height:1.45;}
   .vo-strip a:hover{color:var(--gold);}
   @media (max-width:560px){
-    .vo-card{padding:.75rem .8rem;}
-    .vo-meta{font-size:.62rem;gap:.35rem;}
+    .vo-head{padding:.7rem .75rem;} .vo-body{padding:0 .75rem .75rem;}
+    .vo-meta{font-size:.6rem;gap:.3rem;} .vo-when{margin-left:0;}
     .vo-chip{font-size:.66rem;padding:.36rem .6rem;}
+    .vo-card h4{font-size:.9rem;}
   }
   /* ===== Startup Search — an inline MODE of the shell (body[data-mode="startups"]) ===== */
   body[data-mode="startups"] #startupsbody{display:block;}
@@ -6951,7 +6971,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
 (function(){
   const cards = () => document.getElementById("vo-cards");
   const note  = () => document.getElementById("vo-note");
-  const STATE = {kind: "", busy: false, q: ""};
+  const STATE = {kind: "", busy: false, q: "", moments: []};
 
   const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c =>
     ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -6962,25 +6982,60 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     return (h ? h + ":" + String(m).padStart(2,"0") : String(m)) + ":" + String(s2).padStart(2,"0");
   }
 
-  function cardHtml(m){
+  function cardHtml(m, i){
     const isChapter = m.kind === "chapter";
-    const who = m.speaker ? esc(m.speaker) + (m.role && m.role !== "guest" ? " · " + esc(m.role) : "") : "";
-    const bits = [who, esc(m.show), esc(m.published)].filter(Boolean);
+    const who = m.speaker ? esc(m.speaker) + (m.role && m.role !== "guest" ? " \u00b7 " + esc(m.role) : "") : "";
+    // The offset shows whether or not a link exists. A marker that says "listen from this point" and
+    // then shows no point is a dead end, and some publishers ship no episode URL at all.
+    const bits = [who, esc(m.show), isChapter && m.t_start ? stamp(m.t_start) : ""].filter(Boolean);
     // A chapter's words are a signpost, so they are set plainly. An essay's words are a quotation.
     const words = isChapter ? esc(m.text) : "&ldquo;" + esc(m.text) + "&rdquo;";
-    const open = m.url
-      ? '<a class="vo-open" href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">'
-        + (isChapter ? "Listen from " + stamp(m.t_start) : "Read it") + " &rarr;</a>"
-      : "";
-    return '<article class="vo-card">'
-      + '<div class="vo-meta"><span class="vo-kind ' + (isChapter ? "chapter" : "essay") + '">'
-      + (isChapter ? "podcast moment" : "essay") + "</span>" + bits.map(b => "<span>" + b + "</span>").join("")
-      + "</div>"
-      + "<h4>" + words + "</h4>"
-      + (m.title && !isChapter ? '<div class="vo-meta"><span>' + esc(m.title) + "</span></div>" : "")
-      + (m.title && isChapter ? '<div class="vo-meta"><span>' + esc(m.title) + "</span></div>" : "")
-      + '<div class="vo-reg">' + esc(m.register) + "</div>"
-      + open + "</article>";
+    return '<article class="vo-card ' + (isChapter ? "chapter" : "essay") + '" data-i="' + i + '">'
+      + '<button type="button" class="vo-head" aria-expanded="false" data-open="' + i + '">'
+      +   '<div class="vo-meta"><span class="vo-kind">' + (isChapter ? "podcast moment" : "essay") + "</span>"
+      +     bits.map(b => "<span>" + b + "</span>").join("")
+      +     (m.published ? '<span class="vo-when">' + esc(m.published) + "</span>" : "")
+      +   "</div>"
+      +   "<h4>" + words + "</h4>"
+      +   (m.title ? '<div class="vo-src">' + esc(m.title) + "</div>" : "")
+      +   '<div class="vo-reg">' + esc(m.register) + "</div>"
+      + "</button>"
+      + '<div class="vo-body" id="vo-body-' + i + '" hidden></div>'
+      + "</article>";
+  }
+
+  // Expanding a card asks the server for a summary of the whole piece. The summary is written once
+  // and stored, so opening the same essay again is free; when no model is available the server
+  // returns an extractive summary and says so, rather than an empty panel.
+  async function expand(i){
+    const m = STATE.moments[i];
+    const el = document.getElementById("vo-body-" + i);
+    if(!m || !el) return;
+    const head = el.previousElementSibling;
+    if(!el.hidden){ el.hidden = true; if(head) head.setAttribute("aria-expanded","false"); return; }
+    el.hidden = false; if(head) head.setAttribute("aria-expanded","true");
+    if(el.dataset.loaded) return;
+    el.innerHTML = '<div class="vo-sum"><span class="su-spin"></span>reading the whole piece\u2026</div>';
+    try{
+      const r = await fetch("/voices/summary", {method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({id: m.id})});
+      if(!r.ok) throw new Error("summary failed (" + r.status + ")");
+      const d = await r.json();
+      el.dataset.loaded = "1";
+      const pts = (d.points || []).map(p => "<li>" + esc(p) + "</li>").join("");
+      const open = m.url
+        ? '<a class="vo-open" href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">'
+          + (m.kind === "chapter" ? "Listen from " + stamp(m.t_start) : "Read the whole thing") + " &rarr;</a>"
+        : '<span class="vo-nolink">This feed publishes no episode link \u2014 search the show for this title.</span>';
+      el.innerHTML =
+          (pts ? "<h5>" + esc(d.heading || "What it says") + "</h5><div class=\"vo-sum\"><ul>" + pts + "</ul></div>" : "")
+        + (d.note ? '<div class="vo-reg">' + esc(d.note) + "</div>" : "")
+        + (d.text ? "<h5>" + (m.kind === "chapter" ? "All chapters" : "From the piece") + "</h5>"
+                    + '<div class="vo-full">' + esc(d.text) + "</div>" : "")
+        + '<div class="vo-actions">' + open + "</div>";
+    }catch(e){
+      el.innerHTML = '<div class="vo-reg">Could not load this one: ' + esc(e && e.message ? e.message : e) + "</div>";
+    }
   }
 
   function render(data){
@@ -6998,6 +7053,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     if(c.quotable) parts.push(c.quotable + " quotable " + (c.quotable === 1 ? "passage" : "passages"));
     if(data.ranking === "keyword") parts.push("ranked by words only");
     note().textContent = parts.join(" \u00b7 ");
+    STATE.moments = ms;
     cards().innerHTML = ms.map(cardHtml).join("");
   }
 
@@ -7018,6 +7074,14 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
   }
 
   function wire(){
+    const box = cards();
+    if(box && !box.dataset.wired){
+      box.dataset.wired = "1";
+      box.addEventListener("click", e => {
+        const b = e.target.closest(".vo-head");
+        if(b) expand(parseInt(b.dataset.open, 10));
+      });
+    }
     const bar = document.getElementById("vo-filters");
     if(!bar || bar.dataset.wired) return;
     bar.dataset.wired = "1";

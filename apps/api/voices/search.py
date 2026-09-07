@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import re
 
+from eigen_vertical_tech.show_notes_doc import deep_link
+
 VOICE_SOURCE_KEYS = ("founder_essay", "show_notes", "expert_feed", "podcast")
 
 # Words that carry no signal in a question about startup lessons. Dropping them matters because the
@@ -69,7 +71,7 @@ def moment(row: dict) -> dict:
     source_kind = str(facets.get("source_kind") or "")
     kind = kind_of(source_kind, str(row.get("source_key") or ""))
 
-    t_start, url, body = 0, str(facets.get("episode_url") or ""), text
+    t_start, url, body = 0, str(facets.get("episode_url") or facets.get("url") or ""), text
     if kind == "chapter":
         m = _CHAPTER_LINE.match(text)
         if m:
@@ -77,7 +79,9 @@ def moment(row: dict) -> dict:
             # the stored line is "[hh:mm:ss] Title — <url>"; when the episode had no link the
             # separator is still there, and "Sales agent —" is not a chapter title anyone wrote
             body = m.group(2).strip().rstrip(" -–—")
-            url = m.group(3) or url
+            # the line's own link when it has one; otherwise point the episode's address at this
+            # moment, so a show that ships only an audio enclosure still opens at the right second
+            url = m.group(3) or deep_link(url, t_start)
     if kind != "chapter":
         # the passage that matched, when the query produced one; else the block's opening
         body = (row.get("snippet") or body or "").strip() or body

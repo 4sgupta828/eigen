@@ -1797,8 +1797,12 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 _vo_state["pg"] = PostgresRetrievalSource(_vo_dsn, dim=1536, table="rs_block")
             return _vo_state["pg"]
 
+        # The card summariser shares the startups feature's JSON-model seam, so provider choice and
+        # credit live in one place. When it is unavailable the summary degrades to extractive.
+        from api.startups import pipeline as _vo_pipeline
         app.include_router(_vo_router(_vo_pool, manifest=load_active_vertical(), pg_source_of=_vo_pg,
-                                      admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", "")))
+                                      admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""),
+                                      llm_json=_vo_pipeline.Providers.from_env().llm_json))
 
     @app.get("/health")
     def health() -> dict:

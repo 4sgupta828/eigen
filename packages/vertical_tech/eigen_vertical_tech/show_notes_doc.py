@@ -141,16 +141,35 @@ def guest_from_title(title: str) -> str:
 
 
 def episode_id(rec: dict) -> str:
-    return str(rec.get("guid") or rec.get("id") or rec.get("link") or "").strip()
+    return str(rec.get("guid") or rec.get("id") or rec.get("link") or rec.get("enclosure") or "").strip()
+
+
+_MEDIA = (".mp3", ".m4a", ".mp4", ".aac", ".ogg", ".wav", ".m4v")
+
+
+def episode_link(rec: dict) -> str:
+    """The best address the publisher gives for this episode: its page, else its audio file.
+
+    Half the shows in the allowlist publish no <link> element, so without the enclosure fallback
+    their chapters have nowhere to send the listener — a marker saying "listen from 15:35" with no
+    way to listen is worse than no card at all."""
+    return str(rec.get("link") or rec.get("enclosure") or "").strip()
 
 
 def deep_link(link: str, t_start: int) -> str:
     """The episode URL pointed at the moment. Sends the listener to the publisher, which is the whole
-    point of a pointer: we hold the index, they hold the work."""
+    point of a pointer: we hold the index, they hold the work.
+
+    A page takes `?t=` (the convention every podcast host uses); a bare audio file takes the media
+    fragment `#t=`, which the browser's own player honours. Using `?t=` on an audio URL would just
+    add a query string the CDN ignores and drop the listener at zero."""
     if not link:
         return ""
     if t_start <= 0:
         return link
+    path = link.split("?", 1)[0].split("#", 1)[0].lower()
+    if path.endswith(_MEDIA):
+        return f"{link}#t={int(t_start)}"
     sep = "&" if "?" in link else "?"
     return f"{link}{sep}t={int(t_start)}"
 
@@ -166,7 +185,7 @@ def facets(rec: dict) -> dict:
         "entity_type": "episode",
         "publication": " ".join(str(rec.get("publication") or "").split()).strip(),
         "guest": guest_from_title(str(rec.get("title") or "")),
-        "episode_url": str(rec.get("link") or "").strip(),
+        "episode_url": episode_link(rec),
         "published": str(rec.get("published") or "").strip()[:64],
         "year": _year(rec),
     }
@@ -183,7 +202,7 @@ def to_markdown(rec: dict) -> str:
     chs = chapters(str(rec.get("summary") or rec.get("content") or ""))
     show = " ".join(str(rec.get("publication") or "").split()).strip()
     guest = guest_from_title(title(rec))
-    link = str(rec.get("link") or "").strip()
+    link = episode_link(rec)
     published = str(rec.get("published") or "").strip()
 
     head = " — ".join(x for x in [show, title(rec)] if x)

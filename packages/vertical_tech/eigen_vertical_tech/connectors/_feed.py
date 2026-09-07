@@ -32,6 +32,20 @@ def _text(el, name: str) -> str:
     return (ch.text or "").strip() if (ch is not None and ch.text) else ""
 
 
+def _enclosure(el) -> str:
+    """The media URL an item encloses, or "". Several podcast feeds ship NO <link> at all — No
+    Priors, 20VC, This Week in Startups and The Startup Ideas Podcast all omit it — so the audio
+    enclosure is the only address the publisher gives for an episode."""
+    for ch in el:
+        if _local(ch.tag) == "enclosure":
+            href = ch.get("url") or ch.get("href")
+            if href:
+                return href.strip()
+        if _local(ch.tag) == "link" and (ch.get("rel") or "") == "enclosure" and ch.get("href"):
+            return ch.get("href").strip()
+    return ""
+
+
 def _rss_item(it, publication: str) -> dict:
     link = _text(it, "link")
     guid = _text(it, "guid")
@@ -51,6 +65,7 @@ def _rss_item(it, publication: str) -> dict:
         "published": _text(it, "pubDate") or _text(it, "date"),
         "summary": _text(it, "description"),
         "content": content,
+        "enclosure": _enclosure(it),
     }
 
 
@@ -81,6 +96,7 @@ def _atom_entry(e, publication: str) -> dict:
         "published": _text(e, "published") or _text(e, "updated"),
         "summary": _text(e, "summary"),
         "content": _text(e, "content"),
+        "enclosure": _enclosure(e),
     }
 
 

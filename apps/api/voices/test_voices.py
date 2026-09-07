@@ -64,7 +64,7 @@ ESSAY_ROW = {
     "document_id": "p1", "block_id": "b2", "document_title": "What I got wrong about seed pricing",
     "source_key": "founder_essay", "text": "We priced our seed round too high and it cost a year.",
     "facets": {"source_kind": "essay", "author": "Fred Wilson", "voice_role": "investor",
-               "publication": "AVC", "year": "2026"},
+               "publication": "AVC", "year": "2026", "url": "https://avc.com/seed-pricing"},
 }
 
 
@@ -82,6 +82,7 @@ def test_an_essay_moment_is_quotable_and_names_its_author_and_role():
     assert m["kind"] == "essay" and m["quotable"] is True
     assert m["speaker"] == "Fred Wilson" and m["role"] == "investor"
     assert m["t_start"] == 0 and m["published"] == "2026"
+    assert m["url"] == "https://avc.com/seed-pricing"      # a card must be able to send you to read it
 
 
 def test_search_sql_filters_to_the_voice_corpus_and_survives_an_empty_query():
@@ -157,3 +158,18 @@ def test_one_prolific_writer_cannot_own_the_whole_result_set():
     out = search.dedupe(ms, per_source=3, limit=5)
     assert [m["speaker"] for m in out[:4]] == ["Elad Gil", "Elad Gil", "Elad Gil", "Hunter Walk"]
     assert len(out) == 5           # the held-back passages still fill the set rather than vanish
+
+
+def test_a_moment_always_offers_somewhere_to_go():
+    """A card with no link is a dead end. Essays carry `url`, episodes carry `episode_url`, and a
+    chapter's own line carries the deep link — moment() must read whichever exists."""
+    essay = search.moment({"document_id": "p", "block_id": "b", "document_title": "t",
+                           "source_key": "founder_essay", "text": "words",
+                           "facets": {"source_kind": "essay", "url": "https://x.com/post"}})
+    assert essay["url"] == "https://x.com/post"
+    ep = search.moment({"document_id": "e", "block_id": "b", "document_title": "t",
+                        "source_key": "show_notes", "text": "[00:15:35] A lesson",
+                        "facets": {"source_kind": "chapter_pointer",
+                                   "episode_url": "https://cdn.fm/ep.mp3"}})
+    # an audio enclosure takes a media fragment, so the player opens at the moment itself
+    assert ep["url"] == "https://cdn.fm/ep.mp3#t=935" and ep["t_start"] == 935

@@ -45,6 +45,13 @@ async def _setup():
     await pg.ensure_schema()
     async with pool.acquire() as c:
         await c.execute("DELETE FROM rs_block WHERE source_key IN ('show_notes','founder_essay')")
+        # the summary cache outlives a block delete, so a re-run would read a stale row and the
+        # "first open is not cached" assertion would pass or fail depending on run order
+        await c.execute("CREATE TABLE IF NOT EXISTS vo_summary (document_id text PRIMARY KEY, "
+                        "heading text NOT NULL DEFAULT '', points jsonb NOT NULL DEFAULT '[]'::jsonb, "
+                        "note text NOT NULL DEFAULT '', basis text NOT NULL DEFAULT '', "
+                        "made_at timestamptz NOT NULL DEFAULT now())")
+        await c.execute("DELETE FROM vo_summary")
     return pool, pg
 
 
@@ -144,5 +151,45 @@ def test_refresh_guests_repairs_a_stale_or_wrong_name():
             facets = _json.loads(f) if isinstance(f, str) else f
             assert facets["guest"] == "Ryan Petersen"        # re-derived from the title
             assert "person" not in facets and "company_id" not in facets   # the bad binding is gone
+        await pool.close()
+    _run(go())
+
+
+def test_the_summary_endpoint_caches_and_survives_having_no_model():
+    """Opening a card summarises the whole piece once. A second open is free, and with no model the
+    panel is filled from the piece's own sentences rather than left empty."""
+    async def go():
+        from api.voices.routes import build_router
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+        pool, pg = await _setup()
+        await _ingest(pg)
+
+        async def pool_of():
+            return pool
+        app = FastAPI()
+        app.include_router(build_router(pool_of, llm_json=None))
+        async with pool.acquire() as c:
+            doc = await c.fetchval("SELECT document_id FROM rs_block WHERE source_key='founder_essay' LIMIT 1")
+            ep = await c.fetchval("SELECT document_id FROM rs_block WHERE source_key='show_notes' LIMIT 1")
+
+        tr = ASGITransport(app=app)
+        async with AsyncClient(transport=tr, base_url="http://t") as cl:
+            r = await cl.post("/voices/summary", json={"id": f"{doc}::x"})
+            assert r.status_code == 200, r.text
+            d = r.json()
+            assert d["basis"] == "extractive" and d["points"] and d["cached"] is False
+            assert "no model was available" in d["note"]
+
+            again = (await cl.post("/voices/summary", json={"id": f"{doc}::x"})).json()
+            assert again["cached"] is True and again["points"] == d["points"]
+
+            # an episode needs no model at all: its own chapter list is the summary
+            e = (await cl.post("/voices/summary", json={"id": f"{ep}::x"})).json()
+            assert e["basis"] == "chapters" and e["points"]
+            assert all("http" not in p for p in e["points"])
+
+            missing = await cl.post("/voices/summary", json={"id": "nope::x"})
+            assert missing.status_code == 404
         await pool.close()
     _run(go())

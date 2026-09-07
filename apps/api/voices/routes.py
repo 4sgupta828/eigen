@@ -13,7 +13,8 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from .ingest import bind_guests, ingest_voices, mark_boilerplate, refresh_guests
-from .search import build_query, dedupe, moment
+from .search import VOICE_SOURCE_KEYS, build_query, dedupe, moment
+from .summarize import MAX_INPUT_CHARS, cached, store, summarize
 
 
 def voices_enabled() -> bool:
@@ -28,13 +29,18 @@ class SearchIn(BaseModel):
     limit: int = 30
 
 
+class SummaryIn(BaseModel):
+    id: str                       # "<document_id>::<block_id>" as a moment card carries it
+    refresh: bool = False
+
+
 class JobIn(BaseModel):
     kind: str = "ingest"
     limit: int = 60
 
 
 def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = "default",
-                 admin_token: str = "") -> APIRouter:
+                 admin_token: str = "", llm_json=None) -> APIRouter:
     router = APIRouter()
 
     async def _rows(sql: str, params: list) -> list[dict]:
@@ -77,6 +83,45 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
         sql, params = build_query(q="", company_id=company_id, limit=limit, per_document=True)
         return {"moments": [moment(r) for r in await _rows(sql, params)]}
 
+    @router.post("/voices/summary")
+    async def voices_summary(body: SummaryIn) -> dict:
+        """Summarise the whole piece behind a moment, for the expanded card.
+
+        Lazy and cached by document: nothing is summarised until someone opens it, and the second
+        reader pays nothing. When no model is available the summary is extractive and says so.
+        """
+        document_id = (body.id or "").split("::", 1)[0]
+        if not document_id:
+            raise HTTPException(status_code=400, detail="a moment id is required")
+        pool = await pool_of()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT text, document_title, source_key, facets FROM rs_block "
+                "WHERE document_id = $1 AND source_key = ANY($2) ORDER BY block_id", document_id,
+                list(VOICE_SOURCE_KEYS))
+            if not rows:
+                raise HTTPException(status_code=404, detail="that piece is no longer in the corpus")
+            import json as _json
+            facets = rows[0]["facets"]
+            facets = _json.loads(facets) if isinstance(facets, str) else (facets or {})
+            is_chapter = str(facets.get("source_kind") or "") == "chapter_pointer"
+            title = rows[0]["document_title"] or ""
+            author = str(facets.get("author") or facets.get("guest") or "")
+            text = "\n".join((r["text"] or "") for r in rows)
+
+            hit = None if body.refresh else await cached(conn, document_id)
+            if hit is None:
+                hit = await summarize(title=title, author=author, text=text, is_chapter=is_chapter,
+                                      llm_json=llm_json)
+                await store(conn, document_id, hit)
+                hit = dict(hit, cached=False)
+            else:
+                hit = dict(hit, cached=True)
+        # the piece itself, bounded — the panel shows the words, not just a summary of them
+        hit["text"] = text[:MAX_INPUT_CHARS]
+        hit["title"] = title
+        return hit
+
     @router.get("/voices/sources")
     async def voices_sources() -> dict:
         """What the corpus actually holds, by show/publication — the honest coverage answer."""
@@ -84,7 +129,6 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
                "count(DISTINCT document_id) AS items FROM rs_block "
                "WHERE source_key = ANY($1) AND facets->>'publication' IS NOT NULL "
                "GROUP BY 1, 2 ORDER BY items DESC LIMIT 60")
-        from .search import VOICE_SOURCE_KEYS
         rows = await _rows(sql, [list(VOICE_SOURCE_KEYS)])
         return {"sources": [{"name": r["name"], "kind": r["source_key"],
                              "items": r["items"], "blocks": r["blocks"]} for r in rows]}

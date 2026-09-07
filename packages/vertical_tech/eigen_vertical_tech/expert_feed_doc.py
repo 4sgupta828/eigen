@@ -37,6 +37,10 @@ def _year(rec: dict) -> str:
 def facets(rec: dict) -> dict:
     f = {
         "source_kind": "essay",           # → NEW "expert_analysis" tier (wired separately)
+        # The permalink belongs in the FACETS, not only in the document body: a card renders from
+        # facets, so an essay whose link lives only in its prose reaches the reader with no way to
+        # go and read it.
+        "url": str(rec.get("link") or "").strip(),
         "source_country": "global",
         "entity_type": "essay",
         "author": " ".join(str(rec.get("author") or "").split()).strip(),
