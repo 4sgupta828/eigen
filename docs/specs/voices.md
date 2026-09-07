@@ -263,3 +263,47 @@ publisher's own chapter list, so nothing is invented and nothing is quoted).
 
 **Model credit returned** while this shipped: the first summary requested in production came back
 `basis: model`, and startup search reports embeddings working again with no degraded banner.
+
+
+## 12. YouTube, and why the first answer was wrong (2026-09-07)
+
+Section 0 concluded that video was metadata-only. That was true of CAPTIONS and false of the source
+as a whole, and the difference cost a real leg of the corpus for half a day.
+
+- YouTube's caption endpoint is gated: `captionTracks` is still in the watch page, but every format
+  of its `baseUrl` returns zero bytes without a signed token. We do not scrape captions, so
+  transcripts stay unavailable.
+- DESCRIPTIONS are public in the keyless channel feed, and on these channels they carry the
+  creator's own timestamped chapters — the exact unit this mode already indexes. Measured over the
+  newest 15 videos per channel: BG2 14, a16z 13, Greg Isenberg 13, Y Combinator 12, The Logan
+  Bartlett Show 12.
+- The earlier probe missed it by reading the entry's own `<description>`. In a YouTube Atom feed the
+  text lives one level down, in `<media:group><media:description>`. A wrong element read as a
+  verdict about the whole platform.
+
+`connectors/youtube_chapters.py` indexes them, deep-linking to `watch?v=<id>&t=<seconds>`. Channels
+are pinned by ID, not handle, because a handle can be reassigned. In production it added 1,195
+chapter blocks, including Y Combinator's own channel, which no podcast feed covers.
+
+## 13. Startup activity as it is reported (2026-09-07)
+
+Activity is reported before it is filed, and often only ever reported: a seed round covered by
+Crunchbase News may never surface a Form D we can find, and a launch produces no filing at all.
+`connectors/startup_news.py` ingests 14 press feeds, each kept only after measuring that it ships
+usable article text. TechCrunch and its venture and startups categories are excluded at roughly 130
+characters an item — an index of headlines with no reporting under them cannot answer a question.
+Europe, India and the wider world are in the list deliberately, because a US-only press leg quietly
+makes the whole index US-only.
+
+The tier does the disciplining: `source_kind="news"` grades to `analysis`, rank 4, never
+controlling. Press reports a round; a filing attests one, and when both exist the filing wins.
+
+First run in production: 112 articles, 227 blocks, all embedded, spread evenly across all 14
+publications, carrying exactly the headlines this is for — a $165M raise, a $17M acquisition, a
+€203M fund close, and monthly global funding totals.
+
+**An operational trap worth remembering.** The corpus queue is drained by the SEPARATE `eigen-worker`
+service. `railway up -s eigen-api` does not touch it, so a newly added connector fails with "unknown
+connector" until the worker is deployed too. Deploy both, or the queue rejects work the API happily
+accepted. The ingest endpoint also de-duplicates by (connector, query): re-queuing the identical job
+returns `queued: 1` without creating a row, which reads as a silent failure.
