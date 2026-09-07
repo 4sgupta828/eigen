@@ -29,7 +29,8 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
                          HuggingFaceConnector, LobstersConnector, NihReporterConnector, NsfConnector,
                          OpenAlexConnector,
                          OpenReviewConnector, PatentsViewConnector, PodcastConnector, RedditConnector,
-                         SemanticScholarConnector, ShowNotesConnector, StackExchangeConnector,
+                         SemanticScholarConnector, ShowNotesConnector, StartupNewsConnector,
+                         StackExchangeConnector,
                          UsptoConnector,
                          WikidataConnector, WikipediaConnector, YcConnector,
                          YoutubeChaptersConnector)
@@ -126,6 +127,9 @@ def build_manifest() -> VerticalManifest:
             # The same chapter unit from video: creators write timestamped chapters in the
             # public description, which the keyless channel feed carries. Captions stay untouched.
             "youtube_chapters": YoutubeChaptersConnector(),
+            # Startup ACTIVITY as it is reported — funding, launches, acquisitions. Press is
+            # the "analysis" tier: it reports a round, a filing attests one.
+            "startup_news": StartupNewsConnector(),
             "github": GithubConnector(),
             "patentsview": PatentsViewConnector(),
             "gdelt": GdeltConnector(),
