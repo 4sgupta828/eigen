@@ -18,6 +18,23 @@ import re
 
 VOICE_SOURCE_KEYS = ("founder_essay", "show_notes", "expert_feed", "podcast")
 
+# Words that carry no signal in a question about startup lessons. Dropping them matters because the
+# query is OR-ed: left in, "how" and "what" would match half the corpus and drown the real terms.
+_STOP = {"a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "with", "at", "by", "from",
+         "how", "what", "why", "when", "who", "do", "does", "did", "is", "are", "was", "were", "be",
+         "i", "we", "you", "they", "it", "that", "this", "about", "after", "before", "my", "our"}
+
+
+def terms(q: str) -> list[str]:
+    """Query words, cleaned for `to_tsquery`. Punctuation out, stopwords out, duplicates out."""
+    out: list[str] = []
+    for raw in re.split(r"[^A-Za-z0-9']+", (q or "").lower()):
+        w = raw.strip("'")
+        if len(w) < 2 or w in _STOP or w in out:
+            continue
+        out.append(w)
+    return out[:12]
+
 # "[00:13:00] Is Series A the hardest stage — https://show.fm/ep?t=780"
 _CHAPTER_LINE = re.compile(r"^\[(\d{2}:\d{2}:\d{2})\]\s*(.+?)(?:\s+—\s+(https?://\S+))?$")
 
@@ -113,15 +130,20 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         where.append(f"(facets->>'guest' ILIKE ${n} OR facets->>'author' ILIKE ${n})")
         params.append(speaker)
 
-    if q.strip():
+    q_terms = terms(q)
+    if q_terms:
+        # OR, not AND. `plainto_tsquery` requires EVERY word, so "pivot after a failed round"
+        # returned one block in the whole corpus — a question phrased as a sentence found nothing.
+        # OR-ing the terms and letting ts_rank order the result is what the kernel's own retrieval
+        # does, and it is the difference between a mode that answers and a mode that shrugs.
         n += 1
-        where.append(f"tsv @@ plainto_tsquery('english', ${n})")
-        params.append(q.strip())
-        rank = f"ts_rank(tsv, plainto_tsquery('english', ${n}))"
+        params.append(" | ".join(q_terms))
+        where.append(f"tsv @@ to_tsquery('english', ${n})")
+        rank = f"ts_rank(tsv, to_tsquery('english', ${n}))"
         order = f"{rank} DESC, created_at DESC NULLS LAST"
         # An essay block can be thousands of characters, so the head of it is rarely the part that
         # answered the question. ts_headline returns the passage that actually matched.
-        snippet = (f"ts_headline('english', text, plainto_tsquery('english', ${n}), "
+        snippet = (f"ts_headline('english', text, to_tsquery('english', ${n}), "
                    f"'MaxWords=48, MinWords=20, ShortWord=3, MaxFragments=1, StartSel=\u00ab, StopSel=\u00bb')")
     else:
         rank = "0.0"

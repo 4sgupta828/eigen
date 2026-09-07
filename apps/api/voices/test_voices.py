@@ -86,11 +86,11 @@ def test_an_essay_moment_is_quotable_and_names_its_author_and_role():
 
 def test_search_sql_filters_to_the_voice_corpus_and_survives_an_empty_query():
     sql, params = search.build_query(q="pivot after a failed series a", limit=10)
-    assert "source_key = ANY($1)" in sql and "plainto_tsquery" in sql and "ts_rank" in sql
+    assert "source_key = ANY($1)" in sql and "to_tsquery" in sql and "ts_rank" in sql
     assert params[0] == list(search.VOICE_SOURCE_KEYS) and params[-1] == 10
 
     sql2, params2 = search.build_query(q="   ", limit=5)
-    assert "plainto_tsquery" not in sql2 and "created_at DESC" in sql2   # newest, not an error
+    assert "tsquery" not in sql2 and "created_at DESC" in sql2           # newest, not an error
 
 
 def test_search_can_be_scoped_to_one_company_or_one_kind():
@@ -125,3 +125,19 @@ def test_dedupe_keeps_a_result_set_readable():
 def test_every_voice_query_excludes_boilerplate():
     sql, _ = search.build_query(q="pivot")
     assert "NOT (facets ? 'boilerplate')" in sql
+
+
+def test_a_question_phrased_as_a_sentence_still_finds_things():
+    # plainto_tsquery requires EVERY word, so "pivot after a failed round" matched one block in the
+    # entire corpus. The terms are OR-ed and ranked instead, and the noise words are dropped.
+    assert search.terms("How do I price a seed round after a failed pivot?") == \
+        ["price", "seed", "round", "failed", "pivot"]
+    sql, params = search.build_query(q="pivot after a failed round")
+    assert "to_tsquery" in sql and "plainto_tsquery" not in sql
+    assert "pivot | failed | round" in params
+
+
+def test_an_all_stopword_query_degrades_to_newest_rather_than_erroring():
+    assert search.terms("what about the and of") == []
+    sql, _ = search.build_query(q="what about the and of")
+    assert "tsquery" not in sql and "created_at DESC" in sql
