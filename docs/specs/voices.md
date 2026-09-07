@@ -307,3 +307,39 @@ service. `railway up -s eigen-api` does not touch it, so a newly added connector
 connector" until the worker is deployed too. Deploy both, or the queue rejects work the API happily
 accepted. The ingest endpoint also de-duplicates by (connector, query): re-queuing the identical job
 returns `queued: 1` without creating a row, which reads as a silent failure.
+
+
+## 14. The card as an object (2026-09-07, later)
+
+A pointer card should look like the thing it points at. The cards were bolded text with a link;
+they now carry the publisher's own artwork, a real typographic hierarchy, and the ability to play
+the moment in place.
+
+**Artwork, free from the feeds we already read.** Podcasts ship `itunes:image` at both show and
+episode level, and the show's cover fills in for an episode that has none. Every YouTube video has a
+deterministic thumbnail. Essays carry their lead image inside the body the feed already sends, so no
+second fetch is needed; tracking pixels are skipped, because a 1x1 beacon rendered at card size is
+worse than no picture. When there is genuinely no image, a monogram of the show keeps the row
+aligned — a hole where a picture should be reads as broken, not plain.
+
+**Hierarchy.** A small monospace kicker carries kind, show, date and timestamp. The moment itself is
+the heading. Who said it sits underneath in its own line, their name in the reader's weight rather
+than as a chip. Essays are italic and gold-keyed; recordings upright and blue-keyed. The accent is a
+thin left rule and a 4% tint, never a shouted colour, because the artwork should be the loudest
+thing on the card.
+
+**Play in place.** A YouTube moment embeds through `youtube-nocookie.com` and starts at the second;
+a podcast moment plays its audio enclosure from the same offset. The link out sits beside the play
+button, so the publisher still gets the traffic either way.
+
+**Keeping.** The ☆ saves a moment and a "Kept" view lists them. Storage is per ACCOUNT, not per
+browser, because the point of keeping something is finding it again from a phone. Each favourite
+stores a SNAPSHOT of the card next to its id: feeds roll, and a kept moment must still render after
+its episode has scrolled out of the corpus entirely. The integration test pins exactly that by
+deleting the blocks underneath a saved card and asserting it still renders.
+
+**Verified how.** Data and structure only — the search API returns artwork and a play mode for every
+podcast and video moment in production, the JavaScript parses, the responsive pass is present, and
+the favourites round-trip is covered by an integration test against a real database. The browser
+extension was disconnected, so this pass has NOT been checked visually at 400px. That check is still
+owed.
