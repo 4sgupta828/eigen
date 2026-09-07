@@ -38,3 +38,28 @@ def test_an_oversized_page_is_refused_rather_than_truncated():
         raise AssertionError("accepted an oversized payload")
     except ValueError as e:
         assert "narrow" in str(e)      # a share that quietly dropped half its results would lie
+
+
+def test_a_history_fingerprint_folds_a_repeated_search():
+    from api import history
+    a = history.fingerprint({"q": "pivot", "kinds": ["video"], "days": 7})
+    b = history.fingerprint({"days": 7, "kinds": ["video"], "q": "pivot"})   # same search, keys reordered
+    c = history.fingerprint({"q": "pivot", "kinds": ["podcast"], "days": 7})
+    assert a == b and a != c
+
+
+def test_history_is_only_kept_for_a_signed_in_account():
+    import asyncio
+
+    class FakeConn:
+        def __init__(self): self.writes = 0
+        async def execute(self, *a, **k):
+            self.writes += 1
+            return "OK"
+
+    c = FakeConn()
+    asyncio.run(history.record(c, "", mode="voices", title="t", query={"q": "x"}, hits=1))
+    assert c.writes == 0        # anonymous searches are not logged to the server at all
+
+
+from api import history  # noqa: E402

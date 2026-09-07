@@ -134,6 +134,16 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
         if uid:
             async with pool.acquire() as conn:
                 kept = set(await favorites.ids(conn, uid))
+                # a private note of what was asked, so a line of enquiry can be resumed
+                try:
+                    from api.history import record as _record
+                    await _record(conn, uid, mode="voices",
+                                  title=(body.q.strip() or "browse: " + (body.kinds[0] if body.kinds else "everything")),
+                                  query={"q": body.q, "kinds": body.kinds, "days": body.days,
+                                         "order": body.order},
+                                  hits=len(moments))
+                except Exception:      # noqa: BLE001 — history must never break the search
+                    pass
             for m in moments:
                 m["saved"] = m["id"] in kept
         return {

@@ -1779,6 +1779,29 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 raise HTTPException(status_code=404, detail="that link has expired or never existed")
             return snap
 
+        @app.get("/history")
+        async def search_history(mode: str = "", x_eigen_token: str = Header(default="")) -> dict:
+            """A private list of what this account searched, newest first."""
+            from api import history as _history
+            u = await _shell_user(x_eigen_token)
+            uid = str((u or {}).get("id") or "")
+            if not uid:
+                return {"searches": [], "signed_in": False}
+            pool = await _share_pool()
+            async with pool.acquire() as conn:
+                return {"searches": await _history.listing(conn, uid, mode=mode), "signed_in": True}
+
+        @app.delete("/history")
+        async def clear_history(mode: str = "", x_eigen_token: str = Header(default="")) -> dict:
+            from api import history as _history
+            u = await _shell_user(x_eigen_token)
+            uid = str((u or {}).get("id") or "")
+            if not uid:
+                raise HTTPException(status_code=401, detail="sign in first")
+            pool = await _share_pool()
+            async with pool.acquire() as conn:
+                return {"cleared": await _history.clear(conn, uid, mode=mode)}
+
         @app.get("/shares")
         async def my_shares(x_eigen_token: str = Header(default="")) -> dict:
             u = await _shell_user(x_eigen_token)

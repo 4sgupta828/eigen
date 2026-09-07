@@ -18,7 +18,12 @@ import re
 
 from eigen_vertical_tech.show_notes_doc import deep_link
 
-VOICE_SOURCE_KEYS = ("founder_essay", "show_notes", "youtube_chapters", "expert_feed", "podcast")
+# The mode's sources. The kernel's older `podcast` connector is NOT here: it holds publisher
+# transcripts of deep-tech ENGINEERING shows (the Changelog network, Latent Space), which are
+# first-person practitioner talk but not founders and investors on building companies. Their
+# fragments — "[00:28:20.11] And these..." with no show or speaker on the card — diluted every
+# result. They stay in the corpus for research answers; they are simply not this mode's material.
+VOICE_SOURCE_KEYS = ("founder_essay", "show_notes", "youtube_chapters", "expert_feed")
 
 # Words that carry no signal in a question about startup lessons. Dropping them matters because the
 # query is OR-ed: left in, "how" and "what" would match half the corpus and drown the real terms.
@@ -206,7 +211,7 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
     if kinds:
         by_kind = {"podcast": ["show_notes"], "video": ["youtube_chapters"],
                    "chapter": ["show_notes", "youtube_chapters"],      # kept: "both kinds of moment"
-                   "essay": ["founder_essay", "expert_feed"], "transcript": ["podcast"]}
+                   "essay": ["founder_essay", "expert_feed"]}
         keys: list[str] = []
         for k in kinds:
             keys += by_kind.get(k, [])

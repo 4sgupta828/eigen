@@ -311,6 +311,13 @@
   .vo-read p:last-child{margin-bottom:0;}
   .vo-chapline{font-size:.8rem;line-height:1.6;margin:0 0 .35rem;}
   .vo-nolink{font-family:var(--mono);font-size:.64rem;color:var(--dim);}
+  .vo-hist{display:grid;gap:.4rem;}
+  .vo-hrow{display:flex;flex-direction:column;gap:.2rem;align-items:flex-start;text-align:left;
+    border:1px solid var(--hair);border-radius:10px;background:var(--panel2);padding:.6rem .75rem;
+    cursor:pointer;font:inherit;color:inherit;min-height:44px;}
+  .vo-hrow:hover{border-color:var(--gold);}
+  .vo-hq{font-size:.88rem;font-weight:600;line-height:1.35;}
+  .vo-hmeta{font-family:var(--mono);font-size:.63rem;color:var(--dim);}
   .vo-strip{margin:.7rem 0 0;border-top:1px dashed var(--hair);padding-top:.6rem;}
   .vo-strip .vo-slabel{font-family:var(--mono);font-size:.64rem;color:var(--dim);letter-spacing:.05em;text-transform:uppercase;}
   .vo-strip a{display:block;font-size:.78rem;color:var(--ink);text-decoration:none;margin-top:.3rem;line-height:1.45;}
@@ -1767,7 +1774,8 @@
     <button type="button" class="vo-chip" data-kind="podcast" aria-pressed="false">🎧 Podcasts</button>
     <button type="button" class="vo-chip" data-kind="video" aria-pressed="false">▶ Videos</button>
     <button type="button" class="vo-chip" data-kind="essay" aria-pressed="false">✎ Essays</button>
-    <button type="button" class="vo-chip" id="vo-share" style="margin-left:auto" title="Create a permanent link to exactly these results">🔗 Share</button>
+    <button type="button" class="vo-chip" id="vo-recent" style="margin-left:auto" title="Searches you have run before">🕘 Recent</button>
+    <button type="button" class="vo-chip" id="vo-share" title="Create a permanent link to exactly these results">🔗 Share</button>
     <button type="button" class="vo-chip" id="vo-saved" aria-pressed="false">★ Kept</button>
   </div>
   <div class="vo-filters vo-browse" id="vo-window">
@@ -1785,7 +1793,7 @@
 
 <section id="startupsbody" aria-label="Startup search">
 
-  <div class="su-toolbar"><button type="button" id="su-saveMap">☆ Save as map</button><button type="button" id="su-myMaps">🗺 My maps</button><button type="button" id="su-share" title="Create a permanent link to exactly these results">🔗 Share</button><button type="button" id="su-covLink">Coverage</button></div>
+  <div class="su-toolbar"><button type="button" id="su-saveMap">☆ Save as map</button><button type="button" id="su-myMaps">🗺 My maps</button><button type="button" id="su-recent" title="Searches you have run before">🕘 Recent</button><button type="button" id="su-share" title="Create a permanent link to exactly these results">🔗 Share</button><button type="button" id="su-covLink">Coverage</button></div>
   <div class="su-examples" id="su-examples"></div>
   <div id="su-mapbar"></div>
   <div id="su-mapsPanel" hidden></div>
@@ -6721,6 +6729,32 @@ window.addEventListener("hashchange", ()=>{
     }catch(e){ alert("Couldn't take that turn — try again."); }
     finally{ G.busy = false; render(); }
   }
+  // Recent searches, newest first. Clicking one runs it again against the index AS IT IS NOW — the
+  // point of a history entry is that the answer may have changed since.
+  async function showRecent(){
+    STATE.view = "recent";
+    note().textContent = "Loading your recent searches\u2026";
+    cards().innerHTML = "";
+    const {searches, where} = await recentSearches("voices");
+    if(!searches.length){
+      note().textContent = "No searches yet. What you run will appear here (" + where + ").";
+      return;
+    }
+    note().textContent = searches.length + " recent " + (searches.length === 1 ? "search" : "searches")
+      + " \u00b7 kept in " + where + " \u00b7 click one to run it again";
+    cards().innerHTML = '<div class="vo-hist">' + searches.map((h, i) => {
+      const q = (h.query || {});
+      const bits = [q.kinds && q.kinds.length ? q.kinds[0] + "s" : "", q.days ? "last " + q.days + " days" : "",
+                    q.order && q.order !== "recent" ? q.order : "",
+                    h.hits ? h.hits + " results" : "", h.runs > 1 ? "run " + h.runs + "×" : ""].filter(Boolean);
+      return '<button type="button" class="vo-hrow" data-recent="' + i + '">'
+        + '<span class="vo-hq">' + esc(h.title || q.q || "browse") + "</span>"
+        + '<span class="vo-hmeta">' + esc(bits.join(" \u00b7 ")) + (h.at ? " \u00b7 " + esc(shortDate(h.at)) : "") + "</span>"
+        + "</button>";
+    }).join("") + "</div>";
+    STATE.recent = searches;
+  }
+
   async function showSaved(){
     STATE.view = "saved";
     note().textContent = "Loading what you kept\u2026";
@@ -7037,6 +7071,7 @@ async function runEvaluate(contract, opts){
       toast(`Applied ✓ — ${d.rows.length} shown · ${added.length} new · ${removed.length} dropped`);
     } else STATE.lastDiff = null;
     STATE.prevMatched = d.coverage.matched;
+    rememberStartupSearch(d.contract || contract, STATE.brief, (d.rows || []).length);
     renderCoverage(); renderRail(); renderResults();
     if(prev){ const el=$("#su-rail"); if(el) el.scrollIntoView({block:"start", behavior:"smooth"}); }
   } finally { STATE.busy=false; renderRail(); }
@@ -7052,6 +7087,13 @@ async function enter(params){
   if(h.get("map")){ await openMap(h.get("map"), h.get("share")||""); }
   else if(h.get("b")){ q.value=h.get("b"); runCompile(h.get("b")); }
 }
+function rememberStartupSearch(contract, brief, hits){
+  try{
+    localHistory("startups", {title: brief || contract.text || "startup search",
+                              query: {contract}, hits: hits || 0});
+  }catch(e){ /* a history entry is never worth breaking a search over */ }
+}
+
 function runContract(contract, brief){ STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.brief=brief||""; if(brief) q.value=brief; STATE.merge=contract.merge||{mode:"merged"}; STATE.mergeOff=[]; renderNotes([]); renderMapBar(); return runEvaluate(contract); }
 function reset(){
   STATE.data=null; STATE.contract=null; STATE.draft=null; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.mergeOff=[]; STATE.brief=""; STATE.open=null; STATE.busy=false;
@@ -7073,6 +7115,44 @@ function reset(){
          labels: STATE.data.labels, contract: STATE.contract}, b);
       renderNotes([{note: (copied ? "Link copied. " : "") + "Anyone with this link sees these exact results: " + url}]);
     }catch(e){ toast("could not create a link: " + (e && e.message ? e.message : e)); }
+  });
+})();
+
+// Recent startup searches. A MAP is a curated artifact you chose to keep; a history entry is just
+// what you asked, so running it again re-evaluates against the index as it is now.
+(function(){
+  const b = document.getElementById("su-recent");
+  if(!b) return;
+  b.addEventListener("click", async () => {
+    const {searches, where} = await recentSearches("startups");
+    const panel = $("#su-mapsPanel");
+    if(!panel) return;
+    if(!searches.length){
+      panel.hidden = false;
+      panel.innerHTML = "<p class=\"su-empty\">No searches yet. What you run will appear here (" + where + ").</p>";
+      return;
+    }
+    window.SU_RECENT = searches;
+    panel.hidden = false;
+    panel.innerHTML = "<h4>Recent searches <span class=\"su-dim\">· kept in " + esc(where) + "</span></h4>"
+      + '<div class="vo-hist">' + searches.map((h, i) => {
+          const c = (h.query || {}).contract || {};
+          const bits = [h.hits ? h.hits + " results" : "", h.runs > 1 ? "run " + h.runs + "×" : "",
+                        c.centre ? "centred on " + c.centre : ""].filter(Boolean);
+          return '<button type="button" class="vo-hrow" data-surecent="' + i + '">'
+            + '<span class="vo-hq">' + esc(h.title || "startup search") + "</span>"
+            + '<span class="vo-hmeta">' + esc(bits.join(" · ")) + (h.at ? " · " + esc(String(h.at).slice(0, 10)) : "")
+            + "</span></button>";
+        }).join("") + "</div>";
+  });
+  document.addEventListener("click", e => {
+    const row = e.target.closest("[data-surecent]");
+    if(!row) return;
+    const h = (window.SU_RECENT || [])[parseInt(row.dataset.surecent, 10)];
+    const contract = h && (h.query || {}).contract;
+    if(!contract) return;
+    const mp = $("#su-mapsPanel"); if(mp) mp.hidden = true;
+    runContract(contract, h.title || "");
   });
 })();
 
@@ -7113,6 +7193,34 @@ async function mintShare(mode, title, query, payload, btn){
   }finally{ if(btn){ btn.disabled = false; btn.textContent = label; } }
 }
 
+// Recent searches. Signed in, they follow the account; signed out they stay in this browser, because
+// writing a per-browser query log to the server would be keeping something nobody asked us to keep.
+function localHistory(mode, entry){
+  const key = "eigen_recent_" + mode;
+  let list = [];
+  try{ list = JSON.parse(localStorage.getItem(key) || "[]"); }catch(e){ list = []; }
+  if(entry){
+    const fp = JSON.stringify(entry.query || {});
+    list = list.filter(x => JSON.stringify(x.query || {}) !== fp);
+    list.unshift(Object.assign({at: new Date().toISOString()}, entry));
+    list = list.slice(0, 40);
+    try{ localStorage.setItem(key, JSON.stringify(list)); }catch(e){ /* private window */ }
+  }
+  return list;
+}
+
+async function recentSearches(mode){
+  const signedIn = (typeof USER !== "undefined" && USER && USER.token);
+  if(signedIn){
+    try{
+      const r = await fetch("/history?mode=" + encodeURIComponent(mode), {headers:{"x-eigen-token": USER.token}});
+      const d = await r.json();
+      if(d.signed_in) return {searches: d.searches || [], where: "your account"};
+    }catch(e){ /* fall through to the local list */ }
+  }
+  return {searches: localHistory(mode), where: "this browser"};
+}
+
 async function openShare(token){
   const r = await fetch("/share/" + encodeURIComponent(token));
   if(!r.ok) throw new Error("that link has expired or never existed");
@@ -7127,7 +7235,8 @@ async function openShare(token){
 (function(){
   const cards = () => document.getElementById("vo-cards");
   const note  = () => document.getElementById("vo-note");
-  const STATE = {kind: "", busy: false, q: "", moments: [], view: "search", days: 7, order: "recent"};
+  const STATE = {kind: "", busy: false, q: "", moments: [], view: "search", days: 7,
+                 order: "recent", recent: []};
 
   const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c =>
     ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -7390,7 +7499,12 @@ async function openShare(token){
         body: JSON.stringify({q: STATE.q, kinds: STATE.kind ? [STATE.kind] : [], limit: 30,
                               days: STATE.q ? 0 : STATE.days, order: STATE.order})});
       if(!r.ok) throw new Error("search failed (" + r.status + ")");
-      render(await r.json());
+      const data = await r.json();
+      render(data);
+      localHistory("voices", {title: STATE.q || ("browse: " + (STATE.kind || "everything")),
+                              query: {q: STATE.q, kinds: STATE.kind ? [STATE.kind] : [],
+                                      days: STATE.days, order: STATE.order},
+                              hits: (data.moments || []).length});
     }catch(e){
       cards().innerHTML = "";
       note().textContent = "Voices search failed: " + (e && e.message ? e.message : e);
@@ -7406,6 +7520,21 @@ async function openShare(token){
         if(pl){ play(parseInt(pl.dataset.play, 10)); return; }
         const fa = e.target.closest("[data-fav]");
         if(fa){ favorite(parseInt(fa.dataset.fav, 10)); return; }
+        const hr = e.target.closest("[data-recent]");
+        if(hr){
+          const h = (STATE.recent || [])[parseInt(hr.dataset.recent, 10)];
+          if(h){
+            const q = h.query || {};
+            STATE.kind = (q.kinds || [])[0] || "";
+            STATE.days = q.days || 0;
+            STATE.order = q.order || "recent";
+            STATE.view = "search";
+            syncSort();
+            if(q.q) $("#q").value = q.q;
+            search(q.q || "");
+          }
+          return;
+        }
         const op = e.target.closest("[data-open]");
         if(op){
           expand(parseInt(op.dataset.open, 10));
@@ -7443,6 +7572,15 @@ async function openShare(token){
         search(STATE.q);
       }));
     }
+    const rc = document.getElementById("vo-recent");
+    if(rc && !rc.dataset.wired){
+      rc.dataset.wired = "1";
+      rc.addEventListener("click", () => {
+        document.querySelectorAll("#vo-filters .vo-chip").forEach(x => x.setAttribute("aria-pressed", "false"));
+        rc.setAttribute("aria-pressed", "true");
+        showRecent();
+      });
+    }
     const sh = document.getElementById("vo-share");
     if(sh && !sh.dataset.wired){
       sh.dataset.wired = "1";
@@ -7465,6 +7603,32 @@ async function openShare(token){
       bar.querySelectorAll(".vo-chip").forEach(x => x.setAttribute("aria-pressed", x === sv ? "true" : "false"));
       showSaved();
     });
+  }
+
+  // Recent searches, newest first. Clicking one runs it again against the index AS IT IS NOW — the
+  // point of a history entry is that the answer may have changed since.
+  async function showRecent(){
+    STATE.view = "recent";
+    note().textContent = "Loading your recent searches\u2026";
+    cards().innerHTML = "";
+    const {searches, where} = await recentSearches("voices");
+    if(!searches.length){
+      note().textContent = "No searches yet. What you run will appear here (" + where + ").";
+      return;
+    }
+    note().textContent = searches.length + " recent " + (searches.length === 1 ? "search" : "searches")
+      + " \u00b7 kept in " + where + " \u00b7 click one to run it again";
+    cards().innerHTML = '<div class="vo-hist">' + searches.map((h, i) => {
+      const q = (h.query || {});
+      const bits = [q.kinds && q.kinds.length ? q.kinds[0] + "s" : "", q.days ? "last " + q.days + " days" : "",
+                    q.order && q.order !== "recent" ? q.order : "",
+                    h.hits ? h.hits + " results" : "", h.runs > 1 ? "run " + h.runs + "×" : ""].filter(Boolean);
+      return '<button type="button" class="vo-hrow" data-recent="' + i + '">'
+        + '<span class="vo-hq">' + esc(h.title || q.q || "browse") + "</span>"
+        + '<span class="vo-hmeta">' + esc(bits.join(" \u00b7 ")) + (h.at ? " \u00b7 " + esc(shortDate(h.at)) : "") + "</span>"
+        + "</button>";
+    }).join("") + "</div>";
+    STATE.recent = searches;
   }
 
   async function showSaved(){

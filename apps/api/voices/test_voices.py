@@ -375,3 +375,12 @@ def test_a_question_made_only_of_generic_words_still_searches():
 def test_a_supplied_tsquery_is_what_gets_run():
     sql, params = search.build_query(q="physical ai robotic", tsquery="physical & robotic")
     assert "physical & robotic" in params and "physical | ai | robotic" not in params
+
+
+def test_engineering_transcripts_are_not_this_modes_material():
+    """The kernel's older podcast connector holds Changelog-network transcripts: practitioner talk,
+    but not founders and investors on building companies. Their fragments rendered with no show and
+    no speaker and diluted every result."""
+    assert "podcast" not in search.VOICE_SOURCE_KEYS
+    sql, params = search.build_query(q="robotics")
+    assert "podcast" not in params[0]

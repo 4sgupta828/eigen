@@ -299,11 +299,27 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         return {"contract": out[0], "notes": out[1], "cached": False}
 
     @r.post("/startups/evaluate")
-    async def evaluate_contract(body: EvaluateIn) -> dict:
+    async def evaluate_contract(body: EvaluateIn, x_eigen_token: str = Header(default="")) -> dict:
         from .contract_search import merge_options
         c = Contract.from_dict(body.contract)
         c.kind = KIND
-        return await _evaluate(c, merge_options(body.contract))
+        out = await _evaluate(c, merge_options(body.contract))
+        # a private note of what was asked, so a line of enquiry can be resumed later
+        try:
+            u = await user_of(x_eigen_token) if user_of else None
+            uid = str((u or {}).get("id") or "")
+            if uid:
+                from api.history import record as _record
+                import asyncpg  # noqa: F401 — the pool is the store's
+                pool = await store.pool()
+                async with pool.acquire() as conn:
+                    await _record(conn, uid, mode="startups",
+                                  title=(body.contract.get("text") or "startup search")[:200],
+                                  query={"contract": body.contract},
+                                  hits=len(out.get("rows") or []))
+        except Exception:   # noqa: BLE001 — history must never break the search
+            pass
+        return out
 
     @r.get("/startups/coverage")
     async def coverage() -> dict:
