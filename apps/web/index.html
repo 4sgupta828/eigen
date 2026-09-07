@@ -1767,7 +1767,8 @@
     <button type="button" class="vo-chip" data-kind="podcast" aria-pressed="false">🎧 Podcasts</button>
     <button type="button" class="vo-chip" data-kind="video" aria-pressed="false">▶ Videos</button>
     <button type="button" class="vo-chip" data-kind="essay" aria-pressed="false">✎ Essays</button>
-    <button type="button" class="vo-chip" id="vo-saved" aria-pressed="false" style="margin-left:auto">★ Kept</button>
+    <button type="button" class="vo-chip" id="vo-share" style="margin-left:auto" title="Create a permanent link to exactly these results">🔗 Share</button>
+    <button type="button" class="vo-chip" id="vo-saved" aria-pressed="false">★ Kept</button>
   </div>
   <div class="vo-filters vo-browse" id="vo-window">
     <span class="vo-blabel">Showing</span>
@@ -1784,7 +1785,7 @@
 
 <section id="startupsbody" aria-label="Startup search">
 
-  <div class="su-toolbar"><button type="button" id="su-saveMap">☆ Save as map</button><button type="button" id="su-myMaps">🗺 My maps</button><button type="button" id="su-covLink">Coverage</button></div>
+  <div class="su-toolbar"><button type="button" id="su-saveMap">☆ Save as map</button><button type="button" id="su-myMaps">🗺 My maps</button><button type="button" id="su-share" title="Create a permanent link to exactly these results">🔗 Share</button><button type="button" id="su-covLink">Coverage</button></div>
   <div class="su-examples" id="su-examples"></div>
   <div id="su-mapbar"></div>
   <div id="su-mapsPanel" hidden></div>
@@ -6407,10 +6408,23 @@ $("#grclose").addEventListener("click", () => { $("#graphmodal").hidden = true; 
 $("#graphmodal").addEventListener("click", e => { if(e.target === $("#graphmodal")) $("#graphmodal").hidden = true; });
 
 initIdentity();
-function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel session page · #sessions/#panel
+// Open a frozen page someone sent. It renders in the mode it came from, read-only, and says when it
+// was taken — a link that silently re-ran the query would show the recipient something else.
+async function loadSharedView(token){
+  try{
+    const snap = await openShare(token);
+    if(snap.mode === "voices" && window.VO){ setMode("voices"); VO.renderFrozen(snap); }
+    else if(snap.mode === "startups" && window.SU){ setMode("startups"); SU.renderShared(snap); }
+    else { toast("that shared view needs a mode this deployment does not have"); }
+  }catch(e){ toast(e && e.message ? e.message : "could not open that link"); }
+}
+
+function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel · #share/<token> → a frozen page
   const mp = location.hash.match(/^#p\/(.+)$/);
   const m = location.hash.match(/^#s\/(.+)$/);
-  if(mp){ loadPanelSession(decodeURIComponent(mp[1])); }
+  const sh = location.hash.match(/^#share\/(.+)$/);
+  if(sh){ loadSharedView(decodeURIComponent(sh[1])); }
+  else if(mp){ loadPanelSession(decodeURIComponent(mp[1])); }
   else if(m){ loadSharedSession(decodeURIComponent(m[1])); }   // legacy #s/<panelid> still self-routes to the panel
   else if(location.hash === "#sessions"){ openSessions(); }
   else if(location.hash === "#panel" && ASK_PANEL_ENABLED){ openPanel(""); }
@@ -6425,6 +6439,8 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel s
 loadConfig().then(routeHash);
 // pasted link / back-forward within the tab (our own writes use replaceState → no event)
 window.addEventListener("hashchange", ()=>{
+  const sh = location.hash.match(/^#share\/(.+)$/);
+  if(sh){ loadSharedView(decodeURIComponent(sh[1])); return; }
   const mp = location.hash.match(/^#p\/(.+)$/);
   if(mp){ loadPanelSession(decodeURIComponent(mp[1])); return; }
   const m = location.hash.match(/^#s\/(.+)$/);
@@ -7042,9 +7058,66 @@ function reset(){
   renderNotes([]); renderMapBar(); $("#su-rail").innerHTML=""; $("#su-results").innerHTML=""; const mp=$("#su-mapsPanel"); if(mp) mp.hidden=true;
   renderCoverage();
 }
-window.SU = { search: runCompile, enter, onAuth, runContract, reset };
+// A permanent link to exactly these cards. A MAP is the per-account, revisable artifact; a SHARE is
+// a frozen page anyone can open — different jobs, so both exist.
+(function(){
+  const b = document.getElementById("su-share");
+  if(!b) return;
+  b.addEventListener("click", async () => {
+    if(!STATE.data || !(STATE.data.rows || []).length){ toast("run a search first"); return; }
+    try{
+      const title = STATE.brief || (STATE.contract && STATE.contract.text) || "startup search";
+      const {url, copied} = await mintShare("startups", title,
+        {contract: STATE.contract, brief: STATE.brief},
+        {rows: STATE.data.rows, counts: STATE.data.counts, coverage: STATE.data.coverage,
+         labels: STATE.data.labels, contract: STATE.contract}, b);
+      renderNotes([{note: (copied ? "Link copied. " : "") + "Anyone with this link sees these exact results: " + url}]);
+    }catch(e){ toast("could not create a link: " + (e && e.message ? e.message : e)); }
+  });
+})();
+
+function renderShared(snap){
+  // A frozen page of cards, rendered by the same code that renders a live one.
+  const pay = snap.payload || {};
+  STATE.data = {rows: pay.rows || [], counts: pay.counts || {}, coverage: pay.coverage || {},
+                labels: pay.labels || {}};
+  STATE.contract = pay.contract || (snap.query || {}).contract || null;
+  STATE.brief = snap.title || "";
+  renderResults();
+  renderNotes([{note: "A shared view, frozen on " + String(snap.created_at || "").slice(0, 10)
+                      + ". Search again to see the index as it is now."}]);
+}
+
+window.SU = { search: runCompile, enter, onAuth, runContract, reset, renderShared };
 
 })();
+
+// ===== Shareable links ============================================================================
+// A link freezes the page it was minted from, so the recipient sees what the sender saw. Minting is
+// explicit: auto-publishing a URL for every search would publish a diligence trail nobody chose to.
+async function mintShare(mode, title, query, payload, btn){
+  const label = btn ? btn.textContent : "";
+  if(btn){ btn.disabled = true; btn.textContent = "minting…"; }
+  try{
+    const r = await fetch("/share", {method:"POST",
+      headers:{"content-type":"application/json",
+               "x-eigen-token":(typeof USER!=="undefined"&&USER&&USER.token)||""},
+      body: JSON.stringify({mode, title, query, payload})});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || ("could not create a link (" + r.status + ")"));
+    // NOT "#s/" — that prefix already addresses a shared Q&A session.
+    const url = location.origin + "/#share/" + d.token;
+    let copied = false;
+    try{ await navigator.clipboard.writeText(url); copied = true; }catch(e){ copied = false; }
+    return {url, copied};
+  }finally{ if(btn){ btn.disabled = false; btn.textContent = label; } }
+}
+
+async function openShare(token){
+  const r = await fetch("/share/" + encodeURIComponent(token));
+  if(!r.ok) throw new Error("that link has expired or never existed");
+  return r.json();
+}
 
 // ===== Voices — what founders and investors actually said ==========================================
 // Two kinds of card and the difference is load-bearing. An ESSAY is the person's own words, so it is
@@ -7293,7 +7366,12 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     }
     if(c.pointers) parts.push(c.pointers + (c.pointers === 1 ? " marker" : " markers") + " into recordings (where to listen, not a quote)");
     if(c.quotable) parts.push(c.quotable + " quotable " + (c.quotable === 1 ? "passage" : "passages"));
-    if(data.ranking === "keyword") parts.push("ranked by words only");
+    if(String(data.ranking || "").startsWith("matched ")){
+      const rung = data.ranking.slice(8);
+      parts.push(rung === "all words" ? "every word matched"
+                 : rung === "most words" ? "not everything matched, so any two of your words"
+                 : "only one word matched at a time — try fewer, more specific words");
+    }
     note().textContent = parts.join(" \u00b7 ");
     STATE.moments = ms;
     cards().innerHTML = ms.map(cardHtml).join("");
@@ -7365,6 +7443,23 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
         search(STATE.q);
       }));
     }
+    const sh = document.getElementById("vo-share");
+    if(sh && !sh.dataset.wired){
+      sh.dataset.wired = "1";
+      sh.addEventListener("click", async () => {
+        if(!STATE.moments.length){ note().textContent = "Nothing to share yet — search or browse first."; return; }
+        const title = STATE.q ? "\u201c" + STATE.q + "\u201d"
+          : (STATE.kind ? STATE.kind + "s, " : "") + (STATE.order === "watched" ? "most watched" : "newest");
+        try{
+          const {url, copied} = await mintShare("voices", title,
+            {q: STATE.q, kinds: STATE.kind ? [STATE.kind] : [], days: STATE.days, order: STATE.order},
+            {moments: STATE.moments}, sh);
+          note().innerHTML = (copied ? "Link copied \u00b7 " : "Your link \u00b7 ")
+            + '<a href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(url) + "</a>"
+            + " \u00b7 it shows these exact results, permanently.";
+        }catch(e){ note().textContent = "Could not create a link: " + (e && e.message ? e.message : e); }
+      });
+    }
     const sv = document.getElementById("vo-saved");
     if(sv) sv.addEventListener("click", () => {
       bar.querySelectorAll(".vo-chip").forEach(x => x.setAttribute("aria-pressed", x === sv ? "true" : "false"));
@@ -7389,6 +7484,24 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       note().textContent = ms.length + (ms.length === 1 ? " kept moment" : " kept moments");
       cards().innerHTML = ms.map(cardHtml).join("");
     }catch(e){ note().textContent = "Could not load your kept list: " + (e && e.message ? e.message : e); }
+  }
+
+  // A frozen page: the moments as they were when the link was minted, with the date they were taken.
+  function renderFrozen(snap){
+    wire();
+    STATE.view = "shared";
+    const ms = ((snap.payload || {}).moments) || [];
+    STATE.moments = ms;
+    const when = (snap.created_at || "").slice(0, 10);
+    const q = (snap.query || {}).q;
+    note().innerHTML = "<b>A shared view</b> \u00b7 " + esc(snap.title || (q ? "\u201c" + q + "\u201d" : "browse"))
+      + " \u00b7 frozen on " + esc(when || "an earlier day")
+      + " \u00b7 " + ms.length + (ms.length === 1 ? " moment" : " moments")
+      + ' \u00b7 <a href="#" id="vo-live">search live</a>';
+    cards().innerHTML = ms.map(cardHtml).join("");
+    const live = document.getElementById("vo-live");
+    if(live) live.addEventListener("click", e => { e.preventDefault();
+      history.replaceState(null, "", location.pathname + "#voices"); enter(true); });
   }
 
   function enter(fresh){
@@ -7419,7 +7532,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     }catch(e){ /* a missing strip is never worth breaking a card over */ }
   }
 
-  window.VO = { search, enter, forCompany, showSaved };
+  window.VO = { search, enter, forCompany, showSaved, renderFrozen };
 })();
 </script>
 </body>

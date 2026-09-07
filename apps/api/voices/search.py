@@ -27,6 +27,15 @@ _STOP = {"a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "with", "
          "i", "we", "you", "they", "it", "that", "this", "about", "after", "before", "my", "our"}
 
 
+# Words that are near-universal in a corpus that is entirely about startups. They carry no signal
+# here and, OR-ed into a query, they drown the words that do: "Physical AI startups building Robotic
+# systems" matched every long essay containing "building" or "systems" and returned nothing about
+# robotics. Dropped only when something more specific survives.
+_GENERIC = {"startup", "startups", "company", "companies", "business", "businesses", "founder",
+            "founders", "building", "build", "builds", "tech", "technology", "thing", "things",
+            "people", "team", "teams", "work", "working", "system", "systems", "stuff"}
+
+
 def terms(q: str) -> list[str]:
     """Query words, cleaned for `to_tsquery`. Punctuation out, stopwords out, duplicates out."""
     out: list[str] = []
@@ -35,7 +44,33 @@ def terms(q: str) -> list[str]:
         if len(w) < 2 or w in _STOP or w in out:
             continue
         out.append(w)
-    return out[:12]
+    specific = [w for w in out if w not in _GENERIC]
+    # …unless the whole question is made of them ("what do founders say"), in which case they are
+    # all we have and dropping them would leave nothing to search.
+    return (specific or out)[:12]
+
+
+def tsqueries(words: list[str]) -> list[tuple[str, str]]:
+    """The query ladder, strictest first: [(label, tsquery)].
+
+    Strict-then-relax, the same discipline the startup search uses. Answering a six-word question by
+    OR-ing all six words is not a search, it is a guess: the longest document containing the most
+    common word wins. So ask for ALL the words, then for any TWO of them, and only then for any one
+    — and say which rung answered.
+    """
+    ws = [w for w in words if w]
+    if not ws:
+        return []
+    out = [("all words", " & ".join(ws))]
+    if len(ws) > 2:
+        # any two of the most distinctive words; longer words are the more distinctive ones here
+        top = sorted(ws, key=len, reverse=True)[:5]
+        pairs = [f"{a} & {b}" for i, a in enumerate(top) for b in top[i + 1:]]
+        if pairs:
+            out.append(("most words", " | ".join(pairs)))
+    if len(ws) > 1:
+        out.append(("any word", " | ".join(ws)))
+    return out
 
 # "[00:13:00] Is Series A the hardest stage — https://show.fm/ep?t=780"
 _CHAPTER_LINE = re.compile(r"^\[(\d{2}:\d{2}:\d{2})\]\s*(.+?)(?:\s+—\s+(https?://\S+))?$")
@@ -137,7 +172,7 @@ def moment(row: dict) -> dict:
 
 def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", speaker: str = "",
                 limit: int = 30, table: str = "rs_block", per_document: bool = False,
-                since: str = "", order: str = "recent") -> tuple[str, list]:
+                since: str = "", order: str = "recent", tsquery: str = "") -> tuple[str, list]:
     """Keyword search over the voice corpus. Returns (sql, params) — no I/O, so it is testable.
 
     An empty `q` is a BROWSE, not a failed search: "show me what founders are saying". It used to
@@ -203,13 +238,17 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         params.append(speaker)
 
     q_terms = terms(q)
+    if q_terms and tsquery:
+        q_expr = tsquery
+    elif q_terms:
+        q_expr = " | ".join(q_terms)
     if q_terms:
         # OR, not AND. `plainto_tsquery` requires EVERY word, so "pivot after a failed round"
         # returned one block in the whole corpus — a question phrased as a sentence found nothing.
         # OR-ing the terms and letting ts_rank order the result is what the kernel's own retrieval
         # does, and it is the difference between a mode that answers and a mode that shrugs.
         n += 1
-        params.append(" | ".join(q_terms))
+        params.append(q_expr)
         where.append(f"tsv @@ to_tsquery('english', ${n})")
         # Normalisation 1 divides the rank by 1 + log(length). Without it a 4,000-character essay
         # that mentions a word twice outranks a chapter titled exactly that word, and the podcast

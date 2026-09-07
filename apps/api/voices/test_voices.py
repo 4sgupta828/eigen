@@ -352,3 +352,26 @@ def test_podcasts_rank_by_having_a_named_guest_since_they_publish_no_view_count(
     assert "facets ? 'guest'" in sql
     assert "views" not in sql.split("WHERE")[1].split("ORDER BY")[0]
     assert params[0] == ["show_notes"]
+
+
+def test_a_question_is_answered_strictly_before_it_is_relaxed():
+    """'Physical AI startups building Robotic systems' OR-ed six words, four of which are generic in
+    a startup corpus, and returned the longest essays containing 'building'."""
+    t = search.terms("Physical AI startups building Robotic systems")
+    assert t == ["physical", "ai", "robotic"]          # the generic words are dropped
+
+    ladder = search.tsqueries(t)
+    assert [label for label, _ in ladder] == ["all words", "most words", "any word"]
+    assert ladder[0][1] == "physical & ai & robotic"   # strictest rung asks for all of them
+    assert " | " in ladder[1][1] and " & " in ladder[1][1]   # then any two of them
+    assert ladder[2][1] == "physical | ai | robotic"
+
+
+def test_a_question_made_only_of_generic_words_still_searches():
+    # dropping every word would leave nothing to search, so the generic ones are all we have
+    assert search.terms("founders building companies") == ["founders", "building", "companies"]
+
+
+def test_a_supplied_tsquery_is_what_gets_run():
+    sql, params = search.build_query(q="physical ai robotic", tsquery="physical & robotic")
+    assert "physical & robotic" in params and "physical | ai | robotic" not in params

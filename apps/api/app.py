@@ -1006,6 +1006,16 @@ class RefineIn(BaseModel):
     question: str
 
 
+class ShareIn(BaseModel):
+    """A frozen page of results, addressable by a link. Defined at MODULE level: a Pydantic model
+    declared inside create_app is not fully defined when `from __future__ import annotations` is in
+    force, and FastAPI then reads its fields as query parameters."""
+    mode: str
+    title: str = ""
+    query: dict = {}
+    payload: dict = {}
+
+
 class TriageIn(BaseModel):
     # The running intake transcript, oldest-first: [{role: "user"|"assistant", text}]. The FE holds it
     # (stateless server) and appends each turn. The last item is the user's latest message.
@@ -1730,6 +1740,54 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
     from api.video import build_video_router, video_enabled
     if video_enabled():
         app.include_router(build_video_router(attach_video=_attach_video))
+
+    # ── Shareable links: one frozen page of results, addressable by an unguessable token ────────
+    # Shared by BOTH modes, because "a search someone sent me" is the same object whether it holds
+    # startup cards or first-person moments. See apps/api/shares.py for why it stores results rather
+    # than re-running the query.
+    _share_dsn = os.environ.get("EIGEN_CORPUS_DSN")
+    if _share_dsn:
+        from api import shares as _shares
+        _share_state: dict = {}
+
+        async def _share_pool():
+            if "pool" not in _share_state:
+                import asyncpg
+                _share_state["pool"] = await asyncpg.create_pool(_share_dsn, min_size=1, max_size=3)
+            return _share_state["pool"]
+
+        @app.post("/share")
+        async def create_share(body: ShareIn, x_eigen_token: str = Header(default="")) -> dict:
+            u = await _shell_user(x_eigen_token)
+            pool = await _share_pool()
+            try:
+                async with pool.acquire() as conn:
+                    out = await _shares.create(conn, mode=body.mode, title=body.title,
+                                               query=body.query, payload=body.payload,
+                                               owner_id=str((u or {}).get("id") or ""))
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+            return dict(out, url=f"/#share/{out['token']}")
+
+        @app.get("/share/{token}")
+        async def read_share(token: str) -> dict:
+            """Public by design: a link you were sent must open without an account."""
+            pool = await _share_pool()
+            async with pool.acquire() as conn:
+                snap = await _shares.get(conn, token)
+            if not snap:
+                raise HTTPException(status_code=404, detail="that link has expired or never existed")
+            return snap
+
+        @app.get("/shares")
+        async def my_shares(x_eigen_token: str = Header(default="")) -> dict:
+            u = await _shell_user(x_eigen_token)
+            uid = str((u or {}).get("id") or "")
+            if not uid:
+                return {"shares": [], "signed_in": False}
+            pool = await _share_pool()
+            async with pool.acquire() as conn:
+                return {"shares": await _shares.listing(conn, uid), "signed_in": True}
 
     async def _shell_user(token: str):
         """The signed-in user for a bearer token, or None (never raises).

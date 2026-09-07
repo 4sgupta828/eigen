@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from . import favorites, people
 from .ingest import bind_guests, ingest_voices, mark_boilerplate, refresh_guests
-from .search import VOICE_SOURCE_KEYS, build_query, dedupe, moment
+from .search import VOICE_SOURCE_KEYS, build_query, dedupe, moment, terms, tsqueries
 from .summarize import MAX_INPUT_CHARS, cached, store, summarize
 
 
@@ -97,18 +97,32 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
         # episodes, not two chapters of the same one. A SEARCH may show two, because a second
         # passage from the same piece is often the better answer.
         browse = not body.q.strip()
-        sql, params = build_query(q=body.q, kinds=tuple(body.kinds), company_id=body.company_id,
-                                  speaker=body.speaker, limit=want * 6, since=since,
-                                  order=body.order, per_document=browse)
-        rows = await _rows(sql, params)
+
+        async def _fetch(tsquery: str = "", since_: str = "") -> list[dict]:
+            sql, params = build_query(q=body.q, kinds=tuple(body.kinds), company_id=body.company_id,
+                                      speaker=body.speaker, limit=want * 6, since=since_,
+                                      order=body.order, per_document=browse, tsquery=tsquery)
+            return await _rows(sql, params)
+
+        # A question is answered strictly first and relaxed only when the strict answer is thin.
+        # OR-ing every word of a six-word question is not a search: the longest document holding the
+        # commonest word wins, which is exactly what "Physical AI startups building Robotic systems"
+        # returned before this ladder existed.
+        matched = ""
+        if browse:
+            rows = await _fetch(since_=since)
+        else:
+            rows = []
+            for label, tq in tsqueries(terms(body.q)) or [("any word", "")]:
+                rows = await _fetch(tsquery=tq)
+                matched = label
+                if len(rows) >= 6:
+                    break
         # A window that returns almost nothing is worse than a wider one: widen rather than show an
         # empty week, and say which window the reader is actually looking at.
         if since and len(rows) < 6:
             since, widened = "", True
-            sql, params = build_query(q=body.q, kinds=tuple(body.kinds), company_id=body.company_id,
-                                      speaker=body.speaker, limit=want * 6, order=body.order,
-                                      per_document=browse)
-            rows = await _rows(sql, params)
+            rows = await _fetch()
         moments = dedupe([moment(r) for r in rows], limit=want,
                          per_document=1 if browse else 2)
         # who is speaking, and where to find them — resolved once for the whole page
@@ -131,9 +145,10 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
             },
             # Said plainly so the UI never has to guess: ranking is words-only until vectors exist.
             # Said plainly so the UI never has to guess what it is showing.
-            "ranking": ("keyword" if body.q.strip() else
+            "ranking": (f"matched {matched}" if body.q.strip() else
                         {"watched": "most watched", "guest": "interviews, newest first"}
                         .get(body.order, "newest first")),
+            "terms": terms(body.q) if body.q.strip() else [],
             "window": {"days": 0 if not since else int(body.days), "widened": widened,
                        "since": since},
         }
