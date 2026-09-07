@@ -49,3 +49,17 @@ def test_every_curated_voice_declares_a_role():
     for url, (writer, role) in VOICES.items():
         assert url.startswith("https://"), url
         assert writer and role in ("founder", "investor", "operator", "analyst"), (writer, role)
+
+
+def test_the_essays_own_lead_image_comes_from_the_body_not_a_second_fetch():
+    from eigen_vertical_tech import expert_feed_doc
+    rec = dict(ITEM, content='<p>Intro</p><img src="https://track.example/open.gif?id=1">'
+                             '<img src="https://cdn.example/cover.jpg" width="1456"><p>Body</p>')
+    assert expert_feed_doc.lead_image(rec) == "https://cdn.example/cover.jpg"   # the beacon is skipped
+    assert expert_feed_doc.facets(rec)["image"] == "https://cdn.example/cover.jpg"
+
+
+def test_an_essay_with_no_image_says_so_rather_than_guessing():
+    from eigen_vertical_tech import expert_feed_doc
+    assert expert_feed_doc.lead_image({"content": "<p>Just words.</p>"}) == ""
+    assert "image" not in expert_feed_doc.facets({"link": "https://x/y", "content": "<p>Words.</p>"})

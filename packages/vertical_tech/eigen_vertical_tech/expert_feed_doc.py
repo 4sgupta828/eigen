@@ -34,6 +34,25 @@ def _year(rec: dict) -> str:
     return m.group(0) if m else ""
 
 
+_PIXEL = re.compile(r"(pixel|1x1|spacer|tracking|beacon|open\.gif|\.svg$)", re.I)
+
+
+def lead_image(rec: dict) -> str:
+    """The essay's own lead image, taken from the body the feed already sent.
+
+    Cards without pictures next to cards with pictures read as broken, and every one of these feeds
+    ships the artwork inside the post — so there is no reason to fetch the page for it. Tracking
+    pixels are skipped: a 1x1 beacon is not a picture, and rendering one wastes a card's whole
+    visual slot on nothing.
+    """
+    body = str(rec.get("content") or rec.get("summary") or "")
+    for m in re.finditer(r"<img[^>]+src=[\"']([^\"']+)[\"']", body):
+        src = m.group(1).strip()
+        if src.startswith("http") and not _PIXEL.search(src):
+            return src
+    return ""
+
+
 def facets(rec: dict) -> dict:
     f = {
         "source_kind": "essay",           # → NEW "expert_analysis" tier (wired separately)
@@ -41,6 +60,7 @@ def facets(rec: dict) -> dict:
         # facets, so an essay whose link lives only in its prose reaches the reader with no way to
         # go and read it.
         "url": str(rec.get("link") or "").strip(),
+        "image": str(rec.get("image") or "").strip() or lead_image(rec),
         "source_country": "global",
         "entity_type": "essay",
         "author": " ".join(str(rec.get("author") or "").split()).strip(),
