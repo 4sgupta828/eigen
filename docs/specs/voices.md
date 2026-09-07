@@ -343,3 +343,26 @@ podcast and video moment in production, the JavaScript parses, the responsive pa
 the favourites round-trip is covered by an integration test against a real database. The browser
 extension was disconnected, so this pass has NOT been checked visually at 400px. That check is still
 owed.
+
+
+## 15. Card revision two (2026-09-07, owner feedback)
+
+- **Italics removed.** At card size, an italic title read as decoration rather than emphasis.
+- **One play control.** The thumbnail carried a play glyph and the footer carried a "Play here"
+  button; the same question was asked twice. The artwork is the control.
+- **The keep control is visible.** A faint grey star is a feature nobody uses. It is now a
+  gold-outlined button labelled Keep, which fills in and reads Kept.
+- **Four tabs, essays last:** Everything, Podcasts, Videos, Essays, plus Kept. Podcast and video
+  share the chapter mechanics and differ in how you consume them, so `kind_of` splits them and each
+  gets its own accent — blue for audio, red for video, gold for writing.
+- **People are linkable.** A named speaker carries a link to their own profile, resolved from the
+  11,330 founders in the index who already have LinkedIn or X links.
+
+**Why a direct profile link is rare, and should be.** Of 65 guests parsed from the current window, 8
+appear in the founder index and 7 of those have links — but one of them is "Matthew Smith". The index
+holds one; the world holds thousands. A name-only match would send a reader confidently to a
+stranger, which is the worst failure this feature can have, so a held profile is printed only when
+the same episode ALSO bound that guest to their own company. In the current window that is zero
+episodes, so every card shows the labelled search instead, and the tooltip says why: we hold a
+profile for this name but this episode does not confirm it is the same person. The badge appears
+when it is earned, exactly like the "from the founders" strip.
