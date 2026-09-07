@@ -302,3 +302,16 @@ def test_document_furniture_never_surfaces_as_a_moment():
     sql, _ = search.build_query(q="", limit=5)
     assert "text NOT LIKE 'URL: %'" in sql
     assert "OR text LIKE '[%'" in sql
+
+
+def test_a_byline_paragraph_never_surfaces_as_a_moment():
+    sql, _ = search.build_query(q="", limit=5)
+    assert "(expert analysis / opinion" in sql and "press report" in sql
+
+
+def test_the_per_piece_feed_keeps_the_real_ordering():
+    """Sorting the deduplicated set by score put every browse row at 0.0, so it fell through to
+    document_id and 'founder_essay:…' beat 'show_notes:…' alphabetically — video never appeared."""
+    sql, _ = search.build_query(q="", limit=5, per_document=True)
+    outer = sql.rsplit(") s ", 1)[1]
+    assert "published_at" in outer and "document_id LIMIT" not in outer

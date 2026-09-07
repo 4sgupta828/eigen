@@ -153,6 +153,13 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         # sources is furniture.
         "text NOT LIKE 'URL: %'",
         "(source_key NOT IN ('show_notes','youtube_chapters') OR text LIKE '[%')",
+        # Each document builder writes a byline paragraph carrying its register in parentheses. The
+        # splitter indexes it like any other paragraph, so it surfaced as a moment reading
+        # "Lenny's Newsletter — Claire Vo, Mon, 07 Sep 2026". Excluded by the register phrase the
+        # builder itself wrote, which is the one thing every byline reliably contains.
+        "text NOT LIKE '%(expert analysis / opinion%'",
+        "text NOT LIKE '%(press report — reported, not audited%'",
+        "text NOT LIKE '%Chapter pointers written by the publisher%'",
     ]
     params: list = [list(VOICE_SOURCE_KEYS)]
     n = 1
@@ -222,9 +229,12 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
     if per_document:
         # One row per EPISODE. Without this a company's strip fills with the first eight chapters of
         # one episode ("00:00 Intro", "02:00 Early days") and every other episode is pushed out.
+        # The outer sort must repeat the real ordering. Sorting the deduplicated set by score put
+        # every row at 0.0 in a browse, so it fell through to document_id — an alphabetical feed in
+        # which "founder_essay:…" always beat "show_notes:…" and video never appeared at all.
         sql = (f"SELECT * FROM (SELECT DISTINCT ON (document_id) {cols} "
                f"FROM {table} WHERE {' AND '.join(where)} ORDER BY document_id, {order_sql}) s "
-               f"ORDER BY score DESC, document_id LIMIT ${n}")
+               f"ORDER BY {order_sql} LIMIT ${n}")
     else:
         sql = f"SELECT {cols} FROM {table} WHERE {' AND '.join(where)} ORDER BY {order_sql} LIMIT ${n}"
     return sql, params
