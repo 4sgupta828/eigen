@@ -179,13 +179,25 @@ def _year(rec: dict) -> str:
     return m.group(0) if m else ""
 
 
+def video_id(link: str) -> str:
+    m = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", link or "")
+    return m.group(1) if m else ""
+
+
 def facets(rec: dict) -> dict:
+    link = episode_link(rec)
+    audio = str(rec.get("enclosure") or "").strip()
     f = {
         "source_kind": "chapter_pointer",     # NOT evidence — a navigation aid (see module docstring)
         "entity_type": "episode",
+        # A pointer card is mostly a picture and a play button, so the artwork and the playable
+        # address belong in the facets the card renders from, not only in the document body.
+        "image": str(rec.get("image") or "").strip(),
+        "audio_url": audio if audio.lower().split("?")[0].endswith(_MEDIA) else "",
+        "video_id": video_id(link),
         "publication": " ".join(str(rec.get("publication") or "").split()).strip(),
         "guest": guest_from_title(str(rec.get("title") or "")),
-        "episode_url": episode_link(rec),
+        "episode_url": link,
         "published": str(rec.get("published") or "").strip()[:64],
         "year": _year(rec),
     }

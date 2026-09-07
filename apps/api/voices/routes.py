@@ -12,6 +12,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from . import favorites
 from .ingest import bind_guests, ingest_voices, mark_boilerplate, refresh_guests
 from .search import VOICE_SOURCE_KEYS, build_query, dedupe, moment
 from .summarize import MAX_INPUT_CHARS, cached, store, summarize
@@ -34,14 +35,30 @@ class SummaryIn(BaseModel):
     refresh: bool = False
 
 
+class FavoriteIn(BaseModel):
+    moment: dict = {}             # the card as rendered, so a saved item survives the feed rolling
+    id: str = ""                  # or just the id, when removing
+    note: str = ""
+
+
 class JobIn(BaseModel):
     kind: str = "ingest"
     limit: int = 60
 
 
 def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = "default",
-                 admin_token: str = "", llm_json=None) -> APIRouter:
+                 admin_token: str = "", llm_json=None, user_of=None) -> APIRouter:
     router = APIRouter()
+
+    async def _user(token: str) -> str:
+        """The signed-in account id, or "" — favourites are per account, never per browser."""
+        if user_of is None or not token:
+            return ""
+        try:
+            u = await user_of(token)
+        except Exception:      # noqa: BLE001 — a broken session must not break a search
+            return ""
+        return str((u or {}).get("id") or "") if isinstance(u, dict) else str(getattr(u, "id", "") or "")
 
     async def _rows(sql: str, params: list) -> list[dict]:
         pool = await pool_of()
@@ -57,7 +74,7 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
         return [shape(r) for r in out]
 
     @router.post("/voices/search")
-    async def voices_search(body: SearchIn) -> dict:
+    async def voices_search(body: SearchIn, x_eigen_token: str = Header(default="")) -> dict:
         """Moments matching the question. Keyword-ranked, so it works with no embedding provider."""
         want = max(1, min(int(body.limit or 30), 60))
         # over-fetch, then dedupe: the ranking cannot know that five blocks are the same sidebar
@@ -65,6 +82,13 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
                                   speaker=body.speaker, limit=want * 4)
         rows = await _rows(sql, params)
         moments = dedupe([moment(r) for r in rows], limit=want)
+        uid = await _user(x_eigen_token)
+        if uid:
+            pool = await pool_of()
+            async with pool.acquire() as conn:
+                kept = set(await favorites.ids(conn, uid))
+            for m in moments:
+                m["saved"] = m["id"] in kept
         return {
             "moments": moments,
             "counts": {
@@ -82,6 +106,36 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
         was not confirmed is searchable but never attached to that company's card."""
         sql, params = build_query(q="", company_id=company_id, limit=limit, per_document=True)
         return {"moments": [moment(r) for r in await _rows(sql, params)]}
+
+    @router.get("/voices/favorites")
+    async def voices_favorites(x_eigen_token: str = Header(default="")) -> dict:
+        uid = await _user(x_eigen_token)
+        if not uid:
+            return {"moments": [], "signed_in": False}
+        pool = await pool_of()
+        async with pool.acquire() as conn:
+            return {"moments": await favorites.listing(conn, uid), "signed_in": True}
+
+    @router.post("/voices/favorites")
+    async def voices_favorite_add(body: FavoriteIn, x_eigen_token: str = Header(default="")) -> dict:
+        uid = await _user(x_eigen_token)
+        if not uid:
+            raise HTTPException(status_code=401, detail="sign in to keep a moment")
+        m = body.moment or {}
+        if not (m.get("id") or body.id):
+            raise HTTPException(status_code=400, detail="a moment is required")
+        pool = await pool_of()
+        async with pool.acquire() as conn:
+            return await favorites.add(conn, uid, m or {"id": body.id}, body.note)
+
+    @router.delete("/voices/favorites/{moment_id:path}")
+    async def voices_favorite_remove(moment_id: str, x_eigen_token: str = Header(default="")) -> dict:
+        uid = await _user(x_eigen_token)
+        if not uid:
+            raise HTTPException(status_code=401, detail="sign in to keep a moment")
+        pool = await pool_of()
+        async with pool.acquire() as conn:
+            return await favorites.remove(conn, uid, moment_id)
 
     @router.post("/voices/summary")
     async def voices_summary(body: SummaryIn) -> dict:

@@ -178,3 +178,34 @@ def test_a_moment_always_offers_somewhere_to_go():
 def test_a_moment_nobody_can_open_ranks_below_one_they_can():
     sql, _ = search.build_query(q="fundraising")
     assert "facets ? 'url' OR facets ? 'episode_url'" in sql and "0.7" in sql
+
+
+def test_a_moment_says_how_it_can_be_played():
+    yt = search.moment({"document_id": "y", "block_id": "b", "document_title": "t",
+                        "source_key": "youtube_chapters", "text": "[00:04:27] Building it by accident",
+                        "facets": {"source_kind": "chapter_pointer", "video_id": "abc123",
+                                   "episode_url": "https://www.youtube.com/watch?v=abc123",
+                                   "image": "https://i.ytimg.com/vi/abc123/mqdefault.jpg"}})
+    assert yt["media"] == {"kind": "youtube", "id": "abc123", "t": 267}
+    assert yt["image"].endswith("mqdefault.jpg")
+
+    pod = search.moment({"document_id": "p", "block_id": "b", "document_title": "t",
+                         "source_key": "show_notes", "text": "[00:13:00] The pivot",
+                         "facets": {"source_kind": "chapter_pointer",
+                                    "audio_url": "https://cdn.fm/ep.mp3"}})
+    assert pod["media"] == {"kind": "audio", "url": "https://cdn.fm/ep.mp3", "t": 780}
+
+    essay = search.moment({"document_id": "e", "block_id": "b", "document_title": "t",
+                           "source_key": "founder_essay", "text": "words",
+                           "facets": {"source_kind": "essay", "url": "https://x.com/p"}})
+    assert essay["media"] == {}          # an essay is read, not played
+
+
+def test_a_favourite_stores_only_what_a_card_renders():
+    from api.voices import favorites
+    m = {"id": "d::b", "kind": "chapter", "text": "The pivot", "show": "20VC", "t_start": 780,
+         "image": "https://a/b.jpg", "media": {"kind": "audio", "url": "u", "t": 780},
+         "score": 0.42, "facets": {"internal": "x"}}
+    snap = favorites.snapshot_of(m)
+    assert snap["id"] == "d::b" and snap["t_start"] == 780 and snap["media"]["kind"] == "audio"
+    assert "score" not in snap and "facets" not in snap   # never freeze what we may re-derive

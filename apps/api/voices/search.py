@@ -86,6 +86,15 @@ def moment(row: dict) -> dict:
         # the passage that matched, when the query produced one; else the block's opening
         body = (row.get("snippet") or body or "").strip() or body
     speaker = str(facets.get("guest") or facets.get("author") or "")
+    # How this moment can be PLAYED, if at all. A YouTube video embeds and starts at the second; an
+    # audio enclosure plays inline from the same offset; everything else is a link out.
+    vid, audio = str(facets.get("video_id") or ""), str(facets.get("audio_url") or "")
+    if kind == "chapter" and vid:
+        media = {"kind": "youtube", "id": vid, "t": t_start}
+    elif kind == "chapter" and audio:
+        media = {"kind": "audio", "url": audio, "t": t_start}
+    else:
+        media = {}
     return {
         "id": f"{row.get('document_id')}::{row.get('block_id')}",
         "kind": kind,
@@ -99,6 +108,8 @@ def moment(row: dict) -> dict:
         "url": url,
         "t_start": t_start,
         "company_id": str(facets.get("company_id") or ""),
+        "image": str(facets.get("image") or ""),
+        "media": media,
         # The register the UI must print. A pointer is never presented as something anyone said.
         "register": ("Chapter marker written by the publisher — listen from this point"
                      if kind == "chapter" else "First-person account, attributed to its author"),

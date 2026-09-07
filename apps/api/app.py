@@ -1731,6 +1731,22 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
     if video_enabled():
         app.include_router(build_video_router(attach_video=_attach_video))
 
+    async def _shell_user(token: str):
+        """The signed-in user for a bearer token, or None (never raises).
+
+        Shared by every per-account feature in the shell — Startup Maps and kept Voices moments —
+        so there is one place that decides who is asking.
+        """
+        if not accounts_enabled() or not token:
+            return None
+        st = _accounts()
+        if st is None:
+            return None
+        try:
+            return await st.user_by_token(token)
+        except Exception:   # noqa: BLE001 — a broken session is "not signed in", never a 500
+            return None
+
     # Startup Search — a DETACHED feature (apps/api/startups/): its own tables, sources, extractor and UI page,
     # mounted only behind EIGEN_STARTUP_SEARCH so OFF is a true no-op. docs/specs/startup-search.md.
     from api.startups.routes import startup_search_enabled
@@ -1746,20 +1762,9 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 import asyncpg
                 _su_state["pool"] = await asyncpg.create_pool(_su_dsn, min_size=1, max_size=4)
             return _su_state["pool"]
-        async def _su_user(token: str):
-            """The signed-in user for a bearer token, or None (never raises) — Startup Maps are per account."""
-            if not accounts_enabled() or not token:
-                return None
-            st = _accounts()
-            if st is None:
-                return None
-            try:
-                return await st.user_by_token(token)
-            except Exception:   # noqa: BLE001
-                return None
         _su_store = _SuStore(_su_pool)
         app.include_router(_su_router(_su_store, _su_pipeline.Providers.from_env(), dsn=_su_dsn,
-                                      admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""), user_of=_su_user))
+                                      admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""), user_of=_shell_user))
 
         @app.on_event("startup")
         async def _su_orphan_jobs():
@@ -1802,7 +1807,8 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         from api.startups import pipeline as _vo_pipeline
         app.include_router(_vo_router(_vo_pool, manifest=load_active_vertical(), pg_source_of=_vo_pg,
                                       admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""),
-                                      llm_json=_vo_pipeline.Providers.from_env().llm_json))
+                                      llm_json=_vo_pipeline.Providers.from_env().llm_json,
+                                      user_of=_shell_user))
 
     @app.get("/health")
     def health() -> dict:

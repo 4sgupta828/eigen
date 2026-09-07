@@ -80,12 +80,17 @@ def parse_channel(raw: bytes, channel_name: str = "") -> list[dict]:
                 rec["published"] = ch.text.strip()
             elif n == "group":
                 for g in ch:
-                    if _local(g.tag) == "description" and g.text:
+                    gn = _local(g.tag)
+                    if gn == "description" and g.text:
                         rec["summary"] = g.text
+                    elif gn == "thumbnail" and g.get("url"):
+                        rec["image"] = g.get("url").strip()
         if not vid:
             continue
         rec["guid"] = f"youtube:{vid}"
         rec["link"] = f"https://www.youtube.com/watch?v={vid}"
+        # every video has this thumbnail, whether or not the feed spelled one out
+        rec.setdefault("image", f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg")
         out.append(rec)
     return out
 

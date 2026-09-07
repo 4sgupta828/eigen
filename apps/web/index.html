@@ -231,57 +231,75 @@
     border:1px solid var(--hair);background:var(--panel2);color:var(--dim);cursor:pointer;min-height:34px;}
   .vo-chip[aria-pressed="true"]{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
   .vo-note{font-family:var(--mono);font-size:.68rem;color:var(--dim);margin:.5rem 0 0;line-height:1.5;}
-  .vo-cards{display:grid;gap:.75rem;margin:1rem 0 2rem;}
-  /* Two kinds of card, two registers, two colours. An essay is someone's own words (warm, gold-keyed);
-     a podcast moment is a signpost into a recording (cool, blue-keyed). The reader should be able to
-     tell them apart before reading a word — they are not the same kind of thing. */
-  .vo-card{border:1px solid var(--hair);border-left:3px solid var(--hair);border-radius:12px;
-    background:var(--panel2);overflow:hidden;transition:border-color .15s ease,background .15s ease;}
-  .vo-card.essay{border-left-color:var(--gold);background:color-mix(in srgb, var(--gold) 4%, var(--panel2));}
-  .vo-card.chapter{border-left-color:#5b8def;background:color-mix(in srgb, #5b8def 5%, var(--panel2));}
-  .vo-head{padding:.8rem .95rem;cursor:pointer;display:block;width:100%;text-align:left;border:0;background:none;color:inherit;font:inherit;}
-  .vo-head:hover{background:rgba(127,127,127,.06);}
-  .vo-card h4{margin:.4rem 0 .35rem;font-size:.95rem;line-height:1.45;font-weight:600;}
-  .vo-meta{font-family:var(--mono);font-size:.66rem;color:var(--dim);display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;}
-  .vo-kind{border-radius:999px;padding:.12rem .5rem;letter-spacing:.06em;text-transform:uppercase;font-size:.58rem;border:1px solid currentColor;}
-  .vo-card.chapter .vo-kind{color:#5b8def;}
-  .vo-card.essay .vo-kind{color:var(--gold);}
-  .vo-when{margin-left:auto;}
-  .vo-src{font-size:.72rem;color:var(--dim);margin-top:.4rem;line-height:1.4;}
-  .vo-reg{font-family:var(--mono);font-size:.62rem;color:var(--dim);margin-top:.5rem;font-style:italic;}
-  .vo-body{padding:0 .95rem .85rem;border-top:1px dashed var(--hair);margin-top:.2rem;}
-  .vo-body h5{margin:.7rem 0 .3rem;font-family:var(--mono);font-size:.63rem;letter-spacing:.06em;
+  .vo-cards{display:grid;gap:.8rem;margin:1rem 0 2.4rem;}
+  /* Two kinds, two accents. An essay is someone's own words (gold); a podcast or video moment is a
+     signpost into a recording (a cool blue). The accent is a thin left rule and a tinted ground, not
+     a shouted colour — the artwork should be the loudest thing on the card. */
+  .vo-card{--vo-accent:var(--gold);border:1px solid var(--hair);border-left:3px solid var(--vo-accent);
+    border-radius:14px;background:var(--panel2);overflow:hidden;}
+  .vo-card.essay{--vo-accent:var(--gold);background:color-mix(in srgb, var(--gold) 3.5%, var(--panel2));}
+  .vo-card.chapter{--vo-accent:#5b8def;background:color-mix(in srgb, #5b8def 4%, var(--panel2));}
+  .vo-top{display:flex;gap:.85rem;padding:.85rem .95rem;align-items:flex-start;}
+  /* the artwork doubles as the play control: a thumbnail with a play glyph reads as "this is watchable" */
+  .vo-art{position:relative;flex:0 0 108px;width:108px;height:72px;border-radius:9px;overflow:hidden;
+    background:linear-gradient(140deg, color-mix(in srgb, var(--vo-accent) 22%, var(--panel2)), var(--panel2));
+    border:1px solid var(--hair);cursor:pointer;padding:0;display:block;}
+  .vo-art img{width:100%;height:100%;object-fit:cover;display:block;}
+  .vo-art .vo-play{position:absolute;inset:0;display:grid;place-items:center;color:#fff;
+    background:rgba(0,0,0,.28);font-size:1.4rem;text-shadow:0 1px 6px rgba(0,0,0,.6);}
+  .vo-art:hover .vo-play{background:rgba(0,0,0,.45);}
+  .vo-art .vo-mono{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);
+    font-size:1.15rem;color:var(--vo-accent);opacity:.85;letter-spacing:.06em;}
+  .vo-main{min-width:0;flex:1;}
+  .vo-kicker{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;font-family:var(--mono);
+    font-size:.62rem;letter-spacing:.05em;color:var(--dim);text-transform:uppercase;}
+  .vo-kind{color:var(--vo-accent);border:1px solid currentColor;border-radius:999px;padding:.1rem .48rem;font-size:.56rem;}
+  .vo-dot{opacity:.45;}
+  .vo-title{margin:.42rem 0 .3rem;font-size:1.01rem;line-height:1.38;font-weight:650;letter-spacing:-.005em;}
+  .vo-card.essay .vo-title{font-weight:600;font-style:italic;}
+  .vo-sub{font-size:.76rem;line-height:1.45;color:var(--dim);}
+  .vo-who{color:var(--ink);font-weight:600;}
+  .vo-stamp{font-family:var(--mono);font-size:.66rem;color:var(--vo-accent);}
+  .vo-foot{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;padding:0 .95rem .8rem;}
+  .vo-btn{font-family:var(--mono);font-size:.67rem;text-decoration:none;border:1px solid var(--hair);
+    border-radius:999px;padding:.34rem .7rem;min-height:34px;line-height:1.6;color:var(--dim);
+    background:none;cursor:pointer;display:inline-flex;align-items:center;gap:.3rem;}
+  .vo-btn:hover{color:var(--ink);border-color:var(--vo-accent);}
+  .vo-btn.primary{color:var(--vo-accent);border-color:var(--vo-accent);}
+  .vo-star{margin-left:auto;font-size:.85rem;}
+  .vo-star[aria-pressed="true"]{color:var(--gold);border-color:var(--gold);}
+  .vo-reg{font-family:var(--mono);font-size:.61rem;color:var(--dim);font-style:italic;padding:0 .95rem .7rem;}
+  .vo-player{padding:0 .95rem .85rem;}
+  .vo-player iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:10px;display:block;}
+  .vo-player audio{width:100%;display:block;}
+  .vo-body{padding:0 .95rem .9rem;border-top:1px dashed var(--hair);margin-top:.1rem;}
+  .vo-body h5{margin:.8rem 0 .35rem;font-family:var(--mono);font-size:.62rem;letter-spacing:.07em;
     text-transform:uppercase;color:var(--dim);font-weight:600;}
   .vo-sum{font-size:.85rem;line-height:1.6;}
   .vo-sum ul{margin:.35rem 0 0;padding:0;list-style:none;}
   .vo-sum li{margin:.4rem 0;padding-left:1.1rem;position:relative;}
-  .vo-sum li:before{content:"▸";position:absolute;left:0;color:var(--gold);font-size:.7rem;top:.15rem;}
-  .vo-quote{margin:.8rem 0 .2rem;padding:.55rem .8rem;border-left:2px solid var(--gold);
+  .vo-sum li:before{content:"▸";position:absolute;left:0;color:var(--vo-accent);font-size:.7rem;top:.15rem;}
+  .vo-quote{margin:.8rem 0 .2rem;padding:.55rem .8rem;border-left:2px solid var(--vo-accent);
     font-size:.88rem;line-height:1.55;font-style:italic;background:rgba(127,127,127,.05);border-radius:0 8px 8px 0;}
-  /* the piece itself: measured line length, real paragraph spacing, section titles that break it up */
   .vo-read{max-height:26rem;overflow:auto;padding-right:.4rem;}
   .vo-read section{margin:.9rem 0 0;}
-  .vo-read h6{margin:0 0 .35rem;font-family:var(--mono);font-size:.62rem;letter-spacing:.07em;
-    text-transform:uppercase;color:var(--gold);font-weight:600;}
+  .vo-read h6{margin:0 0 .35rem;font-family:var(--mono);font-size:.61rem;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--vo-accent);font-weight:600;}
   .vo-read p{margin:0 0 .7rem;font-size:.83rem;line-height:1.68;max-width:68ch;}
   .vo-read p:last-child{margin-bottom:0;}
   .vo-chapline{font-size:.8rem;line-height:1.6;margin:0 0 .35rem;}
-  .vo-headlink{font-family:var(--mono);font-size:.64rem;text-decoration:none;border:1px solid currentColor;
-    border-radius:999px;padding:.1rem .45rem;margin-left:.35rem;white-space:nowrap;}
-  .vo-actions{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:.7rem;}
-  .vo-card a.vo-open{display:inline-block;font-family:var(--mono);font-size:.68rem;text-decoration:none;
-    border:1px solid currentColor;border-radius:999px;padding:.32rem .7rem;min-height:34px;line-height:1.7;}
-  .vo-card.essay a.vo-open{color:var(--gold);} .vo-card.chapter a.vo-open{color:#5b8def;}
   .vo-nolink{font-family:var(--mono);font-size:.64rem;color:var(--dim);}
   .vo-strip{margin:.7rem 0 0;border-top:1px dashed var(--hair);padding-top:.6rem;}
   .vo-strip .vo-slabel{font-family:var(--mono);font-size:.64rem;color:var(--dim);letter-spacing:.05em;text-transform:uppercase;}
   .vo-strip a{display:block;font-size:.78rem;color:var(--ink);text-decoration:none;margin-top:.3rem;line-height:1.45;}
   .vo-strip a:hover{color:var(--gold);}
   @media (max-width:560px){
-    .vo-head{padding:.7rem .75rem;} .vo-body{padding:0 .75rem .75rem;}
-    .vo-meta{font-size:.6rem;gap:.3rem;} .vo-when{margin-left:0;}
+    .vo-top{padding:.75rem .8rem;gap:.7rem;}
+    .vo-art{flex:0 0 84px;width:84px;height:58px;}
+    .vo-title{font-size:.94rem;}
+    .vo-foot,.vo-player,.vo-reg{padding-left:.8rem;padding-right:.8rem;}
+    .vo-body{padding:0 .8rem .8rem;}
     .vo-chip{font-size:.66rem;padding:.36rem .6rem;}
-    .vo-card h4{font-size:.9rem;}
   }
   /* ===== Startup Search — an inline MODE of the shell (body[data-mode="startups"]) ===== */
   body[data-mode="startups"] #startupsbody{display:block;}
@@ -1725,7 +1743,8 @@
   <div class="vo-filters" id="vo-filters">
     <button type="button" class="vo-chip" data-kind="" aria-pressed="true">Everything</button>
     <button type="button" class="vo-chip" data-kind="essay" aria-pressed="false">Essays</button>
-    <button type="button" class="vo-chip" data-kind="chapter" aria-pressed="false">Podcast moments</button>
+    <button type="button" class="vo-chip" data-kind="chapter" aria-pressed="false">Podcast &amp; video</button>
+    <button type="button" class="vo-chip" id="vo-saved" aria-pressed="false" style="margin-left:auto">★ Kept</button>
   </div>
   <p class="vo-note" id="vo-note"></p>
   <div class="vo-cards" id="vo-cards"></div>
@@ -6654,6 +6673,25 @@ window.addEventListener("hashchange", ()=>{
     }catch(e){ alert("Couldn't take that turn — try again."); }
     finally{ G.busy = false; render(); }
   }
+  async function showSaved(){
+    STATE.view = "saved";
+    note().textContent = "Loading what you kept\u2026";
+    cards().innerHTML = "";
+    try{
+      const r = await fetch("/voices/favorites", {headers: authHeaders()});
+      const d = await r.json();
+      if(!d.signed_in){
+        note().textContent = "Sign in to keep moments. They follow your account, so what you keep here is there on your phone too.";
+        return;
+      }
+      const ms = (d.moments || []).map(m => Object.assign({saved: true}, m));
+      STATE.moments = ms;
+      if(!ms.length){ note().textContent = "Nothing kept yet. The ☆ on any card puts it here."; return; }
+      note().textContent = ms.length + (ms.length === 1 ? " kept moment" : " kept moments");
+      cards().innerHTML = ms.map(cardHtml).join("");
+    }catch(e){ note().textContent = "Could not load your kept list: " + (e && e.message ? e.message : e); }
+  }
+
   function enter(fresh){ if(fresh || !G.last){ G.state=null; G.last=null; G.ready=null; send(""); } else render(); }
   window.SG = { send: (t) => send(t), enter };
 })();
@@ -6984,7 +7022,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
 (function(){
   const cards = () => document.getElementById("vo-cards");
   const note  = () => document.getElementById("vo-note");
-  const STATE = {kind: "", busy: false, q: "", moments: []};
+  const STATE = {kind: "", busy: false, q: "", moments: [], view: "search"};
 
   const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c =>
     ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -6997,33 +7035,105 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
 
   function cardHtml(m, i){
     const isChapter = m.kind === "chapter";
-    const who = m.speaker ? esc(m.speaker) + (m.role && m.role !== "guest" ? " \u00b7 " + esc(m.role) : "") : "";
-    // The offset shows whether or not a link exists. A marker that says "listen from this point" and
-    // then shows no point is a dead end, and some publishers ship no episode URL at all.
-    const bits = [who, esc(m.show), isChapter && m.t_start ? stamp(m.t_start) : ""].filter(Boolean);
-    // A chapter's words are a signpost, so they are set plainly. An essay's words are a quotation.
-    const words = isChapter ? esc(m.text) : "&ldquo;" + esc(m.text) + "&rdquo;";
+    const playable = m.media && (m.media.kind === "youtube" || m.media.kind === "audio");
+    // Artwork carries the play affordance. With no picture, a monogram of the show keeps the row
+    // aligned — a card missing its image next to cards with images reads as broken, not plain.
+    const mono = esc((m.show || m.speaker || "·").trim().slice(0, 2).toUpperCase());
+    const art = m.image
+      ? '<img src="' + esc(m.image) + '" alt="" loading="lazy" referrerpolicy="no-referrer">'
+      : '<span class="vo-mono">' + mono + "</span>";
+    const artEl = playable
+      ? '<button type="button" class="vo-art" data-play="' + i + '" title="Play from '
+        + (m.t_start ? stamp(m.t_start) : "the start") + '">' + art + '<span class="vo-play">▶</span></button>'
+      : '<span class="vo-art">' + art + "</span>";
+
+    const kicker = ['<span class="vo-kind">' + (isChapter ? "moment" : "essay") + "</span>"];
+    if(m.show) kicker.push("<span>" + esc(m.show) + "</span>");
+    if(m.published) kicker.push('<span class="vo-dot">·</span><span>' + esc(shortDate(m.published)) + "</span>");
+    if(isChapter && m.t_start) kicker.push('<span class="vo-dot">·</span><span class="vo-stamp">' + stamp(m.t_start) + "</span>");
+
+    // Who said it is the second line, in the reader's voice, not a chip: "Ryan Petersen, founder".
+    const who = m.speaker
+      ? '<span class="vo-who">' + esc(m.speaker) + "</span>" + (m.role && m.role !== "guest" ? ", " + esc(m.role) : "")
+      : "";
+    const sub = [who, m.title && m.title !== m.text ? esc(m.title) : ""].filter(Boolean).join(" &middot; ");
+
+    const open = m.url
+      ? '<a class="vo-btn primary" href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">'
+        + (isChapter ? "Open at " + stamp(m.t_start) : "Read the original") + " ↗</a>"
+      : '<span class="vo-nolink">' + (isChapter ? "No link in this feed" : "No link published") + "</span>";
+
     return '<article class="vo-card ' + (isChapter ? "chapter" : "essay") + '" data-i="' + i + '">'
-      + '<button type="button" class="vo-head" aria-expanded="false" data-open="' + i + '">'
-      +   '<div class="vo-meta"><span class="vo-kind">' + (isChapter ? "podcast moment" : "essay") + "</span>"
-      +     bits.map(b => "<span>" + b + "</span>").join("")
-      +     (m.published ? '<span class="vo-when">' + esc(m.published) + "</span>" : "")
+      + '<div class="vo-top">' + artEl
+      +   '<div class="vo-main">'
+      +     '<div class="vo-kicker">' + kicker.join("") + "</div>"
+      +     '<h4 class="vo-title">' + esc(m.text) + "</h4>"
+      +     (sub ? '<div class="vo-sub">' + sub + "</div>" : "")
       +   "</div>"
-      +   "<h4>" + words + "</h4>"
-      +   (m.title ? '<div class="vo-src">' + esc(m.title) + "</div>" : "")
-      +   '<div class="vo-reg">' + esc(m.register) + "</div>"
-      + "</button>"
-      // The way out sits on the CLOSED card: opening a card is for reading it here, and a reader who
-      // just wants the original should not have to expand anything to find the link.
-      + (m.url
-          ? '<div class="vo-actions" style="padding:0 .95rem .8rem"><a class="vo-open" href="' + esc(m.url)
-            + '" target="_blank" rel="noopener noreferrer">'
-            + (isChapter ? "Listen from " + stamp(m.t_start) : "Read the original") + " &rarr;</a></div>"
-          : '<div class="vo-actions" style="padding:0 .95rem .8rem"><span class="vo-nolink">'
-            + (isChapter ? "No episode link in this feed \u2014 search the show for this title."
-                         : "No link was published with this piece.") + "</span></div>")
+      + "</div>"
+      + '<div class="vo-player" id="vo-play-' + i + '" hidden></div>'
+      + '<div class="vo-foot">'
+      +   (playable ? '<button type="button" class="vo-btn" data-play="' + i + '">▶ Play here</button>' : "")
+      +   '<button type="button" class="vo-btn" data-open="' + i + '" aria-expanded="false">☰ What it says</button>'
+      +   open
+      +   '<button type="button" class="vo-btn vo-star" data-fav="' + i + '" aria-pressed="'
+      +     (m.saved ? "true" : "false") + '" title="Keep this">' + (m.saved ? "★" : "☆") + "</button>"
+      + "</div>"
+      + '<div class="vo-reg">' + esc(m.register) + "</div>"
       + '<div class="vo-body" id="vo-body-' + i + '" hidden></div>'
       + "</article>";
+  }
+
+  // "Tue, 02 Sep 2026 10:00:00 GMT" and "2026-09-02T17:00:00+00:00" both become "2 Sep 2026".
+  function shortDate(raw){
+    const d = new Date(raw);
+    if(isNaN(d)) return String(raw).slice(0, 16);
+    return d.getDate() + " " + ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]
+           + " " + d.getFullYear();
+  }
+
+  // Play WHERE THE READER IS. A video embeds and starts at the moment; an audio enclosure plays from
+  // the same offset. Either way the publisher still gets the traffic through the link beside it.
+  function play(i){
+    const m = STATE.moments[i], box = document.getElementById("vo-play-" + i);
+    if(!m || !box || !m.media) return;
+    if(!box.hidden){ box.hidden = true; box.innerHTML = ""; return; }
+    box.hidden = false;
+    if(m.media.kind === "youtube"){
+      box.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' + esc(m.media.id)
+        + "?start=" + (parseInt(m.media.t, 10) || 0) + '&autoplay=1" allow="accelerometer; autoplay;'
+        + ' encrypted-media; picture-in-picture" allowfullscreen title="' + esc(m.title || "video") + '"></iframe>';
+    }else{
+      box.innerHTML = '<audio controls autoplay preload="none" src="' + esc(m.media.url)
+        + "#t=" + (parseInt(m.media.t, 10) || 0) + '"></audio>';
+    }
+  }
+
+  async function favorite(i){
+    const m = STATE.moments[i];
+    const btn = cards().querySelector('[data-fav="' + i + '"]');
+    if(!m || !btn) return;
+    const on = btn.getAttribute("aria-pressed") === "true";
+    try{
+      const r = on
+        ? await fetch("/voices/favorites/" + encodeURIComponent(m.id), {method:"DELETE", headers: authHeaders()})
+        : await fetch("/voices/favorites", {method:"POST",
+            headers: Object.assign({"content-type":"application/json"}, authHeaders()),
+            body: JSON.stringify({moment: m})});
+      if(r.status === 401){ note().textContent = "Sign in to keep moments — they follow your account, not this browser."; return; }
+      if(!r.ok) throw new Error("could not save (" + r.status + ")");
+      btn.setAttribute("aria-pressed", on ? "false" : "true");
+      btn.textContent = on ? "☆" : "★";
+      m.saved = !on;
+      if(STATE.view === "saved" && on){ btn.closest(".vo-card").remove(); }
+    }catch(e){ note().textContent = "Could not update your kept list: " + (e && e.message ? e.message : e); }
+  }
+
+  // The shell holds the session in USER; favourites follow the ACCOUNT, so an unsigned reader is
+  // told to sign in rather than silently keeping things in this browser only.
+  function authHeaders(){
+    const t = (typeof USER !== "undefined" && USER && USER.token) || "";
+    return t ? {"x-eigen-token": t} : {};
   }
 
   // Expanding a card asks the server for a summary of the whole piece. The summary is written once
@@ -7033,9 +7143,8 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     const m = STATE.moments[i];
     const el = document.getElementById("vo-body-" + i);
     if(!m || !el) return;
-    const head = el.previousElementSibling;
-    if(!el.hidden){ el.hidden = true; if(head) head.setAttribute("aria-expanded","false"); return; }
-    el.hidden = false; if(head) head.setAttribute("aria-expanded","true");
+    if(!el.hidden){ el.hidden = true; return; }
+    el.hidden = false;
     if(el.dataset.loaded) return;
     el.innerHTML = '<div class="vo-sum"><span class="su-spin"></span>reading the whole piece\u2026</div>';
     try{
@@ -7092,7 +7201,8 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     note().textContent = "Searching what people actually said\u2026";
     cards().innerHTML = "";
     try{
-      const r = await fetch("/voices/search", {method:"POST", headers:{"content-type":"application/json"},
+      const r = await fetch("/voices/search", {method:"POST",
+        headers: Object.assign({"content-type":"application/json"}, authHeaders()),
         body: JSON.stringify({q: STATE.q, kinds: STATE.kind ? [STATE.kind] : [], limit: 30})});
       if(!r.ok) throw new Error("search failed (" + r.status + ")");
       render(await r.json());
@@ -7107,23 +7217,55 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     if(box && !box.dataset.wired){
       box.dataset.wired = "1";
       box.addEventListener("click", e => {
-        const b = e.target.closest(".vo-head");
-        if(b) expand(parseInt(b.dataset.open, 10));
+        const pl = e.target.closest("[data-play]");
+        if(pl){ play(parseInt(pl.dataset.play, 10)); return; }
+        const fa = e.target.closest("[data-fav]");
+        if(fa){ favorite(parseInt(fa.dataset.fav, 10)); return; }
+        const op = e.target.closest("[data-open]");
+        if(op){
+          expand(parseInt(op.dataset.open, 10));
+          const on = op.getAttribute("aria-expanded") === "true";
+          op.setAttribute("aria-expanded", on ? "false" : "true");
+        }
       });
     }
     const bar = document.getElementById("vo-filters");
     if(!bar || bar.dataset.wired) return;
     bar.dataset.wired = "1";
-    bar.querySelectorAll(".vo-chip").forEach(b => b.addEventListener("click", () => {
-      STATE.kind = b.dataset.kind || "";
+    bar.querySelectorAll(".vo-chip[data-kind]").forEach(b => b.addEventListener("click", () => {
+      STATE.kind = b.dataset.kind || ""; STATE.view = "search";
       bar.querySelectorAll(".vo-chip").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
       search(STATE.q);
     }));
+    const sv = document.getElementById("vo-saved");
+    if(sv) sv.addEventListener("click", () => {
+      bar.querySelectorAll(".vo-chip").forEach(x => x.setAttribute("aria-pressed", x === sv ? "true" : "false"));
+      showSaved();
+    });
+  }
+
+  async function showSaved(){
+    STATE.view = "saved";
+    note().textContent = "Loading what you kept\u2026";
+    cards().innerHTML = "";
+    try{
+      const r = await fetch("/voices/favorites", {headers: authHeaders()});
+      const d = await r.json();
+      if(!d.signed_in){
+        note().textContent = "Sign in to keep moments. They follow your account, so what you keep here is there on your phone too.";
+        return;
+      }
+      const ms = (d.moments || []).map(m => Object.assign({saved: true}, m));
+      STATE.moments = ms;
+      if(!ms.length){ note().textContent = "Nothing kept yet. The ☆ on any card puts it here."; return; }
+      note().textContent = ms.length + (ms.length === 1 ? " kept moment" : " kept moments");
+      cards().innerHTML = ms.map(cardHtml).join("");
+    }catch(e){ note().textContent = "Could not load your kept list: " + (e && e.message ? e.message : e); }
   }
 
   function enter(fresh){
     wire();
-    if(fresh){ STATE.q = ""; STATE.kind = ""; cards().innerHTML = ""; }
+    if(fresh){ STATE.q = ""; STATE.kind = ""; STATE.view = "search"; cards().innerHTML = ""; }
     if(!cards().innerHTML) render(null);
   }
 
@@ -7145,7 +7287,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     }catch(e){ /* a missing strip is never worth breaking a card over */ }
   }
 
-  window.VO = { search, enter, forCompany };
+  window.VO = { search, enter, forCompany, showSaved };
 })();
 </script>
 </body>

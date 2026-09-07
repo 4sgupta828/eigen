@@ -20,7 +20,7 @@ from __future__ import annotations
 from eigen_kernel.contract.dto import DocumentRef, EntityRef
 
 from .. import show_notes_doc
-from ._feed import parse_feed
+from ._feed import channel_meta, parse_feed
 from ._http import HttpStrategy
 
 # ── Curated show allowlist (chapter yield measured 2026-09-07, last 25 episodes) ──────────────────
@@ -70,7 +70,9 @@ class ShowNotesConnector:
             items = []
             for url in SHOWS:
                 try:                                        # best-effort: one bad feed ≠ dead batch
-                    recs = parse_feed(await self.fetch_strategy.fetch(url))
+                    raw = await self.fetch_strategy.fetch(url)
+                    recs = parse_feed(raw)
+                    cover = channel_meta(raw).get("image", "")
                 except Exception:
                     continue
                 kept = 0
@@ -81,6 +83,8 @@ class ShowNotesConnector:
                         continue
                     if not show_notes_doc.chapters(str(r.get("summary") or r.get("content") or "")):
                         continue                            # no chapter list → nothing to index
+                    if cover and not r.get("image"):
+                        r["image"] = cover                  # every episode of a show has its cover
                     items.append(r)
                     kept += 1
                 if len(items) >= TOTAL_CAP:

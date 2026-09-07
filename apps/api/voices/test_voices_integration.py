@@ -193,3 +193,58 @@ def test_the_summary_endpoint_caches_and_survives_having_no_model():
             assert missing.status_code == 404
         await pool.close()
     _run(go())
+
+
+def test_keeping_a_moment_is_per_account_and_survives_the_feed_rolling():
+    """A kept moment must render months later, after its episode has scrolled out of the feed and
+    its blocks are gone. That is why the snapshot is stored alongside the id."""
+    async def go():
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+        from api.voices.routes import build_router
+        pool, pg = await _setup()
+        async with pool.acquire() as c:
+            await c.execute("CREATE TABLE IF NOT EXISTS vo_favorite (user_id text NOT NULL, "
+                            "moment_id text NOT NULL, snapshot jsonb NOT NULL DEFAULT '{}'::jsonb, "
+                            "note text NOT NULL DEFAULT '', saved_at timestamptz NOT NULL DEFAULT now(), "
+                            "PRIMARY KEY (user_id, moment_id))")
+            await c.execute("DELETE FROM vo_favorite WHERE user_id = 'u1'")
+
+        async def pool_of():
+            return pool
+
+        async def user_of(token):
+            return {"id": "u1"} if token == "good" else None
+
+        app = FastAPI()
+        app.include_router(build_router(pool_of, user_of=user_of))
+        moment = {"id": "show_notes:ep7::b1", "kind": "chapter", "text": "Why the Series A nearly killed us",
+                  "show": "20VC", "speaker": "Ryan Petersen", "t_start": 780,
+                  "url": "https://show.fm/ep/7?t=780", "image": "https://art/x.jpg",
+                  "media": {"kind": "audio", "url": "https://cdn.fm/ep.mp3", "t": 780}}
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as cl:
+            anon = await cl.post("/voices/favorites", json={"moment": moment})
+            assert anon.status_code == 401                  # keeping is per account, not per browser
+
+            h = {"x-eigen-token": "good"}
+            assert (await cl.post("/voices/favorites", json={"moment": moment}, headers=h)).status_code == 200
+            # saving twice is not an error and does not duplicate
+            assert (await cl.post("/voices/favorites", json={"moment": moment}, headers=h)).status_code == 200
+
+            got = (await cl.get("/voices/favorites", headers=h)).json()
+            assert got["signed_in"] is True and len(got["moments"]) == 1
+            kept = got["moments"][0]
+            assert kept["text"] == "Why the Series A nearly killed us" and kept["t_start"] == 780
+            assert kept["media"]["kind"] == "audio"          # it still plays from the kept list
+
+            # the corpus loses the episode entirely; the kept card must still render
+            async with pool.acquire() as c:
+                await c.execute("DELETE FROM rs_block WHERE source_key IN ('show_notes','founder_essay')")
+            still = (await cl.get("/voices/favorites", headers=h)).json()
+            assert still["moments"][0]["show"] == "20VC"
+
+            await cl.delete("/voices/favorites/" + "show_notes:ep7::b1", headers=h)
+            assert (await cl.get("/voices/favorites", headers=h)).json()["moments"] == []
+        await pool.close()
+    _run(go())
