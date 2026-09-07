@@ -611,3 +611,15 @@ metro, funding floors, stage. The thesis (tech area) and the scope (country) nev
 removal (a preference cannot hold a range) and the note says so. First searches only (a compile, a Guided hand-off) —
 a rail Apply runs the chips exactly as set. The rail's "Showing more" block names each relaxed filter (the user's own
 marked); its chip already sits at ▲ prefer so one tap restores it.
+
+### 2026-09-07 — the non-YC population
+- `portfolio` job: for each fund in `startups/data/portfolios.json` (40 accelerators and funds) the portfolio page's own links
+  and embedded JSON, then the sitemap's profile pages (Sequoia 425, Accel 775, General Catalyst 606, NEA 914, Lux 215, …),
+  each read for the company's site — name from the title / heading / slug, the site from the external link that echoes the
+  name or reads "visit"; a domain on ≥ 3 profiles is the fund's chrome. Companies key by domain; the fund's page grounds
+  `investor{portfolio_affiliation}` or `program`. Pages that render client-side yield little; no headless browser.
+- `discover_sites` job: filing-only companies (cik:<n>) get a website from Clearbit's keyless autocomplete when the suggested
+  name equals the issuer's normalised name; an existing site-keyed company with that domain absorbs the filing identity
+  (CIK, financing, filings; the cik: row is suppressed). Source `lookup` on the card says the site was found by name.
+- Rejected on measurement: DuckDuckGo HTML (blocked), GDELT (429s), Wikidata (≈ 500 recent software companies), Show HN
+  (side projects). Search-API discovery (Brave) stays the better route when its credits are allowed.

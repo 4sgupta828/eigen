@@ -464,9 +464,114 @@ async def run_formd_companies(store: StartupStore, *, since: str = "2022-01-01",
     return {"companies": n, "skipped_name_match": skipped, "of": len(issuers)}
 
 
+# ------------------------------------------------------------------ portfolio pages (non-YC population) + website discovery
+async def run_portfolio(store: StartupStore, *, funds: list[str] | None = None, max_profiles: int = 1500, jid: int | None = None) -> dict:
+    """Every fund in data/portfolios.json: the portfolio page's own links and JSON, then the sitemap's profile pages
+    (each read for the company's site). A company becomes a node keyed by its domain with an investor /
+    program fact from the fund's own page. Funds run concurrently (pacing is per host)."""
+    import os as _os, re as _re
+    from concurrent.futures import ThreadPoolExecutor
+    from .sources import portfolio as pf
+    await store.ensure_schema()
+    entries = pf.load_list(_os.path.join(_os.path.dirname(__file__), "data", "portfolios.json"))
+    if funds:
+        entries = [e for e in entries if e["fund"] in set(funds)]
+    loop = asyncio.get_event_loop()
+    ex = ThreadPoolExecutor(max_workers=6)
+
+    def _one(e: dict) -> dict:
+        out: dict[str, dict] = {}
+        page = site.http.get(e["url"], min_gap=1.0)
+        if page.ok:
+            for c in pf.parse_page(page.text, page.final_url):
+                if c.get("name"):
+                    out[c["domain"]] = {"name": c["name"], "website": c["website"], "via": "page"}
+        try:
+            prof = pf.profile_urls(site.http.registrable_domain(e["url"]))[:max_profiles]
+        except Exception:   # noqa: BLE001
+            prof = []
+        seen_domains: dict[str, int] = {}
+        found: list[dict] = []
+        for u in prof:
+            f = site.http.get(u, min_gap=1.5)
+            if not f.ok:
+                continue
+            r = pf.parse_profile(f.text, f.final_url)
+            if r:
+                seen_domains[r["domain"]] = seen_domains.get(r["domain"], 0) + 1
+                found.append({**r, "profile": u})
+        for r in found:                                   # a domain on three or more profiles is the fund's own chrome
+            if seen_domains.get(r["domain"], 0) >= 3:
+                continue
+            out.setdefault(r["domain"], {"name": r["name"], "website": r["website"], "via": "profile", "profile": r["profile"]})
+        return {"fund": e["fund"], "kind": e["kind"], "url": e["url"], "profiles": len(prof), "companies": out}
+
+    results = await asyncio.gather(*[loop.run_in_executor(ex, _one, e) for e in entries], return_exceptions=True)
+    n_new = n_fact = 0
+    report = {}
+    for e, res in zip(entries, results):
+        if isinstance(res, Exception):
+            report[e["fund"]] = f"error {res!s:.80}"
+            continue
+        for dom, c in res["companies"].items():
+            if dom.endswith((".gov", ".edu")) or len(dom) > 60:
+                continue
+            await store.upsert_company({"id": dom, "name": c["name"] or dom, "website": c["website"], "sources": [f"portfolio:{res['fund']}"]})
+            quote = f"Listed on {res['fund'].replace('_', ' ')}'s portfolio page"
+            src = c.get("profile") or res["url"]
+            if res["kind"] == "program":
+                facts = [{"key": "program", "value": res["fund"] if res["fund"] in ("techstars", "spc", "ai_fund", "a16z_speedrun", "neo", "pear", "hf0", "antler", "ef", "alchemist", "500", "sequoia_arc") else "other",
+                          "quote": quote, "source_url": src, "confidence": 0.9}]
+            else:
+                facts = [{"key": "investor", "value": res["fund"], "quote": quote, "source_url": src, "basis": "portfolio_affiliation", "confidence": 0.9}]
+            n_fact += await store.replace_facts(dom, f"portfolio:{res['fund']}", facts, keys=[facts[0]["key"]])
+            n_new += 1
+        report[res["fund"]] = {"profiles": res["profiles"], "companies": len(res["companies"])}
+        if jid:
+            await _progress(store, jid, {"funds_done": len(report), "companies": n_new, "report": report})
+    return {"companies": n_new, "facts": n_fact, "report": report}
+
+
+async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int | None = None) -> dict:
+    """Filing-only companies (cik:<n>) get a website from Clearbit's autocomplete when the suggested name equals
+    the issuer's. When a site-keyed company with that domain already exists, the filing identity MERGES into it
+    (CIK, financing, filings move over; the cik: row is suppressed); otherwise the cik: row gains the website."""
+    from .sources import lookup
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT id, name, cik FROM su_company WHERE id LIKE 'cik:%' AND website = '' AND status = 'active' AND coalesce(crawl->>'lookup_at', '') = '' LIMIT $1", limit)
+    n_q = n_hit = n_merged = 0
+    for r in rows:
+        hit = await asyncio.get_event_loop().run_in_executor(None, lookup.website_for, r["name"])
+        n_q += 1
+        async with pool.acquire() as conn:
+            if not hit:
+                await conn.execute("UPDATE su_company SET crawl = crawl || jsonb_build_object('lookup_at', $2::text, 'lookup_hit', false) WHERE id = $1", r["id"], date.today().isoformat())
+            else:
+                dom = hit["domain"]
+                existing = await conn.fetchval("SELECT id FROM su_company WHERE id = $1", dom)
+                if existing:
+                    await conn.execute("UPDATE su_financing SET company_id = $2 WHERE company_id = $1", r["id"], dom)
+                    await conn.execute("UPDATE su_formd SET company_id = $2 WHERE company_id = $1", r["id"], dom)
+                    await conn.execute("UPDATE su_company SET cik = CASE WHEN cik = '' THEN $2 ELSE cik END, legal_name = CASE WHEN legal_name = '' THEN $3 ELSE legal_name END, sources = CASE WHEN 'formd' = ANY(sources) THEN sources ELSE array_append(sources, 'formd') END WHERE id = $1", dom, r["cik"], r["name"])
+                    await conn.execute("UPDATE su_company SET status = 'suppressed', crawl = crawl || jsonb_build_object('merged_into', $2::text) WHERE id = $1", r["id"], dom)
+                    n_merged += 1
+                    await derive_one(store, dom)
+                else:
+                    await conn.execute("""UPDATE su_company SET website = $2, aliases = array_append(aliases, $3), sources = CASE WHEN 'lookup' = ANY(sources) THEN sources ELSE array_append(sources, 'lookup') END,
+                                          crawl = crawl || jsonb_build_object('lookup_at', $4::text, 'lookup_hit', true, 'lookup_name', $5::text) WHERE id = $1""",
+                                       r["id"], f"https://{dom}", dom, date.today().isoformat(), hit["name"])
+                n_hit += 1
+        if jid and n_q % 50 == 0:
+            await _progress(store, jid, {"queried": n_q, "sites_found": n_hit, "merged": n_merged, "of": len(rows)})
+        await asyncio.sleep(0.6)
+    return {"queried": n_q, "sites_found": n_hit, "merged": n_merged}
+
+
 # ------------------------------------------------------------------ runner (background thread, own loop + pool)
 RUNNERS = {"yc": run_yc, "embed": run_embed, "formd": run_formd, "match": run_match, "crawl": run_crawl, "extract": run_extract, "derive": run_derive,
-           "news": run_news, "formd_companies": run_formd_companies}
+           "news": run_news, "formd_companies": run_formd_companies, "portfolio": run_portfolio, "discover_sites": run_discover_sites}
 NEEDS_PROV = {"yc", "embed", "match", "extract", "news"}
 
 

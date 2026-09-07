@@ -252,3 +252,18 @@ def test_low_coverage_key_keeps_a_must_when_the_requested_value_is_common():
     assert c.must == {"tech_area": ["fintech"], "founder_count": {"min": 2.0}, "metro": ["new_york"]} and notes == []
     c, notes = cp.build_contract({"text": "x", "must": {"metro": ["lagos"]}}, coverage={"metro": 0.35}, value_counts={"metro": {"lagos": 3}})
     assert c.must == {} and c.prefer == {"metro": ["lagos"]}          # a rare value on a sparse key: a preference
+
+
+def test_portfolio_page_and_profile_parsing_and_lookup_name_cleaning():
+    from api.startups.sources import portfolio, lookup
+    page = ('<html><body><a href="https://acme.ai">Acme</a><a href="https://www.linkedin.com/company/x">LinkedIn</a>'
+            '<a href="https://fund.com/portfolio/acme">Acme profile</a><a href="https://beta.io">Read more</a>'
+            '<script id="__NEXT_DATA__" type="application/json">{"props":{"companies":[{"name":"Gamma","website":"https://gamma.co"}]}}</script></body></html>')
+    cands = {c["domain"]: c for c in portfolio.parse_page(page, "https://fund.com/portfolio")}
+    assert cands["acme.ai"]["name"] == "Acme" and cands["gamma.co"]["name"] == "Gamma" and cands["gamma.co"]["how"] == "json"
+    assert "linkedin.com" not in cands and "fund.com" not in cands and cands["beta.io"]["name"] == ""      # 'Read more' is not a name
+    prof = '<html><head><title>Acme | Fund</title></head><body><h1>Infrastructure for the next billion users</h1><a href="https://twitter.com/acme">Twitter</a><a href="https://acme.ai">Visit website</a></body></html>'
+    r = portfolio.parse_profile(prof, "https://fund.com/companies/acme")
+    assert r["name"] == "Acme" and r["domain"] == "acme.ai" and r["score"] >= 5
+    assert portfolio.parse_profile('<html><title>Fund</title><a href="https://podcast.fund-media.com">Podcast</a></html>', "https://fund.com/companies/x") is None
+    assert lookup.clean_name("Nuburu, Inc.") == "Nuburu" and lookup.clean_name("Whatnot Inc.") == "Whatnot" and lookup.clean_name("Bending Spoons S.p.A.") == "Bending Spoons S.p.A."
