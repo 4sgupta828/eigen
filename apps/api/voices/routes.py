@@ -28,6 +28,8 @@ class SearchIn(BaseModel):
     company_id: str = ""
     speaker: str = ""
     limit: int = 30
+    days: int = 0                 # browse window: 7, 30, 90 … 0 means no window
+    order: str = "recent"         # "recent" (by publication date) or "watched" (platform views)
 
 
 class SummaryIn(BaseModel):
@@ -44,6 +46,15 @@ class FavoriteIn(BaseModel):
 class JobIn(BaseModel):
     kind: str = "ingest"
     limit: int = 60
+
+
+def _window(days: int) -> tuple[str, bool]:
+    """The ISO date a browse window starts at, or "" for no window."""
+    days = int(days or 0)
+    if days <= 0:
+        return "", False
+    from datetime import date, timedelta
+    return (date.today() - timedelta(days=min(days, 3650))).isoformat(), False
 
 
 def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = "default",
@@ -77,10 +88,19 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
     async def voices_search(body: SearchIn, x_eigen_token: str = Header(default="")) -> dict:
         """Moments matching the question. Keyword-ranked, so it works with no embedding provider."""
         want = max(1, min(int(body.limit or 30), 60))
+        since, widened = _window(body.days)
         # over-fetch, then dedupe: the ranking cannot know that five blocks are the same sidebar
         sql, params = build_query(q=body.q, kinds=tuple(body.kinds), company_id=body.company_id,
-                                  speaker=body.speaker, limit=want * 4)
+                                  speaker=body.speaker, limit=want * 4, since=since,
+                                  order=body.order)
         rows = await _rows(sql, params)
+        # A window that returns almost nothing is worse than a wider one: widen rather than show an
+        # empty week, and say which window the reader is actually looking at.
+        if since and len(rows) < 6:
+            since, widened = "", True
+            sql, params = build_query(q=body.q, kinds=tuple(body.kinds), company_id=body.company_id,
+                                      speaker=body.speaker, limit=want * 4, order=body.order)
+            rows = await _rows(sql, params)
         moments = dedupe([moment(r) for r in rows], limit=want)
         # who is speaking, and where to find them — resolved once for the whole page
         pool = await pool_of()
@@ -101,7 +121,11 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
                 "pointers": sum(1 for m in moments if not m["quotable"]),
             },
             # Said plainly so the UI never has to guess: ranking is words-only until vectors exist.
-            "ranking": "keyword",
+            # Said plainly so the UI never has to guess what it is showing.
+            "ranking": ("keyword" if body.q.strip()
+                        else ("most watched" if body.order == "watched" else "newest first")),
+            "window": {"days": 0 if not since else int(body.days), "widened": widened,
+                       "since": since},
         }
 
     @router.get("/voices/company/{company_id}")

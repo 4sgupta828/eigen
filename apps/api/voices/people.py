@@ -21,10 +21,23 @@ def is_person(name: str) -> bool:
     return 2 <= len(n.split()) <= 4 and bool(re.search(r"[A-Za-z]", n))
 
 
-def search_url(name: str, context: str = "") -> str:
-    """A labelled search, never a guessed profile."""
-    bits = " ".join(x for x in [name, context] if x)[:160]
-    return "https://www.google.com/search?q=" + quote_plus(bits + " linkedin")
+def profile_searches(name: str) -> dict:
+    """Where to look for THIS PERSON, on each network's own people search.
+
+    The first version searched the web for the name plus the SHOW, which reliably found the podcast
+    episode — the one thing the reader already has. A profile search must be about the person and
+    nothing else, and it must land on a people directory rather than on general results, or it
+    returns the interview again.
+    """
+    n = " ".join((name or "").split())[:120]
+    if not n:
+        return {}
+    return {
+        # LinkedIn's own people search: the canonical place a profile lives
+        "linkedin": "https://www.linkedin.com/search/results/people/?keywords=" + quote_plus(n),
+        # X's people tab, not its post search, for the same reason
+        "twitter": "https://x.com/search?f=user&q=" + quote_plus(n),
+    }
 
 
 async def links_for(conn, names: list[str]) -> dict[str, dict]:
@@ -75,8 +88,7 @@ def decorate(moments: list[dict], resolved: dict[str, dict]) -> None:
         if rec and corroborated:
             m["person"] = dict(rec, name=name)
         else:
-            m["person"] = {"name": name, "basis": "search",
-                           "search": search_url(name, str(m.get("show") or "")),
+            m["person"] = {"name": name, "basis": "search", "search": profile_searches(name),
                            # say WHY there is no direct link, so the gap is legible rather than a bug
                            "why": ("we hold a profile for this name but this episode does not confirm "
                                    "it is the same person" if rec else "")}

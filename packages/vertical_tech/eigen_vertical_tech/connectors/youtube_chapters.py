@@ -85,6 +85,10 @@ def parse_channel(raw: bytes, channel_name: str = "") -> list[dict]:
                         rec["summary"] = g.text
                     elif gn == "thumbnail" and g.get("url"):
                         rec["image"] = g.get("url").strip()
+                    elif gn == "community":
+                        for cm in g:
+                            if _local(cm.tag) == "statistics" and cm.get("views"):
+                                rec["views"] = cm.get("views").strip()
         if not vid:
             continue
         rec["guid"] = f"youtube:{vid}"

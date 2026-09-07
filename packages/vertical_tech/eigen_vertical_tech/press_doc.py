@@ -14,6 +14,8 @@ from __future__ import annotations
 import html
 import re
 
+from .feed_dates import iso_date
+
 _MAX_BODY = 9000
 
 
@@ -44,6 +46,7 @@ def facets(rec: dict) -> dict:
         "url": str(rec.get("link") or "").strip(),
         "published": str(rec.get("published") or "").strip()[:64],
         "year": _year(rec),
+        "published_at": iso_date(rec.get("published")),
     }
     return {k: v for k, v in f.items() if v}
 

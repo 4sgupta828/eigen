@@ -121,6 +121,8 @@ def moment(row: dict) -> dict:
         # reused here to decide whether a profile link is safe to print
         "bind_basis": str(facets.get("bind_basis") or ""),
         "image": str(facets.get("image") or ""),
+        "views": int(facets["views"]) if str(facets.get("views") or "").isdigit() else 0,
+        "published_at": str(facets.get("published_at") or ""),
         "media": media,
         # The register the UI must print. A pointer is never presented as something anyone said.
         "register": (("Chapter marker written by the publisher — "
@@ -130,11 +132,15 @@ def moment(row: dict) -> dict:
 
 
 def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", speaker: str = "",
-                limit: int = 30, table: str = "rs_block", per_document: bool = False) -> tuple[str, list]:
+                limit: int = 30, table: str = "rs_block", per_document: bool = False,
+                since: str = "", order: str = "recent") -> tuple[str, list]:
     """Keyword search over the voice corpus. Returns (sql, params) — no I/O, so it is testable.
 
-    An empty `q` is legitimate ("show me what founders are saying"): it degrades to the newest rows
-    rather than to an error, because a mode that returns nothing when the box is empty reads broken.
+    An empty `q` is a BROWSE, not a failed search: "show me what founders are saying". It used to
+    fall back to `created_at`, which is when WE ingested a row — an ordering that means nothing to a
+    reader and put whatever the last job touched at the top. A browse now orders by the piece's own
+    PUBLICATION date (`published_at`, ISO text, so it sorts), optionally within a window, and can
+    order by the platform's own view count where one exists.
     """
     # Boilerplate is excluded everywhere. Many newsletter feeds repeat a sidebar of post titles in
     # every item's body, which otherwise floods a search with the same block five times over.
@@ -152,6 +158,15 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         # An unrecognised kind must narrow to nothing, never widen back to everything: silently
         # returning the whole corpus for a typo'd filter is a lie about what the filter did.
         params[0] = keys
+    if since:
+        # a published_at we could not parse is left out of a window rather than dated to today
+        n += 1
+        where.append(f"(facets->>'published_at') >= ${n}")
+        params.append(since)
+    if order == "watched":
+        n += 1
+        where.append(f"(facets->>'views') ~ ${n}")
+        params.append(r"^\d+$")
     if company_id:
         n += 1
         where.append(f"facets->>'company_id' = ${n}")
@@ -178,14 +193,17 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         # one, so they are demoted rather than deleted — the words are still worth finding.
         rank = (f"ts_rank(tsv, to_tsquery('english', ${n}), 1) * "
                 f"CASE WHEN (facets ? 'url' OR facets ? 'episode_url') THEN 1.0 ELSE 0.7 END")
-        order = f"{rank} DESC, created_at DESC NULLS LAST"
+        order_sql = f"{rank} DESC, facets->>'published_at' DESC NULLS LAST"
         # An essay block can be thousands of characters, so the head of it is rarely the part that
         # answered the question. ts_headline returns the passage that actually matched.
         snippet = (f"ts_headline('english', text, to_tsquery('english', ${n}), "
                    f"'MaxWords=48, MinWords=20, ShortWord=3, MaxFragments=1, StartSel=\u00ab, StopSel=\u00bb')")
     else:
         rank = "0.0"
-        order = "created_at DESC NULLS LAST"
+        # Newest by the PIECE's date; ingest time only breaks ties for rows with no usable date.
+        order_sql = ("(facets->>'views')::bigint DESC, facets->>'published_at' DESC NULLS LAST"
+                     if order == "watched"
+                     else "facets->>'published_at' DESC NULLS LAST, created_at DESC NULLS LAST")
         snippet = "left(text, 320)"
 
     n += 1
@@ -196,10 +214,10 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         # One row per EPISODE. Without this a company's strip fills with the first eight chapters of
         # one episode ("00:00 Intro", "02:00 Early days") and every other episode is pushed out.
         sql = (f"SELECT * FROM (SELECT DISTINCT ON (document_id) {cols} "
-               f"FROM {table} WHERE {' AND '.join(where)} ORDER BY document_id, {order}) s "
+               f"FROM {table} WHERE {' AND '.join(where)} ORDER BY document_id, {order_sql}) s "
                f"ORDER BY score DESC, document_id LIMIT ${n}")
     else:
-        sql = f"SELECT {cols} FROM {table} WHERE {' AND '.join(where)} ORDER BY {order} LIMIT ${n}"
+        sql = f"SELECT {cols} FROM {table} WHERE {' AND '.join(where)} ORDER BY {order_sql} LIMIT ${n}"
     return sql, params
 
 

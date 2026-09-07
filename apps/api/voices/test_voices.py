@@ -218,9 +218,12 @@ def test_a_named_person_links_to_their_profile_or_to_an_honest_search():
           {"speaker": "", "show": "20VC"}]
     people.decorate(ms, {"Ryan Petersen": {"linkedin": "https://linkedin.com/in/typeryan", "basis": "index"}})
     assert ms[0]["person"]["linkedin"].endswith("typeryan") and ms[0]["person"]["basis"] == "index"
-    # nobody we hold → a LABELLED search, never a guessed profile URL
-    assert ms[1]["person"]["basis"] == "search" and "google.com/search" in ms[1]["person"]["search"]
-    assert "linkedin.com/in/" not in ms[1]["person"]["search"].split("q=")[0]
+    # nobody we hold → a LABELLED search on each network's PEOPLE directory, never a guessed URL
+    sr = ms[1]["person"]["search"]
+    assert ms[1]["person"]["basis"] == "search"
+    assert "linkedin.com/search/results/people" in sr["linkedin"]
+    assert "x.com/search?f=user" in sr["twitter"]
+    assert "linkedin.com/in/" not in sr["linkedin"]                  # never a guessed profile path
     assert "person" not in ms[2]                     # no name, no link
 
 
@@ -243,10 +246,51 @@ def test_a_common_name_alone_never_earns_a_profile_link():
     people.decorate(ms, {"Matthew Smith": {"linkedin": "https://linkedin.com/in/matthew-smith250",
                                            "basis": "index"}})
     assert ms[0]["person"]["basis"] == "search"
-    assert "linkedin.com/in/matthew-smith250" not in json_dumps(ms[0])
+    assert "matthew-smith250" not in json_dumps(ms[0])
     assert "does not confirm" in ms[0]["person"]["why"]
 
 
 def json_dumps(o):
     import json
     return json.dumps(o)
+
+
+def test_a_profile_search_looks_for_the_person_not_the_show():
+    """Searching the name plus the show found the episode — the one thing the reader already has."""
+    from api.voices import people
+    ms = [{"speaker": "Dara Khosrowshahi", "show": "Invest Like the Best"}]
+    people.decorate(ms, {})
+    sr = ms[0]["person"]["search"]
+    assert "Khosrowshahi" in sr["linkedin"] and "Invest" not in sr["linkedin"]
+    assert "Khosrowshahi" in sr["twitter"] and "Invest" not in sr["twitter"]
+
+
+def test_a_browse_orders_by_the_pieces_own_date_not_by_when_we_ingested_it():
+    """With no query the feed used to order by created_at — when OUR job touched the row, which
+    means nothing to a reader and put whatever ran last on top."""
+    sql, params = search.build_query(q="", limit=10)
+    assert "facets->>'published_at' DESC" in sql
+    assert sql.index("published_at") < sql.index("created_at")      # ingest time only breaks ties
+
+
+def test_a_window_filters_by_publication_date():
+    sql, params = search.build_query(q="", since="2026-09-01", limit=10)
+    assert "(facets->>'published_at') >= " in sql and "2026-09-01" in params
+
+
+def test_most_watched_only_considers_rows_that_carry_a_view_count():
+    sql, params = search.build_query(q="", order="watched", limit=10)
+    assert "(facets->>'views')::bigint DESC" in sql
+    assert any(p == r"^\d+$" for p in params)      # rows with no number are excluded, not treated as 0
+
+
+def test_a_moment_carries_the_platforms_view_count_when_there_is_one():
+    m = search.moment({"document_id": "y", "block_id": "b", "document_title": "t",
+                       "source_key": "youtube_chapters", "text": "[00:04:27] A lesson",
+                       "facets": {"source_kind": "chapter_pointer", "views": "39103",
+                                  "published_at": "2026-09-07", "video_id": "abc"}})
+    assert m["views"] == 39103 and m["published_at"] == "2026-09-07"
+    podcast = search.moment({"document_id": "p", "block_id": "b", "document_title": "t",
+                             "source_key": "show_notes", "text": "[00:13:00] A lesson",
+                             "facets": {"source_kind": "chapter_pointer"}})
+    assert podcast["views"] == 0                    # podcasts publish none; we invent none

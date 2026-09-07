@@ -231,6 +231,13 @@
     border:1px solid var(--hair);background:var(--panel2);color:var(--dim);cursor:pointer;min-height:34px;}
   .vo-chip[aria-pressed="true"]{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
   .vo-note{font-family:var(--mono);font-size:.68rem;color:var(--dim);margin:.5rem 0 0;line-height:1.5;}
+  .vo-browse{margin:.35rem 0 0;gap:.3rem;}
+  .vo-blabel{font-family:var(--mono);font-size:.63rem;color:var(--dim);letter-spacing:.04em;margin-right:.1rem;}
+  .vo-swin{font-family:var(--mono);font-size:.63rem;background:none;border:0;color:var(--dim);
+    cursor:pointer;padding:.3rem .4rem;min-height:32px;border-bottom:1px solid transparent;}
+  .vo-swin:hover{color:var(--ink);}
+  .vo-swin[aria-pressed="true"]{color:var(--gold);border-bottom-color:var(--gold);font-weight:600;}
+  .vo-views{font-family:var(--mono);font-size:.62rem;color:var(--dim);}
   .vo-cards{display:grid;gap:.8rem;margin:1rem 0 2.4rem;}
   /* Two kinds, two accents. An essay is someone's own words (gold); a podcast or video moment is a
      signpost into a recording (a cool blue). The accent is a thin left rule and a tinted ground, not
@@ -1761,6 +1768,14 @@
     <button type="button" class="vo-chip" data-kind="video" aria-pressed="false">▶ Videos</button>
     <button type="button" class="vo-chip" data-kind="essay" aria-pressed="false">✎ Essays</button>
     <button type="button" class="vo-chip" id="vo-saved" aria-pressed="false" style="margin-left:auto">★ Kept</button>
+  </div>
+  <div class="vo-filters vo-browse" id="vo-window">
+    <span class="vo-blabel">Showing</span>
+    <button type="button" class="vo-swin" data-days="7" aria-pressed="true">this week</button>
+    <button type="button" class="vo-swin" data-days="30" aria-pressed="false">this month</button>
+    <button type="button" class="vo-swin" data-days="90" aria-pressed="false">this quarter</button>
+    <button type="button" class="vo-swin" data-days="0" aria-pressed="false">all time</button>
+    <button type="button" class="vo-swin" data-order="watched" aria-pressed="false" title="Ordered by the view count YouTube publishes; videos only">▶ most watched</button>
   </div>
   <p class="vo-note" id="vo-note"></p>
   <div class="vo-cards" id="vo-cards"></div>
@@ -7038,7 +7053,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
 (function(){
   const cards = () => document.getElementById("vo-cards");
   const note  = () => document.getElementById("vo-note");
-  const STATE = {kind: "", busy: false, q: "", moments: [], view: "search"};
+  const STATE = {kind: "", busy: false, q: "", moments: [], view: "search", days: 7, order: "recent"};
 
   const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c =>
     ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -7069,6 +7084,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     if(m.show) kicker.push("<span>" + esc(m.show) + "</span>");
     if(m.published) kicker.push('<span class="vo-dot">·</span><span>' + esc(shortDate(m.published)) + "</span>");
     if(isPointer && m.t_start) kicker.push('<span class="vo-dot">·</span><span class="vo-stamp">' + stamp(m.t_start) + "</span>");
+    if(m.views) kicker.push('<span class="vo-dot">·</span><span class="vo-views">' + views(m.views) + "</span>");
 
     // A named person gets a way to reach them: the profile we hold, or a clearly-labelled search.
     // We never print a guessed profile URL — pointing confidently at the wrong stranger is worse
@@ -7079,10 +7095,15 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       const bits = [];
       if(p.linkedin) bits.push('<a class="vo-plink" href="' + esc(p.linkedin) + '" target="_blank" rel="noopener noreferrer" title="LinkedIn profile">in</a>');
       if(p.twitter)  bits.push('<a class="vo-plink" href="' + esc(p.twitter) + '" target="_blank" rel="noopener noreferrer" title="X profile">𝕏</a>');
-      if(!bits.length && p.search) bits.push('<a class="vo-plink guess" href="' + esc(p.search)
-        + '" target="_blank" rel="noopener noreferrer" title="'
-        + esc(p.why || "We do not hold a profile for this person") + ' — this searches LinkedIn for them">'
-        + "find on LinkedIn ⌕</a>");
+      if(!bits.length && p.search){
+        // Two people-directory searches for THIS PERSON. Searching the name plus the show found the
+        // episode again, which the reader already has open.
+        const why = esc(p.why || "We do not hold a profile for this person");
+        if(p.search.linkedin) bits.push('<a class="vo-plink guess" href="' + esc(p.search.linkedin)
+          + '" target="_blank" rel="noopener noreferrer" title="' + why + ' — search LinkedIn people">find on LinkedIn ⌕</a>');
+        if(p.search.twitter) bits.push('<a class="vo-plink guess" href="' + esc(p.search.twitter)
+          + '" target="_blank" rel="noopener noreferrer" title="' + why + ' — search X people">𝕏 ⌕</a>');
+      }
       who = '<span class="vo-person"><span class="vo-who">' + esc(m.speaker) + "</span>" + bits.join("") + "</span>"
             + (m.role && m.role !== "guest" ? ", " + esc(m.role) : "");
     }
@@ -7112,6 +7133,14 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       + '<div class="vo-reg">' + esc(m.register) + "</div>"
       + '<div class="vo-body" id="vo-body-' + i + '" hidden></div>'
       + "</article>";
+  }
+
+  // The platform's own number, shown as a fact about the video and never turned into our ranking.
+  function views(n){
+    n = parseInt(n, 10) || 0;
+    if(n >= 1000000) return (n / 1000000).toFixed(n >= 10000000 ? 0 : 1) + "M views";
+    if(n >= 1000) return Math.round(n / 1000) + "K views";
+    return n + " views";
   }
 
   // "Tue, 02 Sep 2026 10:00:00 GMT" and "2026-09-02T17:00:00+00:00" both become "2 Sep 2026".
@@ -7215,8 +7244,15 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
         : "Ask what you want to learn from. The index holds first-person essays and timestamped podcast moments from founders, investors and operators.";
       return;
     }
-    const c = data.counts || {};
+    const c = data.counts || {}, w = data.window || {};
     const parts = [ms.length + (ms.length === 1 ? " moment" : " moments")];
+    if(!STATE.q){
+      const label = {7: "published this week", 30: "published this month", 90: "published this quarter"};
+      if(data.ranking === "most watched") parts.push("the most watched videos we hold");
+      else if(w.days && label[w.days] && !w.widened) parts.push(label[w.days]);
+      else if(w.widened) parts.push("nothing recent enough in that window, so showing everything we hold");
+      else parts.push("everything we hold, newest first");
+    }
     if(c.pointers) parts.push(c.pointers + (c.pointers === 1 ? " marker" : " markers") + " into recordings (where to listen, not a quote)");
     if(c.quotable) parts.push(c.quotable + " quotable " + (c.quotable === 1 ? "passage" : "passages"));
     if(data.ranking === "keyword") parts.push("ranked by words only");
@@ -7228,12 +7264,15 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
   async function search(question){
     if(STATE.busy) return;
     STATE.busy = true; STATE.q = (question || "").trim();
+    const winEl = document.getElementById("vo-window");
+    if(winEl) winEl.hidden = !!STATE.q;
     note().textContent = "Searching what people actually said\u2026";
     cards().innerHTML = "";
     try{
       const r = await fetch("/voices/search", {method:"POST",
         headers: Object.assign({"content-type":"application/json"}, authHeaders()),
-        body: JSON.stringify({q: STATE.q, kinds: STATE.kind ? [STATE.kind] : [], limit: 30})});
+        body: JSON.stringify({q: STATE.q, kinds: STATE.kind ? [STATE.kind] : [], limit: 30,
+                              days: STATE.q ? 0 : STATE.days, order: STATE.order})});
       if(!r.ok) throw new Error("search failed (" + r.status + ")");
       render(await r.json());
     }catch(e){
@@ -7267,6 +7306,18 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       bar.querySelectorAll(".vo-chip").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
       search(STATE.q);
     }));
+    const win = document.getElementById("vo-window");
+    if(win && !win.dataset.wired){
+      win.dataset.wired = "1";
+      win.querySelectorAll(".vo-swin").forEach(b => b.addEventListener("click", () => {
+        if(b.dataset.order){ STATE.order = STATE.order === "watched" ? "recent" : "watched"; }
+        else { STATE.order = "recent"; STATE.days = parseInt(b.dataset.days, 10); }
+        win.querySelectorAll(".vo-swin").forEach(x => x.setAttribute("aria-pressed",
+          x === b ? (STATE.order === "watched" || !x.dataset.order ? "true" : "false") : "false"));
+        STATE.view = "search";
+        search(STATE.q);
+      }));
+    }
     const sv = document.getElementById("vo-saved");
     if(sv) sv.addEventListener("click", () => {
       bar.querySelectorAll(".vo-chip").forEach(x => x.setAttribute("aria-pressed", x === sv ? "true" : "false"));
@@ -7295,8 +7346,11 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
 
   function enter(fresh){
     wire();
-    if(fresh){ STATE.q = ""; STATE.kind = ""; STATE.view = "search"; cards().innerHTML = ""; }
-    if(!cards().innerHTML) render(null);
+    if(fresh){ STATE.q = ""; STATE.kind = ""; STATE.view = "search"; STATE.days = 7;
+               STATE.order = "recent"; cards().innerHTML = ""; }
+    // Open on what has just been published rather than on an empty page. A browse is a legitimate
+    // way to use this mode: most weeks a reader wants to see what landed, not to ask a question.
+    if(!cards().innerHTML) search("");
   }
 
   // The "from the founders" strip on a startup card: only episodes whose guest IS that company's

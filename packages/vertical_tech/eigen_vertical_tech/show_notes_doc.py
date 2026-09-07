@@ -22,6 +22,8 @@ from __future__ import annotations
 import html
 import re
 
+from .feed_dates import iso_date
+
 # "13:00 Title", "(00:02:16) Title", "[1:02:33] - Title" — an offset then the chapter's words.
 # The offset must OPEN its line (optionally in brackets). Requiring that kills the prose match:
 # "At 08:30 we wake up and start coding" is a sentence, not a chapter, and a looser pattern turned it
@@ -199,6 +201,11 @@ def facets(rec: dict) -> dict:
         "guest": guest_from_title(str(rec.get("title") or "")),
         "episode_url": link,
         "published": str(rec.get("published") or "").strip()[:64],
+        # sortable date — "newest first" is meaningless without one, and ISO text sorts correctly
+        "published_at": iso_date(rec.get("published")),
+        # what the platform itself publishes about attention. Present for video, absent for podcasts,
+        # and shown as the platform's own number rather than turned into a ranking of our own.
+        "views": str(rec.get("views") or "").strip(),
         "year": _year(rec),
     }
     return {k: v for k, v in f.items() if v}

@@ -16,6 +16,8 @@ from __future__ import annotations
 import html
 import re
 
+from .feed_dates import iso_date
+
 _MAX_BODY = 16000
 
 
@@ -66,6 +68,7 @@ def facets(rec: dict) -> dict:
         "author": " ".join(str(rec.get("author") or "").split()).strip(),
         "publication": " ".join(str(rec.get("publication") or "").split()).strip(),
         "year": _year(rec),
+        "published_at": iso_date(rec.get("published")),
     }
     return {k: v for k, v in f.items() if v}
 
