@@ -74,7 +74,9 @@ def moment(row: dict) -> dict:
         m = _CHAPTER_LINE.match(text)
         if m:
             t_start = seconds_of(m.group(1))
-            body = m.group(2).strip()
+            # the stored line is "[hh:mm:ss] Title — <url>"; when the episode had no link the
+            # separator is still there, and "Sales agent —" is not a chapter title anyone wrote
+            body = m.group(2).strip().rstrip(" -–—")
             url = m.group(3) or url
     if kind != "chapter":
         # the passage that matched, when the query produced one; else the block's opening

@@ -200,3 +200,38 @@ are pinned as a regression test.
 because the passage index cannot tell whose words are inside the quotation marks. The register line
 says "first-person account, attributed to its author" rather than asserting the author said it, and a
 real fix needs quote attribution, which is Phase 2 work.
+
+
+## 10. In production (2026-09-07)
+
+Live at `EIGEN_VOICES=1`. The corpus, all ingested free of model spend:
+
+| | |
+| --- | --- |
+| Sources with content | 37 |
+| Podcast episodes | 85 |
+| Chapter blocks | ~1,200 |
+| Essay items | ~90 |
+| Embeddings written | 0 |
+
+Four quality problems only production traffic exposed, each now fixed:
+1. **Every question returned one result.** `plainto_tsquery` requires every word, so a question
+   phrased as a sentence matched almost nothing. Terms are OR-ed and ranked, stopwords dropped.
+2. **The same block five times.** Newsletters paste a sidebar of post titles into every item, and
+   that text ranks like prose. `mark_boilerplate` stamps text repeated across three or more items of
+   one source, and results are deduped with a two-per-document cap.
+3. **Podcast moments never appeared.** Without length normalisation a long essay mentioning a word
+   twice outranks a chapter titled exactly that word. `ts_rank(..., 1)` fixed it, and searches now
+   return moments like "The first recruiting hire most founders get wrong" at 1:11:18.
+4. **Stale guest names.** Blocks key on a hash of their text, so a re-ingest never revisits an
+   episode the feed has dropped, and names the first extractor got wrong ("Arm CEO Rene") persisted.
+   `refresh_guests` re-derives them and clears any binding that rested on a wrong name.
+
+**Binding is as rare as measured.** Of 44 episodes with a parsed guest, 7 guests are founders in our
+index and 1 bound fully to a company. That is the gate working, not a bug: the guests on these shows
+are mostly investors and large-company executives, and our index is YC, Form D issuers and fund
+portfolios. The strip appears where it is earned.
+
+**Operations.** `POST /admin/voices/jobs` with `{"kind": …}` — `ingest` (fetch feeds),
+`refresh_guests` (re-derive names), `bind` (attach guests to companies), `mark_boilerplate`. All are
+free. Run them in that order after any change to the extractor.

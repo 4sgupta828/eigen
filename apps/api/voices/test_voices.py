@@ -141,3 +141,10 @@ def test_an_all_stopword_query_degrades_to_newest_rather_than_erroring():
     assert search.terms("what about the and of") == []
     sql, _ = search.build_query(q="what about the and of")
     assert "tsquery" not in sql and "created_at DESC" in sql
+
+
+def test_a_chapter_with_no_link_does_not_keep_the_dangling_separator():
+    row = dict(CHAPTER_ROW, text="[00:04:29] Sales agent —",
+               facets={"source_kind": "chapter_pointer", "publication": "The Startup Ideas"})
+    m = search.moment(row)
+    assert m["text"] == "Sales agent" and m["t_start"] == 269
