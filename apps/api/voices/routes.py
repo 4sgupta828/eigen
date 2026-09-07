@@ -90,18 +90,24 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
         want = max(1, min(int(body.limit or 30), 60))
         since, widened = _window(body.days)
         # over-fetch, then dedupe: the ranking cannot know that five blocks are the same sidebar
+        # A BROWSE shows one moment per piece: a feed of "what landed" should list distinct
+        # episodes, not two chapters of the same one. A SEARCH may show two, because a second
+        # passage from the same piece is often the better answer.
+        browse = not body.q.strip()
         sql, params = build_query(q=body.q, kinds=tuple(body.kinds), company_id=body.company_id,
-                                  speaker=body.speaker, limit=want * 4, since=since,
-                                  order=body.order)
+                                  speaker=body.speaker, limit=want * 6, since=since,
+                                  order=body.order, per_document=browse)
         rows = await _rows(sql, params)
         # A window that returns almost nothing is worse than a wider one: widen rather than show an
         # empty week, and say which window the reader is actually looking at.
         if since and len(rows) < 6:
             since, widened = "", True
             sql, params = build_query(q=body.q, kinds=tuple(body.kinds), company_id=body.company_id,
-                                      speaker=body.speaker, limit=want * 4, order=body.order)
+                                      speaker=body.speaker, limit=want * 6, order=body.order,
+                                      per_document=browse)
             rows = await _rows(sql, params)
-        moments = dedupe([moment(r) for r in rows], limit=want)
+        moments = dedupe([moment(r) for r in rows], limit=want,
+                         per_document=1 if browse else 2)
         # who is speaking, and where to find them — resolved once for the whole page
         pool = await pool_of()
         async with pool.acquire() as conn:

@@ -294,3 +294,11 @@ def test_a_moment_carries_the_platforms_view_count_when_there_is_one():
                              "source_key": "show_notes", "text": "[00:13:00] A lesson",
                              "facets": {"source_kind": "chapter_pointer"}})
     assert podcast["views"] == 0                    # podcasts publish none; we invent none
+
+
+def test_document_furniture_never_surfaces_as_a_moment():
+    """A document's byline and URL lines are paragraphs too, and they surfaced as moments reading
+    '20VC, 2026-09-07T13:59:48'. A pointer's real content always opens with its timestamp."""
+    sql, _ = search.build_query(q="", limit=5)
+    assert "text NOT LIKE 'URL: %'" in sql
+    assert "OR text LIKE '[%'" in sql

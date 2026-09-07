@@ -144,7 +144,16 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
     """
     # Boilerplate is excluded everywhere. Many newsletter feeds repeat a sidebar of post titles in
     # every item's body, which otherwise floods a search with the same block five times over.
-    where = ["source_key = ANY($1)", "NOT (facets ? 'boilerplate')"]
+    where = [
+        "source_key = ANY($1)",
+        "NOT (facets ? 'boilerplate')",
+        # A document carries a header — a byline line and a "URL: …" line — and the splitter indexes
+        # those as ordinary paragraphs. They surfaced as moments reading "20VC, 2026-09-07T13:59:48".
+        # A pointer's real content always opens with its timestamp, so anything else in those
+        # sources is furniture.
+        "text NOT LIKE 'URL: %'",
+        "(source_key NOT IN ('show_notes','youtube_chapters') OR text LIKE '[%')",
+    ]
     params: list = [list(VOICE_SOURCE_KEYS)]
     n = 1
 
