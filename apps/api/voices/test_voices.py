@@ -97,12 +97,12 @@ def test_search_sql_filters_to_the_voice_corpus_and_survives_an_empty_query():
 def test_search_can_be_scoped_to_one_company_or_one_kind():
     sql, params = search.build_query(q="layoffs", company_id="flexport.com", kinds=("chapter",))
     assert "facets->>'company_id'" in sql and "flexport.com" in params
-    assert params[0] == ["show_notes"]
+    assert params[0] == ["show_notes", "youtube_chapters"]   # both chapter sources, podcast and video
 
 
 def test_an_unknown_filter_narrows_to_nothing_rather_than_widening():
     sql, params = search.build_query(q="pivot", kinds=("chapter", "nonsense"))
-    assert params[0] == ["show_notes"]              # the good kind survives, the bad one adds nothing
+    assert params[0] == ["show_notes", "youtube_chapters"]  # the good kind survives, the bad adds nothing
     sql2, params2 = search.build_query(q="pivot", kinds=("nonsense",))
     assert params2[0] == []                         # nothing matches, rather than everything
 

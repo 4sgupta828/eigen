@@ -252,9 +252,22 @@
   .vo-body{padding:0 .95rem .85rem;border-top:1px dashed var(--hair);margin-top:.2rem;}
   .vo-body h5{margin:.7rem 0 .3rem;font-family:var(--mono);font-size:.63rem;letter-spacing:.06em;
     text-transform:uppercase;color:var(--dim);font-weight:600;}
-  .vo-sum{font-size:.84rem;line-height:1.55;}
-  .vo-sum ul{margin:.3rem 0 0 1rem;padding:0;} .vo-sum li{margin:.22rem 0;}
-  .vo-full{font-size:.8rem;line-height:1.55;color:var(--dim);max-height:15rem;overflow:auto;}
+  .vo-sum{font-size:.85rem;line-height:1.6;}
+  .vo-sum ul{margin:.35rem 0 0;padding:0;list-style:none;}
+  .vo-sum li{margin:.4rem 0;padding-left:1.1rem;position:relative;}
+  .vo-sum li:before{content:"▸";position:absolute;left:0;color:var(--gold);font-size:.7rem;top:.15rem;}
+  .vo-quote{margin:.8rem 0 .2rem;padding:.55rem .8rem;border-left:2px solid var(--gold);
+    font-size:.88rem;line-height:1.55;font-style:italic;background:rgba(127,127,127,.05);border-radius:0 8px 8px 0;}
+  /* the piece itself: measured line length, real paragraph spacing, section titles that break it up */
+  .vo-read{max-height:26rem;overflow:auto;padding-right:.4rem;}
+  .vo-read section{margin:.9rem 0 0;}
+  .vo-read h6{margin:0 0 .35rem;font-family:var(--mono);font-size:.62rem;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--gold);font-weight:600;}
+  .vo-read p{margin:0 0 .7rem;font-size:.83rem;line-height:1.68;max-width:68ch;}
+  .vo-read p:last-child{margin-bottom:0;}
+  .vo-chapline{font-size:.8rem;line-height:1.6;margin:0 0 .35rem;}
+  .vo-headlink{font-family:var(--mono);font-size:.64rem;text-decoration:none;border:1px solid currentColor;
+    border-radius:999px;padding:.1rem .45rem;margin-left:.35rem;white-space:nowrap;}
   .vo-actions{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:.7rem;}
   .vo-card a.vo-open{display:inline-block;font-family:var(--mono);font-size:.68rem;text-decoration:none;
     border:1px solid currentColor;border-radius:999px;padding:.32rem .7rem;min-height:34px;line-height:1.7;}
@@ -7000,6 +7013,15 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       +   (m.title ? '<div class="vo-src">' + esc(m.title) + "</div>" : "")
       +   '<div class="vo-reg">' + esc(m.register) + "</div>"
       + "</button>"
+      // The way out sits on the CLOSED card: opening a card is for reading it here, and a reader who
+      // just wants the original should not have to expand anything to find the link.
+      + (m.url
+          ? '<div class="vo-actions" style="padding:0 .95rem .8rem"><a class="vo-open" href="' + esc(m.url)
+            + '" target="_blank" rel="noopener noreferrer">'
+            + (isChapter ? "Listen from " + stamp(m.t_start) : "Read the original") + " &rarr;</a></div>"
+          : '<div class="vo-actions" style="padding:0 .95rem .8rem"><span class="vo-nolink">'
+            + (isChapter ? "No episode link in this feed \u2014 search the show for this title."
+                         : "No link was published with this piece.") + "</span></div>")
       + '<div class="vo-body" id="vo-body-' + i + '" hidden></div>'
       + "</article>";
   }
@@ -7023,19 +7045,23 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       const d = await r.json();
       el.dataset.loaded = "1";
       const pts = (d.points || []).map(p => "<li>" + esc(p) + "</li>").join("");
-      const open = m.url
-        ? '<a class="vo-open" href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">'
-          + (m.kind === "chapter" ? "Listen from " + stamp(m.t_start) : "Read the whole thing") + " &rarr;</a>"
-        : '<span class="vo-nolink">' + (m.kind === "chapter"
-            ? "No episode link in this feed \u2014 search the show for this title."
-            : "No link was published with this piece \u2014 search its title on the author\u2019s site.")
-          + "</span>";
+      const quotes = (d.quotes || []).map(qq => '<blockquote class="vo-quote">&ldquo;' + esc(qq) + "&rdquo;</blockquote>").join("");
+      // The piece itself, as the author's own paragraphs, grouped under the headings the model gave
+      // them. Nothing here is rewritten — a section holds sentences copied from the source.
+      const secs = (d.sections || []).map(sec =>
+        "<section>" + (sec.title ? "<h6>" + esc(sec.title) + "</h6>" : "")
+        + (sec.paragraphs || []).map(par => "<p>" + esc(par) + "</p>").join("") + "</section>").join("");
+      // An episode has no prose, only its chapter list, which is shown as lines rather than paragraphs.
+      const chap = (!secs && d.text)
+        ? d.text.split("\n").filter(l => l.trim().startsWith("["))
+            .map(l => '<div class="vo-chapline">' + esc(l.replace(/\s+—\s+https?:\/\/\S+$/, "")) + "</div>").join("")
+        : "";
       el.innerHTML =
-          (pts ? "<h5>" + esc(d.heading || "What it says") + "</h5><div class=\"vo-sum\"><ul>" + pts + "</ul></div>" : "")
-        + (d.note ? '<div class="vo-reg">' + esc(d.note) + "</div>" : "")
-        + (d.text ? "<h5>" + (m.kind === "chapter" ? "All chapters" : "From the piece") + "</h5>"
-                    + '<div class="vo-full">' + esc(d.text) + "</div>" : "")
-        + '<div class="vo-actions">' + open + "</div>";
+          (pts ? "<h5>" + esc(d.heading || "Key takeaways") + "</h5><div class=\"vo-sum\"><ul>" + pts + "</ul></div>" : "")
+        + quotes
+        + (secs ? "<h5>The piece</h5><div class=\"vo-read\">" + secs + "</div>" : "")
+        + (chap ? "<h5>All chapters</h5><div class=\"vo-read\">" + chap + "</div>" : "")
+        + (d.note ? '<div class="vo-reg">' + esc(d.note) + "</div>" : "");
     }catch(e){
       el.innerHTML = '<div class="vo-reg">Could not load this one: ' + esc(e && e.message ? e.message : e) + "</div>";
     }

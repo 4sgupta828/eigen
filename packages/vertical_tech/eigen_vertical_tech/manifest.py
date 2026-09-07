@@ -31,7 +31,8 @@ from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnec
                          OpenReviewConnector, PatentsViewConnector, PodcastConnector, RedditConnector,
                          SemanticScholarConnector, ShowNotesConnector, StackExchangeConnector,
                          UsptoConnector,
-                         WikidataConnector, WikipediaConnector, YcConnector)
+                         WikidataConnector, WikipediaConnector, YcConnector,
+                         YoutubeChaptersConnector)
 from .use_case_lenses import USE_CASE_LENSES
 from .answer_contract import (ANSWER_PROFILES, TECH_CONTRACT_PROMPT, TECH_CONTRACT_PROMPT_ENTITY,
                               TECH_CONTRACT_COMPOSE_PROMPT,
@@ -122,6 +123,9 @@ def build_manifest() -> VerticalManifest:
             # timestamped chapter POINTERS into their podcast episodes (never transcripts we made).
             "founder_essay": FounderEssayConnector(),
             "show_notes": ShowNotesConnector(),
+            # The same chapter unit from video: creators write timestamped chapters in the
+            # public description, which the keyless channel feed carries. Captions stay untouched.
+            "youtube_chapters": YoutubeChaptersConnector(),
             "github": GithubConnector(),
             "patentsview": PatentsViewConnector(),
             "gdelt": GdeltConnector(),

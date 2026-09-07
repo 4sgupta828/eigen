@@ -18,7 +18,7 @@ import re
 
 from eigen_vertical_tech.show_notes_doc import deep_link
 
-VOICE_SOURCE_KEYS = ("founder_essay", "show_notes", "expert_feed", "podcast")
+VOICE_SOURCE_KEYS = ("founder_essay", "show_notes", "youtube_chapters", "expert_feed", "podcast")
 
 # Words that carry no signal in a question about startup lessons. Dropping them matters because the
 # query is OR-ed: left in, "how" and "what" would match half the corpus and drown the real terms.
@@ -49,7 +49,7 @@ def is_quotable(source_kind: str) -> bool:
 
 def kind_of(source_kind: str, source_key: str) -> str:
     sk = (source_kind or "").lower()
-    if sk == "chapter_pointer" or source_key == "show_notes":
+    if sk == "chapter_pointer" or source_key in ("show_notes", "youtube_chapters"):
         return "chapter"
     if source_key == "podcast":
         return "transcript"
@@ -119,8 +119,8 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
     n = 1
 
     if kinds:
-        by_kind = {"chapter": ["show_notes"], "essay": ["founder_essay", "expert_feed"],
-                   "transcript": ["podcast"]}
+        by_kind = {"chapter": ["show_notes", "youtube_chapters"],
+                   "essay": ["founder_essay", "expert_feed"], "transcript": ["podcast"]}
         keys: list[str] = []
         for k in kinds:
             keys += by_kind.get(k, [])

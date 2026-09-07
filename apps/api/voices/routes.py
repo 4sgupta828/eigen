@@ -104,7 +104,8 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
             import json as _json
             facets = rows[0]["facets"]
             facets = _json.loads(facets) if isinstance(facets, str) else (facets or {})
-            is_chapter = str(facets.get("source_kind") or "") == "chapter_pointer"
+            is_chapter = (str(facets.get("source_kind") or "") == "chapter_pointer"
+                          or rows[0]["source_key"] in ("show_notes", "youtube_chapters"))
             title = rows[0]["document_title"] or ""
             author = str(facets.get("author") or facets.get("guest") or "")
             text = "\n".join((r["text"] or "") for r in rows)
@@ -117,8 +118,11 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
                 hit = dict(hit, cached=False)
             else:
                 hit = dict(hit, cached=True)
-        # the piece itself, bounded — the panel shows the words, not just a summary of them
-        hit["text"] = text[:MAX_INPUT_CHARS]
+        # For an episode the chapter list IS the piece, so it is sent as text; for an essay the
+        # readable body already rides in `sections`, and sending the raw dump too would only give the
+        # panel a wall of text to fall back to.
+        if is_chapter:
+            hit["text"] = text[:MAX_INPUT_CHARS]
         hit["title"] = title
         return hit
 

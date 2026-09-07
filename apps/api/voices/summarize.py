@@ -22,18 +22,25 @@ MAX_INPUT_CHARS = 12000        # one call, bounded: ~3k tokens in, a few hundred
 MAX_POINTS = 5
 
 SYSTEM = (
-    "You summarise first-person writing by startup founders, investors and operators for an "
-    "investor's reading list. Return STRICT JSON: {\"heading\": str, \"points\": [str]}.\n"
-    "RULES:\n"
-    "- 3 to 5 points. Each is ONE sentence, under 25 words, stating something the piece actually "
-    "argues or reports. No preamble, no 'the author discusses'.\n"
-    "- Prefer the specific over the general: a number, a mechanism, a named mistake, a concrete "
-    "recommendation. Drop anything you could have written without reading the piece.\n"
-    "- Never invent a fact, a figure or an outcome that is not in the text. If the piece is thin, "
-    "return fewer points rather than padding.\n"
-    "- The heading is 2 to 5 words naming the subject, not a sentence.\n"
-    "- This is one person's opinion and experience. Summarise what THEY claim; do not endorse it "
-    "and do not add your own judgment."
+    "You prepare one piece of first-person writing by a startup founder, investor or operator for an "
+    "investor to read. The paragraphs are given to you NUMBERED. Return STRICT JSON:\n"
+    '{"heading": str, "points": [str], "quotes": [str], '
+    '"sections": [{"title": str, "paras": [int]}], "dropped": [int]}\n'
+    "RULES\n"
+    "points — 3 to 6 takeaways. Each is ONE sentence under 25 words stating something the piece "
+    "actually argues or reports. Prefer the specific: a number, a mechanism, a named mistake, a "
+    "concrete recommendation. Drop anything you could have written without reading the piece. Never "
+    "invent a figure or an outcome. Fewer points beats padding.\n"
+    "quotes — 0 to 2 sentences copied VERBATIM from the paragraphs, the ones a reader would "
+    "underline. Copy exactly, character for character, or omit them.\n"
+    "sections — group the paragraphs worth reading into 2 to 6 sections IN ORDER, each with a short "
+    "title (2 to 6 words) naming what that run of paragraphs is about. List each kept paragraph's "
+    "number once, in order. You are ORGANISING, not rewriting: never renumber, merge or reorder.\n"
+    "dropped — the numbers of paragraphs that are NOISE: subscribe and share prompts, navigation, "
+    "lists of other posts, sponsor copy, sign-offs, comment invitations, repeated boilerplate. "
+    "PRESERVE EVERYTHING SUBSTANTIVE. If a paragraph carries an argument, an example, a number, a "
+    "story or an opinion, it is substance even when it is short or informal. When unsure, keep it.\n"
+    "This is one person's experience and opinion. Report what THEY claim; add no judgment of your own."
 )
 
 _FIG = re.compile(r"\$?\d[\d,.]*\s*(?:%|percent|k|m|bn|b|x|million|billion)?", re.I)
@@ -125,35 +132,119 @@ def chapter_points(text: str, k: int = MAX_POINTS) -> list[str]:
     return sorted(titles, key=len, reverse=True)[:k]
 
 
-def user_payload(title: str, author: str, text: str) -> str:
-    body = (text or "")[:MAX_INPUT_CHARS]
+def user_payload(title: str, author: str, paras: list[str]) -> str:
+    """Numbered paragraphs — the numbers are how the model points at text without retyping it."""
     who = f"By {author}. " if author else ""
-    return f"{who}Title: {title}\n\n{body}"
+    lines, used = [], 0
+    for i, p in enumerate(paras):
+        if used + len(p) > MAX_INPUT_CHARS:
+            break
+        used += len(p)
+        lines.append(f"[{i}] {p}")
+    return f"{who}Title: {title}\n\n" + "\n\n".join(lines)
+
+
+NOISE = re.compile(
+    r"^(subscribe|share this|share on|follow me|read more|related posts?|previously|sponsored|"
+    r"advertisement|thanks for reading|if you liked|sign up|join \d|comments?|leave a comment|"
+    r"tags?:|categor|posted (in|on)|filed under|photo by|image credit)", re.I)
+
+
+def paragraphs(text: str, *, max_paras: int = 120) -> list[str]:
+    """The piece as paragraphs. Blocks arrive newline-joined, so this is the unit a reader reads."""
+    out = []
+    for raw in re.split(r"\n{1,}", text or ""):
+        p = " ".join(raw.split())
+        if p:
+            out.append(p)
+    return out[:max_paras]
+
+
+def drop_noise(paras: list[str]) -> list[str]:
+    """The fallback judgement when no model is available: obvious chrome out, everything else kept.
+
+    Deliberately timid. Losing a paragraph of someone's argument is far worse than showing one line
+    of 'Subscribe', so this only removes what announces itself as furniture.
+    """
+    kept = []
+    for p in paras:
+        if len(p) < 25 and not re.search(r"[.!?]", p):
+            continue                        # a bare label or a stray nav word
+        if NOISE.match(p) and len(p) < 200:
+            continue
+        kept.append(p)
+    return kept
+
+
+def assemble(sections: list, paras: list[str]) -> list[dict]:
+    """Build the readable body from the ORIGINAL paragraphs by index.
+
+    The model chooses the grouping and the titles; it never supplies the prose. That is the whole
+    point: a section cannot contain a sentence the author did not write, because the text is copied
+    out of the source by number.
+    """
+    out, used = [], set()
+    for sec in sections or []:
+        if not isinstance(sec, dict):
+            continue
+        body = []
+        for i in sec.get("paras") or []:
+            try:
+                idx = int(i)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= idx < len(paras) and idx not in used:
+                used.add(idx)
+                body.append(paras[idx])
+        if body:
+            out.append({"title": str(sec.get("title") or "").strip()[:80], "paragraphs": body})
+    return out
+
+
+def _fallback(text: str, note: str) -> dict:
+    paras = drop_noise(paragraphs(text))
+    return {"heading": "Key passages", "points": extractive_points(text), "quotes": [],
+            "sections": ([{"title": "", "paragraphs": paras}] if paras else []),
+            "note": note, "basis": "extractive"}
 
 
 async def summarize(*, title: str, author: str, text: str, is_chapter: bool, llm_json=None) -> dict:
-    """Return {heading, points, note, basis}. Never raises: a summary is a convenience, and a card
-    that fails to summarise must still show the piece."""
+    """Return {heading, points, quotes, sections, note, basis}.
+
+    Never raises: a summary is a convenience, and a card that fails to summarise must still show the
+    piece. `sections` always holds the author's own paragraphs — organised, sometimes trimmed of
+    chrome, never rewritten.
+    """
     if is_chapter:
-        return {"heading": "What the episode covers", "points": chapter_points(text),
-                "note": "The publisher's own chapter list. Nothing here is a quotation.",
+        return {"heading": "What the episode covers", "points": chapter_points(text), "quotes": [],
+                "sections": [], "note": "The publisher's own chapter list. Nothing here is a quotation.",
                 "basis": "chapters"}
+
+    paras = paragraphs(text)
     if llm_json is not None:
         try:
-            out = await llm_json(SYSTEM, user_payload(title, author, text))
+            out = await llm_json(SYSTEM, user_payload(title, author, paras))
             raw = [str(p).strip() for p in (out.get("points") or []) if str(p).strip()][:MAX_POINTS]
             pts = verify(raw, text)          # a figure the piece never states is not a summary
+            quotes = [q for q in (str(x).strip() for x in (out.get("quotes") or []))
+                      if q and " ".join(q.split()) in " ".join(text.split())][:2]
+            sections = assemble(out.get("sections"), paras)
+            if not sections:                  # the model organised nothing: show the piece anyway
+                sections = [{"title": "", "paragraphs": drop_noise(paras)}]
             if pts:
+                kept = sum(len(sec["paragraphs"]) for sec in sections)
+                trimmed = max(0, len(paras) - kept)
+                note = ("Read and organised from the full piece"
+                        + (f", by {author}" if author else "")
+                        + (f" — {trimmed} paragraph{'s' if trimmed != 1 else ''} of navigation and "
+                           "subscribe copy left out." if trimmed else "."))
                 return {"heading": str(out.get("heading") or "What it says")[:80], "points": pts,
-                        "note": f"Summarised from the full piece{', by ' + author if author else ''}.",
-                        "basis": "model"}
+                        "quotes": quotes, "sections": sections, "note": note, "basis": "model"}
         except Exception as e:      # noqa: BLE001 — an outage degrades the panel, never breaks it
-            note = f"No model available ({type(e).__name__}), so these are the piece's own sentences."
-            return {"heading": "Key passages", "points": extractive_points(text), "note": note,
-                    "basis": "extractive"}
-    return {"heading": "Key passages", "points": extractive_points(text),
-            "note": "Selected from the piece's own sentences — no model was available to summarise it.",
-            "basis": "extractive"}
+            return _fallback(text, f"No model available ({type(e).__name__}), so these are the "
+                                   "piece's own sentences and its own paragraphs.")
+    return _fallback(text, "Selected from the piece's own sentences — no model was available to "
+                           "summarise it.")
 
 
 # ── cache ────────────────────────────────────────────────────────────────────────────────────────
@@ -165,7 +256,14 @@ CREATE TABLE IF NOT EXISTS vo_summary (
     note        text NOT NULL DEFAULT '',
     basis       text NOT NULL DEFAULT '',
     made_at     timestamptz NOT NULL DEFAULT now());
+ALTER TABLE vo_summary ADD COLUMN IF NOT EXISTS quotes jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE vo_summary ADD COLUMN IF NOT EXISTS sections jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE vo_summary ADD COLUMN IF NOT EXISTS v int NOT NULL DEFAULT 1;
 """
+
+# Bump when the SHAPE of a summary changes. A row written by an older shape is re-read rather than
+# rendered half-empty — the alternative is a panel missing the part the reader came for.
+VERSION = 2
 
 # An essay does not change, so the summary of one does not either. The TTL exists only so that an
 # EXTRACTIVE summary written during a model outage is re-attempted later, when credit exists — a
@@ -178,14 +276,18 @@ async def cached(conn, document_id: str) -> dict | None:
     import json
     await conn.execute(DDL)
     r = await conn.fetchrow(
-        "SELECT heading, points, note, basis, EXTRACT(EPOCH FROM (now() - made_at)) / 86400.0 AS age "
+        "SELECT heading, points, quotes, sections, note, basis, v, "
+        "       EXTRACT(EPOCH FROM (now() - made_at)) / 86400.0 AS age "
         "FROM vo_summary WHERE document_id = $1", document_id)
-    if not r:
+    if not r or int(r["v"] or 1) < VERSION:
         return None
     if float(r["age"] or 0) > TTL_DAYS.get(r["basis"], 7):
         return None
-    pts = json.loads(r["points"]) if isinstance(r["points"], str) else (r["points"] or [])
-    return {"heading": r["heading"], "points": pts, "note": r["note"], "basis": r["basis"]}
+
+    def js(v, default):
+        return (json.loads(v) if isinstance(v, str) else v) or default
+    return {"heading": r["heading"], "points": js(r["points"], []), "quotes": js(r["quotes"], []),
+            "sections": js(r["sections"], []), "note": r["note"], "basis": r["basis"]}
 
 
 async def store(conn, document_id: str, summary: dict) -> None:
@@ -195,9 +297,11 @@ async def store(conn, document_id: str, summary: dict) -> None:
     import json
     await conn.execute(DDL)
     await conn.execute(
-        "INSERT INTO vo_summary (document_id, heading, points, note, basis, made_at) "
-        "VALUES ($1,$2,$3::jsonb,$4,$5, now()) ON CONFLICT (document_id) DO UPDATE "
-        "SET heading=EXCLUDED.heading, points=EXCLUDED.points, note=EXCLUDED.note, "
-        "    basis=EXCLUDED.basis, made_at=now()",
+        "INSERT INTO vo_summary (document_id, heading, points, quotes, sections, note, basis, v, made_at) "
+        "VALUES ($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6,$7,$8, now()) ON CONFLICT (document_id) DO UPDATE "
+        "SET heading=EXCLUDED.heading, points=EXCLUDED.points, quotes=EXCLUDED.quotes, "
+        "    sections=EXCLUDED.sections, note=EXCLUDED.note, basis=EXCLUDED.basis, v=EXCLUDED.v, "
+        "    made_at=now()",
         document_id, summary.get("heading", "")[:120], json.dumps(summary.get("points") or []),
-        summary.get("note", "")[:200], summary.get("basis", "")[:20])
+        json.dumps(summary.get("quotes") or []), json.dumps(summary.get("sections") or []),
+        summary.get("note", "")[:200], summary.get("basis", "")[:20], VERSION)

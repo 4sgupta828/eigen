@@ -24,7 +24,7 @@ from .bind import bind_guest, facet_patch
 
 log = logging.getLogger(__name__)
 
-VOICE_CONNECTORS = ("founder_essay", "show_notes")
+VOICE_CONNECTORS = ("founder_essay", "show_notes", "youtube_chapters")
 
 
 async def ingest_voices(manifest, pg_source, *, tenant_id: str, connectors=VOICE_CONNECTORS,
@@ -76,8 +76,9 @@ async def bind_guests(pool, *, table: str = "rs_block", limit: int = 500) -> dic
 
         rows = await conn.fetch(
             f"SELECT DISTINCT document_id, document_title, facets->>'guest' AS guest "
-            f"FROM {table} WHERE source_key = 'show_notes' AND facets->>'guest' IS NOT NULL "
-            f"  AND facets->>'person' IS NULL LIMIT $1", int(limit))
+            f"FROM {table} WHERE source_key = ANY($2) AND facets->>'guest' IS NOT NULL "
+            f"  AND facets->>'person' IS NULL LIMIT $1", int(limit),
+            ["show_notes", "youtube_chapters"])
 
         stats = {"episodes": len(rows), "guest_and_company": 0, "guest_only": 0, "unbound": 0}
         for r in rows:
@@ -110,7 +111,8 @@ async def refresh_guests(pool, *, table: str = "rs_block", limit: int = 5000) ->
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"SELECT DISTINCT document_id, document_title, facets->>'guest' AS guest "
-            f"FROM {table} WHERE source_key = 'show_notes' LIMIT $1", int(limit))
+            f"FROM {table} WHERE source_key = ANY($2) LIMIT $1", int(limit),
+            ["show_notes", "youtube_chapters"])
         stats["episodes"] = len(rows)
         for r in rows:
             want = guest_from_title(r["document_title"] or "")
@@ -145,6 +147,7 @@ async def mark_boilerplate(pool, *, table: str = "rs_block", min_documents: int 
                 WHERE source_key = ANY($1) AND NOT (facets ? 'boilerplate') AND text IN (
                   SELECT text FROM {table} WHERE source_key = ANY($1)
                   GROUP BY text HAVING count(DISTINCT document_id) >= $2)""",
-            ["founder_essay", "show_notes", "expert_feed", "podcast"], int(min_documents))
+            ["founder_essay", "show_notes", "youtube_chapters", "expert_feed", "podcast"],
+            int(min_documents))
         marked = int(str(n).rsplit(" ", 1)[-1]) if str(n).startswith("UPDATE") else 0
         return {"marked": marked}
