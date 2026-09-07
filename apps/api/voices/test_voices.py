@@ -213,7 +213,8 @@ def test_a_favourite_stores_only_what_a_card_renders():
 
 def test_a_named_person_links_to_their_profile_or_to_an_honest_search():
     from api.voices import people
-    ms = [{"speaker": "Ryan Petersen", "show": "20VC"}, {"speaker": "Someone Unknown", "show": "20VC"},
+    ms = [{"speaker": "Ryan Petersen", "show": "20VC", "bind_basis": "guest_and_company"},
+          {"speaker": "Someone Unknown", "show": "20VC"},
           {"speaker": "", "show": "20VC"}]
     people.decorate(ms, {"Ryan Petersen": {"linkedin": "https://linkedin.com/in/typeryan", "basis": "index"}})
     assert ms[0]["person"]["linkedin"].endswith("typeryan") and ms[0]["person"]["basis"] == "index"
@@ -232,3 +233,20 @@ def test_podcasts_and_videos_are_separate_kinds():
     assert params[0] == ["youtube_chapters"]
     sql2, params2 = search.build_query(q="pivot", kinds=("podcast",))
     assert params2[0] == ["show_notes"]
+
+
+def test_a_common_name_alone_never_earns_a_profile_link():
+    """The index holds one Matthew Smith; the world holds thousands. Without this episode also
+    naming his company, a direct link would send the reader to a stranger."""
+    from api.voices import people
+    ms = [{"speaker": "Matthew Smith", "show": "Invest Like the Best"}]      # no bind_basis
+    people.decorate(ms, {"Matthew Smith": {"linkedin": "https://linkedin.com/in/matthew-smith250",
+                                           "basis": "index"}})
+    assert ms[0]["person"]["basis"] == "search"
+    assert "linkedin.com/in/matthew-smith250" not in json_dumps(ms[0])
+    assert "does not confirm" in ms[0]["person"]["why"]
+
+
+def json_dumps(o):
+    import json
+    return json.dumps(o)

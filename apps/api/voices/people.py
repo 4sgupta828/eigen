@@ -58,14 +58,25 @@ async def links_for(conn, names: list[str]) -> dict[str, dict]:
 
 
 def decorate(moments: list[dict], resolved: dict[str, dict]) -> None:
-    """Attach `person` to each moment: the profile we hold, or a labelled search when we do not."""
+    """Attach `person` to each moment: the profile we hold, or a labelled search when we do not.
+
+    A held profile is printed ONLY when this episode also bound the guest to their own company. The
+    index has one "Matthew Smith"; the world has thousands, and a name-only match would send a
+    reader confidently to a stranger's LinkedIn. Corroboration — the guest named in the title AND
+    their company named in the episode — is what earns a direct link. Everything else gets the
+    labelled search, which is honest about being a search.
+    """
     for m in moments:
         name = " ".join(str(m.get("speaker") or "").split())
         if not is_person(name):
             continue
         rec = resolved.get(name)
-        if rec:
+        corroborated = str(m.get("bind_basis") or "") == "guest_and_company"
+        if rec and corroborated:
             m["person"] = dict(rec, name=name)
         else:
             m["person"] = {"name": name, "basis": "search",
-                           "search": search_url(name, str(m.get("show") or ""))}
+                           "search": search_url(name, str(m.get("show") or "")),
+                           # say WHY there is no direct link, so the gap is legible rather than a bug
+                           "why": ("we hold a profile for this name but this episode does not confirm "
+                                   "it is the same person" if rec else "")}

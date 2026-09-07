@@ -7072,7 +7072,9 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       const bits = [];
       if(p.linkedin) bits.push('<a class="vo-plink" href="' + esc(p.linkedin) + '" target="_blank" rel="noopener noreferrer" title="LinkedIn profile">in</a>');
       if(p.twitter)  bits.push('<a class="vo-plink" href="' + esc(p.twitter) + '" target="_blank" rel="noopener noreferrer" title="X profile">𝕏</a>');
-      if(!bits.length && p.search) bits.push('<a class="vo-plink guess" href="' + esc(p.search) + '" target="_blank" rel="noopener noreferrer" title="We do not hold a profile for this person — this searches for one">find ⌕</a>');
+      if(!bits.length && p.search) bits.push('<a class="vo-plink guess" href="' + esc(p.search)
+        + '" target="_blank" rel="noopener noreferrer" title="'
+        + esc(p.why || "We do not hold a profile for this person") + ' — this searches for one">find ⌕</a>');
       who = '<span class="vo-person"><span class="vo-who">' + esc(m.speaker) + "</span>" + bits.join("") + "</span>"
             + (m.role && m.role !== "guest" ? ", " + esc(m.role) : "");
     }

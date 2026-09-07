@@ -117,6 +117,9 @@ def moment(row: dict) -> dict:
         "url": url,
         "t_start": t_start,
         "company_id": str(facets.get("company_id") or ""),
+        # how strongly this episode tied the guest to a company we index — the binder's own verdict,
+        # reused here to decide whether a profile link is safe to print
+        "bind_basis": str(facets.get("bind_basis") or ""),
         "image": str(facets.get("image") or ""),
         "media": media,
         # The register the UI must print. A pointer is never presented as something anyone said.
