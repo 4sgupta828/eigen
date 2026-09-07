@@ -222,6 +222,34 @@
   .sg-busy{font-size:.8rem;color:var(--muted);margin:.4rem 0;}
   .sg-readings{margin:.5rem 0 .2rem;} .sg-reading{font-size:.8rem;line-height:1.5;color:var(--ink);padding:.15rem 0;border-top:1px dashed var(--hair);} .sg-reading .c-dom{font-family:var(--mono);font-size:.66rem;color:var(--muted);}
   @media (max-width:560px){ .sg-opt{flex:1 1 auto;text-align:center;} .sg-msg{max-width:100%;} }
+  /* ===== Voices — first-person startup content, an inline MODE (body[data-mode="voices"]) ===== */
+  #voicesbody{display:none;}
+  body[data-mode="voices"] #voicesbody{display:block;}
+  body[data-mode="voices"] #out, body[data-mode="voices"] #effort{display:none !important;}
+  .vo-filters{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:.8rem 0 .2rem;}
+  .vo-chip{font-family:var(--mono);font-size:.7rem;letter-spacing:.03em;padding:.34rem .7rem;border-radius:999px;
+    border:1px solid var(--hair);background:var(--panel2);color:var(--dim);cursor:pointer;min-height:34px;}
+  .vo-chip[aria-pressed="true"]{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
+  .vo-note{font-family:var(--mono);font-size:.68rem;color:var(--dim);margin:.5rem 0 0;line-height:1.5;}
+  .vo-cards{display:grid;gap:.7rem;margin:1rem 0 2rem;}
+  .vo-card{border:1px solid var(--hair);border-radius:12px;padding:.85rem .95rem;background:var(--panel2);}
+  .vo-card h4{margin:0 0 .35rem;font-size:.95rem;line-height:1.4;font-weight:600;}
+  .vo-meta{font-family:var(--mono);font-size:.67rem;color:var(--dim);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;}
+  .vo-kind{border:1px solid var(--hair);border-radius:999px;padding:.1rem .5rem;letter-spacing:.05em;text-transform:uppercase;font-size:.6rem;}
+  .vo-kind.chapter{color:var(--dim);}
+  .vo-kind.essay{color:var(--gold);border-color:var(--gold);}
+  .vo-reg{font-family:var(--mono);font-size:.64rem;color:var(--dim);margin-top:.45rem;font-style:italic;}
+  .vo-card a.vo-open{display:inline-block;margin-top:.5rem;font-family:var(--mono);font-size:.7rem;color:var(--gold);
+    text-decoration:none;border:1px solid var(--gold);border-radius:999px;padding:.3rem .7rem;min-height:34px;line-height:1.6;}
+  .vo-strip{margin:.7rem 0 0;border-top:1px dashed var(--hair);padding-top:.6rem;}
+  .vo-strip .vo-slabel{font-family:var(--mono);font-size:.64rem;color:var(--dim);letter-spacing:.05em;text-transform:uppercase;}
+  .vo-strip a{display:block;font-size:.78rem;color:var(--ink);text-decoration:none;margin-top:.3rem;line-height:1.45;}
+  .vo-strip a:hover{color:var(--gold);}
+  @media (max-width:560px){
+    .vo-card{padding:.75rem .8rem;}
+    .vo-meta{font-size:.62rem;gap:.35rem;}
+    .vo-chip{font-size:.66rem;padding:.36rem .6rem;}
+  }
   /* ===== Startup Search — an inline MODE of the shell (body[data-mode="startups"]) ===== */
   body[data-mode="startups"] #startupsbody{display:block;}
   body[data-mode="startups"] #out, body[data-mode="startups"] #effort{display:none !important;}
@@ -1545,6 +1573,7 @@
       <button type="button" class="mbtn" data-mode="panel" role="tab" aria-selected="false">◈ Expert Panel</button>
       <button type="button" class="mbtn" id="guidedTab" role="tab" aria-selected="false" hidden title="Guided — shape the startup search with a few questions">◍ Guided</button>
       <button type="button" class="mbtn" id="startupsTab" role="tab" aria-selected="false" hidden title="Startup Search — cards over a grounded startup index">◆ Startups</button>
+      <button type="button" class="mbtn" id="voicesTab" role="tab" aria-selected="false" hidden title="Voices — what founders and investors actually said">◇ Voices</button>
     </div>
   </div>
   <form id="ask">
@@ -1659,6 +1688,16 @@
 <section class="panelbody" id="panelbody" hidden aria-label="Expert panel"></section>
   <section class="triagebody" id="triagebody" hidden aria-label="Guided intake"></section>
 <section id="guidedbody" aria-label="Guided startup search"></section>
+<section id="voicesbody" aria-label="Voices — first-person startup content">
+  <div class="vo-filters" id="vo-filters">
+    <button type="button" class="vo-chip" data-kind="" aria-pressed="true">Everything</button>
+    <button type="button" class="vo-chip" data-kind="essay" aria-pressed="false">Essays</button>
+    <button type="button" class="vo-chip" data-kind="chapter" aria-pressed="false">Podcast moments</button>
+  </div>
+  <p class="vo-note" id="vo-note"></p>
+  <div class="vo-cards" id="vo-cards"></div>
+</section>
+
 <section id="startupsbody" aria-label="Startup search">
 
   <div class="su-toolbar"><button type="button" id="su-saveMap">☆ Save as map</button><button type="button" id="su-myMaps">🗺 My maps</button><button type="button" id="su-covLink">Coverage</button></div>
@@ -1878,6 +1917,7 @@ let REASONING_ENABLED = false;  // reasoning-read interpretation + confidence la
 let ASK_PANEL_ENABLED = false;  // AI expert panel (Alpha)
 let TRIAGE_ENABLED = false;     // guided-intake / triage mode (clarify → route)
 let STARTUPS_ENABLED = false;   // Startup Search — a separate page (/startups), shown as a tab when enabled
+let VOICES_ENABLED = false;     // Voices — first-person founder/investor content, an inline mode
 let ACCOUNTS_ENABLED = false;   // accounts + per-answer feedback (W-taxonomy)
 let DUEL_ENABLED = false;       // A/B duel: fresh questions run standard + reasoned engines, user votes
 let PULSE_ENABLED = false;      // Evidence Pulse: watches, inbox, answer-integrity banners
@@ -1953,6 +1993,7 @@ async function loadConfig(){
     ASK_PANEL_ENABLED = !!c.ask_panel_enabled;
     TRIAGE_ENABLED = !!c.triage_enabled;
     STARTUPS_ENABLED = !!c.startup_search_enabled;
+    VOICES_ENABLED = !!c.voices_enabled;
     ACCOUNTS_ENABLED = !!c.accounts_enabled;
     if(ACCOUNTS_ENABLED && USER && !USER.token){ AUTH_MODE = "login"; }   // a pre-accounts local identity must sign in
     try{ updateAuthUI(); maybeShowAuthButtons(); }catch(e){}
@@ -1971,7 +2012,7 @@ async function loadConfig(){
     }
     PANEL_SPECIALISTS = c.panel_specialists || [];
     PANEL_EXAMPLES = c.panel_examples || [];
-    if(ASK_PANEL_ENABLED || TRIAGE_ENABLED || STARTUPS_ENABLED){
+    if(ASK_PANEL_ENABLED || TRIAGE_ENABLED || STARTUPS_ENABLED || VOICES_ENABLED){
       // One shell, up to three modes (Guided intake ⇄ Quick Q&A ⇄ Expert Panel), switched in the same
       // place under the heading. Only the enabled modes' buttons show; the shared box carries across them.
       $("#modeswitch").classList.add("on");
@@ -1980,6 +2021,7 @@ async function loadConfig(){
       // Startup Search is a separate page (a detached feature) — the tab navigates rather than switching mode.
       const sbtn = $("#startupsTab"); if(sbtn){ sbtn.hidden = !STARTUPS_ENABLED; sbtn.dataset.mode = "startups"; }
       const gbtn = $("#guidedTab"); if(gbtn){ gbtn.hidden = !STARTUPS_ENABLED; gbtn.dataset.mode = "guided"; }
+      const vbtn = $("#voicesTab"); if(vbtn){ vbtn.hidden = !VOICES_ENABLED; vbtn.dataset.mode = "voices"; }
       wireModeSwitch($("#modeswitch"));
     }
     VISION_ENABLED = !!c.vision_enabled;
@@ -3779,6 +3821,7 @@ $("#ask").addEventListener("submit", e=>{
   if(APP_MODE === "triage"){ submitTriage(question); return; }        // guided intake → next clarifying turn
   if(APP_MODE === "panel"){ submitPanelIntake(question); return; }   // panel mode → convene / follow-up
   if(APP_MODE === "startups"){ if(question && window.SU) SU.search(question); return; }   // startup search → compile + evaluate
+  if(APP_MODE === "voices"){ if(window.VO) VO.search(question); return; }                 // voices → keyword search over first-person content
   if(APP_MODE === "guided"){ if(window.SG) SG.send(question); return; }                      // guided → one intake turn
   if(CURRENT_ABORT) return;               // a question is in flight — Enter/submit is a no-op (use Stop)
   if(!question && ATTACHMENTS.length){    // attachment-only ask (e.g. a converted long paste IS the question)
@@ -3961,7 +4004,8 @@ function wireModeSwitch(el){
 // intake box are shared; only the answer surface (and Q&A-only control rows) swap. Typed text is preserved.
 function setMode(mode, opts){
   opts = opts || {};
-  mode = (mode === "panel" || mode === "triage" || ((mode === "startups" || mode === "guided") && STARTUPS_ENABLED)) ? mode : "qa";
+  mode = (mode === "panel" || mode === "triage" || (mode === "voices" && VOICES_ENABLED)
+          || ((mode === "startups" || mode === "guided") && STARTUPS_ENABLED)) ? mode : "qa";
   APP_MODE = mode;
   GUIDED_REFINED = false;   // any mode change clears the stale "skip refine" flag (routeTriage re-sets it)
   document.body.dataset.mode = mode;
@@ -3970,7 +4014,7 @@ function setMode(mode, opts){
   $("#modeswitch").querySelectorAll(".mbtn").forEach(b =>
     b.setAttribute("aria-selected", b.dataset.mode === mode ? "true" : "false"));
   ATTN_BOX = "#attns"; renderAttachments();   // one intake box → one attachment surface
-  const clearModeHash = () => { if(/^#(panel|triage|startups|guided)/.test(location.hash) || location.hash.indexOf("#p/") === 0)
+  const clearModeHash = () => { if(/^#(panel|triage|startups|guided|voices)/.test(location.hash) || location.hash.indexOf("#p/") === 0)
     history.replaceState(null, "", location.pathname + location.search); };
   if(mode === "panel"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -3994,6 +4038,13 @@ function setMode(mode, opts){
     q.setAttribute("placeholder", "e.g. seed to series A AI-infra startups selling to banks, ≥ $5M raised, founders ex-Stripe, not YC, hiring sales");
     if(location.hash.indexOf("#startups") !== 0) history.pushState(null, "", "#startups");
     if(window.SU) SU.enter(opts.params);
+    q.focus();
+  } else if(mode === "voices"){
+    document.body.classList.remove("chatting"); out.style.paddingBottom = "";
+    $("#heading").textContent = "What have founders and investors actually said?";
+    q.setAttribute("placeholder", "e.g. what founders learned from a pivot after a failed Series A");
+    if(location.hash !== "#voices") history.pushState(null, "", "#voices");
+    if(window.VO) VO.enter(!!opts.fresh);
     q.focus();
   } else if(mode === "triage"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -6802,7 +6853,11 @@ $("#su-results").addEventListener("click", async e=>{
   if(!b && (!card || e.target.closest("a") || e.target.closest(".drawer"))) return;
   const id=(b||card).dataset.open||card.dataset.id;
   STATE.open = STATE.open===id ? null : id; renderResults();
-  if(STATE.open===id){ const dr=$(`#drawer-${CSS.escape(id)}`); dr.innerHTML=`<span class="su-spin"></span>loading the evidence…`; try{ const r=await fetch("/startups/"+encodeURIComponent(id)); const co=await r.json(); dr.innerHTML=drawerHtml(co); dr.scrollIntoView({block:"nearest"}); }catch(err){ dr.innerHTML="could not load"; } }
+  if(STATE.open===id){ const dr=$(`#drawer-${CSS.escape(id)}`); dr.innerHTML=`<span class="su-spin"></span>loading the evidence…`; try{ const r=await fetch("/startups/"+encodeURIComponent(id)); const co=await r.json(); dr.innerHTML=drawerHtml(co); dr.scrollIntoView({block:"nearest"});
+    // …then, if this company's own founder was a podcast guest, a strip of what they said. Absent for
+    // almost every company (a few percent of episodes bind), so it is added after and never awaited.
+    if(window.VO) VO.forCompany(id, dr);
+  }catch(err){ dr.innerHTML="could not load"; } }
 });
 function drawerHtml(co){
   const facts=(co.facts||[]).slice().sort((a,b)=>a.key.localeCompare(b.key));
@@ -6886,6 +6941,118 @@ function reset(){
 }
 window.SU = { search: runCompile, enter, onAuth, runContract, reset };
 
+})();
+
+// ===== Voices — what founders and investors actually said ==========================================
+// Two kinds of card and the difference is load-bearing. An ESSAY is the person's own words, so it is
+// quoted and attributed. A PODCAST MOMENT is a chapter marker the publisher wrote, so it is never
+// quoted: it says where to listen and links to that second on the publisher's own page. The server
+// sends `quotable` per moment; the UI never decides this for itself.
+(function(){
+  const cards = () => document.getElementById("vo-cards");
+  const note  = () => document.getElementById("vo-note");
+  const STATE = {kind: "", busy: false, q: ""};
+
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  function stamp(sec){
+    sec = Math.max(0, parseInt(sec || 0, 10));
+    const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s2 = sec%60;
+    return (h ? h + ":" + String(m).padStart(2,"0") : String(m)) + ":" + String(s2).padStart(2,"0");
+  }
+
+  function cardHtml(m){
+    const isChapter = m.kind === "chapter";
+    const who = m.speaker ? esc(m.speaker) + (m.role && m.role !== "guest" ? " · " + esc(m.role) : "") : "";
+    const bits = [who, esc(m.show), esc(m.published)].filter(Boolean);
+    // A chapter's words are a signpost, so they are set plainly. An essay's words are a quotation.
+    const words = isChapter ? esc(m.text) : "&ldquo;" + esc(m.text) + "&rdquo;";
+    const open = m.url
+      ? '<a class="vo-open" href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">'
+        + (isChapter ? "Listen from " + stamp(m.t_start) : "Read it") + " &rarr;</a>"
+      : "";
+    return '<article class="vo-card">'
+      + '<div class="vo-meta"><span class="vo-kind ' + (isChapter ? "chapter" : "essay") + '">'
+      + (isChapter ? "podcast moment" : "essay") + "</span>" + bits.map(b => "<span>" + b + "</span>").join("")
+      + "</div>"
+      + "<h4>" + words + "</h4>"
+      + (m.title && !isChapter ? '<div class="vo-meta"><span>' + esc(m.title) + "</span></div>" : "")
+      + (m.title && isChapter ? '<div class="vo-meta"><span>' + esc(m.title) + "</span></div>" : "")
+      + '<div class="vo-reg">' + esc(m.register) + "</div>"
+      + open + "</article>";
+  }
+
+  function render(data){
+    const ms = (data && data.moments) || [];
+    if(!ms.length){
+      cards().innerHTML = "";
+      note().textContent = STATE.q
+        ? "Nothing in the corpus matches those words yet. The index holds essays and podcast chapters from a curated list of founders and investors, so a very specific company may simply not be in it."
+        : "Ask what you want to learn from. The index holds first-person essays and timestamped podcast moments from founders, investors and operators.";
+      return;
+    }
+    const c = data.counts || {};
+    const parts = [ms.length + (ms.length === 1 ? " moment" : " moments")];
+    if(c.pointers) parts.push(c.pointers + " podcast " + (c.pointers === 1 ? "marker" : "markers") + " (where to listen, not a quote)");
+    if(c.quotable) parts.push(c.quotable + " quotable " + (c.quotable === 1 ? "passage" : "passages"));
+    if(data.ranking === "keyword") parts.push("ranked by words only");
+    note().textContent = parts.join(" \u00b7 ");
+    cards().innerHTML = ms.map(cardHtml).join("");
+  }
+
+  async function search(question){
+    if(STATE.busy) return;
+    STATE.busy = true; STATE.q = (question || "").trim();
+    note().textContent = "Searching what people actually said\u2026";
+    cards().innerHTML = "";
+    try{
+      const r = await fetch("/voices/search", {method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({q: STATE.q, kinds: STATE.kind ? [STATE.kind] : [], limit: 30})});
+      if(!r.ok) throw new Error("search failed (" + r.status + ")");
+      render(await r.json());
+    }catch(e){
+      cards().innerHTML = "";
+      note().textContent = "Voices search failed: " + (e && e.message ? e.message : e);
+    }finally{ STATE.busy = false; }
+  }
+
+  function wire(){
+    const bar = document.getElementById("vo-filters");
+    if(!bar || bar.dataset.wired) return;
+    bar.dataset.wired = "1";
+    bar.querySelectorAll(".vo-chip").forEach(b => b.addEventListener("click", () => {
+      STATE.kind = b.dataset.kind || "";
+      bar.querySelectorAll(".vo-chip").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+      search(STATE.q);
+    }));
+  }
+
+  function enter(fresh){
+    wire();
+    if(fresh){ STATE.q = ""; STATE.kind = ""; cards().innerHTML = ""; }
+    if(!cards().innerHTML) render(null);
+  }
+
+  // The "from the founders" strip on a startup card: only episodes whose guest IS that company's
+  // founder, and whose company was confirmed, ever appear here.
+  async function forCompany(companyId, el){
+    if(!companyId || !el) return;
+    try{
+      const r = await fetch("/voices/company/" + encodeURIComponent(companyId) + "?limit=4");
+      if(!r.ok) return;
+      const ms = (await r.json()).moments || [];
+      if(!ms.length) return;
+      el.insertAdjacentHTML("beforeend",
+        '<div class="vo-strip"><span class="vo-slabel">From the founders</span>'
+        + ms.map(m => '<a href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">'
+            + esc(m.text) + " &middot; " + esc(m.show)
+            + (m.kind === "chapter" ? " (listen from " + stamp(m.t_start) + ")" : "") + "</a>").join("")
+        + "</div>");
+    }catch(e){ /* a missing strip is never worth breaking a card over */ }
+  }
+
+  window.VO = { search, enter, forCompany };
 })();
 </script>
 </body>

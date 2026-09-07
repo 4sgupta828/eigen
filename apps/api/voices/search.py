@@ -59,6 +59,9 @@ def moment(row: dict) -> dict:
             t_start = seconds_of(m.group(1))
             body = m.group(2).strip()
             url = m.group(3) or url
+    if kind != "chapter":
+        # the passage that matched, when the query produced one; else the block's opening
+        body = (row.get("snippet") or body or "").strip() or body
     speaker = str(facets.get("guest") or facets.get("author") or "")
     return {
         "id": f"{row.get('document_id')}::{row.get('block_id')}",
@@ -114,12 +117,18 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         params.append(q.strip())
         rank = f"ts_rank(tsv, plainto_tsquery('english', ${n}))"
         order = f"{rank} DESC, created_at DESC NULLS LAST"
+        # An essay block can be thousands of characters, so the head of it is rarely the part that
+        # answered the question. ts_headline returns the passage that actually matched.
+        snippet = (f"ts_headline('english', text, plainto_tsquery('english', ${n}), "
+                   f"'MaxWords=48, MinWords=20, ShortWord=3, MaxFragments=1, StartSel=\u00ab, StopSel=\u00bb')")
     else:
         rank = "0.0"
         order = "created_at DESC NULLS LAST"
+        snippet = "left(text, 320)"
 
     n += 1
     params.append(int(max(1, min(limit, 100))))
-    sql = (f"SELECT document_id, block_id, text, document_title, source_key, facets, {rank} AS score "
+    sql = (f"SELECT document_id, block_id, text, document_title, source_key, facets, "
+           f"{rank} AS score, {snippet} AS snippet "
            f"FROM {table} WHERE {' AND '.join(where)} ORDER BY {order} LIMIT ${n}")
     return sql, params

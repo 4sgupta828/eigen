@@ -13,6 +13,7 @@ A parsed feed item is a plain dict with (best-effort across RSS+Atom shapes):
 """
 from __future__ import annotations
 
+import html
 import re
 
 _MAX_BODY = 16000
@@ -46,7 +47,10 @@ def facets(rec: dict) -> dict:
 
 
 def _strip_html(raw: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw)).strip()
+    """Tags out, entities decoded. Feeds double-escape often enough (&amp;#8217;) that one pass
+    leaves "I&#8217;m" on the card, so unescape twice — the second pass is a no-op on clean text."""
+    txt = html.unescape(html.unescape(raw or ""))
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", txt)).strip()
 
 
 def to_markdown(rec: dict) -> str:

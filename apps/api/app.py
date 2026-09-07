@@ -25,6 +25,7 @@ from eigen_kernel.retrieval.postgres import PostgresRetrievalSource
 from eigen_kernel.retrieval.web import WebRetrievalSource
 from eigen_kernel.runtime.build import build_embedder, build_llm, build_web, load_active_vertical
 from eigen_kernel.runtime.ingest import ingest_connector_to_postgres
+from api.voices.routes import voices_enabled as _voices_enabled
 from eigen_kernel.runtime.research import ResearchService
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -1775,9 +1776,9 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
     # A MODE over the existing kernel corpus, not a new store: its rows are ordinary rs_block rows
     # written by the show_notes / founder_essay connectors. Flag-gated; OFF is a true no-op.
     # docs/specs/voices.md.
-    from api.voices.routes import build_router as _vo_router, voices_enabled
+    from api.voices.routes import build_router as _vo_router
     _vo_dsn = os.environ.get("EIGEN_CORPUS_DSN")
-    if voices_enabled() and _vo_dsn:
+    if _voices_enabled() and _vo_dsn:
         _vo_state: dict = {}
 
         async def _vo_pool():
@@ -1821,6 +1822,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "console": console,
             "video_enabled": video_enabled(),
             "startup_search_enabled": startup_search_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
+            "voices_enabled": _voices_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "structured_answers": structured_answers(),
             "clinical_synthesis": clinical_synthesis() and structured_answers(),
             "evidence_select": bool(getattr(svc, "evidence_select", False)),
