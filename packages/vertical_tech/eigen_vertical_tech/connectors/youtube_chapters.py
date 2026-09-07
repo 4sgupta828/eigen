@@ -19,6 +19,8 @@ here, because a handle can be reassigned while an ID cannot.
 """
 from __future__ import annotations
 
+import logging
+
 import re
 import xml.etree.ElementTree as ET
 
@@ -26,6 +28,10 @@ from eigen_kernel.contract.dto import DocumentRef, EntityRef
 
 from .. import show_notes_doc
 from ._http import HttpStrategy
+
+# A feed that fails silently turns a whole source off with no trace. One naive datetime once
+# emptied every podcast in a run, and the only symptom was a zero in a job result.
+log = logging.getLogger(__name__)
 
 FEED = "https://www.youtube.com/feeds/videos.xml?channel_id="
 
@@ -121,7 +127,8 @@ class YoutubeChaptersConnector:
             for cid, name in CHANNELS.items():
                 try:                                # best-effort: one dead channel ≠ dead batch
                     recs = parse_channel(await self.fetch_strategy.fetch(FEED + cid), name)
-                except Exception:
+                except Exception as e:              # noqa: BLE001
+                    log.warning("youtube_chapters: %s failed: %s: %s", name, type(e).__name__, e)
                     continue
                 kept = 0
                 for r in recs:

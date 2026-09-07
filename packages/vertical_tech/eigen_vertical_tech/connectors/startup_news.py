@@ -15,11 +15,17 @@ because a US-only press leg quietly makes the whole index US-only.
 """
 from __future__ import annotations
 
+import logging
+
 from eigen_kernel.contract.dto import DocumentRef, EntityRef
 
 from .. import press_doc
 from ._feed import parse_feed
 from ._http import HttpStrategy
+
+# A feed that fails silently turns a whole source off with no trace. One naive datetime once
+# emptied every podcast in a run, and the only symptom was a zero in a job result.
+log = logging.getLogger(__name__)
 
 # ── Curated allowlist: url → (publication, beat). Median body length measured, in comments. ──────
 FEEDS: dict[str, tuple[str, str]] = {
@@ -82,7 +88,8 @@ class StartupNewsConnector:
                 pub, _beat = FEEDS.get(url, ("", ""))
                 try:                                  # best-effort: one dead feed ≠ dead batch
                     recs = parse_feed(await self.fetch_strategy.fetch(url))
-                except Exception:
+                except Exception as e:                # noqa: BLE001
+                    log.warning("startup_news: %s failed: %s: %s", url, type(e).__name__, e)
                     continue
                 for r in recs[:per]:
                     if not press_doc.item_id(r):

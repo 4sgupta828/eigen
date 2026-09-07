@@ -32,9 +32,11 @@ def iso_date(raw: str) -> str:
         return ""
     if dt is None:
         return ""
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc)
-    # a date in the future is a feed bug, not news; treat it as unknown rather than pinning it top
-    if dt > datetime.now(timezone.utc).replace(year=datetime.now(timezone.utc).year + 1):
+    # "-0000" is RFC 5322 for "no timezone stated" and yields a NAIVE datetime. Most podcast feeds
+    # use it, so treating naive as UTC is not an edge case — comparing it to an aware `now` raised
+    # TypeError, which the connector's catch-all swallowed and turned into an empty feed.
+    dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+    # a date far in the future is a feed bug, not news; unknown beats pinning it to the top
+    if dt.year > datetime.now(timezone.utc).year + 1:
         return ""
     return dt.date().isoformat()

@@ -17,11 +17,17 @@ writing them simply yields nothing, which is the failure mode we want.
 """
 from __future__ import annotations
 
+import logging
+
 from eigen_kernel.contract.dto import DocumentRef, EntityRef
 
 from .. import show_notes_doc
 from ._feed import channel_meta, parse_feed
 from ._http import HttpStrategy
+
+# A feed that fails silently turns a whole source off with no trace. One naive datetime once
+# emptied every podcast in a run, and the only symptom was a zero in a job result.
+log = logging.getLogger(__name__)
 
 # ── Curated show allowlist (chapter yield measured 2026-09-07, last 25 episodes) ──────────────────
 SHOWS: list[str] = [
@@ -73,7 +79,8 @@ class ShowNotesConnector:
                     raw = await self.fetch_strategy.fetch(url)
                     recs = parse_feed(raw)
                     cover = channel_meta(raw).get("image", "")
-                except Exception:
+                except Exception as e:                      # noqa: BLE001
+                    log.warning("show_notes: %s failed: %s: %s", url, type(e).__name__, e)
                     continue
                 kept = 0
                 for r in recs:
