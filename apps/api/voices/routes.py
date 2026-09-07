@@ -116,7 +116,11 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
             for label, tq in tsqueries(terms(body.q)) or [("any word", "")]:
                 rows = await _fetch(tsquery=tq)
                 matched = label
-                if len(rows) >= 6:
+                # Stop at the strictest rung that answers with enough, from more than one voice. A
+                # page of five essays by the same writer is technically the best match and reads as
+                # if the corpus knows one person; widening one rung finds the others who said it.
+                voices = {str((r.get("facets") or {}).get("publication") or "") for r in rows}
+                if len(rows) >= 6 and len(voices) >= 2:
                     break
         # A window that returns almost nothing is worse than a wider one: widen rather than show an
         # empty week, and say which window the reader is actually looking at.

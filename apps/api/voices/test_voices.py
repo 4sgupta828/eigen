@@ -384,3 +384,12 @@ def test_engineering_transcripts_are_not_this_modes_material():
     assert "podcast" not in search.VOICE_SOURCE_KEYS
     sql, params = search.build_query(q="robotics")
     assert "podcast" not in params[0]
+
+
+def test_the_ladder_widens_when_one_voice_fills_the_page():
+    """Five essays by the same writer is technically the best match and reads as though the corpus
+    knows one person. The rung is only accepted when more than one voice answered."""
+    ladder = search.tsqueries(search.terms("physical ai robotic systems"))
+    assert len(ladder) >= 2          # there is somewhere to widen TO
+    # the stop condition itself lives in the route; this pins the ladder it walks
+    assert ladder[0][0] == "all words" and ladder[-1][0] == "any word"
