@@ -271,11 +271,18 @@
   .vo-star{margin-left:auto;font-size:.8rem;color:var(--gold);border-color:color-mix(in srgb, var(--gold) 55%, transparent);}
   .vo-star:hover{background:color-mix(in srgb, var(--gold) 12%, transparent);border-color:var(--gold);}
   .vo-star[aria-pressed="true"]{background:var(--gold);color:var(--on-accent);border-color:var(--gold);font-weight:600;}
-  .vo-person{display:inline-flex;gap:.3rem;align-items:center;}
-  .vo-plink{font-family:var(--mono);font-size:.6rem;text-decoration:none;color:var(--dim);
-    border:1px solid var(--hair);border-radius:4px;padding:0 .28rem;line-height:1.5;}
-  .vo-plink:hover{color:var(--ink);border-color:var(--vo-accent);}
-  .vo-plink.guess{opacity:.7;font-style:normal;}
+  .vo-person{display:inline-flex;gap:.35rem;align-items:center;flex-wrap:wrap;}
+  /* A profile we actually hold: a small solid badge, because it is a fact, not an offer. */
+  .vo-plink{font-family:var(--mono);font-size:.64rem;text-decoration:none;color:var(--gold);
+    border:1px solid color-mix(in srgb, var(--gold) 60%, transparent);border-radius:5px;
+    padding:.06rem .34rem;line-height:1.5;font-weight:600;}
+  .vo-plink:hover{background:color-mix(in srgb, var(--gold) 14%, transparent);border-color:var(--gold);}
+  /* The SEARCH link is the one a reader most often needs, so it is the one that must look
+     clickable: the theme's own accent colour, underlined, no border box to mute it, and a label
+     that says where it goes. It was previously grey at 70% opacity — an offer nobody could see. */
+  .vo-plink.guess{color:var(--gold);border:0;padding:0 .1rem;text-decoration:underline;
+    text-underline-offset:2px;text-decoration-thickness:1px;font-weight:600;letter-spacing:.01em;}
+  .vo-plink.guess:hover{color:var(--gold-strong);background:none;text-decoration-thickness:2px;}
   .vo-reg{font-family:var(--mono);font-size:.61rem;color:var(--dim);font-style:italic;padding:0 .95rem .7rem;}
   .vo-player{padding:0 .95rem .85rem;}
   .vo-player iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:10px;display:block;}
@@ -7074,7 +7081,8 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       if(p.twitter)  bits.push('<a class="vo-plink" href="' + esc(p.twitter) + '" target="_blank" rel="noopener noreferrer" title="X profile">𝕏</a>');
       if(!bits.length && p.search) bits.push('<a class="vo-plink guess" href="' + esc(p.search)
         + '" target="_blank" rel="noopener noreferrer" title="'
-        + esc(p.why || "We do not hold a profile for this person") + ' — this searches for one">find ⌕</a>');
+        + esc(p.why || "We do not hold a profile for this person") + ' — this searches LinkedIn for them">'
+        + "find on LinkedIn ⌕</a>");
       who = '<span class="vo-person"><span class="vo-who">' + esc(m.speaker) + "</span>" + bits.join("") + "</span>"
             + (m.role && m.role !== "guest" ? ", " + esc(m.role) : "");
     }
