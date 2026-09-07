@@ -15,6 +15,7 @@ that is text-format parsing, not a semantic judgment.
 """
 from __future__ import annotations
 
+import html
 import re
 
 
@@ -124,8 +125,9 @@ def normalize_transcript(text: str, kind: str = "") -> str:
         return _strip_cues(text)
     if "srt" in k or "subrip" in k or "-->" in text:
         return _strip_cues(text)
-    # plain text (or html-wrapped plain): strip tags, collapse whitespace.
-    return _collapse(re.sub(r"<[^>]+>", " ", text))
+    # plain text (or html-wrapped plain): decode entities, strip tags, collapse whitespace.
+    # Without the unescape a transcript reads "I&#39;ve been in love with technology" on the card.
+    return _collapse(re.sub(r"<[^>]+>", " ", html.unescape(html.unescape(text))))
 
 
 TRANSCRIPT_CHAR_CAP = 40000

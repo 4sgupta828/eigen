@@ -139,7 +139,10 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         n += 1
         params.append(" | ".join(q_terms))
         where.append(f"tsv @@ to_tsquery('english', ${n})")
-        rank = f"ts_rank(tsv, to_tsquery('english', ${n}))"
+        # Normalisation 1 divides the rank by 1 + log(length). Without it a 4,000-character essay
+        # that mentions a word twice outranks a chapter titled exactly that word, and the podcast
+        # moments — the thing this mode exists to surface — never appear at all.
+        rank = f"ts_rank(tsv, to_tsquery('english', ${n}), 1)"
         order = f"{rank} DESC, created_at DESC NULLS LAST"
         # An essay block can be thousands of characters, so the head of it is rarely the part that
         # answered the question. ts_headline returns the passage that actually matched.
