@@ -7143,12 +7143,19 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     return n + " views";
   }
 
-  // "Tue, 02 Sep 2026 10:00:00 GMT" and "2026-09-02T17:00:00+00:00" both become "2 Sep 2026".
+  // Dates are rendered in the terms the source published them, without a timezone shifting them.
+  // new Date("2026-09-07") is parsed as UTC midnight, which in any western timezone displays as the
+  // 6th — an off-by-one on every card. A plain date is therefore read field by field.
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   function shortDate(raw){
-    const d = new Date(raw);
-    if(isNaN(d)) return String(raw).slice(0, 16);
-    return d.getDate() + " " + ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]
-           + " " + d.getFullYear();
+    const s = String(raw || "").trim();
+    if(!s) return "";
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(iso) return parseInt(iso[3], 10) + " " + MONTHS[parseInt(iso[2], 10) - 1] + " " + iso[1];
+    if(/^\d{4}$/.test(s)) return s;                 // a bare year is a year, not a date
+    const d = new Date(s);
+    if(isNaN(d)) return s.slice(0, 16);              // show what the feed said rather than a guess
+    return d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear();
   }
 
   // Play WHERE THE READER IS. A video embeds and starts at the moment; an audio enclosure plays from

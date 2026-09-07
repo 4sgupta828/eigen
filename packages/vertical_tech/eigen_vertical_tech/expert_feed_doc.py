@@ -68,6 +68,7 @@ def facets(rec: dict) -> dict:
         "author": " ".join(str(rec.get("author") or "").split()).strip(),
         "publication": " ".join(str(rec.get("publication") or "").split()).strip(),
         "year": _year(rec),
+        "published": str(rec.get("published") or "").strip()[:64],
         "published_at": iso_date(rec.get("published")),
     }
     return {k: v for k, v in f.items() if v}

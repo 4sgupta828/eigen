@@ -64,7 +64,8 @@ ESSAY_ROW = {
     "document_id": "p1", "block_id": "b2", "document_title": "What I got wrong about seed pricing",
     "source_key": "founder_essay", "text": "We priced our seed round too high and it cost a year.",
     "facets": {"source_kind": "essay", "author": "Fred Wilson", "voice_role": "investor",
-               "publication": "AVC", "year": "2026", "url": "https://avc.com/seed-pricing"},
+               "publication": "AVC", "year": "2026", "published_at": "2026-09-03",
+               "url": "https://avc.com/seed-pricing"},
 }
 
 
@@ -81,7 +82,7 @@ def test_an_essay_moment_is_quotable_and_names_its_author_and_role():
     m = search.moment(ESSAY_ROW)
     assert m["kind"] == "essay" and m["quotable"] is True
     assert m["speaker"] == "Fred Wilson" and m["role"] == "investor"
-    assert m["t_start"] == 0 and m["published"] == "2026"
+    assert m["t_start"] == 0 and m["published"] == "2026-09-03" and m["year"] == "2026"
     assert m["url"] == "https://avc.com/seed-pricing"      # a card must be able to send you to read it
 
 
@@ -322,3 +323,22 @@ def test_the_per_piece_feed_keeps_the_real_ordering():
     sql2, _ = search.build_query(q="pivot", limit=5, per_document=True)
     outer2 = sql2.rsplit(") s ", 1)[1]
     assert outer2.strip().startswith("ORDER BY score DESC") and "tsv" not in outer2
+
+
+def test_a_card_never_shows_a_bare_year_as_a_date():
+    """The reported contradiction: a card read "31 Dec 2025" inside a "published this month" feed.
+    The essay had no `published` facet, so the moment fell back to the YEAR, "2026", and a browser
+    west of UTC rendered that as 31 Dec 2025 — a wrong date arguing with a correct filter."""
+    m = search.moment({"document_id": "e", "block_id": "b", "document_title": "t",
+                       "source_key": "founder_essay", "text": "words",
+                       "facets": {"source_kind": "essay", "year": "2026",
+                                  "published_at": "2026-09-07",
+                                  "published": "Sun, 07 Sep 2026 12:00:00 GMT"}})
+    assert m["published"] == "2026-09-07"          # the exact date wins
+    assert m["year"] == "2026"                     # the year is still available, separately
+
+    # with no exact date, the feed's own string is shown — never the year dressed as a date
+    m2 = search.moment({"document_id": "e", "block_id": "b", "document_title": "t",
+                        "source_key": "founder_essay", "text": "words",
+                        "facets": {"source_kind": "essay", "year": "2026"}})
+    assert m2["published"] == "" and m2["year"] == "2026"

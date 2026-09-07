@@ -113,7 +113,11 @@ def moment(row: dict) -> dict:
         "show": str(facets.get("publication") or ""),
         "speaker": speaker,
         "role": str(facets.get("voice_role") or ("guest" if is_pointer(kind) else "")),
-        "published": str(facets.get("published") or facets.get("year") or ""),
+        # The exact date if we have one, else the feed's own string. NEVER the bare year: a card
+        # rendering "2026" as a date showed "31 Dec 2025" to a reader west of UTC, which contradicted
+        # the very window that had selected it.
+        "published": str(facets.get("published_at") or facets.get("published") or ""),
+        "year": str(facets.get("year") or ""),
         "url": url,
         "t_start": t_start,
         "company_id": str(facets.get("company_id") or ""),
