@@ -36,7 +36,10 @@ class Fetch:
 
 
 def host_of(url: str) -> str:
-    return (urllib.parse.urlsplit(url).hostname or "").lower()
+    try:
+        return (urllib.parse.urlsplit(url).hostname or "").lower()
+    except ValueError:            # "Invalid IPv6 URL" and friends: a malformed site is no host
+        return ""
 
 
 def _pace(host: str, min_gap: float) -> None:
@@ -136,10 +139,12 @@ def links(h: str, base: str) -> list[tuple[str, str]]:
 def registrable_domain(url_or_host: str) -> str:
     """A company's identity key: the host without `www.` (structural; two-level public suffixes such as
     `co.uk` keep three labels)."""
-    h = url_or_host.strip().lower()
+    h = (url_or_host or "").strip().lower()
     if "://" in h or h.startswith("//"):
         h = host_of(h if "://" in h else "https:" + h)
-    h = h.split("/")[0].split(":")[0]
+    h = h.split("/")[0].split(":")[0].strip("[]")
+    if not re.match(r"^[a-z0-9.-]+$", h):
+        return ""
     if h.startswith("www."):
         h = h[4:]
     parts = h.split(".")

@@ -267,3 +267,11 @@ def test_portfolio_page_and_profile_parsing_and_lookup_name_cleaning():
     assert r["name"] == "Acme" and r["domain"] == "acme.ai" and r["score"] >= 5
     assert portfolio.parse_profile('<html><title>Fund</title><a href="https://podcast.fund-media.com">Podcast</a></html>', "https://fund.com/companies/x") is None
     assert lookup.clean_name("Nuburu, Inc.") == "Nuburu" and lookup.clean_name("Whatnot Inc.") == "Whatnot" and lookup.clean_name("Bending Spoons S.p.A.") == "Bending Spoons S.p.A."
+
+
+def test_registrable_domain_never_raises_on_garbage():
+    for bad in ("https://[::1", "http://", "not a url", "https://a b.com/x", "https://[2001:db8::1]/"):
+        try:
+            http.registrable_domain(bad)
+        except Exception as e:   # noqa: BLE001
+            raise AssertionError(f"registrable_domain raised on {bad!r}: {e}")

@@ -262,11 +262,17 @@ async def run_crawl(store: StartupStore, *, ids: list[str] | None = None, limit:
                                        ORDER BY updated_at DESC LIMIT $2""", str(recrawl_days), limit)
     n_ok = n_fail = 0
     for r in rows:
-        res = await asyncio.get_event_loop().run_in_executor(None, site.crawl, r["website"])
+        try:
+            res = await asyncio.get_event_loop().run_in_executor(None, site.crawl, r["website"])
+        except Exception as e:   # noqa: BLE001 — one malformed site never aborts the job; it is recorded as a failed fetch
+            res = {"domain": r["id"], "pages": [], "failed": [{"kind": "home", "url": r["website"], "status": 0, "error": type(e).__name__}]}
         pages = res["pages"]
         roles, board = ([], None)
         if pages:
-            roles, board = await asyncio.get_event_loop().run_in_executor(None, ats.hiring_for, [p["html"] for p in pages])
+            try:
+                roles, board = await asyncio.get_event_loop().run_in_executor(None, ats.hiring_for, [p["html"] for p in pages])
+            except Exception:   # noqa: BLE001
+                roles, board = ([], None)
         meta = {"at": date.today().isoformat(), "pages": [{"kind": p["kind"], "url": p["url"], "chars": len(p["text"])} for p in pages],
                 "failed": res["failed"], "ats": {"board": list(board) if board else None, "roles": [{"title": x["title"], "location": x["location"], "department": x["department"], "url": x["url"]} for x in roles[:200]]}}
         await store.save_pages(r["id"], [{k: p[k] for k in ("url", "kind", "sha", "text")} for p in pages], meta)
