@@ -148,3 +148,12 @@ def test_a_chapter_with_no_link_does_not_keep_the_dangling_separator():
                facets={"source_kind": "chapter_pointer", "publication": "The Startup Ideas"})
     m = search.moment(row)
     assert m["text"] == "Sales agent" and m["t_start"] == 269
+
+
+def test_one_prolific_writer_cannot_own_the_whole_result_set():
+    ms = [{"id": f"d{i}::a", "text": f"passage {i}", "speaker": "Elad Gil", "show": "Elad Blog"}
+          for i in range(6)]
+    ms.append({"id": "dx::a", "text": "someone else", "speaker": "Hunter Walk", "show": "hunterwalk"})
+    out = search.dedupe(ms, per_source=3, limit=5)
+    assert [m["speaker"] for m in out[:4]] == ["Elad Gil", "Elad Gil", "Elad Gil", "Hunter Walk"]
+    assert len(out) == 5           # the held-back passages still fill the set rather than vanish

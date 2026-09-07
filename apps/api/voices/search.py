@@ -170,23 +170,33 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
     return sql, params
 
 
-def dedupe(moments: list[dict], *, per_document: int = 2, limit: int = 30) -> list[dict]:
-    """Keep a result set readable: no repeated text, and no single episode or essay taking it over.
+def dedupe(moments: list[dict], *, per_document: int = 2, per_source: int = 3,
+           limit: int = 30) -> list[dict]:
+    """Keep a result set readable: no repeated text, and no one voice taking it over.
 
     Ranking alone does not do this. One essay split into blocks can hold the top five slots with
-    near-identical passages, which reads as though the corpus knows one thing.
+    near-identical passages, and the most prolific writer in the corpus can hold the rest — either
+    way it reads as though the corpus knows one thing. Two passes over the same ranked list, so the
+    order is still the ranking's; only the crowding is removed.
     """
     seen_text: set[str] = set()
     per_doc: dict[str, int] = {}
+    per_pub: dict[str, int] = {}
     out: list[dict] = []
+    spill: list[dict] = []
     for m in moments:
         key = " ".join((m.get("text") or "").lower().split())[:160]
         doc = str(m.get("id", "")).split("::", 1)[0]
+        pub = (m.get("speaker") or m.get("show") or "").lower()
         if not key or key in seen_text or per_doc.get(doc, 0) >= per_document:
             continue
         seen_text.add(key)
         per_doc[doc] = per_doc.get(doc, 0) + 1
+        if pub and per_pub.get(pub, 0) >= per_source:
+            spill.append(m)          # held back, not discarded: it still fills a thin result set
+            continue
+        per_pub[pub] = per_pub.get(pub, 0) + 1
         out.append(m)
         if len(out) >= limit:
-            break
-    return out
+            return out
+    return (out + spill)[:limit]
