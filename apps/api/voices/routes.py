@@ -12,8 +12,8 @@ import os
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from .ingest import bind_guests, ingest_voices, refresh_guests
-from .search import build_query, moment
+from .ingest import bind_guests, ingest_voices, mark_boilerplate, refresh_guests
+from .search import build_query, dedupe, moment
 
 
 def voices_enabled() -> bool:
@@ -53,10 +53,12 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
     @router.post("/voices/search")
     async def voices_search(body: SearchIn) -> dict:
         """Moments matching the question. Keyword-ranked, so it works with no embedding provider."""
+        want = max(1, min(int(body.limit or 30), 60))
+        # over-fetch, then dedupe: the ranking cannot know that five blocks are the same sidebar
         sql, params = build_query(q=body.q, kinds=tuple(body.kinds), company_id=body.company_id,
-                                  speaker=body.speaker, limit=body.limit)
+                                  speaker=body.speaker, limit=want * 4)
         rows = await _rows(sql, params)
-        moments = [moment(r) for r in rows]
+        moments = dedupe([moment(r) for r in rows], limit=want)
         return {
             "moments": moments,
             "counts": {
@@ -98,6 +100,8 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
             return {"kind": "bind", "result": await bind_guests(await pool_of())}
         if body.kind == "refresh_guests":
             return {"kind": "refresh_guests", "result": await refresh_guests(await pool_of())}
+        if body.kind == "mark_boilerplate":
+            return {"kind": "mark_boilerplate", "result": await mark_boilerplate(await pool_of())}
         if body.kind == "ingest":
             if manifest is None or pg_source_of is None:
                 raise HTTPException(status_code=503, detail="ingest not configured")

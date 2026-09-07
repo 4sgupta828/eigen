@@ -109,3 +109,19 @@ def test_an_unknown_filter_narrows_to_nothing_rather_than_widening():
 def test_the_company_strip_asks_for_one_moment_per_episode():
     sql, _ = search.build_query(q="", company_id="flexport.com", limit=4, per_document=True)
     assert "DISTINCT ON (document_id)" in sql
+
+
+def test_dedupe_keeps_a_result_set_readable():
+    ms = [{"id": "d1::a", "text": "The same sidebar of post titles"},
+          {"id": "d2::a", "text": "the same   SIDEBAR of post titles"},   # same text, other document
+          {"id": "d1::b", "text": "A real passage about pricing"},
+          {"id": "d1::c", "text": "A third passage from the same essay"},
+          {"id": "d3::a", "text": "Someone else entirely"}]
+    out = search.dedupe(ms, per_document=2, limit=10)
+    assert [m["id"] for m in out] == ["d1::a", "d1::b", "d3::a"]
+    # the duplicate text is gone, and no single document holds more than two slots
+
+
+def test_every_voice_query_excludes_boilerplate():
+    sql, _ = search.build_query(q="pivot")
+    assert "NOT (facets ? 'boilerplate')" in sql

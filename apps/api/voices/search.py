@@ -89,7 +89,9 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
     An empty `q` is legitimate ("show me what founders are saying"): it degrades to the newest rows
     rather than to an error, because a mode that returns nothing when the box is empty reads broken.
     """
-    where = ["source_key = ANY($1)"]
+    # Boilerplate is excluded everywhere. Many newsletter feeds repeat a sidebar of post titles in
+    # every item's body, which otherwise floods a search with the same block five times over.
+    where = ["source_key = ANY($1)", "NOT (facets ? 'boilerplate')"]
     params: list = [list(VOICE_SOURCE_KEYS)]
     n = 1
 
@@ -139,3 +141,25 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
     else:
         sql = f"SELECT {cols} FROM {table} WHERE {' AND '.join(where)} ORDER BY {order} LIMIT ${n}"
     return sql, params
+
+
+def dedupe(moments: list[dict], *, per_document: int = 2, limit: int = 30) -> list[dict]:
+    """Keep a result set readable: no repeated text, and no single episode or essay taking it over.
+
+    Ranking alone does not do this. One essay split into blocks can hold the top five slots with
+    near-identical passages, which reads as though the corpus knows one thing.
+    """
+    seen_text: set[str] = set()
+    per_doc: dict[str, int] = {}
+    out: list[dict] = []
+    for m in moments:
+        key = " ".join((m.get("text") or "").lower().split())[:160]
+        doc = str(m.get("id", "")).split("::", 1)[0]
+        if not key or key in seen_text or per_doc.get(doc, 0) >= per_document:
+            continue
+        seen_text.add(key)
+        per_doc[doc] = per_doc.get(doc, 0) + 1
+        out.append(m)
+        if len(out) >= limit:
+            break
+    return out

@@ -128,3 +128,23 @@ async def refresh_guests(pool, *, table: str = "rs_block", limit: int = 5000) ->
                     f"UPDATE {table} SET facets = facets - 'guest' - 'person' - 'bind_basis' "
                     f"  - 'company_id' - 'company_name' WHERE document_id = $1", r["document_id"])
     return stats
+
+
+async def mark_boilerplate(pool, *, table: str = "rs_block", min_documents: int = 3) -> dict:
+    """Stamp `boilerplate` on text a feed repeats across its own items.
+
+    Newsletters commonly paste a sidebar of recent post titles into every item's body. Those blocks
+    are real text, so they index and rank like prose, and a search for "pivot" returns the same
+    sidebar five times. The test is structural and needs no model: identical text appearing in three
+    or more DIFFERENT items of the same source is boilerplate by construction, not an opinion about
+    quality.
+    """
+    async with pool.acquire() as conn:
+        n = await conn.execute(
+            f"""UPDATE {table} SET facets = facets || '{{"boilerplate":"1"}}'::jsonb
+                WHERE source_key = ANY($1) AND NOT (facets ? 'boilerplate') AND text IN (
+                  SELECT text FROM {table} WHERE source_key = ANY($1)
+                  GROUP BY text HAVING count(DISTINCT document_id) >= $2)""",
+            ["founder_essay", "show_notes", "expert_feed", "podcast"], int(min_documents))
+        marked = int(str(n).rsplit(" ", 1)[-1]) if str(n).startswith("UPDATE") else 0
+        return {"marked": marked}
