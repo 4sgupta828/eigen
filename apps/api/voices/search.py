@@ -210,6 +210,10 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         rank = (f"ts_rank(tsv, to_tsquery('english', ${n}), 1) * "
                 f"CASE WHEN (facets ? 'url' OR facets ? 'episode_url') THEN 1.0 ELSE 0.7 END")
         order_sql = f"{rank} DESC, facets->>'published_at' DESC NULLS LAST"
+        # The outer query of the per-piece path can only name columns the inner one returned, and
+        # `tsv` is a generated column that is never selected. Order by the SELECTED alias instead of
+        # recomputing the rank — recomputing it is also wasted work.
+        outer_order = "score DESC, facets->>'published_at' DESC NULLS LAST"
         # An essay block can be thousands of characters, so the head of it is rarely the part that
         # answered the question. ts_headline returns the passage that actually matched.
         snippet = (f"ts_headline('english', text, to_tsquery('english', ${n}), "
@@ -221,10 +225,13 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
                      if order == "watched"
                      else "facets->>'published_at' DESC NULLS LAST, created_at DESC NULLS LAST")
         snippet = "left(text, 320)"
+        outer_order = order_sql
 
     n += 1
     params.append(int(max(1, min(limit, 100))))
-    cols = (f"document_id, block_id, text, document_title, source_key, facets, "
+    # created_at is SELECTED, not merely ordered by: the per-piece path wraps this in an outer
+    # query, and an outer ORDER BY can only name columns the inner query returned.
+    cols = (f"document_id, block_id, text, document_title, source_key, facets, created_at, "
             f"{rank} AS score, {snippet} AS snippet")
     if per_document:
         # One row per EPISODE. Without this a company's strip fills with the first eight chapters of
@@ -234,7 +241,7 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         # which "founder_essay:…" always beat "show_notes:…" and video never appeared at all.
         sql = (f"SELECT * FROM (SELECT DISTINCT ON (document_id) {cols} "
                f"FROM {table} WHERE {' AND '.join(where)} ORDER BY document_id, {order_sql}) s "
-               f"ORDER BY {order_sql} LIMIT ${n}")
+               f"ORDER BY {outer_order} LIMIT ${n}")
     else:
         sql = f"SELECT {cols} FROM {table} WHERE {' AND '.join(where)} ORDER BY {order_sql} LIMIT ${n}"
     return sql, params

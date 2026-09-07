@@ -269,8 +269,9 @@ def test_a_browse_orders_by_the_pieces_own_date_not_by_when_we_ingested_it():
     """With no query the feed used to order by created_at — when OUR job touched the row, which
     means nothing to a reader and put whatever ran last on top."""
     sql, params = search.build_query(q="", limit=10)
-    assert "facets->>'published_at' DESC" in sql
-    assert sql.index("published_at") < sql.index("created_at")      # ingest time only breaks ties
+    order = sql.split("ORDER BY")[-1]
+    assert "facets->>'published_at' DESC" in order
+    assert order.index("published_at") < order.index("created_at")  # ingest time only breaks ties
 
 
 def test_a_window_filters_by_publication_date():
@@ -315,3 +316,9 @@ def test_the_per_piece_feed_keeps_the_real_ordering():
     sql, _ = search.build_query(q="", limit=5, per_document=True)
     outer = sql.rsplit(") s ", 1)[1]
     assert "published_at" in outer and "document_id LIMIT" not in outer
+
+    # …and with a query it orders by the SELECTED alias: `tsv` is a generated column the inner
+    # query never returns, so recomputing the rank outside it is invalid SQL.
+    sql2, _ = search.build_query(q="pivot", limit=5, per_document=True)
+    outer2 = sql2.rsplit(") s ", 1)[1]
+    assert outer2.strip().startswith("ORDER BY score DESC") and "tsv" not in outer2

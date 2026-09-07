@@ -79,6 +79,7 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
 
         def shape(rec) -> dict:
             d = dict(rec)
+            d.pop("created_at", None)      # an internal column, never part of a card
             if "facets" in d:      # not every query selects facets (the coverage query does not)
                 d["facets"] = json.loads(d["facets"]) if isinstance(d["facets"], str) else (d["facets"] or {})
             return d

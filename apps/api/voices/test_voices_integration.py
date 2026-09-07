@@ -248,3 +248,30 @@ def test_keeping_a_moment_is_per_account_and_survives_the_feed_rolling():
             assert (await cl.get("/voices/favorites", headers=h)).json()["moments"] == []
         await pool.close()
     _run(go())
+
+
+def test_every_shape_of_query_actually_runs_against_postgres():
+    """SQL that is merely well-formed can still be invalid. The per-piece feed ordered by a column
+    its inner query did not select, which unit tests could not see and production answered with a
+    500 on the mode's own opening screen."""
+    async def go():
+        from api.voices.search import build_query
+        pool, pg = await _setup()
+        await _ingest(pg)
+        shapes = [
+            dict(q="pivot"),                                    # keyword search
+            dict(q=""),                                         # browse, newest first
+            dict(q="", per_document=True),                      # browse, one per piece
+            dict(q="", since="2026-01-01", per_document=True),  # windowed browse
+            dict(q="", order="watched"),                        # most watched
+            dict(q="", order="watched", per_document=True),
+            dict(q="pivot", kinds=("video",), per_document=True),
+            dict(q="", company_id="flexport.com", per_document=True),
+            dict(q="pivot", speaker="Ryan Petersen"),
+        ]
+        async with pool.acquire() as c:
+            for kw in shapes:
+                sql, params = build_query(limit=5, **kw)
+                await c.fetch(sql, *params)                     # raises if the SQL is invalid
+        await pool.close()
+    _run(go())
