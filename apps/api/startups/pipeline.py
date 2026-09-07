@@ -257,8 +257,9 @@ async def run_crawl(store: StartupStore, *, ids: list[str] | None = None, limit:
         if ids:
             rows = await conn.fetch("SELECT id, website FROM su_company WHERE id = ANY($1) AND status = 'active'", ids)
         else:
+            # never crawled (no 'at' stamp — a lookup or ATS stamp alone is not a crawl) or crawled longer ago than the window
             rows = await conn.fetch("""SELECT id, website FROM su_company WHERE status = 'active' AND website <> ''
-                                       AND (crawl = '{}'::jsonb OR (crawl->>'at')::timestamptz < now() - ($1 || ' days')::interval)
+                                       AND (crawl->>'at' IS NULL OR (crawl->>'at')::timestamptz < now() - ($1 || ' days')::interval)
                                        ORDER BY updated_at DESC LIMIT $2""", str(recrawl_days), limit)
     n_ok = n_fail = 0
     for r in rows:
@@ -297,7 +298,9 @@ async def run_extract(store: StartupStore, prov: Providers, *, ids: list[str] | 
         if ids:
             rows = await conn.fetch("SELECT id, name, website, one_liner, crawl FROM su_company WHERE id = ANY($1) AND crawl <> '{}'::jsonb", ids)
         else:
-            rows = await conn.fetch("""SELECT id, name, website, one_liner, crawl FROM su_company WHERE status = 'active' AND crawl <> '{}'::jsonb
+            # only companies with a crawl (pages to read) that were not extracted since that crawl
+            rows = await conn.fetch("""SELECT id, name, website, one_liner, crawl FROM su_company WHERE status = 'active' AND crawl->>'at' IS NOT NULL
+                                       AND jsonb_array_length(coalesce(crawl->'pages', '[]'::jsonb)) > 0
                                        AND (extracted_at IS NULL OR extracted_at < (crawl->>'at')::timestamptz) ORDER BY updated_at DESC LIMIT $1""", limit)
     proj = project_extract_cost(len(rows))
     if proj["projected_usd"] > max_usd:

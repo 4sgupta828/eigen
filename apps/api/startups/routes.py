@@ -363,6 +363,8 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         await store.ensure_schema()
         pool = await store.pool()
         async with pool.acquire() as conn:
+            # a 'running' row silent for 30 minutes is a zombie (its thread died with a restart the startup hook missed)
+            await conn.execute("UPDATE su_job SET status = 'orphaned', error = 'no progress for 30 minutes; the job thread is gone — re-launch it', updated_at = now() WHERE status = 'running' AND updated_at < now() - interval '30 minutes'")
             rows = await conn.fetch("SELECT id, kind, status, params, progress, error, created_at, updated_at FROM su_job ORDER BY id DESC LIMIT 30")
         return {"jobs": [_job_row(j) for j in rows]}
 
