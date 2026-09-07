@@ -636,3 +636,55 @@ marked); its chip already sits at ▲ prefer so one tap restores it.
   nicknames in quotes or parentheses and post-nominal letters are all real founder names in the index, so a stricter
   "two capitalised tokens" rule would have deleted 129 real founders. The three rows are replaced on the next
   extraction pass for those companies.
+
+## 14. Extraction backlog — the resume plan (written 2026-09-07, paused on credits)
+
+**Where it stands.** Downloading is done; reading the downloaded pages is not.
+
+| Stage | Count | Note |
+| --- | --- | --- |
+| Companies indexed | 17,665 | all embedded |
+| With a website | 13,659 | |
+| Crawled | 13,528 | crawl job 46 finished the tail |
+| Crawled with usable pages | 11,614 | 32,067 pages stored |
+| Extracted from their own site | 800 | `su_fact.basis = 'self_reported'` |
+| **Extraction backlog** | **10,814** | the whole of the remaining work |
+
+Search works today without it: filings ground 8,894 companies, derive 9,022, portfolio affiliation 3,448,
+named founders 6,108, ATS 914. Extraction is what adds the site-grounded keys — ARR, customers, business model,
+stated rounds, founder prior companies — so the backlog is the difference between a directory and a read corpus.
+
+**Why it is paused.** Both model accounts are empty: DeepSeek 402 `Insufficient Balance` (2026-09-06 evening),
+OpenAI 429 `credit_balance_exhausted` (2026-09-07). Extraction is one model call per company, so it cannot run
+at all until credit is added. Nothing else blocks it — the pages are already in `su_page`.
+
+**Cost.** `EXTRACT_USD_PER_COMPANY` is 0.012 (a DeepSeek-priced estimate of ~30k in / 1k out).
+
+| Provider | Per company | 10,814 backlog |
+| --- | --- | --- |
+| Our projection constant | $0.012 | ~$130 |
+| OpenAI gpt-4o-mini (actual list) | ~$0.010 | ~$110 |
+| DeepSeek chat (actual list) | ~$0.009 | ~$97 |
+
+**How to resume (do this in order).**
+1. Confirm credit is really there before launching anything: one extraction on a single company
+   (`{"kind":"extract","params":{"limit":1,"max_usd":0.05}}`) and check `su_fact` gained `self_reported` rows.
+   A batch launched against an empty account burns the whole tranche on 402/429 retries.
+2. Set the provider to whichever account has credit: `railway variables --set "EIGEN_STARTUP_LLM_PROVIDER=deepseek|openai" -s eigen-api`.
+   Setting a variable redeploys, which orphans running jobs — do it BEFORE launching, never during.
+3. Run in tranches of 600 with `max_usd: 8.0` (the job refuses a projection above `max_usd`), reviewing between:
+   `POST /admin/startups/jobs {"kind":"extract","params":{"limit":600,"max_usd":8.0}}`. About 18 tranches clears
+   the backlog. The selection already skips companies with no crawled pages and companies already extracted, so
+   tranches never overlap and a re-run after an orphan resumes where it stopped.
+4. Order matters more than volume. The first tranches should be the companies most likely to be searched —
+   those with funding or recency signals (`su_fact` carrying `total_disclosed_funding` or `founded >= 2023`) —
+   so the index gets deep where users actually look. The plain selection is arbitrary; add an ORDER BY before
+   the first tranche rather than after.
+5. Run `derive` after every few tranches (`{"kind":"derive"}`, free and deterministic) so the new
+   self-reported rows fold into stage, financing scale and evidence strength.
+6. Watch for the deploy hazard: every `railway up` restarts the API and orphans in-flight jobs. Do not deploy
+   while a tranche is running; if one is orphaned, just relaunch — jobs resume idempotently.
+
+**When it is done.** Coverage for `arr` (29 companies today), `customer` (439), `business_model` (527) and
+`founder_prior_company` (104) should rise by roughly the extraction hit rate seen so far — job 19 turned 512
+companies into 2,777 facts, about 5.4 facts per company.
