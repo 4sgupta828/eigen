@@ -235,3 +235,31 @@ portfolios. The strip appears where it is earned.
 **Operations.** `POST /admin/voices/jobs` with `{"kind": …}` — `ingest` (fetch feeds),
 `refresh_guests` (re-derive names), `bind` (attach guests to companies), `mark_boilerplate`. All are
 free. Run them in that order after any change to the extractor.
+
+
+## 11. Cards, summaries and the missing links (2026-09-07, later)
+
+**Two kinds, two colours.** An essay card is gold-keyed and sets the words as a quotation; a podcast
+card is blue-keyed and sets them plainly with the offset. They are different objects and the reader
+should see that before reading a word.
+
+**Opening a card summarises the whole piece**, following roster's posting-summary pattern: lazy on
+first open so spend follows attention, cached per document in `vo_summary`, never caching an empty
+read, and a code-owned `verify()` pass that drops any point asserting a figure the piece never
+states. The card always says which path produced the words — `model`, `extractive` (the piece's own
+sentences, used when no model is available) or `chapters` (an episode is summarised by the
+publisher's own chapter list, so nothing is invented and nothing is quoted).
+
+**Why cards had no links.** Two separate bugs, both found by the owner using it:
+- Several shows publish no `<link>` element at all — No Priors, 20VC, This Week in Startups and The
+  Startup Ideas Podcast among them. Nothing in the repo had ever parsed `<enclosure>`, so those
+  episodes had no address. The feed parser now reads it, and a chapter deep-links into the audio
+  with a media fragment (`#t=935`) rather than a query string the CDN would ignore.
+- Essays carried their permalink only inside the document body, and a card renders from facets, so
+  every essay card was a dead end. The permalink is now a facet.
+- Items that scrolled out of their feed before this landed can never get an address. They are
+  demoted in ranking rather than deleted — the words are still worth finding — and the card says no
+  link was published instead of showing a dead end.
+
+**Model credit returned** while this shipped: the first summary requested in production came back
+`basis: model`, and startup search reports embeddings working again with no degraded banner.
