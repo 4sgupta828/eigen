@@ -342,3 +342,13 @@ def test_a_card_never_shows_a_bare_year_as_a_date():
                         "source_key": "founder_essay", "text": "words",
                         "facets": {"source_kind": "essay", "year": "2026"}})
     assert m2["published"] == "" and m2["year"] == "2026"
+
+
+def test_podcasts_rank_by_having_a_named_guest_since_they_publish_no_view_count():
+    """'Most watched' can never rank a podcast: no podcast feed publishes a view count, so that
+    order returns an empty page. What is actually useful is the interviews rather than the weekly
+    news round-ups, which is a property of the episode and not a popularity guess."""
+    sql, params = search.build_query(q="", order="guest", kinds=("podcast",))
+    assert "facets ? 'guest'" in sql
+    assert "views" not in sql.split("WHERE")[1].split("ORDER BY")[0]
+    assert params[0] == ["show_notes"]

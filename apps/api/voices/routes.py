@@ -29,7 +29,9 @@ class SearchIn(BaseModel):
     speaker: str = ""
     limit: int = 30
     days: int = 0                 # browse window: 7, 30, 90 … 0 means no window
-    order: str = "recent"         # "recent" (by publication date) or "watched" (platform views)
+    # "recent" (publication date), "watched" (the platform's own view count, video only) or
+    # "guest" (episodes with a named guest — the ordering that works where no view count exists)
+    order: str = "recent"
 
 
 class SummaryIn(BaseModel):
@@ -129,8 +131,9 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
             },
             # Said plainly so the UI never has to guess: ranking is words-only until vectors exist.
             # Said plainly so the UI never has to guess what it is showing.
-            "ranking": ("keyword" if body.q.strip()
-                        else ("most watched" if body.order == "watched" else "newest first")),
+            "ranking": ("keyword" if body.q.strip() else
+                        {"watched": "most watched", "guest": "interviews, newest first"}
+                        .get(body.order, "newest first")),
             "window": {"days": 0 if not since else int(body.days), "widened": widened,
                        "since": since},
         }

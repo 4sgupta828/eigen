@@ -1775,7 +1775,8 @@
     <button type="button" class="vo-swin" data-days="30" aria-pressed="false">this month</button>
     <button type="button" class="vo-swin" data-days="90" aria-pressed="false">this quarter</button>
     <button type="button" class="vo-swin" data-days="0" aria-pressed="false">all time</button>
-    <button type="button" class="vo-swin" data-order="watched" aria-pressed="false" title="Ordered by the view count YouTube publishes; videos only">▶ most watched</button>
+    <button type="button" class="vo-swin" id="vo-sort" data-order="watched" aria-pressed="false"
+            title="Ordered by the view count YouTube publishes">▶ most watched</button>
   </div>
   <p class="vo-note" id="vo-note"></p>
   <div class="vo-cards" id="vo-cards"></div>
@@ -7064,6 +7065,27 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     return (h ? h + ":" + String(m).padStart(2,"0") : String(m)) + ":" + String(s2).padStart(2,"0");
   }
 
+  // Each tab gets the ordering its sources can actually support. YouTube publishes view counts;
+  // podcast feeds publish none, so offering "most watched" there guarantees an empty page. For
+  // podcasts the useful cut is the interviews, which is a fact about the episode.
+  const SORTS = {
+    "":        {order: "watched", label: "▶ most watched", why: "Ordered by the view count YouTube publishes; videos only."},
+    "video":   {order: "watched", label: "▶ most watched", why: "Ordered by the view count YouTube publishes."},
+    "podcast": {order: "guest",   label: "🎙 interviews",   why: "Episodes with a named guest, rather than the weekly news round-ups. Podcast feeds publish no view counts."},
+    "essay":   {order: "",        label: "",               why: ""},
+  };
+  function syncSort(){
+    const b = document.getElementById("vo-sort");
+    if(!b) return;
+    const cfg = SORTS[STATE.kind] || SORTS[""];
+    b.hidden = !cfg.order;                       // essays have no second ordering to offer
+    if(!cfg.order){ if(STATE.order !== "recent"){ STATE.order = "recent"; } return; }
+    b.dataset.order = cfg.order;
+    b.textContent = cfg.label;
+    b.title = cfg.why;
+    b.setAttribute("aria-pressed", STATE.order === cfg.order ? "true" : "false");
+  }
+
   function cardHtml(m, i){
     const isPointer = m.kind === "podcast" || m.kind === "video";
     const playable = m.media && (m.media.kind === "youtube" || m.media.kind === "audio");
@@ -7246,9 +7268,18 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     const ms = (data && data.moments) || [];
     if(!ms.length){
       cards().innerHTML = "";
-      note().textContent = STATE.q
-        ? "Nothing in the corpus matches those words yet. The index holds essays and podcast chapters from a curated list of founders and investors, so a very specific company may simply not be in it."
-        : "Ask what you want to learn from. The index holds first-person essays and timestamped podcast moments from founders, investors and operators.";
+      const w = (data && data.window) || {};
+      if(STATE.q){
+        note().textContent = "Nothing matches those words yet. The index holds essays, podcast moments and video moments from a curated list of founders and investors, so a very specific company may simply not be in it.";
+      }else if(STATE.order === "watched"){
+        note().textContent = "No view counts here. YouTube publishes them, podcast feeds and newsletters do not, so this ordering only has something to show under Videos.";
+      }else if(STATE.order === "guest"){
+        note().textContent = "No episodes with a named guest in this window — try a wider one.";
+      }else if(w.days){
+        note().textContent = "Nothing published in that window yet. Try a wider one.";
+      }else{
+        note().textContent = "Nothing here yet.";
+      }
       return;
     }
     const c = data.counts || {}, w = data.window || {};
@@ -7310,6 +7341,10 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     bar.dataset.wired = "1";
     bar.querySelectorAll(".vo-chip[data-kind]").forEach(b => b.addEventListener("click", () => {
       STATE.kind = b.dataset.kind || ""; STATE.view = "search";
+      // an ordering the new tab cannot support goes back to newest rather than emptying the page
+      const cfg = SORTS[STATE.kind] || SORTS[""];
+      if(STATE.order !== "recent" && STATE.order !== cfg.order) STATE.order = "recent";
+      syncSort();
       bar.querySelectorAll(".vo-chip").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
       search(STATE.q);
     }));
@@ -7317,10 +7352,15 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     if(win && !win.dataset.wired){
       win.dataset.wired = "1";
       win.querySelectorAll(".vo-swin").forEach(b => b.addEventListener("click", () => {
-        if(b.dataset.order){ STATE.order = STATE.order === "watched" ? "recent" : "watched"; }
-        else { STATE.order = "recent"; STATE.days = parseInt(b.dataset.days, 10); }
-        win.querySelectorAll(".vo-swin").forEach(x => x.setAttribute("aria-pressed",
-          x === b ? (STATE.order === "watched" || !x.dataset.order ? "true" : "false") : "false"));
+        if(b.dataset.order){
+          STATE.order = STATE.order === b.dataset.order ? "recent" : b.dataset.order;
+        }else{
+          STATE.order = "recent";
+          STATE.days = parseInt(b.dataset.days, 10);
+        }
+        win.querySelectorAll(".vo-swin[data-days]").forEach(x => x.setAttribute("aria-pressed",
+          (STATE.order === "recent" && parseInt(x.dataset.days, 10) === STATE.days) ? "true" : "false"));
+        syncSort();
         STATE.view = "search";
         search(STATE.q);
       }));
@@ -7353,6 +7393,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
 
   function enter(fresh){
     wire();
+    syncSort();
     if(fresh){ STATE.q = ""; STATE.kind = ""; STATE.view = "search"; STATE.days = 7;
                STATE.order = "recent"; cards().innerHTML = ""; }
     // Open on what has just been published rather than on an empty page. A browse is a legitimate

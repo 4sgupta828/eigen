@@ -187,6 +187,12 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         n += 1
         where.append(f"(facets->>'views') ~ ${n}")
         params.append(r"^\d+$")
+    if order == "guest":
+        # Podcasts publish no engagement number, so "most watched" can never rank them. What a
+        # founder or investor actually wants from a podcast feed is the INTERVIEWS — an episode with
+        # a named guest — rather than the weekly news round-ups that make up much of these shows.
+        # It is a property of the episode, not a popularity guess we would be inventing.
+        where.append("facets ? 'guest'")
     if company_id:
         n += 1
         where.append(f"facets->>'company_id' = ${n}")
