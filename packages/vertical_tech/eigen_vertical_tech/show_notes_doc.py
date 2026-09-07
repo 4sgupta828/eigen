@@ -23,15 +23,31 @@ import html
 import re
 
 # "13:00 Title", "(00:02:16) Title", "[1:02:33] - Title" — an offset then the chapter's words.
+# The offset must OPEN its line (optionally in brackets). Requiring that kills the prose match:
+# "At 08:30 we wake up and start coding" is a sentence, not a chapter, and a looser pattern turned it
+# into one.
 _CHAPTER = re.compile(
-    r"(?:^|[\s(\[])(\d{1,2}:\d{2}(?::\d{2})?)\s*[)\]]?\s*[-–—:|]*\s*([^\n<|]{6,110})")
+    r"^[\s\u2022*\-–—]*[(\[]?(\d{1,2}:\d{2}(?::\d{2})?)[)\]]?\s*[-–—:|]*\s*([^\n<|]{6,110})",
+    re.M)
 
-# "20VC: Why X | Guest Name, CEO @ Acme" / "Jane Doe - Lessons - [Show]" / "… with Jane Doe"
+# Role and company words that are never part of a person's name. They appear next to the guest in
+# titles like "with Netic Founder Melisa Tokmak", where a naive capture returns "Netic Founder Melisa".
+_ROLE_WORDS = {"founder", "founders", "cofounder", "co-founder", "co-founders", "cofounders",
+               "ceo", "cto", "coo", "cfo", "cpo", "cmo", "chairman", "president", "partner",
+               "gp", "vp", "head", "lead", "director", "chief", "general", "managing", "operating",
+               "capital", "ventures", "partners", "fund", "labs", "inc", "llc", "co", "the"}
+_TITLE_VERBS = {"how", "why", "what", "when", "building", "chasing", "making", "rethinking", "leaving",
+                "inside", "breaking", "redefining", "introducing", "scaling", "learning", "growing"}
+
+_NAME = r"[A-Z][a-zA-Z'’\-]+(?:\s+[A-Z][a-zA-Z'’.\-]+){1,3}"
+# Ordered by how strongly each shape identifies the GUEST, most explicit first.
 _GUEST_HINTS = (
-    re.compile(r"\bwith\s+([A-Z][a-z]+(?:\s+[A-Z][a-zA-Z'’\-]+){1,2})"),
-    re.compile(r"\bft\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-zA-Z'’\-]+){1,2})"),
-    re.compile(r"\bfeaturing\s+([A-Z][a-z]+(?:\s+[A-Z][a-zA-Z'’\-]+){1,2})"),
-    re.compile(r"^([A-Z][a-z]+(?:\s+[A-Z][a-zA-Z'’\-]+){1,2})\s*[-–—|]"),
+    re.compile(r"\bwith\s+(" + _NAME + r")"),                    # "… with Ryan Petersen, CEO @ Flexport"
+    re.compile(r"\bft\.?\s+(" + _NAME + r")"),
+    re.compile(r"\bfeaturing\s+(" + _NAME + r")"),
+    re.compile(r"\|\s*(" + _NAME + r")\s*(?:[,(]|$)"),           # "… | Michael Tannenbaum, CEO of Figure"
+    re.compile(r"^(" + _NAME + r")\s+[-–—]\s+"),                 # "Sam Altman - How to Make an Abundant Future"
+    re.compile(r"^(" + _NAME + r")\s+on\s+\S"),                  # "Ben Thompson on Big Tech, China …"
 )
 
 MIN_CHAPTERS = 3          # fewer than this is a stray timestamp, not a chapter list
@@ -75,7 +91,9 @@ def chapters(description: str) -> list[dict]:
         except (ValueError, IndexError):
             continue
         title = " ".join(raw_title.split()).strip(" -–—:•|")
-        if len(title) < 6 or secs <= last or secs > 6 * 3600:
+        if secs <= last or secs > 6 * 3600:
+            break        # offsets only move forward; a backward one means the list ended and prose began
+        if len(title) < 6:
             continue
         # a chapter title is a phrase, not a paragraph of body copy
         if len(title) > 110 or title.count(".") > 2:
@@ -87,15 +105,37 @@ def chapters(description: str) -> list[dict]:
     return out if len(out) >= MIN_CHAPTERS else []
 
 
+def _clean_name(raw: str) -> str:
+    """Trim a captured span down to the PERSON, or return "" if it is not one.
+
+    Two failures came from real prod titles. "with Netic Founder Melisa Tokmak" captured the company
+    and the role; the fix is to drop everything up to and including the last role word. "Chasing
+    Trillion-Dollar Companies, Founder Ambition…" captured a sentence; the fix is to reject a span
+    whose first word is a title verb."""
+    toks = [t for t in " ".join((raw or "").split()).split() if t]
+    while toks and toks[0].lower().strip(".,") in _ROLE_WORDS:
+        toks = toks[1:]
+    # a role word INSIDE the span means the real name follows it ("Netic Founder Melisa Tokmak")
+    last_role = max((i for i, t in enumerate(toks) if t.lower().strip(".,") in _ROLE_WORDS), default=-1)
+    if last_role >= 0:
+        toks = toks[last_role + 1:]
+    if not toks or toks[0].lower() in _TITLE_VERBS:
+        return ""
+    if any(t.lower().strip(".,") in _ROLE_WORDS for t in toks):
+        return ""
+    if not (2 <= len(toks) <= 3):
+        return ""
+    return " ".join(toks)
+
+
 def guest_from_title(title: str) -> str:
     """The guest as the TITLE names them, or "". Body copy is never consulted — a name in the notes
     is a mention, and binding a mention to the episode is how a quote lands on the wrong person."""
     t = " ".join((title or "").split())
     for pat in _GUEST_HINTS:
-        m = pat.search(t)
-        if m:
-            name = " ".join(m.group(1).split())
-            if 2 <= len(name.split()) <= 3:
+        for m in pat.finditer(t):
+            name = _clean_name(m.group(1))
+            if name:
                 return name
     return ""
 

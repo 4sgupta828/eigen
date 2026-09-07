@@ -61,7 +61,7 @@ CREATE INDEX IF NOT EXISTS {table}_created ON {table} (created_at DESC);
 class PostgresRetrievalSource:
     def __init__(self, dsn: str, *, key: str = "postgres", dim: int = 1536,
                  table: str = "rs_block", covers: FacetFilter | None = None,
-                 currency_demote: bool = False):
+                 currency_demote: bool = False, never_return: dict | None = None):
         self.key = key
         self._dsn = dsn
         self._dim = dim
@@ -71,6 +71,12 @@ class PostgresRetrievalSource:
         self._cache: dict[tuple[str, str, str], str] = {}
         # Evidence Pulse C1 (flag-fed by the app): exclude retracted / demote superseded at retrieval
         self._currency_demote = currency_demote
+        # Blocks this source must NEVER return, as {facet_key: (value, …)} — a standing exclusion the
+        # caller cannot forget to pass. A request's own exclude_facets are additive to it. Used for
+        # content that is indexed for navigation but is not evidence, so "the request didn't ask to
+        # exclude it" can never become "the answer cited it".
+        self._never_return = {k: (list(v) if not isinstance(v, str) else [v])
+                              for k, v in (never_return or {}).items() if v}
 
     # --- lifecycle ---
     async def _get_pool(self):
@@ -227,7 +233,11 @@ class PostgresRetrievalSource:
             params.append(vals)
             preds.append(f"(facets ->> ${key_idx}) = ANY(${len(params)})")
         # exclusion: drop a block only if it HAS the key with a listed value (untagged passes)
+        merged: dict[str, list] = {k: list(v) for k, v in self._never_return.items()}
         for key, banned in getattr(req, "exclude_facets", {}).items():
+            vals = [banned] if isinstance(banned, str) else list(banned)
+            merged[key] = list(dict.fromkeys(merged.get(key, []) + vals))
+        for key, banned in merged.items():
             vals = [banned] if isinstance(banned, str) else list(banned)
             params.append(key)
             key_idx = len(params)

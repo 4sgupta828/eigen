@@ -129,6 +129,9 @@ def build_manifest() -> VerticalManifest:
             "yc": YcConnector(),
         },
         retrieval_sources={"corpus": TechRetrievalSource()},
+        # A podcast chapter title is a producer's navigation marker, not speech. It is indexed so the
+        # Voices mode can find the moment, and barred here so no answer can ever cite it.
+        non_evidence_facets={"source_kind": ("chapter_pointer",)},
         gating_policy=TechGatingPolicy(),
         citation_verifier=None,       # block_span handled by the kernel
         persona=TechPersona(),

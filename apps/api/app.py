@@ -1232,7 +1232,10 @@ def build_default_service() -> ResearchService:
         covers = next((s.covers() for s in manifest.retrieval_sources.values()
                        if hasattr(s, "covers")), {})
         pg = PostgresRetrievalSource(dsn, dim=embedder.dim, table="rs_block", covers=covers,
-                                     currency_demote=pulse_enabled())
+                                     currency_demote=pulse_enabled(),
+                                     # the vertical says which indexed content is NEVER evidence; the
+                                     # research path must not be able to reach it at all
+                                     never_return=getattr(manifest, "non_evidence_facets", {}))
         corpus_key = next(iter(manifest.retrieval_sources), "corpus")
         sources[corpus_key] = pg
         connectors = dict(manifest.connectors)

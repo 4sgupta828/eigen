@@ -79,3 +79,37 @@ def test_connector_skips_episodes_with_no_chapter_list():
     ents = asyncio.run(c.discover_entities({}))
     assert [e.native_id for e in ents] == ["a"]                    # the chapter-less episode is gone
     assert ents[0].facets["guest"] == "Jane Doe"
+
+
+# Real episode titles taken from the prod corpus on 2026-09-07, with the guest a human would name.
+# The first version of the extractor got 9 of these 16 right and produced "Netic Founder Me",
+# "Chasing Trillion" and "Arm CEO Rene" — a name that is really a company, a sentence, and a role.
+REAL_TITLES = [
+    ("20VC: How to Build Your Own Data Center | How ElevenLabs Leapfrogged with Cliff Weitzman", "Cliff Weitzman"),
+    ("Building an Autonomous Enterprise for Real-World Services with Netic Founder Melisa Tokmak", "Melisa Tokmak"),
+    ("Chasing Trillion-Dollar Companies, Founder Ambition, Token Budgets, and Regulatory Capture with Sam Altman", "Sam Altman"),
+    ("Redefining Chip Architecture with Arm CEO Rene Haas", "Rene Haas"),
+    ("Rethinking Legacy Data Infrastructure with Eon Co-Founders Ofir Ehrlich and Gonen Stein", "Ofir Ehrlich"),
+    ("Sam Altman - How to Make an Abundant Future - [Invest Like the Best, EP.484]", "Sam Altman"),
+    ("Ben Thompson on Big Tech, China, and the AI Boom Running Out of Money", "Ben Thompson"),
+    ("Brex\u2019s 1st Employee On Thinking Like a Founder | Michael Tannenbaum, CEO of Figure", "Michael Tannenbaum"),
+    ("AI\u2019s third era: the rise of persistent AI coworkers | Tara Seshan (Product Lead ChatGPT Work)", "Tara Seshan"),
+    ("How to close $100K+ enterprise deals, step by step | Jen Abel", "Jen Abel"),
+    ("Re-founding a Company for the AI Era | Shensi Ding, Merge", "Shensi Ding"),
+    ("Building an Autonomous Delivery Experience with DoorDash Co-Founders Andy Fang and Stanley Tang", "Andy Fang"),
+    # …and the ones with no guest at all, which must stay empty rather than invent someone.
+    ("Are AI Agents forming \"civilizations\" or is this just a psy op? | 2332", ""),
+    ("China wants you to cheer for the robots taking your job | E2329", ""),
+    ("How to Build an AI-Native Company in 2026", ""),
+    ("20VC: NVIDIA Bonanza: Buys Poolside & Invests in Mercor and Perplexity", ""),
+]
+
+
+def test_guest_extraction_against_real_episode_titles():
+    wrong = [(t, want, D.guest_from_title(t)) for t, want in REAL_TITLES if D.guest_from_title(t) != want]
+    assert not wrong, wrong
+
+
+def test_a_role_or_company_is_never_returned_as_a_person():
+    for bad in ("with Arm CEO", "with Netic Founder", "with Sequoia Partners", "with the Founders"):
+        assert D.guest_from_title("Episode " + bad) == "", bad

@@ -83,7 +83,7 @@ def moment(row: dict) -> dict:
 
 
 def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", speaker: str = "",
-                limit: int = 30, table: str = "rs_block") -> tuple[str, list]:
+                limit: int = 30, table: str = "rs_block", per_document: bool = False) -> tuple[str, list]:
     """Keyword search over the voice corpus. Returns (sql, params) — no I/O, so it is testable.
 
     An empty `q` is legitimate ("show me what founders are saying"): it degrades to the newest rows
@@ -94,14 +94,14 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
     n = 1
 
     if kinds:
-        keys = []
-        if "chapter" in kinds:
-            keys.append("show_notes")
-        if "essay" in kinds:
-            keys += ["founder_essay", "expert_feed"]
-        if "transcript" in kinds:
-            keys.append("podcast")
-        params[0] = keys or list(VOICE_SOURCE_KEYS)
+        by_kind = {"chapter": ["show_notes"], "essay": ["founder_essay", "expert_feed"],
+                   "transcript": ["podcast"]}
+        keys: list[str] = []
+        for k in kinds:
+            keys += by_kind.get(k, [])
+        # An unrecognised kind must narrow to nothing, never widen back to everything: silently
+        # returning the whole corpus for a typo'd filter is a lie about what the filter did.
+        params[0] = keys
     if company_id:
         n += 1
         where.append(f"facets->>'company_id' = ${n}")
@@ -128,7 +128,14 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
 
     n += 1
     params.append(int(max(1, min(limit, 100))))
-    sql = (f"SELECT document_id, block_id, text, document_title, source_key, facets, "
-           f"{rank} AS score, {snippet} AS snippet "
-           f"FROM {table} WHERE {' AND '.join(where)} ORDER BY {order} LIMIT ${n}")
+    cols = (f"document_id, block_id, text, document_title, source_key, facets, "
+            f"{rank} AS score, {snippet} AS snippet")
+    if per_document:
+        # One row per EPISODE. Without this a company's strip fills with the first eight chapters of
+        # one episode ("00:00 Intro", "02:00 Early days") and every other episode is pushed out.
+        sql = (f"SELECT * FROM (SELECT DISTINCT ON (document_id) {cols} "
+               f"FROM {table} WHERE {' AND '.join(where)} ORDER BY document_id, {order}) s "
+               f"ORDER BY score DESC, document_id LIMIT ${n}")
+    else:
+        sql = f"SELECT {cols} FROM {table} WHERE {' AND '.join(where)} ORDER BY {order} LIMIT ${n}"
     return sql, params

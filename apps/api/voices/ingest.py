@@ -55,13 +55,22 @@ async def bind_guests(pool, *, table: str = "rs_block", limit: int = 500) -> dic
     stay searchable — being unattached to a company card is the normal case, not a failure.
     """
     async with pool.acquire() as conn:
-        founders = {}
+        # A name shared by two founders is AMBIGUOUS, and the fail-safe for ambiguity is to bind
+        # nothing. Keeping the first row would silently attach every "David Smith" episode to
+        # whichever company the query happened to return first.
+        seen: dict[str, set] = {}
+        founders: dict[str, dict] = {}
         for r in await conn.fetch(
                 "SELECT f.name, f.company_id, c.name AS company_name "
                 "FROM su_founder f JOIN su_company c ON c.id = f.company_id"):
             nm = (r["name"] or "").strip().lower()
-            if nm and nm not in founders:
-                founders[nm] = {"company_id": r["company_id"], "company_name": r["company_name"] or ""}
+            if not nm:
+                continue
+            seen.setdefault(nm, set()).add(r["company_id"])
+            founders[nm] = {"company_id": r["company_id"], "company_name": r["company_name"] or ""}
+        for nm, companies in seen.items():
+            if len(companies) > 1:
+                founders.pop(nm, None)
 
         rows = await conn.fetch(
             f"SELECT DISTINCT document_id, document_title, facets->>'guest' AS guest "

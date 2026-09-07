@@ -39,6 +39,13 @@ class VerticalManifest:
 
     # Retrieval + policy (P2)
     retrieval_sources: dict[str, RetrievalSource] = field(default_factory=dict)
+    # Facet values whose blocks are NEVER evidence and must not reach the research/answer path at
+    # all — {facet_key: (value, …)}. This is a STRUCTURAL bar, not a ranking hint: a source can be
+    # worth indexing for navigation while being unusable as support for a claim (a publisher-written
+    # chapter marker points at a moment in a recording; it is not speech, so no claim may rest on
+    # it). Empty by default, so a vertical that declares nothing behaves exactly as before. The
+    # kernel neither knows nor judges what the values mean — it only excludes what it is told to.
+    non_evidence_facets: dict[str, tuple[str, ...]] = field(default_factory=dict)
     gating_policy: GatingPolicy | None = None
     citation_verifier: CitationVerifier | None = None
 

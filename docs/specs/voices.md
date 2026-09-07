@@ -167,3 +167,36 @@ must never be quotable.
 layoffs, pricing) are not extracted yet, so a query relies on the publisher's own words. Some essay
 feeds put navigation chrome in the item body, which occasionally surfaces a block of post titles.
 Video remains metadata-only.
+
+## 9. Panel findings and what changed (2026-09-07)
+
+The implementation review (`docs/specs/voices-panel.md`) landed six findings worth acting on. All six
+are fixed; the reasoning is recorded because each one is a way the feature could have lied.
+
+1. **A chapter about a competitor inherited the guest's company.** Every block of an episode got
+   `company_id`, so "14:00 Why Uber struggled" would surface on the guest's own company card. The
+   company strip now returns ONE row per episode (`DISTINCT ON (document_id)`) and shows the episode,
+   not a chapter, so a company is never represented by a marker about someone else.
+2. **The pointer tier was advisory.** `is_evidence()` returned False but nothing consulted it, and
+   the blocks sit in the same `rs_block` table the research loop searches — so an answer could have
+   cited a producer's chapter title. The manifest now declares `non_evidence_facets`, and
+   `PostgresRetrievalSource(never_return=…)` merges that into every request's exclusions. The bar is
+   now structural: a caller cannot forget it.
+3. **A backward timestamp corrupted the chapter list.** The docstring said such an offset ends the
+   list; the code skipped it and kept parsing. It now breaks, as documented.
+4. **Prose times became chapters.** "At 08:30 we wake up and start coding" matched. A timestamp must
+   now open its line.
+5. **A shared founder name bound silently to whichever company came back first.** Two founders called
+   "David Smith" made the binding arbitrary. An ambiguous name now binds to nobody.
+6. **An unrecognised filter widened the search to everything.** A typo'd kind fell back to the whole
+   corpus. It now narrows to nothing, which is what the user asked for.
+
+Also fixed while acting on the review: the guest extractor. Against 16 real prod titles it scored
+9/16 and produced "Netic Founder Me", "Chasing Trillion" and "Arm CEO Rene" — a company, a sentence
+and a role, each of which would have been printed as a person. It now scores 16/16 and those titles
+are pinned as a regression test.
+
+**Accepted, not fixed.** An essay that quotes a third party is still attributed to the essay's author,
+because the passage index cannot tell whose words are inside the quotation marks. The register line
+says "first-person account, attributed to its author" rather than asserting the author said it, and a
+real fix needs quote attribution, which is Phase 2 work.

@@ -42,8 +42,13 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
         async with pool.acquire() as conn:
             out = await conn.fetch(sql, *params)
         import json
-        return [{**dict(r), "facets": (json.loads(r["facets"]) if isinstance(r["facets"], str)
-                                       else (r["facets"] or {}))} for r in out]
+
+        def shape(rec) -> dict:
+            d = dict(rec)
+            if "facets" in d:      # not every query selects facets (the coverage query does not)
+                d["facets"] = json.loads(d["facets"]) if isinstance(d["facets"], str) else (d["facets"] or {})
+            return d
+        return [shape(r) for r in out]
 
     @router.post("/voices/search")
     async def voices_search(body: SearchIn) -> dict:
@@ -67,7 +72,7 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
     async def voices_for_company(company_id: str, limit: int = 8) -> dict:
         """The 'from the founders' strip. Only fully-bound episodes appear — a guest whose company
         was not confirmed is searchable but never attached to that company's card."""
-        sql, params = build_query(q="", company_id=company_id, limit=limit)
+        sql, params = build_query(q="", company_id=company_id, limit=limit, per_document=True)
         return {"moments": [moment(r) for r in await _rows(sql, params)]}
 
     @router.get("/voices/sources")

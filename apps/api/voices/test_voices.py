@@ -1,6 +1,8 @@
 """The Voices gates. Every test here is a way the feature could lie, written before it can."""
 from __future__ import annotations
 
+from eigen_vertical_tech import show_notes_doc
+
 from api.voices import bind, search
 
 FOUNDERS = {
@@ -21,10 +23,14 @@ def test_a_guest_named_in_the_title_with_their_company_binds():
 def test_a_mention_in_the_body_never_binds():
     # THE TRAP, measured on a real episode: the guest is one person, the body names another founder
     # and their company. A body mention must not put words in that person's mouth.
-    b = bind.bind_guest(title="Gokul Rajaram - Lessons from Investing in 700 Startups",
-                        body="We also discuss what Tony Xu did at DoorDash in 2020.",
-                        guest="Tony Xu", founders=FOUNDERS)
-    assert b == {}
+    # The guest is derived the way the pipeline derives it, so the test cannot bypass the extractor.
+    title = "Gokul Rajaram - Lessons from Investing in 700 Startups"
+    body = "We also discuss what Tony Xu did at DoorDash in 2020."
+    guest = show_notes_doc.guest_from_title(title)
+    assert guest == "Gokul Rajaram"                 # the extractor names the guest, not the mention
+    assert bind.bind_guest(title=title, body=body, guest=guest, founders=FOUNDERS) == {}
+    # and even if something upstream handed us the mentioned person, the title gate still refuses
+    assert bind.bind_guest(title=title, body=body, guest="Tony Xu", founders=FOUNDERS) == {}
 
 
 def test_a_collective_is_not_a_person():
@@ -91,3 +97,15 @@ def test_search_can_be_scoped_to_one_company_or_one_kind():
     sql, params = search.build_query(q="layoffs", company_id="flexport.com", kinds=("chapter",))
     assert "facets->>'company_id'" in sql and "flexport.com" in params
     assert params[0] == ["show_notes"]
+
+
+def test_an_unknown_filter_narrows_to_nothing_rather_than_widening():
+    sql, params = search.build_query(q="pivot", kinds=("chapter", "nonsense"))
+    assert params[0] == ["show_notes"]              # the good kind survives, the bad one adds nothing
+    sql2, params2 = search.build_query(q="pivot", kinds=("nonsense",))
+    assert params2[0] == []                         # nothing matches, rather than everything
+
+
+def test_the_company_strip_asks_for_one_moment_per_episode():
+    sql, _ = search.build_query(q="", company_id="flexport.com", limit=4, per_document=True)
+    assert "DISTINCT ON (document_id)" in sql
