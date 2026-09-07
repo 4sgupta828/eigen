@@ -12,7 +12,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from . import favorites
+from . import favorites, people
 from .ingest import bind_guests, ingest_voices, mark_boilerplate, refresh_guests
 from .search import VOICE_SOURCE_KEYS, build_query, dedupe, moment
 from .summarize import MAX_INPUT_CHARS, cached, store, summarize
@@ -82,9 +82,13 @@ def build_router(pool_of, *, manifest=None, pg_source_of=None, tenant_id: str = 
                                   speaker=body.speaker, limit=want * 4)
         rows = await _rows(sql, params)
         moments = dedupe([moment(r) for r in rows], limit=want)
+        # who is speaking, and where to find them — resolved once for the whole page
+        pool = await pool_of()
+        async with pool.acquire() as conn:
+            resolved = await people.links_for(conn, [m.get("speaker") or "" for m in moments])
+        people.decorate(moments, resolved)
         uid = await _user(x_eigen_token)
         if uid:
-            pool = await pool_of()
             async with pool.acquire() as conn:
                 kept = set(await favorites.ids(conn, uid))
             for m in moments:

@@ -238,7 +238,8 @@
   .vo-card{--vo-accent:var(--gold);border:1px solid var(--hair);border-left:3px solid var(--vo-accent);
     border-radius:14px;background:var(--panel2);overflow:hidden;}
   .vo-card.essay{--vo-accent:var(--gold);background:color-mix(in srgb, var(--gold) 3.5%, var(--panel2));}
-  .vo-card.chapter{--vo-accent:#5b8def;background:color-mix(in srgb, #5b8def 4%, var(--panel2));}
+  .vo-card.podcast{--vo-accent:#5b8def;background:color-mix(in srgb, #5b8def 4%, var(--panel2));}
+  .vo-card.video{--vo-accent:#e0575b;background:color-mix(in srgb, #e0575b 4%, var(--panel2));}
   .vo-top{display:flex;gap:.85rem;padding:.85rem .95rem;align-items:flex-start;}
   /* the artwork doubles as the play control: a thumbnail with a play glyph reads as "this is watchable" */
   .vo-art{position:relative;flex:0 0 108px;width:108px;height:72px;border-radius:9px;overflow:hidden;
@@ -256,7 +257,6 @@
   .vo-kind{color:var(--vo-accent);border:1px solid currentColor;border-radius:999px;padding:.1rem .48rem;font-size:.56rem;}
   .vo-dot{opacity:.45;}
   .vo-title{margin:.42rem 0 .3rem;font-size:1.01rem;line-height:1.38;font-weight:650;letter-spacing:-.005em;}
-  .vo-card.essay .vo-title{font-weight:600;font-style:italic;}
   .vo-sub{font-size:.76rem;line-height:1.45;color:var(--dim);}
   .vo-who{color:var(--ink);font-weight:600;}
   .vo-stamp{font-family:var(--mono);font-size:.66rem;color:var(--vo-accent);}
@@ -266,8 +266,16 @@
     background:none;cursor:pointer;display:inline-flex;align-items:center;gap:.3rem;}
   .vo-btn:hover{color:var(--ink);border-color:var(--vo-accent);}
   .vo-btn.primary{color:var(--vo-accent);border-color:var(--vo-accent);}
-  .vo-star{margin-left:auto;font-size:.85rem;}
-  .vo-star[aria-pressed="true"]{color:var(--gold);border-color:var(--gold);}
+  /* Keeping is a real action, so it gets a real control: a gold outline you can see, a label, and a
+     filled state that reads at a glance. A faint grey star nobody notices is a feature nobody uses. */
+  .vo-star{margin-left:auto;font-size:.8rem;color:var(--gold);border-color:color-mix(in srgb, var(--gold) 55%, transparent);}
+  .vo-star:hover{background:color-mix(in srgb, var(--gold) 12%, transparent);border-color:var(--gold);}
+  .vo-star[aria-pressed="true"]{background:var(--gold);color:var(--on-accent);border-color:var(--gold);font-weight:600;}
+  .vo-person{display:inline-flex;gap:.3rem;align-items:center;}
+  .vo-plink{font-family:var(--mono);font-size:.6rem;text-decoration:none;color:var(--dim);
+    border:1px solid var(--hair);border-radius:4px;padding:0 .28rem;line-height:1.5;}
+  .vo-plink:hover{color:var(--ink);border-color:var(--vo-accent);}
+  .vo-plink.guess{opacity:.7;font-style:normal;}
   .vo-reg{font-family:var(--mono);font-size:.61rem;color:var(--dim);font-style:italic;padding:0 .95rem .7rem;}
   .vo-player{padding:0 .95rem .85rem;}
   .vo-player iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:10px;display:block;}
@@ -1742,8 +1750,9 @@
 <section id="voicesbody" aria-label="Voices — first-person startup content">
   <div class="vo-filters" id="vo-filters">
     <button type="button" class="vo-chip" data-kind="" aria-pressed="true">Everything</button>
-    <button type="button" class="vo-chip" data-kind="essay" aria-pressed="false">Essays</button>
-    <button type="button" class="vo-chip" data-kind="chapter" aria-pressed="false">Podcast &amp; video</button>
+    <button type="button" class="vo-chip" data-kind="podcast" aria-pressed="false">🎧 Podcasts</button>
+    <button type="button" class="vo-chip" data-kind="video" aria-pressed="false">▶ Videos</button>
+    <button type="button" class="vo-chip" data-kind="essay" aria-pressed="false">✎ Essays</button>
     <button type="button" class="vo-chip" id="vo-saved" aria-pressed="false" style="margin-left:auto">★ Kept</button>
   </div>
   <p class="vo-note" id="vo-note"></p>
@@ -7034,36 +7043,47 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
   }
 
   function cardHtml(m, i){
-    const isChapter = m.kind === "chapter";
+    const isPointer = m.kind === "podcast" || m.kind === "video";
     const playable = m.media && (m.media.kind === "youtube" || m.media.kind === "audio");
-    // Artwork carries the play affordance. With no picture, a monogram of the show keeps the row
-    // aligned — a card missing its image next to cards with images reads as broken, not plain.
+    // The artwork IS the play control — one affordance, not two. A separate "Play here" button
+    // beside a play glyph on the thumbnail asked the same question twice.
     const mono = esc((m.show || m.speaker || "·").trim().slice(0, 2).toUpperCase());
     const art = m.image
       ? '<img src="' + esc(m.image) + '" alt="" loading="lazy" referrerpolicy="no-referrer">'
       : '<span class="vo-mono">' + mono + "</span>";
     const artEl = playable
-      ? '<button type="button" class="vo-art" data-play="' + i + '" title="Play from '
-        + (m.t_start ? stamp(m.t_start) : "the start") + '">' + art + '<span class="vo-play">▶</span></button>'
+      ? '<button type="button" class="vo-art" data-play="' + i + '" title="'
+        + (m.kind === "video" ? "Watch" : "Listen") + " from " + (m.t_start ? stamp(m.t_start) : "the start")
+        + '">' + art + '<span class="vo-play">▶</span></button>'
       : '<span class="vo-art">' + art + "</span>";
 
-    const kicker = ['<span class="vo-kind">' + (isChapter ? "moment" : "essay") + "</span>"];
+    const label = m.kind === "video" ? "video" : (m.kind === "podcast" ? "podcast" : "essay");
+    const kicker = ['<span class="vo-kind">' + label + "</span>"];
     if(m.show) kicker.push("<span>" + esc(m.show) + "</span>");
     if(m.published) kicker.push('<span class="vo-dot">·</span><span>' + esc(shortDate(m.published)) + "</span>");
-    if(isChapter && m.t_start) kicker.push('<span class="vo-dot">·</span><span class="vo-stamp">' + stamp(m.t_start) + "</span>");
+    if(isPointer && m.t_start) kicker.push('<span class="vo-dot">·</span><span class="vo-stamp">' + stamp(m.t_start) + "</span>");
 
-    // Who said it is the second line, in the reader's voice, not a chip: "Ryan Petersen, founder".
-    const who = m.speaker
-      ? '<span class="vo-who">' + esc(m.speaker) + "</span>" + (m.role && m.role !== "guest" ? ", " + esc(m.role) : "")
-      : "";
+    // A named person gets a way to reach them: the profile we hold, or a clearly-labelled search.
+    // We never print a guessed profile URL — pointing confidently at the wrong stranger is worse
+    // than admitting we are searching.
+    let who = "";
+    if(m.speaker){
+      const p = m.person || {};
+      const bits = [];
+      if(p.linkedin) bits.push('<a class="vo-plink" href="' + esc(p.linkedin) + '" target="_blank" rel="noopener noreferrer" title="LinkedIn profile">in</a>');
+      if(p.twitter)  bits.push('<a class="vo-plink" href="' + esc(p.twitter) + '" target="_blank" rel="noopener noreferrer" title="X profile">𝕏</a>');
+      if(!bits.length && p.search) bits.push('<a class="vo-plink guess" href="' + esc(p.search) + '" target="_blank" rel="noopener noreferrer" title="We do not hold a profile for this person — this searches for one">find ⌕</a>');
+      who = '<span class="vo-person"><span class="vo-who">' + esc(m.speaker) + "</span>" + bits.join("") + "</span>"
+            + (m.role && m.role !== "guest" ? ", " + esc(m.role) : "");
+    }
     const sub = [who, m.title && m.title !== m.text ? esc(m.title) : ""].filter(Boolean).join(" &middot; ");
 
     const open = m.url
       ? '<a class="vo-btn primary" href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">'
-        + (isChapter ? "Open at " + stamp(m.t_start) : "Read the original") + " ↗</a>"
-      : '<span class="vo-nolink">' + (isChapter ? "No link in this feed" : "No link published") + "</span>";
+        + (isPointer ? "Open at " + stamp(m.t_start) : "Read the original") + " ↗</a>"
+      : '<span class="vo-nolink">' + (isPointer ? "No link in this feed" : "No link published") + "</span>";
 
-    return '<article class="vo-card ' + (isChapter ? "chapter" : "essay") + '" data-i="' + i + '">'
+    return '<article class="vo-card ' + esc(m.kind) + '" data-i="' + i + '">'
       + '<div class="vo-top">' + artEl
       +   '<div class="vo-main">'
       +     '<div class="vo-kicker">' + kicker.join("") + "</div>"
@@ -7073,11 +7093,11 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       + "</div>"
       + '<div class="vo-player" id="vo-play-' + i + '" hidden></div>'
       + '<div class="vo-foot">'
-      +   (playable ? '<button type="button" class="vo-btn" data-play="' + i + '">▶ Play here</button>' : "")
       +   '<button type="button" class="vo-btn" data-open="' + i + '" aria-expanded="false">☰ What it says</button>'
       +   open
       +   '<button type="button" class="vo-btn vo-star" data-fav="' + i + '" aria-pressed="'
-      +     (m.saved ? "true" : "false") + '" title="Keep this">' + (m.saved ? "★" : "☆") + "</button>"
+      +     (m.saved ? "true" : "false") + '" title="Keep this in your list">'
+      +     (m.saved ? "★ Kept" : "☆ Keep") + "</button>"
       + "</div>"
       + '<div class="vo-reg">' + esc(m.register) + "</div>"
       + '<div class="vo-body" id="vo-body-' + i + '" hidden></div>'
@@ -7123,7 +7143,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
       if(r.status === 401){ note().textContent = "Sign in to keep moments — they follow your account, not this browser."; return; }
       if(!r.ok) throw new Error("could not save (" + r.status + ")");
       btn.setAttribute("aria-pressed", on ? "false" : "true");
-      btn.textContent = on ? "☆" : "★";
+      btn.textContent = on ? "☆ Keep" : "★ Kept";
       m.saved = !on;
       if(STATE.view === "saved" && on){ btn.closest(".vo-card").remove(); }
     }catch(e){ note().textContent = "Could not update your kept list: " + (e && e.message ? e.message : e); }
@@ -7187,7 +7207,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
     }
     const c = data.counts || {};
     const parts = [ms.length + (ms.length === 1 ? " moment" : " moments")];
-    if(c.pointers) parts.push(c.pointers + " podcast " + (c.pointers === 1 ? "marker" : "markers") + " (where to listen, not a quote)");
+    if(c.pointers) parts.push(c.pointers + (c.pointers === 1 ? " marker" : " markers") + " into recordings (where to listen, not a quote)");
     if(c.quotable) parts.push(c.quotable + " quotable " + (c.quotable === 1 ? "passage" : "passages"));
     if(data.ranking === "keyword") parts.push("ranked by words only");
     note().textContent = parts.join(" \u00b7 ");
@@ -7282,7 +7302,7 @@ window.SU = { search: runCompile, enter, onAuth, runContract, reset };
         '<div class="vo-strip"><span class="vo-slabel">From the founders</span>'
         + ms.map(m => '<a href="' + esc(m.url) + '" target="_blank" rel="noopener noreferrer">'
             + esc(m.text) + " &middot; " + esc(m.show)
-            + (m.kind === "chapter" ? " (listen from " + stamp(m.t_start) + ")" : "") + "</a>").join("")
+            + (m.t_start ? " (from " + stamp(m.t_start) + ")" : "") + "</a>").join("")
         + "</div>");
     }catch(e){ /* a missing strip is never worth breaking a card over */ }
   }

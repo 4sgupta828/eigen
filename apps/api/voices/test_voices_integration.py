@@ -93,7 +93,7 @@ def test_keyword_search_finds_the_moment_and_labels_the_pointer():
         ms = [moment({**r, "facets": json.loads(r["facets"]) if isinstance(r["facets"], str)
                       else r["facets"]}) for r in rows]
         hit = next(m for m in ms if "Series A" in m["text"])
-        assert hit["kind"] == "chapter" and hit["quotable"] is False and hit["t_start"] == 780
+        assert hit["kind"] == "podcast" and hit["quotable"] is False and hit["t_start"] == 780
         assert hit["show"] == "20VC" and hit["speaker"] == "Ryan Petersen"
         await pool.close()
     _run(go())

@@ -41,6 +41,11 @@ def terms(q: str) -> list[str]:
 _CHAPTER_LINE = re.compile(r"^\[(\d{2}:\d{2}:\d{2})\]\s*(.+?)(?:\s+—\s+(https?://\S+))?$")
 
 
+def is_pointer(kind: str) -> bool:
+    """Podcast and video moments are chapter pointers: navigation, never speech."""
+    return kind in ("podcast", "video")
+
+
 def is_quotable(source_kind: str) -> bool:
     """False for a chapter pointer. A producer's chapter title is not speech, so quoting it would
     manufacture a statement nobody made. Everything else may be quoted with attribution."""
@@ -48,9 +53,13 @@ def is_quotable(source_kind: str) -> bool:
 
 
 def kind_of(source_kind: str, source_key: str) -> str:
-    sk = (source_kind or "").lower()
-    if sk == "chapter_pointer" or source_key in ("show_notes", "youtube_chapters"):
-        return "chapter"
+    """A podcast and a video are not the same object to a reader: one is listened to on the move,
+    the other watched. They share the chapter MECHANICS and differ in how you consume them, so the
+    card kind separates them even though the tier and the gates are identical."""
+    if source_key == "youtube_chapters":
+        return "video"
+    if source_key == "show_notes" or (source_kind or "").lower() == "chapter_pointer":
+        return "podcast"
     if source_key == "podcast":
         return "transcript"
     return "essay"
@@ -72,7 +81,7 @@ def moment(row: dict) -> dict:
     kind = kind_of(source_kind, str(row.get("source_key") or ""))
 
     t_start, url, body = 0, str(facets.get("episode_url") or facets.get("url") or ""), text
-    if kind == "chapter":
+    if is_pointer(kind):
         m = _CHAPTER_LINE.match(text)
         if m:
             t_start = seconds_of(m.group(1))
@@ -82,16 +91,16 @@ def moment(row: dict) -> dict:
             # the line's own link when it has one; otherwise point the episode's address at this
             # moment, so a show that ships only an audio enclosure still opens at the right second
             url = m.group(3) or deep_link(url, t_start)
-    if kind != "chapter":
+    if not is_pointer(kind):
         # the passage that matched, when the query produced one; else the block's opening
         body = (row.get("snippet") or body or "").strip() or body
     speaker = str(facets.get("guest") or facets.get("author") or "")
     # How this moment can be PLAYED, if at all. A YouTube video embeds and starts at the second; an
     # audio enclosure plays inline from the same offset; everything else is a link out.
     vid, audio = str(facets.get("video_id") or ""), str(facets.get("audio_url") or "")
-    if kind == "chapter" and vid:
+    if is_pointer(kind) and vid:
         media = {"kind": "youtube", "id": vid, "t": t_start}
-    elif kind == "chapter" and audio:
+    elif is_pointer(kind) and audio:
         media = {"kind": "audio", "url": audio, "t": t_start}
     else:
         media = {}
@@ -103,7 +112,7 @@ def moment(row: dict) -> dict:
         "title": str(row.get("document_title") or ""),
         "show": str(facets.get("publication") or ""),
         "speaker": speaker,
-        "role": str(facets.get("voice_role") or ("guest" if kind == "chapter" else "")),
+        "role": str(facets.get("voice_role") or ("guest" if is_pointer(kind) else "")),
         "published": str(facets.get("published") or facets.get("year") or ""),
         "url": url,
         "t_start": t_start,
@@ -111,8 +120,9 @@ def moment(row: dict) -> dict:
         "image": str(facets.get("image") or ""),
         "media": media,
         # The register the UI must print. A pointer is never presented as something anyone said.
-        "register": ("Chapter marker written by the publisher — listen from this point"
-                     if kind == "chapter" else "First-person account, attributed to its author"),
+        "register": (("Chapter marker written by the publisher — "
+                      + ("watch from this point" if kind == "video" else "listen from this point"))
+                     if is_pointer(kind) else "First-person account, attributed to its author"),
     }
 
 
@@ -130,7 +140,8 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
     n = 1
 
     if kinds:
-        by_kind = {"chapter": ["show_notes", "youtube_chapters"],
+        by_kind = {"podcast": ["show_notes"], "video": ["youtube_chapters"],
+                   "chapter": ["show_notes", "youtube_chapters"],      # kept: "both kinds of moment"
                    "essay": ["founder_essay", "expert_feed"], "transcript": ["podcast"]}
         keys: list[str] = []
         for k in kinds:

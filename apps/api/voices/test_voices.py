@@ -70,7 +70,7 @@ ESSAY_ROW = {
 
 def test_a_chapter_moment_carries_its_offset_and_is_not_quotable():
     m = search.moment(CHAPTER_ROW)
-    assert m["kind"] == "chapter" and m["t_start"] == 780
+    assert m["kind"] == "podcast" and m["t_start"] == 780
     assert m["url"].endswith("?t=780")
     assert m["quotable"] is False                       # THE TRAP: never rendered as a quotation
     assert "listen from this point" in m["register"]
@@ -209,3 +209,26 @@ def test_a_favourite_stores_only_what_a_card_renders():
     snap = favorites.snapshot_of(m)
     assert snap["id"] == "d::b" and snap["t_start"] == 780 and snap["media"]["kind"] == "audio"
     assert "score" not in snap and "facets" not in snap   # never freeze what we may re-derive
+
+
+def test_a_named_person_links_to_their_profile_or_to_an_honest_search():
+    from api.voices import people
+    ms = [{"speaker": "Ryan Petersen", "show": "20VC"}, {"speaker": "Someone Unknown", "show": "20VC"},
+          {"speaker": "", "show": "20VC"}]
+    people.decorate(ms, {"Ryan Petersen": {"linkedin": "https://linkedin.com/in/typeryan", "basis": "index"}})
+    assert ms[0]["person"]["linkedin"].endswith("typeryan") and ms[0]["person"]["basis"] == "index"
+    # nobody we hold → a LABELLED search, never a guessed profile URL
+    assert ms[1]["person"]["basis"] == "search" and "google.com/search" in ms[1]["person"]["search"]
+    assert "linkedin.com/in/" not in ms[1]["person"]["search"].split("q=")[0]
+    assert "person" not in ms[2]                     # no name, no link
+
+
+def test_podcasts_and_videos_are_separate_kinds():
+    assert search.kind_of("chapter_pointer", "youtube_chapters") == "video"
+    assert search.kind_of("chapter_pointer", "show_notes") == "podcast"
+    assert search.is_pointer("video") and search.is_pointer("podcast")
+    assert not search.is_pointer("essay")
+    sql, params = search.build_query(q="pivot", kinds=("video",))
+    assert params[0] == ["youtube_chapters"]
+    sql2, params2 = search.build_query(q="pivot", kinds=("podcast",))
+    assert params2[0] == ["show_notes"]
