@@ -9022,9 +9022,23 @@ async function openShare(token){
       const n = (d.dossier.sections || []).length;
       const sp = (d.dossier.spend || {}).projection || {};
       if(sp.projected_usd) cost().textContent = "last read \u00b7 $" + Number(sp.projected_usd).toFixed(3);
+      // A thin dossier is usually a company nobody has read yet, not a company with nothing to say.
+      // Say which, and put the next step in the sentence rather than leaving it to be inferred.
+      const claims = (d.dossier.sections || []).reduce((t, s) => t + (s.claims || []).length, 0);
+      const unread = String(d.dossier.basis || "").indexOf("read") < 0;
+      const thin = unread && claims < 12
+        ? ' \u00b7 <b>nobody has read their site yet</b> \u2014 <a href="#" id="dd-read">read their site</a>'
+        : "";
       note().innerHTML = (d.cached ? "A dossier we already built" : "Built from the public record we hold")
-        + " \u00b7 " + n + (n === 1 ? " section" : " sections")
+        + " \u00b7 " + n + (n === 1 ? " section" : " sections") + thin
         + (d.cached ? ' \u00b7 <a href="#" id="dd-again">read it again</a>' : "");
+      const rd = document.getElementById("dd-read");
+      if(rd) rd.addEventListener("click", e => { e.preventDefault();
+        STATE.depth = "read";
+        const bar = document.getElementById("dd-depth");
+        if(bar) bar.querySelectorAll(".dd-dbtn").forEach(x =>
+          x.setAttribute("aria-pressed", x.dataset.depth === "read" ? "true" : "false"));
+        dive({company_id: STATE.cid, depth: "read", refresh: true}); });
       render(d.dossier);
       if(d.dossier.id) history.replaceState(null, "", location.pathname + "#deepdive/" + encodeURIComponent(d.dossier.company_id || STATE.cid));
       const again = document.getElementById("dd-again");
