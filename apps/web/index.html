@@ -7101,9 +7101,14 @@ function provGlyph(f){ if(!f) return ""; const p=f.basis==="self_reported"?"site
 function cardHtml(row){
   const co=row.company||{}, by=factsOf(co), id=row.id;
   const stage=pick(by,"stage"), scale=pick(by,"financing_scale"), total=pick(by,"total_disclosed_funding"), last=pick(by,"last_round_amount"), lastM=pick(by,"last_round_months");
-  const arr=pick(by,"arr"), rr=pick(by,"revenue_range"), lead=(by.lead_investor||[]).map(f=>f.value), inv=(by.investor||[]).map(f=>f.value).filter(v=>!lead.includes(v));
-  const areas=(by.tech_area||[]).map(f=>f.value), progs=(by.program||[]).map(f=>f.value), hc=pick(by,"headcount"), hiring=pick(by,"hiring"), hf=(by.hiring_function||[]).map(f=>f.value);
-  const founders=co.founders||[], fpc=(by.founder_prior_company||[]).map(f=>f.value), country=(by.country||[]).map(f=>f.value), metro=(by.metro||[]).map(f=>f.value);
+  // Two sources agreeing is one fact, not two tags. YC's directory and the company's own site both
+  // say "enterprise SaaS" and both say the company is a YC company, which rendered every such value
+  // twice on the card. The agreement is worth keeping — it lives in the expanded card, on the value
+  // itself — but the face shows each value once.
+  const vals = list => [...new Set((list || []).map(f => f.value).filter(v => v != null && v !== ""))];
+  const arr=pick(by,"arr"), rr=pick(by,"revenue_range"), lead=vals(by.lead_investor), inv=vals(by.investor).filter(v=>!lead.includes(v));
+  const areas=vals(by.tech_area), progs=vals(by.program), hc=pick(by,"headcount"), hiring=pick(by,"hiring"), hf=vals(by.hiring_function);
+  const founders=co.founders||[], fpc=vals(by.founder_prior_company), country=vals(by.country), metro=vals(by.metro);
   const founded=pick(by,"founded"), status=pick(by,"status"), ev=pick(by,"evidence_strength");
   // Money is ONE statement, not three tags repeating a number. A company whose only funding record is
   // a single filing was showing "filing: $125.2M sold", "$125.2M disclosed" and "last $125.2M · 57
@@ -7125,8 +7130,16 @@ function cardHtml(row){
   }
   if(rr) money.push(`<span class="su-tag" title="${esc(rr.quote)}">${provGlyph(rr)}revenue ${esc(label("revenue_range",rr.value))} (filing)</span>`);
   if(arr) money.push(`<span class="su-tag self" title="${esc(arr.quote)}">${provGlyph(arr)}self-reported ARR ${esc(arr.display||usd(arr.number))}</span>`);
-  const who=[]; if(lead.length) who.push(`<span class="su-tag" title="lead investor (stated)">lead: ${esc(lead.join(", "))}</span>`);
-  if(inv.length) who.push(`<span class="su-tag">${esc(inv.slice(0,3).join(", "))}${inv.length>3?" +"+(inv.length-3):""}</span>`);
+  // Investor slugs are not names: "slow_ventures, gfc, soma_capital" is how we store them, not how
+  // anyone writes them. Each one is shown as a name and links to the firm when we hold its site.
+  const invSites = (STATE.labels || {}).investor_sites || {};
+  const invName = v => label("investor", v) || String(v).replace(/_/g, " ");
+  const invChip = (v, pre) => invSites[v]
+    ? `<a class="su-tag su-inv" href="${esc(invSites[v])}" target="_blank" rel="noopener noreferrer" title="${esc(invName(v))} — their site">${pre||""}${esc(invName(v))} ↗</a>`
+    : `<span class="su-tag su-inv">${pre||""}${esc(invName(v))}</span>`;
+  const who=[]; for(const v of lead) who.push(invChip(v, "lead: "));
+  for(const v of inv.slice(0,3)) who.push(invChip(v));
+  if(inv.length>3) who.push(`<span class="su-tag su-inv" title="${esc(inv.slice(3).map(invName).join(", "))}">+${inv.length-3} more</span>`);
   for(const p of progs) who.push(`<span class="su-tag">◈ ${esc(label("program",p))}${co.yc_batch&&p==="yc"?" "+esc(co.yc_batch):""}</span>`);
   const what=areas.map(a=>`<span class="su-tag">${esc(label("tech_area",a))}</span>`).join("") + (country.length||metro.length?`<span class="su-tag">${esc((metro[0]?label("metro",metro[0])+", ":"")+(country[0]?label("country",country[0]):""))}</span>`:"") + (founded?`<span class="su-tag">est. ${esc(founded.display)}</span>`:"") + (hc?`<span class="su-tag">${esc(hc.display)} people</span>`:"") + (status&&status.value!=="active"?`<span class="su-tag" style="color:var(--warn)">${esc(label("status",status.value))}</span>`:"");
   const sig=[]; if(hiring) sig.push(`<span class="su-tag sig" title="${esc(hiring.quote)}">⚙ ${esc(hiring.display)}${hf.length?" · "+esc(hf.slice(0,3).join(", ")):""}</span>`);
