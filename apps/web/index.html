@@ -338,6 +338,58 @@
     .vo-body{padding:0 .8rem .8rem;}
     .vo-chip{font-size:.66rem;padding:.36rem .6rem;}
   }
+  /* ===== DeepDive — one company, read end to end (body[data-mode="deepdive"]) =====
+     Two registers, two colours, and they never blend: FILED is what a filing states, STATED is what
+     the company claims. The Manifest of Absence is deliberately as prominent as the findings —
+     "zero granted patents" is a diligence answer, not an empty slot. */
+  #deepdivebody{display:none;}
+  body[data-mode="deepdive"] #deepdivebody{display:block;}
+  body[data-mode="deepdive"] #out, body[data-mode="deepdive"] #effort{display:none !important;}
+  .dd-note{font-family:var(--mono);font-size:.68rem;color:var(--dim);margin:.7rem 0 0;line-height:1.5;}
+  .dd-cands{display:grid;gap:.5rem;margin:1rem 0;}
+  .dd-cand{display:flex;gap:.7rem;align-items:baseline;width:100%;text-align:left;cursor:pointer;
+    padding:.7rem .85rem;border:1px solid var(--hair);border-radius:10px;background:var(--panel2);color:var(--ink);}
+  .dd-cand:hover{border-color:var(--gold);}
+  .dd-cand b{font-size:.95rem;}
+  .dd-cand span{font-family:var(--mono);font-size:.66rem;color:var(--dim);}
+  .dd-head{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;margin:1.1rem 0 .3rem;}
+  .dd-head h2{margin:0;font-size:1.35rem;letter-spacing:-.01em;}
+  .dd-head .dd-sub{font-family:var(--mono);font-size:.7rem;color:var(--dim);width:100%;margin:.15rem 0 0;}
+  .dd-secs{display:grid;gap:.9rem;margin:1.1rem 0 2.4rem;}
+  .dd-sec{border:1px solid var(--hair);border-radius:12px;background:var(--panel2);padding:.9rem 1rem;}
+  .dd-sec > h3{margin:0 0 .5rem;font-size:.78rem;font-family:var(--mono);letter-spacing:.06em;
+    text-transform:uppercase;color:var(--dim);}
+  .dd-sec .dd-secnote{font-family:var(--mono);font-size:.64rem;color:var(--dim);margin:-.3rem 0 .6rem;line-height:1.5;}
+  .dd-rows{display:grid;gap:.45rem;}
+  .dd-row{display:flex;gap:.55rem;align-items:baseline;flex-wrap:wrap;font-size:.86rem;line-height:1.55;}
+  .dd-k{font-family:var(--mono);font-size:.66rem;color:var(--dim);min-width:9.5rem;}
+  .dd-v{color:var(--ink);}
+  .dd-reg{font-family:var(--mono);font-size:.58rem;letter-spacing:.06em;text-transform:uppercase;
+    padding:.1rem .4rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);}
+  .dd-reg[data-r="filed"]{color:var(--ok,#2f7d5b);border-color:currentColor;}
+  .dd-reg[data-r="stated"]{color:var(--gold);border-color:currentColor;}
+  .dd-src{font-family:var(--mono);font-size:.62rem;color:var(--dim);text-decoration:underline;}
+  .dd-src:hover{color:var(--gold);}
+  .dd-quote{font-size:.78rem;color:var(--dim);border-left:2px solid var(--hair);padding-left:.6rem;margin:.15rem 0 0;}
+  .dd-people{display:grid;gap:.6rem;}
+  .dd-person b{font-size:.9rem;} .dd-person em{font-style:normal;font-family:var(--mono);font-size:.66rem;color:var(--dim);}
+  .dd-person p{margin:.2rem 0 0;font-size:.82rem;line-height:1.55;}
+  .dd-titles{display:flex;flex-wrap:wrap;gap:.35rem;margin:.45rem 0 0;}
+  .dd-title{font-family:var(--mono);font-size:.66rem;padding:.24rem .55rem;border-radius:999px;
+    border:1px solid var(--hair);color:var(--ink);}
+  .dd-absent{border:1px dashed var(--hair);border-radius:12px;padding:.9rem 1rem;margin:0 0 2.4rem;}
+  .dd-absent h3{margin:0 0 .2rem;font-size:.78rem;font-family:var(--mono);letter-spacing:.06em;
+    text-transform:uppercase;color:var(--dim);}
+  .dd-absent p{font-family:var(--mono);font-size:.64rem;color:var(--dim);margin:0 0 .6rem;line-height:1.5;}
+  .dd-att{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.4rem;}
+  .dd-attrow{display:flex;justify-content:space-between;gap:.5rem;font-family:var(--mono);font-size:.68rem;
+    padding:.35rem .5rem;border-radius:8px;background:var(--panel);}
+  .dd-attrow[data-found="0"]{color:var(--dim);}
+  .dd-attrow b{font-weight:600;}
+  @media (max-width:560px){
+    .dd-k{min-width:auto;} .dd-head h2{font-size:1.15rem;}
+    .dd-att{grid-template-columns:1fr;}
+  }
   /* ===== Startup Search — an inline MODE of the shell (body[data-mode="startups"]) ===== */
   body[data-mode="startups"] #startupsbody{display:block;}
   body[data-mode="startups"] #out, body[data-mode="startups"] #effort{display:none !important;}
@@ -1816,6 +1868,7 @@
       <button type="button" class="mbtn" id="guidedTab" role="tab" aria-selected="false" hidden title="Guided — shape the startup search with a few questions">◍ Guided</button>
       <button type="button" class="mbtn" id="startupsTab" role="tab" aria-selected="false" hidden title="Startup Search — cards over a grounded startup index">◆ Startups</button>
       <button type="button" class="mbtn" id="voicesTab" role="tab" aria-selected="false" hidden title="Voices — what founders and investors actually said">◇ Voices</button>
+      <button type="button" class="mbtn" id="deepdiveTab" role="tab" aria-selected="false" hidden title="DeepDive — one company, read end to end">⌖ DeepDive</button>
     </div>
   </div>
   <form id="ask">
@@ -1951,6 +2004,16 @@
   </div>
   <p class="vo-note" id="vo-note"></p>
   <div class="vo-cards" id="vo-cards"></div>
+</section>
+
+<section id="deepdivebody" aria-label="DeepDive — one company read end to end">
+  <div class="vo-filters">
+    <button type="button" class="vo-chip" id="dd-recent" title="Companies already dived">🕘 Recent dives</button>
+    <button type="button" class="vo-chip" id="dd-share" title="A permanent link to this dossier">🔗 Share</button>
+    <button type="button" class="vo-chip" id="dd-refresh" title="Read the company again and keep the old version">↻ Refresh</button>
+  </div>
+  <p class="dd-note" id="dd-note"></p>
+  <div id="dd-out"></div>
 </section>
 
 <section id="startupsbody" aria-label="Startup search">
@@ -2173,6 +2236,7 @@ let ASK_PANEL_ENABLED = false;  // AI expert panel (Alpha)
 let TRIAGE_ENABLED = false;     // guided-intake / triage mode (clarify → route)
 let STARTUPS_ENABLED = false;   // Startup Search — a separate page (/startups), shown as a tab when enabled
 let VOICES_ENABLED = false;     // Voices — first-person founder/investor content, an inline mode
+let DEEPDIVE_ENABLED = false;   // DeepDive — one company read end to end, an inline mode
 let ACCOUNTS_ENABLED = false;   // accounts + per-answer feedback (W-taxonomy)
 let DUEL_ENABLED = false;       // A/B duel: fresh questions run standard + reasoned engines, user votes
 let PULSE_ENABLED = false;      // Evidence Pulse: watches, inbox, answer-integrity banners
@@ -2249,6 +2313,7 @@ async function loadConfig(){
     TRIAGE_ENABLED = !!c.triage_enabled;
     STARTUPS_ENABLED = !!c.startup_search_enabled;
     VOICES_ENABLED = !!c.voices_enabled;
+    DEEPDIVE_ENABLED = !!c.deepdive_enabled;
     ACCOUNTS_ENABLED = !!c.accounts_enabled;
     if(ACCOUNTS_ENABLED && USER && !USER.token){ AUTH_MODE = "login"; }   // a pre-accounts local identity must sign in
     try{ updateAuthUI(); maybeShowAuthButtons(); }catch(e){}
@@ -2269,7 +2334,7 @@ async function loadConfig(){
     }
     PANEL_SPECIALISTS = c.panel_specialists || [];
     PANEL_EXAMPLES = c.panel_examples || [];
-    if(ASK_PANEL_ENABLED || TRIAGE_ENABLED || STARTUPS_ENABLED || VOICES_ENABLED){
+    if(ASK_PANEL_ENABLED || TRIAGE_ENABLED || STARTUPS_ENABLED || VOICES_ENABLED || DEEPDIVE_ENABLED){
       // One shell, up to three modes (Guided intake ⇄ Quick Q&A ⇄ Expert Panel), switched in the same
       // place under the heading. Only the enabled modes' buttons show; the shared box carries across them.
       $("#modeswitch").classList.add("on");
@@ -2279,6 +2344,7 @@ async function loadConfig(){
       const sbtn = $("#startupsTab"); if(sbtn){ sbtn.hidden = !STARTUPS_ENABLED; sbtn.dataset.mode = "startups"; }
       const gbtn = $("#guidedTab"); if(gbtn){ gbtn.hidden = !STARTUPS_ENABLED; gbtn.dataset.mode = "guided"; }
       const vbtn = $("#voicesTab"); if(vbtn){ vbtn.hidden = !VOICES_ENABLED; vbtn.dataset.mode = "voices"; }
+      const dbtn = $("#deepdiveTab"); if(dbtn){ dbtn.hidden = !DEEPDIVE_ENABLED; dbtn.dataset.mode = "deepdive"; }
       wireModeSwitch($("#modeswitch"));
     }
     VISION_ENABLED = !!c.vision_enabled;
@@ -4079,6 +4145,7 @@ $("#ask").addEventListener("submit", e=>{
   if(APP_MODE === "panel"){ submitPanelIntake(question); return; }   // panel mode → convene / follow-up
   if(APP_MODE === "startups"){ if(question && window.SU) SU.search(question); return; }   // startup search → compile + evaluate
   if(APP_MODE === "voices"){ if(window.VO) VO.search(question); return; }                 // voices → keyword search over first-person content
+  if(APP_MODE === "deepdive"){ if(window.DD) DD.search(question); return; }             // deepdive → resolve one company, then read it
   if(APP_MODE === "guided"){ if(window.SG) SG.send(question); return; }                      // guided → one intake turn
   if(CURRENT_ABORT) return;               // a question is in flight — Enter/submit is a no-op (use Stop)
   if(!question && ATTACHMENTS.length){    // attachment-only ask (e.g. a converted long paste IS the question)
@@ -4262,6 +4329,7 @@ function wireModeSwitch(el){
 function setMode(mode, opts){
   opts = opts || {};
   mode = (mode === "panel" || mode === "triage" || (mode === "voices" && VOICES_ENABLED)
+          || (mode === "deepdive" && DEEPDIVE_ENABLED)
           || ((mode === "startups" || mode === "guided") && STARTUPS_ENABLED)) ? mode : "qa";
   APP_MODE = mode;
   GUIDED_REFINED = false;   // any mode change clears the stale "skip refine" flag (routeTriage re-sets it)
@@ -4271,7 +4339,7 @@ function setMode(mode, opts){
   $("#modeswitch").querySelectorAll(".mbtn").forEach(b =>
     b.setAttribute("aria-selected", b.dataset.mode === mode ? "true" : "false"));
   ATTN_BOX = "#attns"; renderAttachments();   // one intake box → one attachment surface
-  const clearModeHash = () => { if(/^#(panel|triage|startups|guided|voices)/.test(location.hash) || location.hash.indexOf("#p/") === 0)
+  const clearModeHash = () => { if(/^#(panel|triage|startups|guided|voices|deepdive)/.test(location.hash) || location.hash.indexOf("#p/") === 0)
     history.replaceState(null, "", location.pathname + location.search); };
   if(mode === "panel"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -4295,6 +4363,13 @@ function setMode(mode, opts){
     q.setAttribute("placeholder", "e.g. seed to series A AI-infra startups selling to banks, ≥ $5M raised, founders ex-Stripe, not YC, hiring sales");
     if(location.hash.indexOf("#startups") !== 0) history.pushState(null, "", "#startups");
     if(window.SU) SU.enter(opts.params);
+    q.focus();
+  } else if(mode === "deepdive"){
+    document.body.classList.remove("chatting"); out.style.paddingBottom = "";
+    $("#heading").textContent = "Which company should we read end to end?";
+    q.setAttribute("placeholder", "a company name or its domain \u2014 e.g. Anthropic, or anthropic.com");
+    if(location.hash.indexOf("#deepdive") !== 0) history.pushState(null, "", "#deepdive");
+    if(window.DD) DD.enter(!!opts.fresh);
     q.focus();
   } else if(mode === "voices"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -6663,6 +6738,15 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel �
   else if(location.hash === "#triage" && TRIAGE_ENABLED){ setMode("triage"); }
   else if(location.hash.indexOf("#startups") === 0 && STARTUPS_ENABLED){ setMode("startups", {params: new URLSearchParams(location.hash.split("?")[1] || "")}); }
   else if(location.hash === "#guided" && STARTUPS_ENABLED){ setMode("guided"); }
+  else if(location.hash.indexOf("#dd/") === 0 && DEEPDIVE_ENABLED){
+    // a shared dossier: the reader is never gated, and the page says the day it was taken
+    const im = $("#idmodal"); if(im) im.hidden = true;
+    setMode("deepdive"); if(window.DD) DD.renderShared(decodeURIComponent(location.hash.slice(4)));
+  }
+  else if(location.hash.indexOf("#deepdive/") === 0 && DEEPDIVE_ENABLED){
+    setMode("deepdive"); if(window.DD) DD.dive({company_id: decodeURIComponent(location.hash.slice(10))});
+  }
+  else if(location.hash === "#deepdive" && DEEPDIVE_ENABLED){ setMode("deepdive"); }
   else if(location.hash === "#settings"){ openSettings(); }
   else if(location.hash === "#graph"){ openGraphConsole(); }
   else if(location.hash === "#ingest"){ openIngest(); }
@@ -8578,6 +8662,236 @@ async function openShare(token){
   }
 
   window.VO = { search, enter, forCompany, showSaved, renderFrozen };
+})();
+
+// ---------------------------------------------------------------------------------------------
+// DeepDive — one company, read end to end (docs/specs/deepdive.md).
+//
+// The whole point of this mode is that a dossier is an EVIDENCE LEDGER, not a form. So: a section
+// with no claims does not render at all, `filed` and `stated` never share a colour, and the sources
+// we checked and came up empty are shown as prominently as the ones that paid off — in diligence
+// "zero granted patents against a proprietary-technology claim" is the finding.
+// ---------------------------------------------------------------------------------------------
+(function(){
+  const STATE = { dossier: null, cid: "", busy: false };
+  const out = () => document.getElementById("dd-out");
+  const note = () => document.getElementById("dd-note");
+
+  function ddAuth(){ return (typeof authHeaders === "function") ? authHeaders() : {}; }
+
+  function reg(r){
+    if(!r) return "";
+    const why = r === "filed" ? "a number a filing states" : "a claim the company made \u2014 not a filed number";
+    return '<span class="dd-reg" data-r="' + esc(r) + '" title="' + esc(why) + '">' + esc(r) + "</span>";
+  }
+
+  function src(url, label){
+    if(!url) return "";
+    return '<a class="dd-src" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(label || "source") + "</a>";
+  }
+
+  function factRow(c){
+    const v = c.display || c.label || c.value || "";
+    return '<div class="dd-row"><span class="dd-k">' + esc(String(c.key || "").replace(/_/g, " ")) + "</span>"
+      + '<span class="dd-v">' + esc(v) + "</span>"
+      + (c.provenance ? '<span class="dd-reg">' + esc(c.provenance) + "</span>" : "")
+      + src(c.source_url, "source")
+      + (c.quote ? '<div class="dd-quote">\u201c' + esc(String(c.quote).slice(0, 240)) + "\u201d</div>" : "")
+      + "</div>";
+  }
+
+  function personRow(p){
+    const links = p.links || {};
+    const l = Object.keys(links).map(k => src(links[k], k)).join(" ");
+    return '<div class="dd-person"><b>' + esc(p.name || "") + "</b> "
+      + (p.title ? "<em>" + esc(p.title) + "</em> " : "") + l + " " + src(p.source_url, "source")
+      + (p.bio ? "<p>" + esc(p.bio) + "</p>" : "")
+      + ((p.prior || []).length ? '<p class="dd-quote">previously: ' + esc(p.prior.join(", ")) + "</p>" : "")
+      + "</div>";
+  }
+
+  function hiringRow(h){
+    const n = h.open_roles;
+    const board = h.board_url;
+    const head = (n ? "<b>" + n + (n === 1 ? " open role" : " open roles") + "</b>" : "<b>hiring</b>")
+      + (board ? " " + src(board, "the board") : "")
+      + (h.functions && h.functions.length ? ' <span class="dd-k">' + esc(h.functions.join(" \u00b7 ")) + "</span>" : "");
+    const titles = (h.titles || []).map(t => '<span class="dd-title">' + esc(t) + "</span>").join("");
+    return '<div class="dd-row">' + head + "</div>"
+      + (titles ? '<div class="dd-titles">' + titles + "</div>" : "");
+  }
+
+  function statedRow(c){
+    return '<div class="dd-row">' + reg(c.register)
+      + '<span class="dd-v">' + esc(c.claim || "") + "</span> " + src(c.source_url, "where")
+      + (c.attribution ? ' <span class="dd-k">' + esc(c.attribution) + "</span>" : "")
+      + (c.quote ? '<div class="dd-quote">\u201c' + esc(String(c.quote).slice(0, 200)) + "\u201d</div>" : "")
+      + "</div>";
+  }
+
+  function filedRow(c){
+    return '<div class="dd-row">' + reg("filed")
+      + '<span class="dd-v">' + esc(c.claim || "") + "</span>"
+      + (c.filing_date ? ' <span class="dd-k">' + esc(c.filing_date) + "</span>" : "")
+      + " " + src(c.source_url, "EDGAR") + "</div>";
+  }
+
+  function finRow(c){
+    const amt = (typeof usd === "function" && c.amount_usd) ? usd(c.amount_usd) : (c.amount_usd || "");
+    return '<div class="dd-row">' + reg(c.register)
+      + '<span class="dd-v"><b>' + esc(c.round || "round") + "</b> " + esc(String(amt)) + "</span>"
+      + (c.date ? ' <span class="dd-k">' + esc(c.date) + "</span>" : "")
+      + ((c.investors || []).length ? ' <span class="dd-k">' + esc(c.investors.join(", ")) + "</span>" : "")
+      + " " + src(c.source_url, "source") + "</div>";
+  }
+
+  function pageRow(c){
+    return '<div class="dd-row">' + reg(c.register) + " " + src(c.source_url, c.source_url || "page")
+      + '<div class="dd-quote">' + esc(String(c.excerpt || "").slice(0, 320)) + "\u2026</div></div>";
+  }
+
+  const ROW = { fact: factRow, people: personRow, hiring: hiringRow, stated: statedRow,
+                filed: filedRow, financing: finRow, pages: pageRow };
+
+  function sectionHtml(sec){
+    const row = ROW[sec.kind] || factRow;
+    const body = (sec.claims || []).map(c => { try { return row(c); } catch(e){ return ""; } }).join("");
+    if(!body) return "";                       // a section that renders nothing does not render at all
+    return '<section class="dd-sec"><h3>' + esc(sec.title || "") + "</h3>"
+      + (sec.note ? '<p class="dd-secnote">' + esc(sec.note) + "</p>" : "")
+      + '<div class="dd-rows">' + body + "</div></section>";
+  }
+
+  function absenceHtml(att){
+    if(!(att || []).length) return "";
+    const one = u => (u || "").replace(/s$/, "");     // "1 filings" reads like a bug, not a count
+    const rows = att.map(a => '<div class="dd-attrow" data-found="' + (a.found ? 1 : 0) + '">'
+      + "<span>" + esc(a.source) + "</span><b>"
+      + esc(a.found ? (a.found + " " + (a.found === 1 ? one(a.unit) : (a.unit || ""))) : a.result)
+      + "</b></div>").join("");
+    return '<div class="dd-absent"><h3>Where we looked</h3>'
+      + "<p>What a source did NOT have is part of the answer: a company claiming proprietary technology "
+      + "with zero granted patents is a finding, not a gap.</p>"
+      + '<div class="dd-att">' + rows + "</div></div>";
+  }
+
+  function render(d){
+    const c = d.company || {};
+    const when = (d.updated_at || d.as_of || "").slice(0, 10);
+    const bits = [c.hq, c.yc_batch ? "YC " + c.yc_batch : "", c.cik ? "CIK " + c.cik : "",
+                  d.basis === "held" ? "assembled from what we already hold" : d.basis].filter(Boolean);
+    out().innerHTML = '<div class="dd-head"><h2>' + esc(c.name || c.id || "") + "</h2>"
+      + (c.website ? src(c.website, c.website.replace(/^https?:\/\//, "")) : "")
+      + '<p class="dd-sub">' + esc(c.one_liner || "") + (bits.length ? " \u00b7 " + esc(bits.join(" \u00b7 ")) : "")
+      + (when ? " \u00b7 as of " + esc(when) : "")
+      + (d.revision ? " \u00b7 revision " + d.revision : "") + "</p></div>"
+      + '<div class="dd-secs">' + (d.sections || []).map(sectionHtml).join("") + "</div>"
+      + absenceHtml(d.attempted);
+    STATE.dossier = d; STATE.cid = c.id || "";
+  }
+
+  function renderCandidates(res){
+    const cs = res.candidates || [];
+    note().textContent = res.reason || "Which company do you mean?";
+    out().innerHTML = '<div class="dd-cands">' + cs.map((c, i) =>
+      '<button type="button" class="dd-cand" data-pick="' + i + '"><b>' + esc(c.name || c.id) + "</b>"
+      + "<span>" + esc([c.id, c.hq, c.one_liner].filter(Boolean).join(" \u00b7 ").slice(0, 120)) + "</span></button>").join("")
+      + "</div>";
+    out().querySelectorAll("[data-pick]").forEach(b => b.addEventListener("click", () =>
+      dive({company_id: cs[Number(b.dataset.pick)].id})));
+  }
+
+  async function dive(body){
+    if(STATE.busy) return;
+    STATE.busy = true;
+    note().textContent = "Reading everything we hold on this company\u2026";
+    out().innerHTML = "";
+    try{
+      const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
+                                          body: JSON.stringify(body)});
+      const d = await r.json();
+      if(d.status === "ambiguous" || d.status === "unknown"){ renderCandidates(d); return; }
+      if(!d.dossier){ note().textContent = d.detail || "Nothing came back for that company."; return; }
+      const n = (d.dossier.sections || []).length;
+      note().innerHTML = (d.cached ? "A dossier we already built" : "Built from the public record we hold")
+        + " \u00b7 " + n + (n === 1 ? " section" : " sections")
+        + (d.cached ? ' \u00b7 <a href="#" id="dd-again">read it again</a>' : "");
+      render(d.dossier);
+      if(d.dossier.id) history.replaceState(null, "", location.pathname + "#deepdive/" + encodeURIComponent(d.dossier.company_id || STATE.cid));
+      const again = document.getElementById("dd-again");
+      if(again) again.addEventListener("click", e => { e.preventDefault(); dive({company_id: STATE.cid, refresh: true}); });
+    }catch(e){
+      note().textContent = "That dive failed to load. " + (e && e.message ? e.message : "");
+    }finally{ STATE.busy = false; }
+  }
+
+  async function search(q){
+    q = (q || "").trim();
+    if(!q) return;
+    await dive({q: q});
+  }
+
+  async function recent(){
+    note().textContent = "Loading recent dives\u2026";
+    try{
+      const r = await fetch("/deepdives?limit=40", {headers: ddAuth()});
+      const d = await r.json();
+      const rows = d.dossiers || [];
+      if(!rows.length){ note().textContent = "No company has been dived yet. Type a name above."; out().innerHTML = ""; return; }
+      note().textContent = rows.length + (rows.length === 1 ? " company dived" : " companies dived") + " \u00b7 click one to open it";
+      out().innerHTML = '<div class="dd-cands">' + rows.map((c, i) =>
+        '<button type="button" class="dd-cand" data-open="' + i + '"><b>' + esc(c.title || c.company_id) + "</b>"
+        + "<span>" + esc(c.sections + " sections \u00b7 " + (c.updated_at || "").slice(0, 10)) + "</span></button>").join("") + "</div>";
+      out().querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () =>
+        dive({company_id: rows[Number(b.dataset.open)].company_id})));
+    }catch(e){ note().textContent = "Could not load recent dives."; }
+  }
+
+  async function share(){
+    if(!STATE.dossier || !STATE.dossier.share_token){
+      // A dossier read back from storage does not carry the owner's token; re-fetch to get it.
+      if(!STATE.cid){ note().textContent = "Dive into a company first, then share it."; return; }
+      await dive({company_id: STATE.cid});
+    }
+    const tok = STATE.dossier && STATE.dossier.share_token;
+    if(!tok){ note().textContent = "This dossier has no share link yet."; return; }
+    const url = location.origin + "/#dd/" + tok;
+    try{ await navigator.clipboard.writeText(url); note().textContent = "Link copied \u00b7 " + url; }
+    catch(e){ note().innerHTML = 'Permanent link: <a href="' + esc(url) + '">' + esc(url) + "</a>"; }
+  }
+
+  async function renderShared(token){
+    note().textContent = "Opening a shared dossier\u2026";
+    try{
+      const r = await fetch("/deepdive/share/" + encodeURIComponent(token));
+      const d = await r.json();
+      if(!d.dossier){ note().textContent = "That link does not resolve to a dossier."; return; }
+      render(d.dossier);
+      note().innerHTML = "<b>A shared dossier</b> \u00b7 as of " + esc((d.dossier.updated_at || "").slice(0, 10));
+    }catch(e){ note().textContent = "That shared dossier could not be loaded."; }
+  }
+
+  let wired = false;
+  function wire(){
+    if(wired) return; wired = true;
+    const r = document.getElementById("dd-recent"), sh = document.getElementById("dd-share"),
+          rf = document.getElementById("dd-refresh");
+    if(r) r.addEventListener("click", recent);
+    if(sh) sh.addEventListener("click", share);
+    if(rf) rf.addEventListener("click", () => { if(STATE.cid) dive({company_id: STATE.cid, refresh: true}); });
+  }
+
+  function enter(fresh){
+    wire();
+    if(fresh){ STATE.dossier = null; STATE.cid = ""; out().innerHTML = ""; }
+    if(!out().innerHTML){
+      note().textContent = "Type a company name or its domain. A name we cannot pin to one company "
+        + "comes back as a choice rather than a guess.";
+      recent();
+    }
+  }
+
+  window.DD = { search, enter, dive, renderShared };
 })();
 </script>
 </body>

@@ -26,6 +26,7 @@ from eigen_kernel.retrieval.web import WebRetrievalSource
 from eigen_kernel.runtime.build import build_embedder, build_llm, build_web, load_active_vertical
 from eigen_kernel.runtime.ingest import ingest_connector_to_postgres
 from api.voices.routes import voices_enabled as _voices_enabled
+from api.deepdive.routes import deepdive_enabled as _deepdive_on
 from eigen_kernel.runtime.research import ResearchService
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -1951,6 +1952,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "video_enabled": video_enabled(),
             "startup_search_enabled": startup_search_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "voices_enabled": _voices_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
+            "deepdive_enabled": _deepdive_on() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "structured_answers": structured_answers(),
             "clinical_synthesis": clinical_synthesis() and structured_answers(),
             "evidence_select": bool(getattr(svc, "evidence_select", False)),
