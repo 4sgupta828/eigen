@@ -21,9 +21,19 @@ from __future__ import annotations
 import os
 import re
 
+from .assemble import reads_like_a_sentence
 from .gates import metric_defined, subject_bound
 
+# Copy that appears on every site and says nothing about any company.
+_BOILER = ("for more information", "please visit", "learn more", "contact us", "sign up",
+           "read more", "all rights reserved", "cookie", "subscribe", "follow us", "privacy policy")
+# A sentence that opens inside quotation marks is somebody being quoted. On a customers page that is
+# the customer; in an article it is whoever the journalist called. Either way it is not the company
+# speaking, and attributing it to the company is the misattribution this whole module guards against.
+_OPENS_QUOTED = ("\u201c", '"', "\u2018", "'")
+
 _SENT = re.compile(r"(?<=[.!?])\s+")
+_FIRST_PERSON = re.compile(r"\b(we|our|us)\b", re.I)
 
 # Roughly what one bounded read costs across the keyed engines. Deliberately an over-estimate: the
 # projection a user is shown should not turn out to have been optimistic.
@@ -60,7 +70,7 @@ _FACET_TITLES = {
 _EXTERNAL = ("funding_investors_valuation", "competitors_traction")
 
 
-def _claims_from(hits, subject_terms: list[str], own_domain: str) -> dict[str, list[dict]]:
+def _claims_from(hits, subject_terms: list[str], own_domain: str = "") -> dict[str, list[dict]]:
     by: dict[str, list[dict]] = {}
     seen: set[str] = set()
     for h in hits:
@@ -72,9 +82,20 @@ def _claims_from(hits, subject_terms: list[str], own_domain: str) -> dict[str, l
             s = " ".join(s.split())
             if not (40 <= len(s) <= 320):
                 continue
-            # Off our own domain nothing establishes the subject except the sentence itself.
-            ok, _why = subject_bound(s, subject_terms, url=url,
-                                     own_domain="" if external else own_domain)
+            if not reads_like_a_sentence(s):
+                continue                                  # a fragment is not a claim
+            low = s.lower()
+            if any(b in low for b in _BOILER):
+                continue
+            if s.startswith(_OPENS_QUOTED):
+                continue                                  # somebody else is speaking
+            if external and _FIRST_PERSON.search(s):
+                continue                                  # "we" in coverage is never the company
+            # On the open web nothing establishes the subject except the sentence itself: the
+            # page-owner leniency that a company's own crawled pages get does not apply here, and
+            # without it a landing-page manifesto ("For most of human history, you farmed or you
+            # starved.") is correctly not a claim about anybody.
+            ok, _why = subject_bound(s, subject_terms, url=url)
             if not ok:
                 continue
             if re.search(r"\d", s) and not metric_defined(s)[0]:

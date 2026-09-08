@@ -330,3 +330,57 @@ def test_extraction_reports_what_it_dropped_and_why():
     assert out["read"] == 1 and out["kept"] == 1
     assert out["dropped"] == {"quote is not verbatim in the page": 1}
     assert [s["title"] for s in out["sections"]] == ["What they sell"]
+
+
+# ---------------------------------------------------------------- the web leg
+class _Hit:
+    def __init__(self, text, facet, url, title="TechCrunch"):
+        self.text, self.facets, self.extra = text, {"deep_facet": facet, "url": url}, {}
+        self.locator, self.document_id, self.document_title = None, url, title
+
+
+def test_the_web_leg_keeps_claims_and_drops_everything_that_only_looks_like_one():
+    """Measured against the first live full dive on Fluidstack, which returned all five of these."""
+    from api.deepdive.web import _claims_from
+    hits = [
+        _Hit("For most of human history, you farmed or you starved.", "product", "https://fluidstack.io/"),
+        _Hit("“Fluidstack’s dedicated support is excellent.", "customers", "https://fluidstack.io/customers"),
+        _Hit("The cloud-computing startup Fluidstack Ltd.", "funding_investors_valuation", "https://bloomberg.com/x", "Bloomberg"),
+        _Hit("For more information about Fluidstack, please visit fluidstack.io.", "funding_investors_valuation", "https://m.com/y", "Mishcon"),
+        _Hit("We’ve seen the company go from strength to strength.", "funding_investors_valuation", "https://m.com/y", "Mishcon"),
+        _Hit("Fluidstack builds infrastructure for the leading AI labs and deploys clusters at speed.", "product", "https://fluidstack.io/"),
+        _Hit("Fluidstack raised $830 million in a Series A round announced this week.", "funding_investors_valuation", "https://bloomberg.com/x", "Bloomberg"),
+    ]
+    by = _claims_from(hits, ["Fluidstack", "fluidstack"], "fluidstack.io")
+    kept = [c["claim"] for rows in by.values() for c in rows]
+    assert len(kept) == 2
+    assert any(k.startswith("Fluidstack builds infrastructure") for k in kept)     # a real claim
+    assert any("raised $830 million" in k for k in kept)                           # a real number
+    assert not any("human history" in k for k in kept)                             # landing-page manifesto
+    assert not any("dedicated support" in k for k in kept)                         # the customer's voice
+    assert not any("cloud-computing startup" in k for k in kept)                   # a fragment
+    assert not any("please visit" in k for k in kept)                              # boilerplate
+    assert not any("strength to strength" in k for k in kept)                      # a quoted third party
+
+
+def test_independent_coverage_is_a_signal_and_the_companys_own_page_is_not():
+    from api.deepdive.web import _claims_from
+    by = _claims_from([
+        _Hit("Fluidstack raised $830 million in a Series A round announced this week.",
+             "funding_investors_valuation", "https://bloomberg.com/x", "Bloomberg"),
+        _Hit("Fluidstack builds infrastructure for the leading AI labs and deploys clusters at speed.",
+             "product", "https://fluidstack.io/"),
+    ], ["Fluidstack"], "fluidstack.io")
+    assert by["funding_investors_valuation"][0]["register"] == "signal"
+    assert by["product"][0]["register"] == "stated"
+
+
+def test_the_dive_is_projected_before_it_is_run():
+    from api.deepdive.routes import project
+    assert project("held", 12, None)["projected_usd"] == 0.0
+    read = project("read", 12, None)
+    assert read["pages"] == 12 and read["projected_usd"] > 0
+    full = project("full", 12, {"max_queries": 8})
+    assert full["projected_usd"] > read["projected_usd"] and full["web_usd"] > 0
+    # the page count is capped, so a company with a huge site cannot blow past the projection
+    assert project("read", 500, None)["pages"] == 14
