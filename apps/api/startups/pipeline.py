@@ -639,7 +639,13 @@ async def run_business_model(store: StartupStore, prov: Providers, *, limit: int
     await store.ensure_schema()
     pool = await store.pool()
     async with pool.acquire() as conn:
+        # The PRICING page is the page that actually says how a company charges. A one-liner
+        # describes a product — "A Global Payouts API for Startups", "Carbon capture for vehicles" —
+        # and a validation run over 25 companies decided only 2 from one-liners alone, correctly:
+        # the rest simply do not state a price anywhere we were looking.
         rows = await conn.fetch("""SELECT c.id, c.name, c.one_liner, c.description,
+                                          (SELECT p.text FROM su_page p
+                                            WHERE p.company_id = c.id AND p.kind = 'pricing' LIMIT 1) AS pricing,
                                           (SELECT p.text FROM su_page p
                                             WHERE p.company_id = c.id AND p.kind = 'home' LIMIT 1) AS home
                                    FROM su_company c
@@ -647,18 +653,23 @@ async def run_business_model(store: StartupStore, prov: Providers, *, limit: int
                                      AND (coalesce(c.one_liner,'') <> '' OR coalesce(c.description,'') <> '')
                                      AND NOT EXISTS (SELECT 1 FROM su_fact f
                                                      WHERE f.company_id = c.id AND f.key = 'business_model')
-                                   ORDER BY c.updated_at DESC LIMIT $1""", limit)
+                                   -- companies whose pricing page we hold first: they are the ones
+                                   -- whose text can actually answer the question
+                                   ORDER BY (EXISTS (SELECT 1 FROM su_page p
+                                                     WHERE p.company_id = c.id AND p.kind = 'pricing')) DESC,
+                                            c.updated_at DESC LIMIT $1""", limit)
     proj = project_business_model_cost(len(rows))
     if proj["projected_usd"] > max_usd:
         return {"refused": True, "projection": proj, "max_usd": max_usd}
 
     out = {"of": len(rows), "read": 0, "decided": 0, "unknown": 0, "projection": proj}
     for i, r in enumerate(rows):
-        src = "\n".join(x for x in (r["one_liner"] or "", r["description"] or "", (r["home"] or "")[:1500]) if x)
+        page = ((r["pricing"] or "")[:1800] or (r["home"] or "")[:1500])
+        src = "\n".join(x for x in (r["one_liner"] or "", r["description"] or "", page) if x)
         try:
             data = await providers.llm_json(bm.SYSTEM,
                                             bm.user_payload(r["name"] or r["id"], r["one_liner"] or "",
-                                                            r["description"] or "", (r["home"] or "")[:1500]))
+                                                            r["description"] or "", page))
         except Exception:      # noqa: BLE001 — one failure never stops the pass
             continue
         out["read"] += 1
