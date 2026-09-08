@@ -26,7 +26,10 @@ from .gates import _mentions, metric_defined, subject_bound
 
 # Copy that appears on every site and says nothing about any company.
 _BOILER = ("for more information", "please visit", "learn more", "contact us", "sign up",
-           "read more", "all rights reserved", "cookie", "subscribe", "follow us", "privacy policy")
+           "read more", "all rights reserved", "cookie", "subscribe", "follow us", "privacy policy",
+           # form, footer and legal furniture, which names the company and says nothing about it
+           "confirmation email", "your submission", "fill out", "required field", "try again",
+           "terms of service", "javascript", "browser", "unsubscribe", "newsletter")
 # A sentence that opens inside quotation marks is somebody being quoted. On a customers page that is
 # the customer; in an article it is whoever the journalist called. Either way it is not the company
 # speaking, and attributing it to the company is the misattribution this whole module guards against.
@@ -70,9 +73,14 @@ _FACET_TITLES = {
 _EXTERNAL = ("funding_investors_valuation", "competitors_traction")
 
 
-def _claims_from(hits, subject_terms: list[str], own_domain: str = "") -> dict[str, list[dict]]:
+def _claims_from(hits, subject_terms: list[str], own_domain: str = "",
+                 tally: dict | None = None) -> dict[str, list[dict]]:
     by: dict[str, list[dict]] = {}
     seen: set[str] = set()
+    t = tally if tally is not None else {}
+
+    def drop(why):
+        t[why] = t.get(why, 0) + 1
     for h in hits:
         facet = (h.facets or {}).get("deep_facet") or "product"
         url = ((h.facets or {}).get("url") or (h.extra or {}).get("url")
@@ -83,25 +91,25 @@ def _claims_from(hits, subject_terms: list[str], own_domain: str = "") -> dict[s
             if not (40 <= len(s) <= 320):
                 continue
             if not reads_like_a_sentence(s):
-                continue                                  # a fragment is not a claim
+                drop("not prose"); continue
             low = s.lower()
             if any(b in low for b in _BOILER):
-                continue
+                drop("page furniture"); continue
             if s.startswith(_OPENS_QUOTED):
-                continue                                  # somebody else is speaking
+                drop("somebody else is speaking"); continue
             if external and _FIRST_PERSON.search(s):
-                continue                                  # "we" in coverage is never the company
+                drop("first person in coverage"); continue
             # On the open web the sentence must NAME the company. `subject_bound` lets a first-person
             # sentence stand on the company's own pages, which is right when we crawled the page
             # ourselves and wrong here: "We believe whoever deploys frontier infrastructure fastest
             # will shape whether AI expands human freedom" is a manifesto, not a claim about anybody.
             if not _mentions(s, subject_terms):
-                continue
-            ok, _why = subject_bound(s, subject_terms, url=url)
+                drop("does not name the company"); continue
+            ok, why = subject_bound(s, subject_terms, url=url)
             if not ok:
-                continue
+                drop(why); continue
             if re.search(r"\d", s) and not metric_defined(s)[0]:
-                continue
+                drop("a figure with no definition"); continue
             key = s.lower()[:80]
             if key in seen:
                 continue
@@ -131,7 +139,8 @@ async def read_web(company: dict, *, manifest, subject_terms: list[str]) -> dict
     except Exception:      # noqa: BLE001 — the dossier stands without this leg
         return {"sections": [], "projection": project_web_cost(templates),
                 "attempted": [_att("Web read", 0, "pages", "unavailable on this run")]}
-    by = _claims_from(hits, subject_terms, own)
+    tally: dict = {}
+    by = _claims_from(hits, subject_terms, own, tally=tally)
     sections, own_rows = [], []
     for facet, rows in by.items():
         if facet in _EXTERNAL:
@@ -148,8 +157,18 @@ async def read_web(company: dict, *, manifest, subject_terms: list[str]) -> dict
                             "note": "the company's own words, found on the open web"})
     kept = sum(len(v) for v in by.values())
     return {"sections": sections,
-            "attempted": [_att("Web read", len(hits), "pages"), _att("Web claims kept", kept, "claims")],
+            "attempted": [_att("Web read", len(hits), "pages"),
+                          _att("Web claims kept", kept, "claims",
+                               "" if kept else _top_reason(tally))],
+            "dropped": tally,
             "projection": project_web_cost(templates)}
+
+
+def _top_reason(tally: dict) -> str:
+    if not tally:
+        return "nothing found"
+    why, n = max(tally.items(), key=lambda kv: kv[1])
+    return f"read, nothing survived ({why}, {n}×)"
 
 
 def _att(source: str, found: int, unit: str, result: str = "") -> dict:

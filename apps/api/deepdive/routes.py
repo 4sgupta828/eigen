@@ -130,6 +130,7 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
             got = await read_web(c, manifest=manifest, subject_terms=_terms(c))
             doss["sections"].extend(got["sections"])
             doss["attempted"].extend(got["attempted"])
+            doss["spend"]["web_dropped"] = got.get("dropped") or {}
 
         meta = await dstore.save(pool, doss, owner_id=await _owner(authorization),
                                  reason=depth if body.refresh or depth != "held" else "initial")
