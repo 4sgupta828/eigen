@@ -256,3 +256,77 @@ def test_a_percentage_beside_a_metric_word_is_still_a_percentage_with_no_base():
 def test_a_date_is_not_a_measurement():
     assert not metric_defined("Founded in 2023 by two engineers.")[0]
     assert not metric_defined("On Jul 6, 2026 the team shipped to developers.")[0]
+
+
+# ---------------------------------------------------------------- extraction and its gates
+def test_a_peer_whose_name_contains_ours_is_not_us():
+    """"Acme Health Inc." starts with "Acme". Substring matching called that our company and would
+    have filed a peer's revenue under our name — the wrong-company attribution, exactly."""
+    ok, why = subject_bound("Acme Health Inc. reported $40 million in annual revenue.", ["Acme", "acme"],
+                            own_domain="acme.com")
+    assert not ok and "Acme Health" in why
+
+
+def test_the_sentence_subject_decides_when_both_are_named():
+    ok, _ = subject_bound("Acme raised $450 million from Spark Capital.", ["Acme", "acme"], own_domain="acme.com")
+    assert ok
+    assert not subject_bound("Spark Capital led a $450 million round in Acme.", ["Acme", "acme"],
+                             own_domain="acme.com")[0]
+
+
+def test_a_companys_own_page_is_allowed_to_speak_without_naming_itself():
+    """Demanding the company name itself in every sentence refuses nearly all of its own copy. Its
+    own domain establishes the subject — but only off the customer and case-study pages."""
+    S, D = ["Acme", "acme"], "acme.com"
+    assert subject_bound("Pricing starts at $99 per month for the Team plan.", S,
+                         url="https://acme.com/pricing", own_domain=D)[0]
+    assert not subject_bound("Pricing starts at $99 per month.", S,
+                             url="https://someoneelse.com/x", own_domain=D)[0]
+    assert not subject_bound("Since switching, we cut support costs by 40%.", S,
+                             url="https://acme.com/customers/globex", own_domain=D)[0]
+
+
+def test_acronyms_and_marketing_capitals_are_not_companies():
+    S, D = ["Acme", "acme"], "acme.com"
+    assert subject_bound("Enterprise plans include SSO and SOC2 reports.", S,
+                         url="https://acme.com/security", own_domain=D)[0]
+
+
+def test_a_price_is_a_defined_figure():
+    assert metric_defined("Pricing starts at $99 per month for the Team plan.")[0]
+
+
+def test_a_paraphrased_quote_is_an_invented_quote():
+    from api.deepdive.extract import keep
+    page = "Acme sells a hosted vector database. Pricing starts at $99 per month."
+    ok, why = keep({"kind": "what_they_sell", "text": "Acme sells a managed vector DB.",
+                    "quote": "Acme sells a managed vector DB."},
+                   page_text=page, page_url="https://acme.com/", subject_terms=["Acme"], own_domain="acme.com")
+    assert not ok and "verbatim" in why
+
+
+def test_a_kind_outside_the_vocabulary_is_refused():
+    from api.deepdive.extract import keep
+    page = "Acme sells a hosted vector database."
+    ok, why = keep({"kind": "vibes", "text": "x", "quote": "Acme sells a hosted vector database."},
+                   page_text=page, page_url="https://acme.com/", subject_terms=["Acme"], own_domain="acme.com")
+    assert not ok and "vocabulary" in why
+
+
+def test_extraction_reports_what_it_dropped_and_why():
+    import asyncio
+
+    from api.deepdive.extract import read_pages
+
+    async def llm(system, user):
+        return {"claims": [
+            {"kind": "what_they_sell", "text": "Acme sells a hosted vector database.",
+             "quote": "Acme sells a hosted vector database."},
+            {"kind": "milestone", "text": "made up", "quote": "Acme is the fastest database on earth."},
+        ]}
+    pages = [{"url": "https://acme.com/", "kind": "home",
+              "text": "Acme sells a hosted vector database. " + "Filler sentence about the product. " * 12}]
+    out = asyncio.run(read_pages(llm, name="Acme", subject_terms=["Acme"], pages=pages, own_domain="acme.com"))
+    assert out["read"] == 1 and out["kept"] == 1
+    assert out["dropped"] == {"quote is not verbatim in the page": 1}
+    assert [s["title"] for s in out["sections"]] == ["What they sell"]

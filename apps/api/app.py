@@ -1880,7 +1880,9 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         # Flag-gated, and everything mounted here is free: it reads rows we already hold.
         from api.deepdive.routes import build_router as _dd_router, deepdive_enabled as _dd_on
         if _dd_on():
-            app.include_router(_dd_router(_su_pool, _su_store, user_of=_shell_user))
+            app.include_router(_dd_router(_su_pool, _su_store,
+                                          providers=_su_pipeline.Providers.from_env(),
+                                          manifest=load_active_vertical(), user_of=_shell_user))
 
         @app.on_event("startup")
         async def _su_orphan_jobs():

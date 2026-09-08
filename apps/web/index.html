@@ -376,6 +376,14 @@
     padding:.1rem .4rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);}
   .dd-reg[data-r="filed"]{color:var(--ok,#2f7d5b);border-color:currentColor;}
   .dd-reg[data-r="stated"]{color:var(--gold);border-color:currentColor;}
+  /* Coverage is the LOWEST register: what the press says, never an established fact. It is dimmer
+     than a filing and dimmer than the company's own claim, on purpose. */
+  .dd-reg[data-r="signal"]{color:var(--muted);border-style:dashed;}
+  .dd-depth{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin:.5rem 0 0;}
+  .dd-depth .dd-dbtn{font-family:var(--mono);font-size:.66rem;padding:.34rem .7rem;border-radius:999px;
+    border:1px solid var(--hair);background:var(--panel2);color:var(--dim);cursor:pointer;min-height:34px;}
+  .dd-depth .dd-dbtn[aria-pressed="true"]{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
+  .dd-cost{font-family:var(--mono);font-size:.63rem;color:var(--dim);}
   .dd-src{font-family:var(--mono);font-size:.64rem;color:var(--dim);text-decoration:none;
     display:inline-flex;align-items:center;min-height:30px;padding:.1rem .45rem;
     border:1px solid var(--hair);border-radius:8px;white-space:nowrap;}
@@ -2028,6 +2036,15 @@
     <button type="button" class="vo-chip" id="dd-recent" title="Companies already dived">🕘 Recent dives</button>
     <button type="button" class="vo-chip" id="dd-share" title="A permanent link to this dossier">🔗 Share</button>
     <button type="button" class="vo-chip" id="dd-refresh" title="Read the company again and keep the old version">↻ Refresh</button>
+  </div>
+  <div class="dd-depth" id="dd-depth">
+    <button type="button" class="dd-dbtn" data-depth="held" aria-pressed="true"
+            title="What we already hold, plus the public sources that need no key. Free.">what we hold</button>
+    <button type="button" class="dd-dbtn" data-depth="read" aria-pressed="false"
+            title="Also read the company's own site with a model">+ read their site</button>
+    <button type="button" class="dd-dbtn" data-depth="full" aria-pressed="false"
+            title="Also read the open web for coverage a company's own pages never carry">+ read the web</button>
+    <span class="dd-cost" id="dd-cost"></span>
   </div>
   <p class="dd-note" id="dd-note"></p>
   <div id="dd-out"></div>
@@ -8690,7 +8707,7 @@ async function openShare(token){
 // "zero granted patents against a proprietary-technology claim" is the finding.
 // ---------------------------------------------------------------------------------------------
 (function(){
-  const STATE = { dossier: null, cid: "", busy: false };
+  const STATE = { dossier: null, cid: "", busy: false, depth: "held" };
   const out = () => document.getElementById("dd-out");
   const note = () => document.getElementById("dd-note");
 
@@ -8698,7 +8715,9 @@ async function openShare(token){
 
   function reg(r){
     if(!r) return "";
-    const why = r === "filed" ? "a number a filing states" : "a claim the company made \u2014 not a filed number";
+    const why = r === "filed" ? "a number a filing states"
+      : r === "signal" ? "how this is being covered \u2014 a signal, never an established fact"
+      : "a claim the company made \u2014 not a filed number";
     return '<span class="dd-reg" data-r="' + esc(r) + '" title="' + esc(why) + '">' + esc(r) + "</span>";
   }
 
@@ -8824,18 +8843,39 @@ async function openShare(token){
       dive({company_id: cs[Number(b.dataset.pick)].id})));
   }
 
+  // Nothing above "what we hold" runs without the number being shown first and the answer being yes.
+  async function confirmSpend(body){
+    if((body.depth || "held") === "held") return true;
+    const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
+                                        body: JSON.stringify(Object.assign({}, body, {project_only: true}))});
+    const d = await r.json();
+    const p = d.projection || {};
+    if(!p.projected_usd){ return true; }
+    const bits = [p.pages ? p.pages + " of their pages" : "", p.web_usd ? "a bounded web read" : ""].filter(Boolean);
+    return window.confirm("This reads " + bits.join(" and ") + ".\n\nProjected cost: $"
+      + Number(p.projected_usd).toFixed(3) + "\n\nGo ahead?");
+  }
+
   async function dive(body){
     if(STATE.busy) return;
     STATE.busy = true;
-    note().textContent = "Reading everything we hold on this company\u2026";
+    body = Object.assign({depth: STATE.depth}, body);
+    try{
+      if(!(await confirmSpend(body))){ STATE.busy = false; note().textContent = "Nothing was spent."; return; }
+    }catch(e){ STATE.busy = false; note().textContent = "Could not price that read."; return; }
+    note().textContent = body.depth === "held" ? "Reading everything we hold on this company\u2026"
+      : "Reading the company\u2026 this one goes out to the network.";
     out().innerHTML = "";
     try{
       const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
                                           body: JSON.stringify(body)});
       const d = await r.json();
       if(d.status === "ambiguous" || d.status === "unknown"){ renderCandidates(d); return; }
+      if(d.status === "refused"){ note().textContent = d.reason || "That dive costs more than the cap allows."; return; }
       if(!d.dossier){ note().textContent = d.detail || "Nothing came back for that company."; return; }
       const n = (d.dossier.sections || []).length;
+      const sp = (d.dossier.spend || {}).projection || {};
+      if(sp.projected_usd) cost().textContent = "last read \u00b7 $" + Number(sp.projected_usd).toFixed(3);
       note().innerHTML = (d.cached ? "A dossier we already built" : "Built from the public record we hold")
         + " \u00b7 " + n + (n === 1 ? " section" : " sections")
         + (d.cached ? ' \u00b7 <a href="#" id="dd-again">read it again</a>' : "");
@@ -8894,9 +8934,18 @@ async function openShare(token){
     }catch(e){ note().textContent = "That shared dossier could not be loaded."; }
   }
 
+  const cost = () => document.getElementById("dd-cost");
+
   let wired = false;
   function wire(){
     if(wired) return; wired = true;
+    const depth = document.getElementById("dd-depth");
+    if(depth) depth.addEventListener("click", e => {
+      const b = e.target.closest(".dd-dbtn"); if(!b) return;
+      STATE.depth = b.dataset.depth;
+      depth.querySelectorAll(".dd-dbtn").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+      if(STATE.cid) dive({company_id: STATE.cid, refresh: true});
+    });
     const r = document.getElementById("dd-recent"), sh = document.getElementById("dd-share"),
           rf = document.getElementById("dd-refresh");
     if(r) r.addEventListener("click", recent);

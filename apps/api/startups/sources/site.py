@@ -61,10 +61,24 @@ def _same_site(url: str, domain: str) -> bool:
     return http.registrable_domain(url) == domain
 
 
-def crawl(website: str, *, max_pages: int = MAX_PAGES, min_gap: float = 2.0) -> dict:
+# The pages a DEEP read wants that a card never needed. A dossier asks what the company sells, to
+# whom, on what terms and under whose name — so the product, security, partner and investor pages
+# matter, and they are cheap: this is HTTP, not a model.
+DEEP_WANT = _WANT + (
+    ("product", ("product", "products", "platform", "solutions", "features", "how-it-works")),
+    ("docs", ("docs", "documentation", "developers", "api")),
+    ("security", ("security", "trust", "compliance", "privacy")),
+    ("investors", ("investors", "backers", "partners", "our-investors")),
+    ("research", ("research", "science", "papers", "publications", "engineering")),
+    ("contact", ("contact", "contact-us", "legal", "terms", "imprint")),
+)
+
+
+def crawl(website: str, *, max_pages: int = MAX_PAGES, min_gap: float = 2.0, want=None) -> dict:
     """{'domain', 'pages': [{'kind','url','final_url','status','text','html','sha'}], 'failed': [...]}."""
     if not website.startswith(("http://", "https://")):
         website = "https://" + website
+    want = want or _WANT
     domain = http.registrable_domain(website)
     pages: list[dict] = []
     failed: list[dict] = []
@@ -89,12 +103,12 @@ def crawl(website: str, *, max_pages: int = MAX_PAGES, min_gap: float = 2.0) -> 
         path = urllib.parse.urlsplit(href).path.strip("/").lower()
         seg = path.split("/")[-1] if path else ""
         a = anchor.lower().strip()
-        for kind, words in _WANT:
+        for kind, words in want:
             if kind in cands:
                 continue
             if seg in words or a in words or a.replace(" ", "-") in words or any(a == w.replace("-", " ") for w in words):
                 cands[kind] = href.split("#")[0]
-    for kind, words in _WANT:          # fall back to conventional paths for the two most valuable pages
+    for kind, words in want:           # fall back to conventional paths for the two most valuable pages
         if kind not in cands and kind in ("about", "team", "careers"):
             cands[kind] = urllib.parse.urljoin(base, "/" + words[0])
     for kind, url in cands.items():

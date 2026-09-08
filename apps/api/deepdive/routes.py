@@ -1,8 +1,14 @@
 """DeepDive routes.
 
-Everything here is FREE: resolution is three indexed reads, assembly reads rows we already hold. No
-route in this file spends a model call or a web call — the paid legs (deeper own-site crawl, then the
-web read) come later behind a projection and a max_usd gate, per docs/specs/deepdive.md §4.6.
+Three depths, and the shallowest is the default:
+
+- `held`  — free. Rows we already hold plus the keyless public sources. No model, no web.
+- `read`  — spends a little: a deeper crawl of the company's own site, then one model call per page,
+            every claim gated on a verbatim quote, subject congruence and metric definition.
+- `full`  — adds the bounded web read for what only news and analysis carry, kept in a signal register.
+
+Every depth above `held` is PROJECTED and GATED before anything is spent: a projection over `max_usd`
+returns a refusal with the number in it and charges nothing.
 
 The mode is flag-gated (EIGEN_DEEPDIVE). OFF is a true no-op: no routes, no tables touched.
 """
@@ -18,6 +24,12 @@ from . import store as dstore
 from .assemble import build
 from .resolve import resolve
 
+DEPTHS = ("held", "read", "full")
+# A page of a company's own site is longer than a careers page and the answer is a small JSON list;
+# measured against the careers extractor ($0.0005/page on gpt-4o-mini), three times the input.
+EXTRACT_USD_PER_PAGE = float(os.environ.get("EIGEN_DEEPDIVE_PAGE_USD", "0.0015"))
+MAX_READ_PAGES = 14
+
 
 def deepdive_enabled() -> bool:
     return os.environ.get("EIGEN_DEEPDIVE", "").lower() in ("1", "true", "yes", "on")
@@ -27,10 +39,25 @@ class DiveIn(BaseModel):
     q: str = ""                     # a name, a domain, or a company id
     company_id: str = ""            # set when the caller already picked from candidates
     refresh: bool = False           # write a new revision instead of returning the stored one
-    public: bool = True             # also read the keyless public sources (EDGAR, Wikidata, GitHub)
+    public: bool = True             # the keyless public sources (EDGAR, Wikidata, GitHub) — free
+    depth: str = "held"             # held | read | full
+    max_usd: float = 0.50           # refuse before spending more than this
+    project_only: bool = False      # return the projection and spend nothing
 
 
-def build_router(pool_of, su_store, *, user_of=None) -> APIRouter:
+def project(depth: str, n_pages: int, templates) -> dict:
+    """What a dive at this depth will cost, before it is run."""
+    pages = min(n_pages, MAX_READ_PAGES) if depth in ("read", "full") else 0
+    extract = round(pages * EXTRACT_USD_PER_PAGE, 4)
+    web = 0.0
+    if depth == "full" and templates:
+        from .web import project_web_cost
+        web = project_web_cost(templates)["projected_usd"]
+    return {"depth": depth, "pages": pages, "usd_per_page": EXTRACT_USD_PER_PAGE,
+            "extract_usd": extract, "web_usd": web, "projected_usd": round(extract + web, 4)}
+
+
+def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=None) -> APIRouter:
     r = APIRouter()
 
     async def _owner(token: str) -> str:
@@ -46,6 +73,7 @@ def build_router(pool_of, su_store, *, user_of=None) -> APIRouter:
 
     @r.post("/deepdive")
     async def dd_dive(body: DiveIn, authorization: str = Header(default="")):
+        depth = body.depth if body.depth in DEPTHS else "held"
         cid = (body.company_id or "").strip().lower()
         if not cid:
             res = await resolve(await pool_of(), body.q)
@@ -56,7 +84,7 @@ def build_router(pool_of, su_store, *, user_of=None) -> APIRouter:
             cid = res["company"]["id"]
 
         pool = await pool_of()
-        if not body.refresh:
+        if depth == "held" and not body.refresh:
             held = await dstore.get(pool, company_id=cid)
             if held:
                 return {"status": "ok", "cached": True, "dossier": held}
@@ -65,7 +93,19 @@ def build_router(pool_of, su_store, *, user_of=None) -> APIRouter:
         if not c:
             raise HTTPException(status_code=404, detail="we hold no company with that id")
         pages = await su_store.pages(cid)
+
+        # ---- the gate: project first, spend after, never the other way round
+        proj = project(depth, max(len(pages), 6 if depth != "held" else 0),
+                       getattr(manifest, "company_reader", None))
+        if body.project_only:
+            return {"status": "projection", "projection": proj, "company": {"id": cid, "name": c.get("name")}}
+        if proj["projected_usd"] > body.max_usd:
+            return {"status": "refused", "refused": True, "projection": proj, "max_usd": body.max_usd,
+                    "reason": f"this dive projects ${proj['projected_usd']:.2f}, over the ${body.max_usd:.2f} cap"}
+
         doss = build(c, pages)
+        doss["spend"] = {"projection": proj, "depth": depth}
+
         if body.public:
             # Keyless, identity-gated, and free — but a source being down must never cost the dossier.
             try:
@@ -75,8 +115,24 @@ def build_router(pool_of, su_store, *, user_of=None) -> APIRouter:
             except Exception:      # noqa: BLE001
                 doss["attempted"].append({"source": "Public sources", "found": 0, "unit": "sources",
                                           "result": "could not be reached on this run"})
+
+        if depth in ("read", "full"):
+            doss["basis"] = "held+read"
+            pages = await _deep_crawl(su_store, c, pages)
+            got = await _read_pages(providers, c, pages)
+            doss["sections"].extend(got["sections"])
+            doss["attempted"].append({"source": "Own-site read", "found": got["kept"], "unit": "claims",
+                                      "result": _read_result(got)})
+
+        if depth == "full":
+            doss["basis"] = "held+read+web"
+            from .web import read_web
+            got = await read_web(c, manifest=manifest, subject_terms=_terms(c))
+            doss["sections"].extend(got["sections"])
+            doss["attempted"].extend(got["attempted"])
+
         meta = await dstore.save(pool, doss, owner_id=await _owner(authorization),
-                                 reason="refresh" if body.refresh else "initial")
+                                 reason=depth if body.refresh or depth != "held" else "initial")
         return {"status": "ok", "cached": False, "dossier": {**doss, **meta}}
 
     @r.get("/deepdive/{company_id}")
@@ -99,3 +155,56 @@ def build_router(pool_of, su_store, *, user_of=None) -> APIRouter:
         return {"dossiers": await dstore.recent(await pool_of(), limit=min(200, max(1, limit)))}
 
     return r
+
+
+def _terms(c: dict) -> list[str]:
+    from .assemble import _subject_terms
+    return _subject_terms(c)
+
+
+def _read_result(got: dict) -> str:
+    if got["kept"]:
+        return "found"
+    if not got["read"]:
+        return "no page long enough to read"
+    top = sorted((got.get("dropped") or {}).items(), key=lambda kv: -kv[1])
+    return "read, nothing survived the gates" + (f" ({top[0][0]})" if top else "")
+
+
+async def _deep_crawl(su_store, c: dict, pages: list[dict]) -> list[dict]:
+    """Crawl the pages a dossier wants that a card never needed. HTTP only — this spends nothing."""
+    import asyncio
+
+    from api.startups.sources import site
+    website = c.get("website") or c.get("id") or ""
+    if not website:
+        return pages
+    try:
+        res = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: site.crawl(website, max_pages=MAX_READ_PAGES, want=site.DEEP_WANT))
+    except Exception:      # noqa: BLE001 — a site that will not be read leaves the held pages in place
+        return pages
+    fresh = res.get("pages") or []
+    if not fresh:
+        return pages
+    meta = {**(c.get("crawl") or {}), "at": __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc).isoformat(), "pages": len(fresh),
+        "failed": len(res.get("failed") or []), "depth": "deep"}
+    try:
+        await su_store.save_pages(c["id"], fresh, meta)
+    except Exception:      # noqa: BLE001 — a failed write must not lose the read
+        pass
+    by_url = {p["url"]: p for p in pages}
+    for p in fresh:
+        by_url[p["url"]] = p
+    return list(by_url.values())
+
+
+async def _read_pages(providers, c: dict, pages: list[dict]) -> dict:
+    from .extract import read_pages
+    llm = getattr(providers, "llm_json", None)
+    if llm is None:
+        return {"sections": [], "read": 0, "kept": 0, "dropped": {"no model configured": 1}}
+    return await read_pages(llm, name=c.get("name") or c.get("id") or "", subject_terms=_terms(c),
+                            pages=pages, own_domain=c.get("website") or c.get("id") or "",
+                            max_pages=MAX_READ_PAGES)
