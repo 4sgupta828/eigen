@@ -7140,40 +7140,85 @@ window.addEventListener("hashchange", ()=>{
   window.SG = { send: (t) => send(t), enter };
 })();
 
-// One progress banner, shared by every mode (docs: the user could not tell a search had started).
-// `beginWork` returns a handle: `.step()` changes the message as the work moves on, `.done()` clears
-// it. The elapsed seconds appear once a wait is long enough to worry about, and a long-running read
-// says what it is waiting on rather than pretending to be nearly finished.
-let WORK = null;
-function beginWork(msg, opts){
-  opts = opts || {};
+// ---------------------------------------------------------------------------------------------
+// Progress: DERIVED from what is in flight, never announced by hand.
+//
+// The first version had each mode call beginWork() and promise to call done() in a finally. That is
+// a promise the code cannot keep: `runEvaluate`'s finally called renderRail() BEFORE done(), so one
+// throw inside a render left a spinner running forever with nothing to stop it. Any scheme where a
+// caller must remember to close what it opened has that failure mode somewhere.
+//
+// So the banner counts REQUESTS. A tracked fetch increments on start and decrements when it settles,
+// in a finally the caller cannot skip — and a fetch always settles, on error as well as success. The
+// count reaching zero is what hides the banner, so there is no path that leaves it up.
+//
+// Only listed operations count. An unlisted request (config, history writes, favourites) is
+// invisible by design: this says "your search is running", not "the network is busy".
+// ---------------------------------------------------------------------------------------------
+const WORK_OPS = [
+  [/\/startups\/compile\b/,               {msg: "Reading your brief\u2026"}],
+  [/\/startups\/evaluate\b/,              {msg: "Searching the index\u2026", slowAfter: 8,
+                                           slowMsg: "Still searching \u2014 merging the variant searches\u2026"}],
+  [/\/startups\/maps\/[^/]+\/navigate/,   {msg: "Searching the index\u2026"}],
+  [/\/startups\/group\b/,                 {msg: "Grouping these companies\u2026", slowAfter: 10,
+                                           slowMsg: "Still grouping \u2014 reading the whole result set\u2026"}],
+  [/\/voices\/search\b/,                  {msg: "Searching what founders and investors said\u2026"}],
+  [/\/voices\/summarize\b/,               {msg: "Reading this moment\u2026"}],
+  [/\/deepdive\b/,                         {msg: "Reading the company\u2026", slowAfter: 8,
+                                           slowMsg: "Reading their own pages, then the public record\u2026",
+                                           skip: init => /"project_only"\s*:\s*true/.test(String((init || {}).body || ""))}],
+];
+
+const WORK = {n: 0, since: 0, op: null, timer: null, showAt: 0};
+
+function workOp(url, init){
+  for(const [re, op] of WORK_OPS){
+    if(re.test(url)) return (op.skip && op.skip(init)) ? null : op;
+  }
+  return null;
+}
+
+function workTick(){
   const box = document.getElementById("work"), m = document.getElementById("work-msg"),
         el = document.getElementById("work-el");
-  if(!box) return {step(){}, done(){}};
-  if(WORK) WORK.done();
-  const started = Date.now();
-  m.textContent = msg || "Working\u2026";
-  el.textContent = "";
-  // A search that answers in 200ms should not flash a progress bar on its way past. Wait a beat;
-  // if the work finishes first the banner never appears at all.
-  const show = setTimeout(() => { box.hidden = false; }, 250);
-  const tick = setInterval(() => {
-    const s = Math.round((Date.now() - started) / 1000);
-    el.textContent = s >= 3 ? s + "s" : "";
-    if(opts.slowAfter && s === opts.slowAfter && opts.slowMsg) m.textContent = opts.slowMsg;
-  }, 500);
-  const handle = {
-    step(next){ if(next) m.textContent = next; },
-    done(){
-      clearTimeout(show); clearInterval(tick);
-      box.hidden = true; el.textContent = "";
-      m.textContent = "";        // a hidden aria-live region must not keep announcing stale work
-      if(WORK === handle) WORK = null;
-    }
-  };
-  WORK = handle;
-  return handle;
+  if(!box) return;
+  if(WORK.n <= 0){                       // nothing in flight: the only state that hides the banner
+    box.hidden = true; m.textContent = ""; el.textContent = "";
+    clearInterval(WORK.timer); WORK.timer = null; WORK.op = null; WORK.since = 0;
+    return;
+  }
+  const s = Math.round((Date.now() - WORK.since) / 1000);
+  const op = WORK.op || {};
+  // A search that answers in 200ms should not flash a bar on its way past.
+  if(box.hidden && Date.now() >= WORK.showAt) box.hidden = false;
+  m.textContent = (op.slowAfter && s >= op.slowAfter && op.slowMsg) ? op.slowMsg : (op.msg || "Working\u2026");
+  el.textContent = s >= 3 ? s + "s" : "";
 }
+
+function workStart(op){
+  if(!WORK.n){ WORK.since = Date.now(); WORK.showAt = Date.now() + 250; }
+  WORK.n += 1;
+  WORK.op = op;                          // the most recent operation names the banner
+  if(!WORK.timer) WORK.timer = setInterval(workTick, 250);
+  workTick();
+}
+
+function workEnd(){
+  WORK.n = Math.max(0, WORK.n - 1);
+  workTick();
+}
+
+// One seam for every mode. Wrapping fetch is what makes "it always stops" true rather than hoped for.
+(function(){
+  const raw = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    const url = typeof input === "string" ? input : ((input && input.url) || "");
+    const op = workOp(url, init);
+    if(!op) return raw(input, init);
+    workStart(op);
+    return raw(input, init).finally(workEnd);
+  };
+})();
 
 // ===== Startup Search — inline mode (ported from apps/web/startups.html; ids/classes prefixed su-) =====
 (function(){
@@ -8075,7 +8120,6 @@ function renderNotes(notes){ $("#su-notes").innerHTML = (notes&&notes.length) ? 
 // ---------- run
 async function runCompile(text){
   STATE.busy=true; document.body.classList.add("su-busy");
-  const W = beginWork("Reading your brief\u2026");
   try{
     const r=await fetch("/startups/compile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text})});
     if(!r.ok){ toast("could not compile: "+(await r.text()).slice(0,120)); return; }
@@ -8092,21 +8136,15 @@ async function runCompile(text){
       d.contract.must = Object.assign({}, must, {country: ["us"]});
       notes.push("Showing United States by default — press Worldwide, or pick a country, to widen it.");
     }
-    W.step("Searching the index\u2026");
     renderNotes(notes); STATE.brief=text; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.merge={mode:"merged"}; STATE.mergeOff=[]; renderMapBar(); await runEvaluate(d.contract);
     history.replaceState(null,"","#startups?b="+encodeURIComponent(text));
-  } finally { STATE.busy=false; document.body.classList.remove("su-busy"); W.done(); }
+  } finally { STATE.busy=false; document.body.classList.remove("su-busy"); }
 }
 async function runEvaluate(contract, opts){
   opts = opts || {};
   const prev = (opts.diff && STATE.data) ? STATE.data.rows : null;          // an Apply: remember what was showing
   STATE.newFirst=false;
   STATE.busy=true; renderRail();
-  // A re-run from the rail has no compile in front of it, so it opens its own banner; when compile
-  // is already showing one, that banner keeps running and this must not close it.
-  const own = !WORK;
-  const W = WORK || beginWork(opts.diff ? "Applying your changes\u2026" : "Searching the index\u2026",
-                              {slowAfter: 8, slowMsg: "Still searching \u2014 merging the variant searches\u2026"});
   try{
     const m=STATE.map;
     const url = m ? `/startups/maps/${m.id}/navigate${m.share?"?share="+encodeURIComponent(m.share):""}` : "/startups/evaluate";
@@ -8127,7 +8165,7 @@ async function runEvaluate(contract, opts){
     rememberStartupSearch(d.contract || contract, STATE.brief, (d.rows || []).length);
     renderCoverage(); renderRail(); renderResults();
     if(prev){ const el=$("#su-rail"); if(el) el.scrollIntoView({block:"start", behavior:"smooth"}); }
-  } finally { STATE.busy=false; renderRail(); if(own) W.done(); }
+  } finally { STATE.busy=false; renderRail(); }
 }
 if(EXAMPLES.length){
   $("#su-examples").innerHTML = EXAMPLES.map(x=>`<button type="button" class="su-ex">${esc(x)}</button>`).join("");
@@ -8550,8 +8588,6 @@ async function openShare(token){
     if(winEl) winEl.hidden = !!STATE.q;
     note().textContent = "Searching what people actually said\u2026";
     cards().innerHTML = "";
-    const W = beginWork(STATE.q ? "Searching what founders and investors said\u2026"
-                                : "Loading what landed recently\u2026");
     try{
       const r = await fetch("/voices/search", {method:"POST",
         headers: Object.assign({"content-type":"application/json"}, authHeaders()),
@@ -8567,7 +8603,7 @@ async function openShare(token){
     }catch(e){
       cards().innerHTML = "";
       note().textContent = "Voices search failed: " + (e && e.message ? e.message : e);
-    }finally{ STATE.busy = false; W.done(); }
+    }finally{ STATE.busy = false; }
   }
 
   function wire(){
@@ -8951,8 +8987,8 @@ async function openShare(token){
   // Nothing above "what we hold" runs without the number being shown first and the answer being yes.
   async function confirmSpend(body){
     if(body.discover || body.accept_domain){
-      return window.confirm("This searches the web for the company's own site and reads it.\n\n"
-        + "Projected cost: about $0.01\n\nGo ahead?");
+      return window.confirm("This searches the web for the company's own site, then reads their "
+        + "pages.\n\nProjected cost: about $0.03\n\nGo ahead?");
     }
     if((body.depth || "held") === "held") return true;
     const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
@@ -8974,13 +9010,6 @@ async function openShare(token){
       if(!(await confirmSpend(body))){ STATE.busy = false; note().textContent = "Nothing was spent."; return; }
     }catch(e){ STATE.busy = false; note().textContent = "Could not price that read."; return; }
     note().textContent = "";
-    const deep = body.depth !== "held";
-    const W = beginWork(body.discover || body.accept_domain ? "Looking for the company on the web\u2026"
-                        : deep ? "Reading the company\u2026" : "Reading what we hold on this company\u2026",
-                        {slowAfter: 6,
-                         slowMsg: deep ? "Reading their own pages, then the public record\u2026"
-                                       : "Checking EDGAR, Wikidata and public code\u2026"});
-    if(body.depth === "full") setTimeout(() => W.step("Reading independent coverage\u2026"), 18000);
     out().innerHTML = "";
     try{
       const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
@@ -9002,7 +9031,7 @@ async function openShare(token){
       if(again) again.addEventListener("click", e => { e.preventDefault(); dive({company_id: STATE.cid, refresh: true}); });
     }catch(e){
       note().textContent = "That dive failed to load. " + (e && e.message ? e.message : "");
-    }finally{ STATE.busy = false; W.done(); }
+    }finally{ STATE.busy = false; }
   }
 
   async function search(q){

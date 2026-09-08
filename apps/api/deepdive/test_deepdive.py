@@ -113,15 +113,17 @@ def test_hiring_intent_replaces_the_org_chart_and_reads_the_titles_we_already_ho
     assert "Staff Engineer" in hire["titles"] and "AE, Enterprise" in hire["titles"]
 
 
-def test_the_milestones_ledger_keeps_our_claim_and_drops_the_customers():
-    pages = [{"url": "https://acme.com/about",
-              "text": "Acme was founded in 2023. Acme now has $4 million in annual recurring revenue."},
-             {"url": "https://acme.com/customers/globex",
-              "text": "Since switching to Acme, we cut support costs by 40% and grew revenue 3x."}]
-    rows = stated_milestones(pages, ["Acme", "acme"])
-    claims = " ".join(r["claim"] for r in rows)
-    assert "annual recurring revenue" in claims
-    assert "cut support costs" not in claims
+def test_prose_claims_are_read_by_a_model_never_scraped_by_a_regex():
+    """Found on a real dive: cutting sentences out of raw pages produced "Blazel can adjust
+    usage-based pricing upon 60 days prior written notice. (b) Taxes." from a terms page and "I'm
+    doing 10 demos a week" — someone else's words in the first person on the company's own site.
+    Both passed every gate, because the gates check congruence, not whether a sentence is a claim.
+    A sentence becomes a claim only when a model says what it establishes and the quote is checked
+    back against the page."""
+    pages = [{"url": "https://acme.com/terms",
+              "text": "Acme can adjust usage-based pricing upon 60 days prior written notice. (b) Taxes."},
+             {"url": "https://acme.com/about", "text": "I'm doing 10 demos a week and onboarding 5 customers."}]
+    assert stated_milestones(pages, ["Acme", "acme"]) == []
 
 
 def test_pricing_and_customer_pages_are_found_by_path_not_guessed():
@@ -132,8 +134,14 @@ def test_pricing_and_customer_pages_are_found_by_path_not_guessed():
 
 
 def test_every_stated_row_carries_its_register_and_attribution():
-    pages = [{"url": "https://acme.com/about", "text": "Acme now has $4 million in annual recurring revenue."}]
-    d = build(_company(), pages)
+    """The self-reported ARR facet still stands: it was extracted WITH provenance in the first
+    place, which is exactly the difference from a sentence cut out of a page."""
+    c = _company()
+    c["facts"].append({"key": "arr", "value": "1m_10m", "number": 4000000.0, "display": "$4M ARR",
+                       "provenance": "site", "basis": "self_reported", "source_url": "https://acme.com/about",
+                       "quote": "Acme now has $4 million in annual recurring revenue", "as_of": None,
+                       "confidence": 1.0})
+    d = build(c, pages=[])
     stated = next(s for s in d["sections"] if s["title"] == "Stated milestones")
     assert stated["claims"] and all(r["register"] == "stated" and r["attribution"] for r in stated["claims"])
 

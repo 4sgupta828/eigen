@@ -77,6 +77,11 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
     @r.post("/deepdive")
     async def dd_dive(body: DiveIn, authorization: str = Header(default="")):
         depth = body.depth if body.depth in DEPTHS else "held"
+        # Finding a company on the web is already a spend the caller approved. Stopping at "what we
+        # hold" then shows a company we have held for four seconds — a stub. A discovered company is
+        # read.
+        if (body.discover or body.accept_domain) and depth == "held":
+            depth = "read"
         cid = (body.company_id or "").strip().lower()
         pool = await pool_of()
         discovered = False

@@ -125,25 +125,20 @@ def reads_like_a_sentence(s: str) -> bool:
 
 
 def stated_milestones(pages: list[dict], subject_terms: list[str], *, limit: int = 12) -> list[dict]:
-    """The claims ledger: sentences from the company's own pages that state a defined figure ABOUT
-    the company. Both gates must pass; a sentence that fails either is not weakened, it is dropped."""
-    out: list[dict] = []
-    for p in pages:
-        url, text = p.get("url") or "", p.get("text") or ""
-        for s in sentences(text):
-            if not (40 <= len(s) <= 320) or not reads_like_a_sentence(s):
-                continue
-            ok_m, why_m = metric_defined(s)
-            if not ok_m:
-                continue
-            ok_s, why_s = subject_bound(s, subject_terms, url=url)
-            if not ok_s:
-                continue
-            out.append({"claim": s, "source_url": url, "register": "stated",
-                        "attribution": "the company's own site"})
-            if len(out) >= limit:
-                return out
-    return out
+    """Deliberately empty: prose claims are not scraped, they are read.
+
+    This used to cut sentences out of raw crawled pages with a regex and call the survivors claims.
+    On a real dive that produced "Blazel can adjust usage-based pricing upon 60 days prior written
+    notice. (b) Taxes." from a terms page, and "I'm doing 10 demos a week" — someone else's words in
+    the first person on the company's own site. Both passed every gate, because the gates check
+    congruence, not whether a sentence is a claim at all.
+
+    A sentence becomes a claim when a model reads the page and says what it establishes, and the
+    quote is then checked back against that page (`extract.py`). That is the `read` depth. Structured
+    facts — a filed ARR, a funding event — still appear here, because those were extracted with
+    provenance in the first place. What is left is the honest answer for a free dive: what we hold.
+    """
+    return []
 
 
 def named_customers(pages: list[dict]) -> list[dict]:
