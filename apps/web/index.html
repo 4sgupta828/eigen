@@ -5409,9 +5409,16 @@ async function askQuestion(question, opts){
   CURRENT_Q = question;
   // Fresh-question refinement (no thread history, no attachments). Skipped when re-entering from a chip.
   if(REFINE_ENABLED && !opts.skipRefine && !THREAD.turns.length && !ATTACHMENTS.length){
+    // THE stuck spinner. This was three bare statements: when fetchRefinements threw — a 500, a
+    // network blip, a non-JSON body — the third never ran and the send button kept `.loading` and
+    // `disabled` FOREVER. Its spinner is an ::after pseudo-element, which no scan of animated
+    // ELEMENTS finds, and /refine is not a tracked operation, so nothing was ever in flight to
+    // explain it. A control that disables itself must re-enable itself in a finally, always.
+    let refs = [];
     go.disabled = true; go.classList.add("loading");
-    const refs = await fetchRefinements(question);
-    go.disabled = false; go.classList.remove("loading");
+    try { refs = await fetchRefinements(question); }
+    catch(e){ refs = []; }
+    finally { go.disabled = false; go.classList.remove("loading"); }
     if(refs.length){ renderRefineChips(question, refs); return; }   // let the user pick; stop here
   }
   // A/B DUEL (flag): a FRESH Quick-Q&A question runs BOTH engines — blinded tabs + preference vote.
@@ -7263,25 +7270,41 @@ function onIdleSweep(fn){ if(typeof fn === "function") WORK_SWEEPERS.push(fn); }
 setInterval(function(){
   if(WORK.n > 0 || !WORK.idleSince || Date.now() - WORK.idleSince < WORK_IDLE_SWEEP) return;
   document.body.classList.remove("su-busy");
+  const stuckGo = document.querySelector("button.go.loading");
+  if(stuckGo){ stuckGo.classList.remove("loading"); stuckGo.disabled = false; WORK.swept = (WORK.swept || 0) + 1; }
   for(const fn of WORK_SWEEPERS){
     try{ if(fn()) WORK.swept = (WORK.swept || 0) + 1; }
     catch(e){ /* a sweep that throws must not become the thing that breaks the page */ }
   }
 }, 5000);
 
-// One command in the console when something looks stuck: what is spinning, and is anything running.
+// One command in the console when something looks stuck. Returns a flat STRING: an object gets
+// collapsed to an ellipsis, which is how the one field that mattered went unread twice.
 window.EIGEN_SPIN = function(){
-  const seen = [];
-  document.querySelectorAll(".su-spin, .work, .status, .spin, .sg-busy, .frail-apply, .panelstatus")
-    .forEach(function(el){
-      const r = el.getBoundingClientRect();
-      if(el.hidden || !r.width || !r.height) return;
-      seen.push({what: el.className || el.tagName, says: (el.textContent || "").trim().slice(0, 70),
-                 inside: (el.closest("section[id],div[id]") || {}).id || ""});
+  const out = [];
+  document.querySelectorAll("*").forEach(function(el){
+    const r = el.getBoundingClientRect();
+    if(!r.width || !r.height) return;
+    // Pseudo-elements carry two of this app's spinners — .status::before and the send button's
+    // button.go.loading::after — and getComputedStyle(el) does not see them. Not looking for them
+    // cost several rounds of guessing at the wrong spinner.
+    ["", "::before", "::after"].forEach(function(pseudo){
+      let cs;
+      try { cs = getComputedStyle(el, pseudo || null); } catch(e){ return; }
+      if(!cs || !cs.animationName || cs.animationName === "none") return;
+      if(cs.visibility === "hidden" || cs.display === "none") return;
+      let running = null;
+      try { running = el.getAnimations ? el.getAnimations().some(function(a){ return a.playState === "running"; }) : null; }
+      catch(e){ running = null; }
+      const cls = (el.className && typeof el.className === "string")
+        ? "." + el.className.split(" ").filter(Boolean).slice(0, 2).join(".") : "";
+      out.push(cs.animationName + pseudo + " on " + el.tagName.toLowerCase() + cls
+               + " [" + cs.animationIterationCount + (running === false ? ", settled" : ", RUNNING") + "]");
     });
-  return {build: BUILD, inflight: WORK.n, op: (WORK.op || {}).msg || null, swept: WORK.swept || 0,
-          idleFor: WORK.idleSince ? Math.round((Date.now() - WORK.idleSince) / 1000) + "s" : null,
-          spinning: seen};
+  });
+  return "build " + BUILD + " | inflight " + WORK.n + " | swept " + (WORK.swept || 0)
+    + " | idle " + (WORK.idleSince ? Math.round((Date.now() - WORK.idleSince) / 1000) + "s" : "-")
+    + " | ANIMATING: " + (out.length ? out.join("  //  ") : "nothing");
 };
 
 // One seam for every mode. Wrapping fetch is what makes "it always stops" true rather than hoped for.
