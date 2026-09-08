@@ -32,6 +32,18 @@ _METRIC_WORDS = ("arr", "annual recurring revenue", "revenue", "bookings", "gmv"
                  "downloads", "requests", "queries", "tokens", "valuation", "raised", "funding",
                  "profit", "margin", "ebitda", "cash", "burn", "orders", "transactions", "developers")
 _MONEY = re.compile(r"[$€£]\s?\d")
+# How far from a figure a metric word still describes it.
+_NEAR = 45
+_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+
+
+def _is_date_figure(text: str, m) -> bool:
+    """A date is not a measurement. "Jul 6, 2026" must never satisfy the definition gate."""
+    ctx = text[max(0, m.start() - 12):m.end() + 8].lower()
+    if any(mo in ctx for mo in _MONTHS):
+        return True
+    tok = m.group(0).strip()
+    return bool(re.fullmatch(r"(19|20)\d{2}", tok)) or bool(re.search(r"\d{4}-\d{2}-\d{2}", ctx))
 
 
 def _names(text: str) -> set[str]:
@@ -77,18 +89,32 @@ def subject_bound(text: str, subject_terms: list[str], *, url: str = "") -> tupl
 
 
 def metric_defined(text: str) -> tuple[bool, str]:
-    """Does a figure in this sentence carry a unit and a definition? `(ok, why_not)`."""
+    """Does a figure in this sentence carry a unit and a definition? `(ok, why_not)`.
+
+    The figure and the metric word must be NEAR each other. Checking only that both appear somewhere
+    in the text lets a page of navigation through: "Features Jul 6, 2026 … used by developers
+    everywhere" has digits and has the word "developers", and means nothing. Dates are not figures.
+    """
     t = (text or "").strip()
     if not t:
         return False, "empty"
     low = t.lower()
-    said = [w for w in _METRIC_WORDS if w in low]
-    if not said:
-        return False, "no metric named — a number with no definition is not comparable"
-    if _MONEY.search(t) or re.search(r"\d[\d,.]*\s*(million|billion|thousand|k\b|m\b|bn\b)", low):
+    spans = [m for m in re.finditer(r"[$€£]?\s?\d[\d,.]*\s*(?:%|x|×|million|billion|thousand|bn|k|m)?", t)
+             if not _is_date_figure(t, m)]
+    if not spans:
+        return False, "no figure"
+    for m in spans:
+        near = low[max(0, m.start() - _NEAR):m.end() + _NEAR]
+        said = [w for w in _METRIC_WORDS if w in near]
+        if not said:
+            continue
+        money = bool(_MONEY.search(t[max(0, m.start() - 2):m.end()])) or bool(
+            re.search(r"\d[\d,.]*\s*(million|billion|thousand|k\b|m\b|bn\b)", low[m.start():m.end() + 12]))
+        bare = bool(_UNITLESS.fullmatch(m.group(0).strip()))
+        if bare and not money:
+            # "up 300%" beside the word "revenue" is still a percentage with no base.
+            continue
         return True, ""
-    if _UNITLESS.search(t) and not re.search(r"\d[\d,.]*\s+" + "|".join(_METRIC_WORDS), low):
-        return False, "a bare percentage or multiple with no base"
-    if re.search(r"\b\d[\d,.]*\b", t):
-        return True, ""
-    return False, "no figure"
+    if any(w in low for w in _METRIC_WORDS):
+        return False, "a figure and a metric word that are not about each other"
+    return False, "no metric named — a number with no definition is not comparable"

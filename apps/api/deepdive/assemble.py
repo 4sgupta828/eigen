@@ -64,6 +64,19 @@ def _subject_terms(c: dict) -> list[str]:
 
 
 _SENT = re.compile(r"(?<=[.!?])\s+")
+# Crawled pages carry navigation, card decks and footers, none of which is a sentence. A run of
+# title-case fragments with no verb is furniture; the ledger takes prose or nothing.
+_TITLE_RUN = re.compile(r"(?:\b[A-Z][a-zA-Z]+\b[ ,]*){5,}")
+
+
+def reads_like_a_sentence(s: str) -> bool:
+    if not s.endswith((".", "!", "?")):
+        return False
+    words = s.split()
+    lower = [w for w in words if w[:1].islower()]
+    if len(lower) < 5:                      # a headline stack has almost no lowercase words
+        return False
+    return not _TITLE_RUN.search(s)
 
 
 def stated_milestones(pages: list[dict], subject_terms: list[str], *, limit: int = 12) -> list[dict]:
@@ -74,7 +87,7 @@ def stated_milestones(pages: list[dict], subject_terms: list[str], *, limit: int
         url, text = p.get("url") or "", p.get("text") or ""
         for s in _SENT.split(text.replace("\n", " ")):
             s = " ".join(s.split())
-            if not (40 <= len(s) <= 320):
+            if not (40 <= len(s) <= 320) or not reads_like_a_sentence(s):
                 continue
             ok_m, why_m = metric_defined(s)
             if not ok_m:

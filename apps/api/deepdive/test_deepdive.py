@@ -236,3 +236,23 @@ def test_a_source_that_is_down_becomes_an_attempted_row_not_an_exception(monkeyp
     assert secs == []
     assert {a["source"] for a in att} == {"SEC EDGAR (all filings)", "Wikidata", "GitHub"}
     assert all(a["found"] == 0 for a in att)
+
+
+def test_page_furniture_never_becomes_a_milestone():
+    """Found in production on the first live dive: a crawled page's navigation stack passed both
+    gates because it happened to contain digits and the word "developers"."""
+    junk = ("Features Jul 6, 2026 The Making of Claude Code The inside story of how Claude Code went "
+            "from an internal tool to a product used by developers everywhere")
+    assert not metric_defined(junk)[0]
+    rows = stated_milestones([{"url": "https://acme.com/", "text": junk}], ["Acme", "acme"])
+    assert rows == []
+
+
+def test_a_percentage_beside_a_metric_word_is_still_a_percentage_with_no_base():
+    assert not metric_defined("Revenue is up 300% year over year.")[0]
+    assert metric_defined("Revenue reached $12 million last year.")[0]
+
+
+def test_a_date_is_not_a_measurement():
+    assert not metric_defined("Founded in 2023 by two engineers.")[0]
+    assert not metric_defined("On Jul 6, 2026 the team shipped to developers.")[0]
