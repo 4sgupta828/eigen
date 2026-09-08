@@ -7082,7 +7082,9 @@ function railHtml(){
   let whereLine = "";
   {
     const counts = d.counts || {};
-    const level = (key, label) => {
+    // `anyLabel`, not `label` — naming it `label` shadowed the global label() and the rail threw
+    // before the results ever rendered, which looked like "search returns nothing".
+    const level = (key, anyLabel) => {
       const vals = Object.entries(counts[key] || {})
         .filter(([v, n]) => v && v !== "unknown" && n)
         .sort((a, b) => b[1] - a[1]).slice(0, 24);
@@ -7090,7 +7092,7 @@ function railHtml(){
       const cur = ((STATE.draft || STATE.contract || {}).must || {})[key] || [];
       const opts = vals.map(([v, n]) =>
         `<option value="${esc(v)}"${cur.includes(v) ? " selected" : ""}>${esc(label(key, v) || String(v).replace(/_/g, " "))} (${n})</option>`).join("");
-      return `<select class="su-where" data-wherekey="${esc(key)}"><option value="">${esc(label)}</option>${opts}</select>`;
+      return `<select class="su-where" data-wherekey="${esc(key)}"><option value="">${esc(anyLabel)}</option>${opts}</select>`;
     };
     const anySet = ["country", "state", "metro"].some(k => (((STATE.draft || STATE.contract || {}).must || {})[k] || []).length);
     const sels = [level("country", "Any country"), level("state", "Any state"), level("metro", "Any city")].filter(Boolean).join("");
