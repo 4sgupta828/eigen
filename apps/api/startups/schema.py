@@ -13,8 +13,19 @@ C = (KIND,)
 
 STAGES = ("pre_seed", "seed", "series_a", "series_b", "series_c", "series_d_plus", "growth")
 REVENUE_RANGES = ("no_revenue", "1_1m", "1m_5m", "5m_25m", "25m_100m", "100m_plus")
+# The areas an investor actually segments by. The first fifteen are the technology cuts; the rest are
+# the SECTORS a company sells into, which is how most people ask ("ecommerce startups", "legaltech").
+# Every one of these was measured against the index before being added — a facet value with no
+# coverage does not help a search, it empties it. Counts at the time of adding, from company text:
+# ecommerce 432 · martech_sales 429 · edtech 431 · legal_compliance 398 · hr_people 367 ·
+# logistics_supply 364 · gaming_media 331 · agtech_food 283 · manufacturing 267 · crypto_web3 262 ·
+# insurance 220 · mobility 201 · proptech (tightened from a loose 1,276) · govtech 105 · quantum 16.
 TECH_AREAS = ("ai_infra", "llm_apps", "agents", "devtools", "data", "security", "robotics", "hardware_semis",
-              "bio_health", "climate_energy", "fintech", "consumer", "enterprise_saas", "space_defense", "other")
+              "bio_health", "climate_energy", "fintech", "consumer", "enterprise_saas", "space_defense",
+              "quantum",
+              "ecommerce", "martech_sales", "hr_people", "legal_compliance", "proptech", "logistics_supply",
+              "edtech", "gaming_media", "agtech_food", "crypto_web3", "insurance", "mobility",
+              "manufacturing", "govtech", "other")
 CUSTOMERS = ("enterprise", "smb", "developer", "consumer", "government")
 BUSINESS_MODELS = ("saas", "usage", "marketplace", "hardware", "open_core", "services", "consumer_subscription", "other")
 STATUSES = ("active", "acquired", "shut_down", "public")
@@ -51,7 +62,18 @@ SCHEMA = FacetSchema(keys=(
     FacetKey(key="non_dilutive", type=FacetType.numeric, kinds=C, label="Non-dilutive awards", unit="usd", bands=AWARD_BANDS, guidance="(from award records)"),
     # ---- what they do ----
     FacetKey(key="tech_area", type=FacetType.categorical, kinds=C, label="Tech area", values=TECH_AREAS,
-             guidance="1–2 areas from the list that describe what the company builds (ai_infra = models, inference, training, eval tooling; llm_apps = products built on LLMs; agents = autonomous agents; devtools; data = data infrastructure / analytics; security; robotics; hardware_semis; bio_health; climate_energy; fintech; consumer; enterprise_saas; space_defense)"),
+             guidance=("1–2 areas from the list that describe what the company builds AND the sector it sells into. "
+                       "Technology: ai_infra = models, inference, training, eval tooling; llm_apps = products built on "
+                       "LLMs; agents = autonomous agents; devtools; data = data infrastructure / analytics; security; "
+                       "robotics; hardware_semis; bio_health; climate_energy; consumer; enterprise_saas; space_defense; "
+                       "quantum. Sector: ecommerce = online retail, D2C, commerce infrastructure; fintech = payments, "
+                       "banking, lending; insurance; martech_sales = marketing, sales and go-to-market software; "
+                       "hr_people = hiring, HR, payroll; legal_compliance = legal, regulatory, audit; proptech = real "
+                       "estate and construction; logistics_supply = freight, warehousing, supply chain; edtech; "
+                       "gaming_media = games, creator tools, entertainment; agtech_food = agriculture, food, "
+                       "restaurants; crypto_web3; mobility = automotive, fleets, aviation; manufacturing = industrial "
+                       "and factory software; govtech = public sector. A company can be both (a payments API for "
+                       "online stores is fintech AND ecommerce)")),
     FacetKey(key="customer", type=FacetType.categorical, kinds=C, label="Customer", values=CUSTOMERS,
              guidance="who buys: enterprise, smb, developer, consumer, government — as the text states or clearly implies"),
     FacetKey(key="business_model", type=FacetType.categorical, kinds=C, label="Business model", values=BUSINESS_MODELS,
@@ -112,6 +134,12 @@ VALUE_LABELS = {
     "4_plus": "4+", "1_10": "1–10", "11_50": "11–50", "51_200": "51–200", "201_1000": "201–1,000", "1000_plus": "1,000+",
     "before_2020": "before 2020", "2020_2022": "2020–22", "2025_plus": "2025+", "1_5": "1–5", "6_20": "6–20", "20_plus": "20+", "1_3": "1–3",
     "ai_infra": "AI infra", "llm_apps": "LLM apps", "devtools": "dev tools", "hardware_semis": "hardware / semis", "bio_health": "bio / health",
+    "ecommerce": "e-commerce", "martech_sales": "marketing / sales", "hr_people": "HR / people",
+    "legal_compliance": "legal / compliance", "proptech": "real estate / construction",
+    "logistics_supply": "logistics / supply chain", "edtech": "education", "gaming_media": "gaming / media",
+    "agtech_food": "agriculture / food", "crypto_web3": "crypto / web3", "mobility": "mobility",
+    "manufacturing": "manufacturing", "govtech": "government", "quantum": "quantum",
+    "insurance": "insurance",
     "climate_energy": "climate / energy", "enterprise_saas": "enterprise SaaS", "space_defense": "space / defense",
     "smb": "SMB", "saas": "SaaS", "open_core": "open core", "consumer_subscription": "consumer subscription", "shut_down": "shut down",
     "yc": "Y Combinator", "spc": "South Park Commons", "ai_fund": "AI Fund", "a16z_speedrun": "a16z speedrun", "hf0": "HF0", "ef": "Entrepreneur First",

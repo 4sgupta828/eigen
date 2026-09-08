@@ -324,7 +324,7 @@ def test_an_area_the_brief_did_not_name_ranks_instead_of_filtering():
                                  value_counts={"tech_area": {"consumer": 900}}, brief="Ecommerce Startups")
     assert "tech_area" not in c.must
     assert c.prefer.get("tech_area") == ["consumer"]
-    assert any("ranks results instead of filtering" in n for n in notes)
+    assert any("instead of filtering" in n for n in notes)
 
 
 def test_an_area_the_brief_did_name_still_filters():

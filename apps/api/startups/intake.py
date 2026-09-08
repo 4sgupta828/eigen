@@ -135,6 +135,10 @@ def _usd(x) -> str:
     return f"${x / 1e9:.1f}B" if x >= 1e9 else f"${x / 1e6:.0f}M" if x >= 1e6 else f"${x / 1e3:.0f}k" if x >= 1e3 else f"${x:.0f}"
 
 
+# A question is a choice, not a catalogue: past twenty options people stop reading and start scrolling.
+_MAX_OPTIONS = 20
+
+
 class StartupIntake:
     def __init__(self, *, llm_json: Callable[[str, str], Awaitable[dict]] | None, counts_fn: Callable[[dict, dict], Awaitable[dict]], compile_fn,
                  slice_fn=None, coverage_fn=None):
@@ -167,10 +171,14 @@ class StartupIntake:
             have = {v: n for v, n in opts}
             opts = [(v, int(have.get(v, (counts.get(q.name) or {}).get(v, 0)))) for v in order]
         elif k is not None and k.type.value == "categorical":
-            # the whole vocabulary, most common first (the kernel's top-6 is too few for a 15-value key like tech area)
+            # Most common first (the kernel's top-6 is too few for a key like tech area). Offering the
+            # WHOLE vocabulary stopped scaling at thirty areas: a value the index has nothing under is
+            # a filter that returns nothing, so it is not offered — except the catch-alls, which are
+            # how someone says "none of these".
             have = {v: n for v, n in opts}
             allc = {v: int(have.get(v, (counts.get(q.name) or {}).get(v, 0))) for v in k.values}
-            opts = sorted(allc.items(), key=lambda kv: (-kv[1], k.values.index(kv[0])))
+            keep = [kv for kv in allc.items() if kv[1] > 0 or kv[0] in ("other", "unknown")]
+            opts = sorted(keep or list(allc.items()), key=lambda kv: (-kv[1], k.values.index(kv[0])))[:_MAX_OPTIONS]
         return {"kind": "key", "name": q.name, "key": q.name, "words": words, "hint": hint, "klass": q.klass,
                 "options": [[v, option_label(q.name, v), int(n), option_hint(q.name, v)] for v, n in opts],
                 "skip": SKIP_WORDS.get(q.name, "Skip"), "free_text": True,

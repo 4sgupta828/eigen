@@ -372,6 +372,46 @@ async def run_derive(store: StartupStore, *, ids: list[str] | None = None, jid: 
     return {"derived": n, "facts": nf}
 
 
+async def run_areas(store: StartupStore, *, ids: list[str] | None = None, limit: int = 20000,
+                    jid: int | None = None) -> dict:
+    """Back-fill the SECTOR areas from text we already hold. FREE: no model, no network.
+
+    New facet values start with no coverage, and a value with no coverage empties a search instead of
+    improving it. The extractor fills these going forward; this makes the 17,000 companies already in
+    the index findable today, from their own one-liners and descriptions, with the matching sentence
+    kept as the fact's quote so every assignment can be checked.
+    """
+    from .sources.areas import PHRASES, areas_for
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, one_liner, description FROM su_company WHERE status = 'active'"
+            + (" AND id = ANY($1)" if ids else "")
+            + " ORDER BY updated_at DESC LIMIT " + str(int(limit)), *([ids] if ids else []))
+        known = {}
+        for r in await conn.fetch("SELECT company_id, value FROM su_fact WHERE key = 'tech_area'"):
+            known.setdefault(r["company_id"], set()).add(r["value"])
+    out = {"of": len(rows), "read": 0, "tagged": 0, "facts": 0,
+           "by_area": {a: 0 for a in PHRASES}}
+    for r in rows:
+        out["read"] += 1
+        text = " ".join(x for x in (r["one_liner"], r["description"]) if x)
+        found = areas_for(text, known=known.get(r["id"], set()))
+        if found:
+            await store.replace_facts(r["id"], "derived_area", [
+                {"key": "tech_area", "value": f["value"], "display": "", "basis": "inferred_from_text",
+                 "source_url": "", "quote": f["quote"], "confidence": 0.7} for f in found],
+                keys=["tech_area"])
+            out["tagged"] += 1
+            out["facts"] += len(found)
+            for f in found:
+                out["by_area"][f["value"]] = out["by_area"].get(f["value"], 0) + 1
+        if jid and out["read"] % 500 == 0:
+            await _progress(store, jid, dict(out))
+    return out
+
+
 # ------------------------------------------------------------------ funding news (Brave + model), Form D issuers as companies
 BRAVE_USD_PER_QUERY = 0.005
 
@@ -791,7 +831,7 @@ async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int
 RUNNERS = {"yc": run_yc, "embed": run_embed, "formd": run_formd, "match": run_match, "crawl": run_crawl, "extract": run_extract, "derive": run_derive,
            "news": run_news, "formd_companies": run_formd_companies, "portfolio": run_portfolio, "discover_sites": run_discover_sites,
            "investors": run_investors, "boards": run_boards, "careers_roles": run_careers_roles,
-           "business_model": run_business_model}
+           "business_model": run_business_model, "areas": run_areas}
 NEEDS_PROV = {"yc", "embed", "match", "extract", "news", "careers_roles", "business_model"}
 
 

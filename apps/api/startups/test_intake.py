@@ -37,7 +37,9 @@ def test_opening_then_required_questions_then_ready():
     assert r["stage"] == "opening"
     r = run(svc.step(state=r["state"], message="AI infra startups selling to banks"))
     assert r["stage"] == "questions" and r["question"]["name"] == "tech_area" and r["question"]["multi"]
-    assert {o[0] for o in r["question"]["options"][:3]} == {"ai_infra", "fintech", "robotics"} and len(r["question"]["options"]) == 15
+    assert {o[0] for o in r["question"]["options"][:3]} == {"ai_infra", "fintech", "robotics"}
+    # a question is a choice, not a catalogue: options the index has nothing under are not offered
+    assert 3 <= len(r["question"]["options"]) <= 20
     r = run(svc.step(state=r["state"], answer={"name": "tech_area", "value": ["ai_infra", "fintech"]}))
     assert r["question"]["name"] == "stage" and [o[0] for o in r["question"]["options"]][:2] == ["pre_seed", "seed"]   # vocabulary order, counts shown
     r = run(svc.step(state=r["state"], answer={"name": "stage", "value": "seed"}))

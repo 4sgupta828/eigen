@@ -112,10 +112,26 @@ AREA_WORDS = {
     "hardware_semis": ("hardware", "semiconductor", "chip", "chips", "silicon"),
     "bio_health": ("bio", "biotech", "health", "healthcare", "medical", "clinical"),
     "climate_energy": ("climate", "energy", "solar", "battery", "carbon"),
-    "fintech": ("fintech", "payments", "banking", "lending", "insurance"),
+    "fintech": ("fintech", "payments", "banking", "lending", "treasury", "accounting"),
     "consumer": ("consumer", "d2c", "social app", "mobile app"),
     "enterprise_saas": ("enterprise", "saas", "b2b software"),
     "space_defense": ("space", "defense", "defence", "satellite", "aerospace"),
+    "quantum": ("quantum", "qubit"),
+    "ecommerce": ("ecommerce", "e commerce", "commerce", "online store", "online retail", "retail",
+                  "shopify", "d2c", "direct to consumer", "storefront", "checkout"),
+    "martech_sales": ("martech", "marketing", "sales", "go to market", "gtm", "crm", "advertising", "adtech"),
+    "hr_people": ("hr", "hr tech", "hrtech", "recruiting", "recruitment", "hiring", "payroll", "people ops", "talent"),
+    "legal_compliance": ("legal", "legaltech", "law", "compliance", "regtech", "audit", "governance"),
+    "proptech": ("proptech", "real estate", "property", "construction", "mortgage"),
+    "logistics_supply": ("logistics", "supply chain", "freight", "warehouse", "warehousing", "shipping", "fulfillment"),
+    "edtech": ("edtech", "education", "learning", "training", "tutoring"),
+    "gaming_media": ("gaming", "games", "game", "media", "creator", "streaming", "entertainment", "music"),
+    "agtech_food": ("agtech", "agriculture", "farming", "food", "restaurant", "grocery"),
+    "crypto_web3": ("crypto", "blockchain", "web3", "defi", "stablecoin", "onchain"),
+    "insurance": ("insurance", "insurtech", "underwriting", "claims"),
+    "mobility": ("mobility", "automotive", "fleet", "ev", "aviation", "transit", "trucking"),
+    "manufacturing": ("manufacturing", "industrial", "factory", "shop floor"),
+    "govtech": ("govtech", "government", "public sector", "municipal"),
     "other": (),
 }
 
@@ -155,9 +171,8 @@ def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dic
                 prefer.setdefault("tech_area", [])
                 if v not in prefer["tech_area"]:
                     prefer["tech_area"].append(v)
-            notes.append("\u201c" + brief.strip()[:40] + "\u201d has no exact area in our vocabulary, so "
-                         + ", ".join(v.replace("_", " ") for v in approximated)
-                         + " ranks results instead of filtering them out")
+            notes.append("No exact area for this — ranking by "
+                         + ", ".join(v.replace("_", " ") for v in approximated) + " instead of filtering")
 
     # a STAGE only when the brief names one — the model tends to assume "startups" means seed / series A
     if brief and not brief_names_a_stage(brief):

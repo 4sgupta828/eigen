@@ -8167,7 +8167,7 @@ async function runCompile(text){
     const placed = ["country", "state", "metro"].some(k => (must[k] || []).length);
     if(d.contract && !placed){
       d.contract.must = Object.assign({}, must, {country: ["us"]});
-      notes.push("Showing United States by default — press Worldwide, or pick a country, to widen it.");
+      notes.push("US by default \u2014 press Worldwide to widen");
     }
     renderNotes(notes); STATE.brief=text; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.merge={mode:"merged"}; STATE.mergeOff=[]; renderMapBar(); await runEvaluate(d.contract);
     history.replaceState(null,"","#startups?b="+encodeURIComponent(text));
