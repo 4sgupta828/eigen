@@ -361,9 +361,11 @@
     text-transform:uppercase;color:var(--dim);}
   .dd-sec .dd-secnote{font-family:var(--mono);font-size:.64rem;color:var(--dim);margin:-.3rem 0 .6rem;line-height:1.5;}
   .dd-rows{display:grid;gap:.45rem;}
-  .dd-row{display:flex;gap:.55rem;align-items:baseline;flex-wrap:wrap;font-size:.86rem;line-height:1.55;}
+  .dd-row{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;font-size:.86rem;line-height:1.55;}
+  .dd-v{flex:1 1 12rem;min-width:0;}
   .dd-k{font-family:var(--mono);font-size:.66rem;color:var(--dim);min-width:9.5rem;}
   .dd-v{color:var(--ink);}
+  .dd-row > .dd-quote{flex:1 1 100%;}
   .dd-reg{font-family:var(--mono);font-size:.58rem;letter-spacing:.06em;text-transform:uppercase;
     padding:.1rem .4rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);}
   .dd-reg[data-r="filed"]{color:var(--ok,#2f7d5b);border-color:currentColor;}
@@ -8734,10 +8736,12 @@ async function openShare(token){
       + (titles ? '<div class="dd-titles">' + titles + "</div>" : "");
   }
 
+  // The host chip already names the source, so a per-row attribution beside it is the same fact
+  // twice — "github.com \u2197 GitHub" on ten rows. It is kept only where there is no link to click.
   function statedRow(c){
     return '<div class="dd-row">' + reg(c.register)
-      + '<span class="dd-v">' + esc(c.claim || "") + "</span> " + src(c.source_url)
-      + (c.attribution ? ' <span class="dd-k">' + esc(c.attribution) + "</span>" : "")
+      + '<span class="dd-v">' + esc(c.claim || "") + "</span>" + src(c.source_url)
+      + (!c.source_url && c.attribution ? '<span class="dd-k">' + esc(c.attribution) + "</span>" : "")
       + (c.quote ? '<div class="dd-quote">\u201c' + esc(String(c.quote).slice(0, 200)) + "\u201d</div>" : "")
       + "</div>";
   }
@@ -8745,8 +8749,8 @@ async function openShare(token){
   function filedRow(c){
     return '<div class="dd-row">' + reg("filed")
       + '<span class="dd-v">' + esc(c.claim || "") + "</span>"
-      + (c.filing_date ? ' <span class="dd-k">' + esc(c.filing_date) + "</span>" : "")
-      + " " + src(c.source_url) + "</div>";
+      + (c.filing_date ? '<span class="dd-k">' + esc(c.filing_date) + "</span>" : "")
+      + src(c.source_url) + "</div>";
   }
 
   function finRow(c){
@@ -8754,12 +8758,12 @@ async function openShare(token){
     return '<div class="dd-row">' + reg(c.register)
       + '<span class="dd-v"><b>' + esc(c.round || "round") + "</b> " + esc(String(amt)) + "</span>"
       + (c.date ? ' <span class="dd-k">' + esc(c.date) + "</span>" : "")
-      + ((c.investors || []).length ? ' <span class="dd-k">' + esc(c.investors.join(", ")) + "</span>" : "")
-      + " " + src(c.source_url) + "</div>";
+      + ((c.investors || []).length ? '<span class="dd-k">' + esc(c.investors.join(", ")) + "</span>" : "")
+      + src(c.source_url) + "</div>";
   }
 
   function pageRow(c){
-    return '<div class="dd-row">' + reg(c.register) + " " + src(c.source_url)
+    return '<div class="dd-row">' + reg(c.register) + src(c.source_url)
       + '<div class="dd-quote">' + esc(String(c.excerpt || "").slice(0, 320)) + "\u2026</div></div>";
   }
 
