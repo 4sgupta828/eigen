@@ -555,6 +555,66 @@ async def run_portfolio(store: StartupStore, *, funds: list[str] | None = None, 
     return {"companies": n_new, "facts": n_fact, "report": report}
 
 
+# A careers page is short and the answer is a small JSON list, so this is far cheaper per company
+# than fact extraction: ~1.5k tokens in, ~300 out on gpt-4o-mini.
+CAREERS_USD_PER_COMPANY = float(os.environ.get("EIGEN_STARTUP_CAREERS_USD", "0.0005"))
+
+
+def project_careers_cost(n: int) -> dict:
+    return {"companies": n, "usd_per_company": CAREERS_USD_PER_COMPANY,
+            "projected_usd": round(n * CAREERS_USD_PER_COMPANY, 2)}
+
+
+async def run_careers_roles(store: StartupStore, *, limit: int = 200, max_usd: float = 2.0,
+                            providers: "Providers | None" = None, jid: int | None = None) -> dict:
+    """Read open roles off careers pages we already store. SPENDS: one small model call per company.
+
+    Only companies with a stored careers page and no roles on record are considered, so this never
+    re-reads a page whose board we already have, and it refuses to start if the projection exceeds
+    max_usd — the same gate the fact extractor uses.
+    """
+    import json as _json
+    from .sources import careers
+    if providers is None or providers.llm_json is None:
+        return {"refused": True, "why": "no model configured"}
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""SELECT c.id, c.name, p.url, p.text FROM su_company c
+                                   JOIN su_page p ON p.company_id = c.id AND p.kind = 'careers'
+                                   WHERE c.status = 'active'
+                                     AND jsonb_array_length(coalesce(c.crawl->'ats'->'roles','[]'::jsonb)) = 0
+                                     AND length(coalesce(p.text,'')) > 200
+                                   ORDER BY c.updated_at DESC LIMIT $1""", limit)
+    proj = project_careers_cost(len(rows))
+    if proj["projected_usd"] > max_usd:
+        return {"refused": True, "projection": proj, "max_usd": max_usd}
+
+    out = {"of": len(rows), "read": 0, "hiring": 0, "roles": 0, "projection": proj}
+    for i, r in enumerate(rows):
+        try:
+            data = await providers.llm_json(careers.SYSTEM,
+                                            careers.user_payload(r["name"] or r["id"], r["url"], r["text"]))
+        except Exception:      # noqa: BLE001 — one refusal or timeout never stops the pass
+            continue
+        out["read"] += 1
+        roles = careers.validate(data or {}, r["text"])
+        if not roles:
+            continue
+        async with pool.acquire() as conn:
+            crawl = await conn.fetchval("SELECT crawl FROM su_company WHERE id = $1", r["id"])
+            crawl = _json.loads(crawl) if isinstance(crawl, str) else (crawl or {})
+            # the page IS the board here, so the card can link the page it was read from
+            crawl["ats"] = {"board": ["careers_page", r["url"]], "roles": roles[:200]}
+            await conn.execute("UPDATE su_company SET crawl = $2::jsonb, updated_at = now() WHERE id = $1",
+                               r["id"], _json.dumps(crawl))
+        out["hiring"] += 1
+        out["roles"] += len(roles)
+        if jid and i % 20 == 0:
+            await _progress(store, jid, dict(out, done=i + 1))
+    return out
+
+
 async def run_boards(store: StartupStore, *, limit: int = 500, jid: int | None = None) -> dict:
     """Find a company's job board WITHOUT re-crawling it.
 
@@ -659,8 +719,8 @@ async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int
 # ------------------------------------------------------------------ runner (background thread, own loop + pool)
 RUNNERS = {"yc": run_yc, "embed": run_embed, "formd": run_formd, "match": run_match, "crawl": run_crawl, "extract": run_extract, "derive": run_derive,
            "news": run_news, "formd_companies": run_formd_companies, "portfolio": run_portfolio, "discover_sites": run_discover_sites,
-           "investors": run_investors, "boards": run_boards}
-NEEDS_PROV = {"yc", "embed", "match", "extract", "news"}
+           "investors": run_investors, "boards": run_boards, "careers_roles": run_careers_roles}
+NEEDS_PROV = {"yc", "embed", "match", "extract", "news", "careers_roles"}
 
 
 async def start_job(store: StartupStore, dsn: str, kind: str, params: dict, *, providers: Providers | None = None) -> int:

@@ -7343,9 +7343,14 @@ function drawerHtml(co){
 
   // ── hiring ─────────────────────────────────────────────────────────────────────────────────────
   const hireFacts = pick(HIRE_KEYS);
-  const roleList = roles.slice(0, 12).map(r =>
-    `<a class="d-role" href="${esc(r.url || "#")}" target="_blank" rel="noopener">${esc(r.title || "role")}`
-    + (r.location ? `<span class="d-rloc">${esc(r.location)}</span>` : "") + `</a>`).join("");
+  const roleHref = r => r.url || boardUrl() || "";
+  const roleList = roles.slice(0, 12).map(r => {
+    const href = roleHref(r);
+    const inner = `${esc(r.title || "role")}` + (r.location ? `<span class="d-rloc">${esc(r.location)}</span>` : "");
+    return href
+      ? `<a class="d-role" href="${esc(href)}" target="_blank" rel="noopener">${inner}</a>`
+      : `<span class="d-role">${inner}</span>`;
+  }).join("");
   // We know the COUNT for far more companies than we kept the postings for — the count comes from
   // their board, the titles only survive when we crawled it ourselves. Rather than showing a bare
   // number with nothing to click, link the board we counted so the reader can go and see the roles.
@@ -7356,6 +7361,12 @@ function drawerHtml(co){
     if(kind === "greenhouse") return "https://boards.greenhouse.io/" + token;
     if(kind === "lever") return "https://jobs.lever.co/" + token;
     if(kind === "ashby") return "https://jobs.ashbyhq.com/" + token;
+    if(kind === "workable") return "https://apply.workable.com/" + token;
+    if(kind === "recruitee") return "https://" + token + ".recruitee.com";
+    if(kind === "smartrecruiters") return "https://careers.smartrecruiters.com/" + token;
+    if(kind === "breezy") return "https://" + token + ".breezy.hr";
+    // roles read off the company's own careers page: the page IS the board, so the token is its URL
+    if(kind === "careers_page") return token;
     return "";
   };
   const board = boardUrl();

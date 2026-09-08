@@ -378,6 +378,12 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
             proj = pipeline.project_extract_cost(n)
             if proj["projected_usd"] > params["max_usd"]:
                 return {"refused": True, "projection": proj, "max_usd": params["max_usd"]}
+        if body.kind == "careers_roles":
+            n = int(params.get("limit", 200))
+            params["max_usd"] = float(params.get("max_usd", 2.0))
+            proj = pipeline.project_careers_cost(n)
+            if proj["projected_usd"] > params["max_usd"]:
+                return {"refused": True, "projection": proj, "max_usd": params["max_usd"]}
         jid = await pipeline.start_job(store, dsn, body.kind, params, providers=providers)
         return {"job_id": jid, "kind": body.kind, "params": params}
 
