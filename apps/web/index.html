@@ -8732,7 +8732,7 @@ async function openShare(token){
 
   function factRow(c){
     const v = c.display || c.label || c.value || "";
-    return '<div class="dd-row"><span class="dd-k">' + esc(String(c.key || "").replace(/_/g, " ")) + "</span>"
+    return '<div class="dd-row"><span class="dd-k">' + esc(c.key_label || String(c.key || "").replace(/_/g, " ")) + "</span>"
       + '<span class="dd-v">' + esc(v) + "</span>"
       + (c.provenance ? '<span class="dd-reg">' + esc(c.provenance) + "</span>" : "")
       + src(c.source_url)
@@ -8810,7 +8810,18 @@ async function openShare(token){
 
   function sectionHtml(sec){
     const row = ROW[sec.kind] || factRow;
-    const body = (sec.claims || []).map(c => { try { return row(c); } catch(e){ return ""; } }).join("");
+    // Several derived facts can come off ONE filing and each carried the same quote, so the same
+    // sentence appeared three times in a row. Show it on the first, drop it after.
+    const seenQuote = new Set();
+    const body = (sec.claims || []).map(c => {
+      try {
+        if(c && c.quote){
+          const k = String(c.quote).slice(0, 120);
+          if(seenQuote.has(k)) c = Object.assign({}, c, {quote: ""}); else seenQuote.add(k);
+        }
+        return row(c);
+      } catch(e){ return ""; }
+    }).join("");
     if(!body) return "";                       // a section that renders nothing does not render at all
     return '<section class="dd-sec"><h3>' + esc(sec.title || "") + "</h3>"
       + (sec.note ? '<p class="dd-secnote">' + esc(sec.note) + "</p>" : "")

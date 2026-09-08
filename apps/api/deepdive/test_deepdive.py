@@ -468,3 +468,12 @@ def test_markup_never_reaches_a_claim():
                             "https://bloomberg.com/x", "Bloomberg")], ["Fluidstack"], "fluidstack.io")
     kept = [c["claim"] for rows in by.values() for c in rows]
     assert kept and "<" not in kept[0] and "$18 billion" in kept[0]
+
+
+def test_facts_carry_the_label_a_reader_sees_not_the_column_name():
+    d = build(_company(), pages=[])
+    found = next(s for s in d["sections"] if s["title"] == "Foundations")
+    assert all(c["key_label"] for c in found["claims"])
+    from api.deepdive.assemble import KEY_LABELS
+    assert KEY_LABELS["financing_scale"] == "Latest filing sold"
+    assert KEY_LABELS["last_round_months"] == "Last round age"

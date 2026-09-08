@@ -19,7 +19,11 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from api.startups.schema import VALUE_LABELS
+from api.startups.schema import SCHEMA, VALUE_LABELS
+
+# The schema's own human labels: a dossier that prints "financing scale" and "last round months" is
+# showing the reader our column names.
+KEY_LABELS = {k.key: k.label for k in SCHEMA.keys}
 from .gates import metric_defined, subject_bound
 
 # Facts that describe the company's own shape, grouped into the section they belong to.
@@ -39,7 +43,9 @@ def label(v: str) -> str:
 
 
 def _fact_claim(f: dict) -> dict:
-    return {"key": f.get("key"), "value": f.get("value"), "label": label(f.get("value") or ""),
+    key = f.get("key") or ""
+    return {"key": key, "key_label": KEY_LABELS.get(key, key.replace("_", " ")),
+            "value": f.get("value"), "label": label(f.get("value") or ""),
             "display": f.get("display") or "", "number": f.get("number"),
             "provenance": f.get("provenance") or "", "basis": f.get("basis") or "",
             "source_url": f.get("source_url") or "", "quote": f.get("quote") or "",
