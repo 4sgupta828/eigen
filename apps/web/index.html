@@ -423,6 +423,63 @@
   #startupsbody .su-gaps{font-size:.72rem;color:var(--gap);}
   /* drawer */
   #startupsbody .drawer{margin-top:.5rem;border-top:1px dashed var(--hair);padding-top:.6rem;font-size:.82rem;cursor:auto;}
+  /* ===== the expanded card: grouped, keyed by colour, numbers first ===== */
+  /* Same language as the voice cards: a thin left rule and a faint tint say what KIND of thing this
+     is, before a word is read. Founders gold, money green, hiring blue, everything else neutral. */
+  #startupsbody .d-card{--d-accent:var(--hair);border-left:3px solid var(--d-accent);border-radius:10px;
+    background:color-mix(in srgb, var(--d-accent) 4%, var(--panel2));padding:.6rem .75rem;margin:.5rem 0;}
+  #startupsbody .d-card.who{--d-accent:var(--gold);}
+  #startupsbody .d-card.money{--d-accent:var(--verified);}
+  #startupsbody .d-card.hiring{--d-accent:#5b8def;}
+  #startupsbody .d-card.what{--d-accent:var(--muted);}
+  #startupsbody .d-card h5{margin:0 0 .45rem;font-family:var(--mono);font-size:.63rem;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--d-accent);font-weight:700;}
+  #startupsbody .d-note{font-family:var(--mono);font-size:.62rem;color:var(--muted);text-transform:none;letter-spacing:0;}
+  #startupsbody .d-lede{margin:0 0 .5rem;font-size:.9rem;line-height:1.5;}
+  /* a number is the answer; its name is the caption underneath */
+  #startupsbody .d-stats{display:flex;flex-wrap:wrap;gap:.55rem .9rem;margin:.2rem 0 .1rem;}
+  #startupsbody .d-stat{min-width:6.5rem;}
+  #startupsbody .d-statv{font-size:1.02rem;font-weight:650;line-height:1.25;letter-spacing:-.01em;}
+  #startupsbody .d-statk{font-family:var(--mono);font-size:.6rem;color:var(--muted);letter-spacing:.03em;
+    display:flex;flex-wrap:wrap;gap:.25rem;align-items:center;margin-top:.1rem;}
+  #startupsbody .d-prov{font-size:.55rem;border:1px solid var(--hair);border-radius:3px;padding:0 .22rem;color:var(--muted);}
+  /* people read as people, not as table rows */
+  #startupsbody .d-person{padding:.35rem 0;border-top:1px dashed var(--hair);}
+  #startupsbody .d-person:first-of-type{border-top:0;padding-top:0;}
+  #startupsbody .d-pname{font-size:.92rem;font-weight:650;line-height:1.35;}
+  #startupsbody .d-prole{font-size:.76rem;color:var(--muted);line-height:1.45;margin-top:.05rem;}
+  #startupsbody .d-tag{display:inline-block;font-family:var(--mono);font-size:.62rem;border:1px solid var(--hair);
+    border-radius:999px;padding:.05rem .4rem;margin:.1rem .15rem 0 0;color:var(--ink);}
+  #startupsbody .d-tag.inv{border-color:color-mix(in srgb, var(--verified) 45%, transparent);color:var(--verified);}
+  #startupsbody .d-tags{margin-top:.45rem;}
+  #startupsbody .d-tagsk{font-family:var(--mono);font-size:.6rem;color:var(--muted);letter-spacing:.05em;
+    text-transform:uppercase;margin-right:.35rem;}
+  #startupsbody .d-round{border-top:1px dashed var(--hair);padding:.4rem 0 .2rem;}
+  #startupsbody .d-roundv{font-size:1.05rem;font-weight:650;color:var(--verified);}
+  #startupsbody .d-roundk{font-size:.72rem;color:var(--muted);}
+  /* an open role is a link, not a count */
+  #startupsbody .d-roles{display:grid;gap:.25rem;margin-top:.35rem;}
+  #startupsbody .d-role{display:flex;gap:.5rem;justify-content:space-between;align-items:baseline;
+    font-size:.8rem;text-decoration:none;color:var(--ink);border:1px solid var(--hair);border-radius:8px;
+    padding:.3rem .5rem;min-height:34px;line-height:1.4;}
+  #startupsbody .d-role:hover{border-color:#5b8def;color:#5b8def;}
+  #startupsbody .d-rloc{font-family:var(--mono);font-size:.6rem;color:var(--muted);white-space:nowrap;}
+  /* the evidence, one tap away rather than in front of what it supports */
+  #startupsbody .d-whydet{margin-top:.4rem;}
+  #startupsbody .d-whydet summary{font-family:var(--mono);font-size:.62rem;color:var(--muted);cursor:pointer;
+    list-style:none;min-height:26px;padding:.15rem 0;}
+  #startupsbody .d-whydet summary::-webkit-details-marker{display:none;}
+  #startupsbody .d-whydet summary:before{content:"▸ ";}
+  #startupsbody .d-whydet[open] summary:before{content:"▾ ";}
+  #startupsbody .d-why{font-size:.76rem;line-height:1.5;color:var(--muted);padding:.2rem 0;border-top:1px dashed var(--hair);}
+  #startupsbody .d-whyk{font-family:var(--mono);font-size:.58rem;text-transform:uppercase;letter-spacing:.05em;margin-right:.35rem;}
+  #startupsbody .d-why q{display:block;margin:.1rem 0;} #startupsbody .d-why q::before{content:"\201C";} #startupsbody .d-why q::after{content:"\201D";}
+  @media (max-width:560px){
+    #startupsbody .d-card{padding:.55rem .6rem;}
+    #startupsbody .d-stats{gap:.45rem .7rem;} #startupsbody .d-stat{min-width:5.5rem;}
+    #startupsbody .d-statv{font-size:.95rem;}
+    #startupsbody .d-role{flex-direction:column;gap:.1rem;}
+  }
   #startupsbody .d-sec{margin:.5rem 0;} .d-h{font-family:var(--mono);font-size:.64rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin-bottom:.25rem;}
   #startupsbody .fact{display:grid;grid-template-columns:150px 1fr;gap:.2rem .6rem;padding:.3rem 0;border-bottom:1px solid var(--hair);}
   #startupsbody .fact .k{color:var(--muted);font-size:.74rem;} .fact .v b{font-weight:600;}
@@ -7087,21 +7144,143 @@ $("#su-results").addEventListener("click", async e=>{
     if(window.VO) VO.forCompany(id, dr);
   }catch(err){ dr.innerHTML="could not load"; } }
 });
-function drawerHtml(co){
-  const facts=(co.facts||[]).slice().sort((a,b)=>a.key.localeCompare(b.key));
-  const rows=facts.map(f=>`<div class="fact"><div class="k">${esc(klabel(f.key))}</div><div class="v"><span class="prov ${esc(f.provenance)}" title="${esc(PROV_TITLE[f.provenance]||f.provenance)}">${esc(f.provenance)}${f.basis?" · "+esc(f.basis.replace(/_/g," ")):""}</span><b>${esc(f.display||label(f.key,f.value))}</b>${f.as_of?` <span class="src">as of ${esc(String(f.as_of).slice(0,10))}</span>`:""}${f.quote?`<q>${esc(f.quote.slice(0,400))}</q>`:""}${f.source_url?`<a class="src" href="${esc(f.source_url)}" target="_blank" rel="noopener">${esc(f.source_url.slice(0,80))}</a>`:""}</div></div>`).join("");
-  const fin=(co.financing||[]).map(e=>`<div class="fact"><div class="k">${esc(e.kind==="formd"?"Form D filing":(e.round_name?label("stage",e.round_name):"stated round"))}</div><div class="v"><b>${e.amount_usd?esc(usd(e.amount_usd)):"amount not stated"}</b>${e.event_date?" · "+esc(e.event_date):""}${e.lead?" · led by "+esc(e.lead):""}${(e.investors||[]).length?" · "+esc(e.investors.join(", ")):""}${e.quote?`<q>${esc(e.quote.slice(0,300))}</q>`:""}${e.source_url?`<a class="src" href="${esc(e.source_url)}" target="_blank" rel="noopener">${esc(e.source_url.slice(0,80))}</a>`:""}</div></div>`).join("");
-  const fo=(co.founders||[]).map(f=>`<div class="fact"><div class="k">${founderHtml(f, co.name||co.id)}</div><div class="v"><span class="prov ${esc(f.provenance)}">${esc(f.provenance)}</span><b>${esc(f.title||"founder")}</b>${(f.prior_companies||[]).length?" · previously "+esc(f.prior_companies.join(", ")):""}${f.bio?`<q>${esc(f.bio.slice(0,400))}</q>`:(f.quote?`<q>${esc(f.quote.slice(0,300))}</q>`:"")}</div></div>`).join("");
-  const filings=(co.filings||[]).map(f=>`<div class="fact"><div class="k">${esc(f.filing_date||"")}</div><div class="v"><b>${esc(f.entity_name)}</b> · ${f.sold_usd?esc(usd(f.sold_usd))+" sold":"amount n/a"}${f.is_amendment?" (amendment)":""} · ${esc(f.city)}, ${esc(f.state)} · matched by ${esc(f.match_method)}${f.revenue_range?" · revenue: "+esc(f.revenue_range):""}${(f.officers||[]).length?`<q>officers on the filing (not founders): ${esc(f.officers.slice(0,6).map(o=>o.name+" — "+(o.roles||[]).join("/")).join("; "))}</q>`:""}</div></div>`).join("");
-  const crawl=co.crawl||{}; const pages=(crawl.pages||[]).map(p=>p.kind).join(", "); const failed=(crawl.failed||[]).map(p=>p.kind+" "+(p.error||p.status)).join(", ");
-  const cust=(crawl.customers||[]).map(c=>c.name).join(", ");
-  return `<div class="d-sec"><div class="d-h">Facts, each with its source</div>${rows||"<div class='c-dom'>no facts yet</div>"}</div>
-    ${fin?`<div class="d-sec"><div class="d-h">Financing events</div>${fin}</div>`:""}
-    ${fo?`<div class="d-sec"><div class="d-h">Founders</div>${fo}</div>`:""}
-    ${filings?`<div class="d-sec"><div class="d-h">SEC Form D filings matched to this company</div>${filings}</div>`:""}
-    ${cust?`<div class="d-sec"><div class="d-h">Customers named on the site</div><div class="c-dom">${esc(cust)}</div></div>`:""}
-    <div class="d-sec"><div class="d-h">Sources read</div><div class="c-dom">${esc((co.sources||[]).join(", "))}${pages?" · site pages: "+esc(pages):""}${failed?" · could not read: "+esc(failed):""}${crawl.at?" · crawled "+esc(crawl.at):""}${co.extracted_at?" · extracted "+esc(String(co.extracted_at).slice(0,10)):""}</div></div>`;
+// ---- the expanded card: what an investor asks, in that order ------------------------------------
+// It used to be one alphabetical list of facts with every quote inline — a wall you had to read to
+// find the founders. It is now grouped the way the questions come (who, money, hiring, what they
+// do), each group keyed by its own colour, with numbers set large and the supporting quotes folded
+// away behind "why we believe this". The evidence is not hidden — it is one tap away instead of in
+// front of the thing it supports.
+const MONEY_KEYS = ["total_disclosed_funding", "last_round_amount", "last_round_months", "arr",
+                    "revenue_range", "non_dilutive", "financing_scale", "stage"];
+const TEAM_KEYS  = ["founder_count", "founder_prior_company", "headcount"];
+const HIRE_KEYS  = ["hiring", "hiring_function"];
+const WHAT_KEYS  = ["tech_area", "business_model", "customer", "open_source", "patents_granted",
+                    "program", "status", "founded", "country", "metro"];
+
+function provChip(f){
+  const p = f.provenance || "";
+  return `<span class="d-prov ${esc(p)}" title="${esc(PROV_TITLE[p] || p)}${f.basis ? " · " + esc(f.basis.replace(/_/g, " ")) : ""}">${esc(p)}</span>`;
 }
+function factValue(f){ return esc(f.display || label(f.key, f.value)); }
+// One fold per group holds the quotes and links. A quote is the reason a number is there, which
+// matters when you doubt it and is noise the rest of the time.
+function whyFold(items){
+  const rows = items.filter(f => f.quote || f.source_url).map(f =>
+    `<div class="d-why"><span class="d-whyk">${esc(klabel(f.key) || f.key)}</span>`
+    + (f.quote ? `<q>${esc(String(f.quote).slice(0, 300))}</q>` : "")
+    + (f.source_url ? `<a class="src" href="${esc(f.source_url)}" target="_blank" rel="noopener">${esc(String(f.source_url).replace(/^https?:\/\//, "").slice(0, 60))}</a>` : "")
+    + `</div>`).join("");
+  return rows ? `<details class="d-whydet"><summary>why we believe this</summary>${rows}</details>` : "";
+}
+// The same fact often arrives from two places — a job board and our own derivation both say
+// "3 open roles". That is a strength of the evidence, not two facts, so the value appears once and
+// every source that agrees is listed on it.
+function uniqStats(list){
+  const out = [], seen = new Map();
+  for(const f of list){
+    const key = f.key + "|" + (f.display || label(f.key, f.value));
+    if(seen.has(key)){ seen.get(key).also.push(f); continue; }
+    const rec = Object.assign({}, f, {also: []});
+    seen.set(key, rec); out.push(rec);
+  }
+  return out;
+}
+
+function statHtml(f){
+  const agree = (f.also || []).map(x => provChip(x)).join("");
+  return `<div class="d-stat"><div class="d-statv">${factValue(f)}</div>`
+    + `<div class="d-statk">${esc(klabel(f.key) || f.key)} ${provChip(f)}${agree}`
+    + (f.as_of ? ` <span class="src">as of ${esc(String(f.as_of).slice(0, 10))}</span>` : "") + `</div></div>`;
+}
+
+function drawerHtml(co){
+  const facts = (co.facts || []);
+  const byKey = k => facts.filter(f => f.key === k);
+  const pick = keys => keys.flatMap(byKey);
+  const crawl = co.crawl || {};
+  const roles = ((crawl.ats || {}).roles) || [];
+  const sec = (cls, title, body, note) => body
+    ? `<section class="d-card ${cls}"><h5>${esc(title)}${note ? ` <span class="d-note">${esc(note)}</span>` : ""}</h5>${body}</section>` : "";
+
+  // ── who ────────────────────────────────────────────────────────────────────────────────────────
+  const founders = (co.founders || []).map(f => {
+    const prior = (f.prior_companies || []).map(c => `<span class="d-tag">${esc(c)}</span>`).join("");
+    const bio = f.bio || f.quote || "";
+    return `<div class="d-person"><div class="d-pname">${founderHtml(f, co.name || co.id)}</div>`
+      + `<div class="d-prole">${esc(f.title || "founder")}${prior ? ` &middot; previously ${prior}` : ""}</div>`
+      + (bio ? `<details class="d-whydet"><summary>bio</summary><q>${esc(String(bio).slice(0, 500))}</q></details>` : "")
+      + `</div>`;
+  }).join("");
+  const team = pick(TEAM_KEYS).filter(f => f.key !== "founder_prior_company");
+  const who = sec("who", "Founders", founders
+    + (team.length ? `<div class="d-stats">${uniqStats(team).map(statHtml).join("")}</div>` + whyFold(team) : ""),
+    founders ? "" : "none on record");
+
+  // ── money ──────────────────────────────────────────────────────────────────────────────────────
+  const moneyFacts = pick(MONEY_KEYS);
+  const investors = byKey("investor").concat(byKey("lead_investor"));
+  const invTags = [...new Set(investors.flatMap(f => String(f.display || label(f.key, f.value)).split(/,\s*/)))]
+    .filter(Boolean).map(v => `<span class="d-tag inv">${esc(v)}</span>`).join("");
+  const rounds = (co.financing || []).map(e => {
+    const who2 = [e.lead ? "led by " + e.lead : "", (e.investors || []).join(", ")].filter(Boolean).join(" · ");
+    return `<div class="d-round"><div class="d-roundv">${e.amount_usd ? esc(usd(e.amount_usd)) : "amount not stated"}</div>`
+      + `<div class="d-roundk">${esc(e.kind === "formd" ? "SEC Form D" : (e.round_name ? label("stage", e.round_name) : "round"))}`
+      + (e.event_date ? ` &middot; ${esc(e.event_date)}` : "") + (who2 ? ` &middot; ${esc(who2)}` : "") + `</div>`
+      + (e.source_url ? `<a class="src" href="${esc(e.source_url)}" target="_blank" rel="noopener">filing ↗</a>` : "") + `</div>`;
+  }).join("");
+  const money = sec("money", "Money",
+    (moneyFacts.length ? `<div class="d-stats">${uniqStats(moneyFacts).map(statHtml).join("")}</div>` : "")
+    + (invTags ? `<div class="d-tags"><span class="d-tagsk">Investors</span>${invTags}</div>` : "")
+    + rounds + whyFold(moneyFacts));
+
+  // ── hiring ─────────────────────────────────────────────────────────────────────────────────────
+  const hireFacts = pick(HIRE_KEYS);
+  const roleList = roles.slice(0, 12).map(r =>
+    `<a class="d-role" href="${esc(r.url || "#")}" target="_blank" rel="noopener">${esc(r.title || "role")}`
+    + (r.location ? `<span class="d-rloc">${esc(r.location)}</span>` : "") + `</a>`).join("");
+  const hiring = sec("hiring", "Open roles",
+    (hireFacts.length ? `<div class="d-stats">${uniqStats(hireFacts).map(statHtml).join("")}</div>` : "")
+    + (roleList ? `<div class="d-roles">${roleList}</div>` : "")
+    + (roles.length > 12 ? `<div class="d-note">and ${roles.length - 12} more on their board</div>` : ""));
+
+  // ── what they do ───────────────────────────────────────────────────────────────────────────────
+  const whatFacts = pick(WHAT_KEYS);
+  const customers = (crawl.customers || []).map(c => `<span class="d-tag">${esc(c.name)}</span>`).join("");
+  const what = sec("what", "What they do",
+    (co.one_liner ? `<p class="d-lede">${esc(co.one_liner)}</p>` : "")
+    + (whatFacts.length ? `<div class="d-stats">${uniqStats(whatFacts).map(statHtml).join("")}</div>` : "")
+    + (customers ? `<div class="d-tags"><span class="d-tagsk">Named customers</span>${customers}</div>` : "")
+    + whyFold(whatFacts));
+
+  // ── anything we have not placed, plus where it all came from ────────────────────────────────────
+  const placed = new Set([...MONEY_KEYS, ...TEAM_KEYS, ...HIRE_KEYS, ...WHAT_KEYS,
+                          "investor", "lead_investor", "founder_prior_company"]);
+  const rest = facts.filter(f => !placed.has(f.key));
+  const other = sec("other", "Other facts",
+    rest.length ? `<div class="d-stats">${uniqStats(rest).map(statHtml).join("")}</div>` + whyFold(rest) : "");
+
+  const filings = (co.filings || []).map(f =>
+    `<div class="d-why"><span class="d-whyk">${esc(f.filing_date || "")}</span>`
+    + `<b>${esc(f.entity_name)}</b> &middot; ${f.sold_usd ? esc(usd(f.sold_usd)) + " sold" : "amount n/a"}`
+    + (f.is_amendment ? " (amendment)" : "") + ` &middot; ${esc(f.city)}, ${esc(f.state)}`
+    + (f.revenue_range ? ` &middot; revenue ${esc(f.revenue_range)}` : "")
+    + ((f.officers || []).length ? `<q>officers on the filing, not founders: ${esc(f.officers.slice(0, 6).map(o => o.name + " — " + (o.roles || []).join("/")).join("; "))}</q>` : "")
+    + `</div>`).join("");
+  const pages = (crawl.pages || []).map(p => p.kind).join(", ");
+  const failed = (crawl.failed || []).map(p => p.kind + " " + (p.error || p.status)).join(", ");
+  const provenance = `<details class="d-whydet"><summary>where all this came from</summary>`
+    + `<div class="d-why">${esc((co.sources || []).join(", "))}`
+    + (pages ? ` &middot; pages read: ${esc(pages)}` : "")
+    + (failed ? ` &middot; could not read: ${esc(failed)}` : "")
+    + (crawl.at ? ` &middot; crawled ${esc(crawl.at)}` : "")
+    + (co.extracted_at ? ` &middot; read ${esc(String(co.extracted_at).slice(0, 10))}` : "") + `</div>`
+    + (filings ? `<div class="d-note">SEC Form D filings matched to this company</div>${filings}` : "")
+    + `</details>`;
+
+  return who + money + hiring + what + other + provenance
+    || `<div class='c-dom'>nothing on record for this company yet</div>`;
+}
+
 
 // ---------- coverage + notes
 function renderCoverage(){
