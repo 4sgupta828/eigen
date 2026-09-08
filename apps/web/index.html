@@ -518,6 +518,10 @@
     padding:.3rem .5rem;min-height:34px;line-height:1.4;}
   #startupsbody .d-role:hover{border-color:#5b8def;color:#5b8def;}
   #startupsbody .d-rloc{font-family:var(--mono);font-size:.6rem;color:var(--muted);white-space:nowrap;}
+  #startupsbody .d-rdept{font-family:var(--mono);font-size:.58rem;color:#5b8def;margin-left:.4rem;
+    border:1px solid color-mix(in srgb, #5b8def 35%, transparent);border-radius:4px;padding:0 .25rem;}
+  #startupsbody .d-role.d-allroles{border-color:#5b8def;color:#5b8def;font-weight:650;
+    background:color-mix(in srgb, #5b8def 8%, transparent);}
   /* the evidence, one tap away rather than in front of what it supports */
   #startupsbody .d-whydet{margin-top:.4rem;}
   #startupsbody .d-whydet summary{font-family:var(--mono);font-size:.62rem;color:var(--muted);cursor:pointer;
@@ -7162,23 +7166,6 @@ function renderRail(){
       + `The results below are unaffected.</div></div>`;
   }
 }
-$("#su-results").addEventListener("click", e=>{
-  const chip = e.target.closest("[data-group]");
-  if(chip){
-    STATE.groupBy = chip.dataset.group || "";
-    STATE.openGroups = {};
-    if(STATE.groupBy === "auto" && !STATE.auto){ requestAutoGroups(); return; }
-    renderResults();
-    return;
-  }
-  const head = e.target.closest("[data-groupopen]");
-  if(head){
-    const k = head.dataset.groupopen;
-    STATE.openGroups[k] = !STATE.openGroups[k];
-    renderResults();
-    return;
-  }
-}, true);
 $("#su-rail").addEventListener("change", e=>{
   const where = e.target.closest("[data-wherekey]");
   if(where){
@@ -7304,7 +7291,7 @@ function cardHtml(row){
   const board = rolesLinkOf(co.crawl, hiring);
   let hiringStrip = "";
   if(hiring || roleObjs.length){
-    const titles = roleObjs.slice(0, 3).map(r => esc(r.title)).join(" · ");
+    const titles = diverseRoles(roleObjs, 3).map(r => esc(r.title)).join(" · ");
     const more = roleObjs.length > 3 ? ` +${roleObjs.length - 3} more` : "";
     const count = hiring ? esc(hiring.display) : (roleObjs.length + " open role" + (roleObjs.length === 1 ? "" : "s"));
     const body = titles ? `<span class="su-hroles">${titles}${more}</span>` : "";
@@ -7501,16 +7488,59 @@ function rolesOf(crawl, hiringFact){
   return [...new Set(q.split(/\s*;\s*/).map(t => t.trim()).filter(t => t.length > 2))]
     .map(t => ({title: t, location: "", department: "", url: ""}));
 }
-// The best link we can offer for those roles: the board, else the page the count came from, else the
-// careers page we crawled.
+// A link labelled "30 open roles" must open ALL of them. The hiring fact's source_url is whichever
+// single posting we happened to count first, so pointing at it sends the reader to one job — the one
+// thing they did not ask for. Board addresses are reduced to the board itself, and a posting URL is
+// climbed back up to the list it came from.
+function boardRootOf(url){
+  const u = String(url || "");
+  if(!u.startsWith("http")) return "";
+  let m;
+  if((m = u.match(/^(https?:\/\/boards\.greenhouse\.io\/[^/?#]+)/))) return m[1];
+  if((m = u.match(/^(https?:\/\/job-boards\.greenhouse\.io\/[^/?#]+)/))) return m[1];
+  if((m = u.match(/^(https?:\/\/jobs\.lever\.co\/[^/?#]+)/))) return m[1];
+  if((m = u.match(/^(https?:\/\/jobs\.ashbyhq\.com\/[^/?#]+)/))) return m[1];
+  if((m = u.match(/^(https?:\/\/[^/]*workable\.com\/[^/?#]+)/))) return m[1];
+  if((m = u.match(/^(https?:\/\/[^/]+\.recruitee\.com)/))) return m[1];
+  if((m = u.match(/^(https?:\/\/[^/]+\.breezy\.hr)/))) return m[1];
+  // a company's own careers page carrying one posting in its query string ("…/careers/job?gh_jid=1")
+  if(/[?#]/.test(u) && /(career|job)/i.test(u)) return u.split(/[?#]/)[0].replace(/\/(job|jobs)\/?$/i, "");
+  return "";
+}
 function rolesLinkOf(crawl, hiringFact){
   const b = boardUrlOf(crawl);
   if(b) return b;
-  const src = String((hiringFact || {}).source_url || "");
-  if(src.startsWith("http")) return src;
   const pages = ((crawl || {}).pages) || [];
   const careers = pages.find(p => p.kind === "careers");
-  return careers ? careers.url : "";
+  if(careers) return careers.url;                       // their own list of everything
+  return boardRootOf((hiringFact || {}).source_url);    // climbed up from a single posting
+}
+
+// With a long list, showing the first ten shows one department. A reader scanning for what a company
+// is building wants the SPREAD — an engineer, a seller, a designer — so roles are taken round-robin
+// across departments, falling back to the first word of the title when no department is stated.
+function diverseRoles(roles, n){
+  const list = (roles || []).filter(r => r && r.title);
+  if(list.length <= n) return list;
+  const bucket = r => String(r.department || "").toLowerCase().trim()
+    || String(r.title).toLowerCase().split(/[\s,(/-]+/)[0];
+  const groups = new Map();
+  for(const r of list){
+    const k = bucket(r);
+    if(!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const keys = [...groups.keys()];
+  const out = [];
+  for(let round = 0; out.length < n; round++){
+    let added = false;
+    for(const k of keys){
+      const g = groups.get(k);
+      if(g.length > round){ out.push(g[round]); added = true; if(out.length >= n) break; }
+    }
+    if(!added) break;
+  }
+  return out;
 }
 
 function boardUrlOf(crawl){
@@ -7655,9 +7685,29 @@ function drawerHtml(co){
   const hireFacts = pick(HIRE_KEYS);
   const board = rolesLinkOf(crawl, hiringFact);
   const roleHref = r => r.url || board || "";
-  const roleList = roles.slice(0, 12).map(r => {
+  // Ten of fourteen engineering roles tells a reader one thing about the company. A spread across
+  // departments tells them what it is actually building — and the way to everything is at the top,
+  // where someone looking for a job looks first.
+  const SHOWN = 8;
+  const shown = diverseRoles(roles, SHOWN);
+  // The way to everything is decided by the COUNT, not by how many titles we happen to hold. Fivetran
+  // has 237 open roles and we hold 8 titles; without this the reader is shown eight and offered no
+  // route to the other 229.
+  const counted = (() => {
+    const n = Number((hiringFact || {}).number);
+    if(Number.isFinite(n) && n > 0) return n;
+    const m = String((hiringFact || {}).display || "").match(/(\d[\d,]*)/);
+    return m ? parseInt(m[1].replace(/,/g, ""), 10) : roles.length;
+  })();
+  const total = Math.max(counted || 0, roles.length);
+  const allLink = (total > shown.length && board)
+    ? `<a class="d-role d-allroles" href="${esc(board)}" target="_blank" rel="noopener">All ${total} positions<span class="d-rloc">↗</span></a>`
+    : "";
+  const roleList = allLink + shown.map(r => {
     const href = roleHref(r);
-    const inner = `${esc(r.title || "role")}` + (r.location ? `<span class="d-rloc">${esc(r.location)}</span>` : "");
+    const inner = `${esc(r.title || "role")}`
+      + (r.department ? `<span class="d-rdept">${esc(r.department)}</span>` : "")
+      + (r.location ? `<span class="d-rloc">${esc(r.location)}</span>` : "");
     return href
       ? `<a class="d-role" href="${esc(href)}" target="_blank" rel="noopener">${inner}</a>`
       : `<span class="d-role">${inner}</span>`;
@@ -7673,7 +7723,8 @@ function drawerHtml(co){
   const hiring = sec("hiring", "Open roles",
     (hireFacts.length ? `<div class="d-stats">${uniqStats(hireFacts).map(statHtml).join("")}</div>` : "")
     + (roleList ? `<div class="d-roles">${roleList}</div>` : noRoles)
-    + (roles.length > 12 ? `<div class="d-note">and ${roles.length - 12} more on their board</div>` : ""));
+    + (total > shown.length && !board
+        ? `<div class="d-note">and ${total - shown.length} more, which we have no link to</div>` : ""));
 
   // ── what they do ───────────────────────────────────────────────────────────────────────────────
   const whatFacts = pick(WHAT_KEYS);
