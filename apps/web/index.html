@@ -8859,7 +8859,9 @@ async function openShare(token){
     const v = c.display || c.label || c.value || "";
     return '<div class="dd-row"><span class="dd-k">' + esc(c.key_label || String(c.key || "").replace(/_/g, " ")) + "</span>"
       + '<span class="dd-v">' + esc(v) + "</span>"
-      + (c.provenance ? '<span class="dd-reg">' + esc(c.provenance) + "</span>" : "")
+      + (c.provenance ? '<span class="dd-reg" title="' + esc((c.sources || []).length > 1
+          ? (c.sources || []).join(" and ") + " agree" : "") + '">' + esc(c.provenance)
+          + ((c.sources || []).length > 1 ? " +" + ((c.sources || []).length - 1) : "") + "</span>" : "")
       + src(c.source_url)
       + (c.quote ? '<div class="dd-quote">\u201c' + esc(String(c.quote).slice(0, 240)) + "\u201d</div>" : "")
       + "</div>";

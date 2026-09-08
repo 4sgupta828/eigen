@@ -705,3 +705,50 @@ def test_search_snippets_arrive_escaped_and_truncated():
         "Secureframe's latest funding round is Angel."]
     assert sentences("Secureframe raised a total of $78.71M…") == [
         "Secureframe raised a total of $78.71M."]
+
+
+# ---------------------------------------------------------------- one fact, one person
+def test_two_sources_agreeing_is_one_fact_not_two_rows():
+    """Found on a live dive: YC and the company's own site both state the country, and the dossier
+    printed "US · US" — which reads as a bug, not as corroboration."""
+    from api.deepdive.assemble import dedupe_facts
+    rows = dedupe_facts([
+        {"key": "country", "value": "us", "number": None, "provenance": "site", "quote": "", "source_url": "u"},
+        {"key": "country", "value": "us", "number": None, "provenance": "yc",
+         "quote": "Location: Bridgeton, MO, USA", "source_url": "u"},
+    ])
+    assert len(rows) == 1
+    assert rows[0]["sources"] == ["site", "yc"]          # the agreement is kept, the repetition is not
+    assert rows[0]["quote"]                              # and the row with evidence is the one shown
+
+
+def test_the_same_founder_under_two_names_is_one_person():
+    """"Marty" from one page and "Marty Kausas" from another is not two co-founders."""
+    from api.deepdive.assemble import merge_founders
+    out = merge_founders([
+        {"name": "Marty", "title": "Co-founder", "bio": "", "links": {}, "prior_companies": []},
+        {"name": "Marty Kausas", "title": "Founder", "bio": "CEO of Pylon, started coding early.",
+         "links": {"linkedin": "x"}, "prior_companies": []},
+    ])
+    assert [r["name"] for r in out] == ["Marty Kausas"]
+    assert out[0]["links"] == {"linkedin": "x"} and out[0]["bio"]
+
+
+def test_an_ambiguous_first_name_is_never_merged():
+    """Two Roberts stay two Roberts — guessing there merges two people."""
+    from api.deepdive.assemble import merge_founders
+    out = merge_founders([
+        {"name": "Robert", "title": "Co-founder", "bio": "", "links": {}, "prior_companies": []},
+        {"name": "Robert Eng", "title": "Founder", "bio": "", "links": {}, "prior_companies": []},
+        {"name": "Robert Chen", "title": "Founder", "bio": "", "links": {}, "prior_companies": []},
+    ])
+    assert sorted(r["name"] for r in out) == ["Robert", "Robert Chen", "Robert Eng"]
+
+
+def test_a_domain_is_not_a_biography():
+    c = _company()
+    c["founders"] = [{"name": "Advith Chelikani", "title": "Founder", "prior_companies": [],
+                      "provenance": "site", "source_url": "u", "quote": "", "links": {},
+                      "bio": "usepylon.com"}]
+    person = build(c, pages=[])["sections"][1]["claims"][0]
+    assert person["name"] == "Advith Chelikani" and person["bio"] == ""

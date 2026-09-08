@@ -52,9 +52,82 @@ def _fact_claim(f: dict) -> dict:
     return {"key": key, "key_label": KEY_LABELS.get(key, key.replace("_", " ")),
             "value": f.get("value"), "label": label(f.get("value") or ""),
             "display": f.get("display") or "", "number": f.get("number"),
-            "provenance": f.get("provenance") or "", "basis": f.get("basis") or "",
+            "provenance": f.get("provenance") or "", "sources": f.get("sources") or [],
+            "basis": f.get("basis") or "",
             "source_url": f.get("source_url") or "", "quote": f.get("quote") or "",
             "as_of": str(f.get("as_of") or "")[:10]}
+
+
+# The startup card's rule, which the dossier owes the reader too: "two sources agreeing is one fact,
+# not two tags". YC and the company's own site both say the country, and printing "US · US" reads as
+# a bug. The agreement is kept — it becomes the fact's `sources` — the repetition is not.
+_PROV_RANK = {"formd": 0, "filing": 1, "sec": 1, "ats": 2, "site": 3, "portfolio": 4, "yc": 5,
+              "press": 6, "github": 7, "derived": 8}
+
+
+def dedupe_facts(facts: list[dict]) -> list[dict]:
+    best: dict[tuple, dict] = {}
+    for f in facts:
+        key = (f.get("key"), f.get("value"), f.get("number"))
+        cur = best.get(key)
+        if cur is None:
+            best[key] = dict(f, sources=[f.get("provenance") or ""])
+            continue
+        cur["sources"].append(f.get("provenance") or "")
+        # The value is identical on both rows — that is what made them duplicates — so authority
+        # cannot change the claim, only the evidence shown for it can. Keep the row a reader can
+        # CHECK: a quote first, and the higher-tier source only to break a tie.
+        better = (0 if f.get("quote") else 1, _PROV_RANK.get(f.get("provenance") or "", 9))
+        have = (0 if cur.get("quote") else 1, _PROV_RANK.get(cur.get("provenance") or "", 9))
+        if better < have:
+            src = cur["sources"]
+            best[key] = dict(f, sources=src)
+    for row in best.values():
+        row["sources"] = sorted({s for s in row["sources"] if s})
+    return list(best.values())
+
+
+def _looks_like_a_bio(text: str) -> bool:
+    """A bio is prose about a person. "usepylon.com" is what the extractor found, not a bio."""
+    t = (text or "").strip()
+    return len(t) >= 25 and " " in t and not re.match(r"^\S+\.[a-z]{2,}$", t)
+
+
+def merge_founders(rows: list[dict]) -> list[dict]:
+    """One person, one entry.
+
+    The same founder arrives as "Marty" from one page and "Marty Kausas" from another, and listing
+    both invents a co-founder. A single-token name folds into a full name when it matches exactly
+    ONE of them — two Roberts stay two Roberts, because guessing there would merge two people.
+    """
+    full = [r for r in rows if len((r.get("name") or "").split()) > 1]
+    short = [r for r in rows if len((r.get("name") or "").split()) == 1]
+    out: dict[str, dict] = {}
+    for r in full:
+        key = " ".join((r.get("name") or "").lower().split())
+        cur = out.get(key)
+        if cur is None:
+            out[key] = dict(r)
+            continue
+        for field in ("title", "bio", "source_url", "quote"):
+            if not cur.get(field) and r.get(field):
+                cur[field] = r[field]
+        cur["links"] = {**(r.get("links") or {}), **(cur.get("links") or {})}
+        cur["prior_companies"] = sorted({*(cur.get("prior_companies") or []), *(r.get("prior_companies") or [])})
+    for r in short:
+        first = (r.get("name") or "").strip().lower()
+        hits = [k for k in out if k.split()[0] == first]
+        if len(hits) == 1:
+            cur = out[hits[0]]
+            for field in ("title", "bio", "source_url", "quote"):
+                if not cur.get(field) and r.get(field):
+                    cur[field] = r[field]
+            cur["links"] = {**(r.get("links") or {}), **(cur.get("links") or {})}
+        else:
+            # No match, or several: either way this stays its own entry. Folding "Robert" into one of
+            # two Roberts would merge two people, which is worse than listing a partial name.
+            out.setdefault("first:" + first, dict(r))
+    return list(out.values())
 
 
 def _by_key(facts: list[dict]) -> dict[str, list[dict]]:
@@ -359,17 +432,18 @@ def build(c: dict, pages: list[dict], sites: dict | None = None) -> dict:
     investors linked to their own sites, money raised across rounds, open roles with their titles —
     plus what only a dive collects.
     """
-    byk = _by_key(c.get("facts") or [])
+    byk = _by_key(dedupe_facts(c.get("facts") or []))
     terms = _subject_terms(c)
     sections = []
 
     found = [_fact_claim(f) for k in _FOUNDATIONS for f in byk.get(k, [])]
     sections.append(_section("Foundations", "fact", found))
 
-    people = [{"name": f.get("name"), "title": f.get("title") or "", "bio": f.get("bio") or "",
+    people = [{"name": f.get("name"), "title": f.get("title") or "",
+               "bio": f.get("bio") if _looks_like_a_bio(f.get("bio") or "") else "",
                "prior": list(f.get("prior_companies") or []), "links": f.get("links") or {},
                "source_url": f.get("source_url") or "", "quote": f.get("quote") or "",
-               "register": "stated"} for f in (c.get("founders") or [])]
+               "register": "stated"} for f in merge_founders(c.get("founders") or [])]
     sections.append(_section("Key people", "people", people,
                              note="named on the company's own pages or in a filing"))
 
