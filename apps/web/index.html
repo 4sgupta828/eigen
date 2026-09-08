@@ -7154,7 +7154,9 @@ function beginWork(msg, opts){
   const started = Date.now();
   m.textContent = msg || "Working\u2026";
   el.textContent = "";
-  box.hidden = false;
+  // A search that answers in 200ms should not flash a progress bar on its way past. Wait a beat;
+  // if the work finishes first the banner never appears at all.
+  const show = setTimeout(() => { box.hidden = false; }, 250);
   const tick = setInterval(() => {
     const s = Math.round((Date.now() - started) / 1000);
     el.textContent = s >= 3 ? s + "s" : "";
@@ -7162,7 +7164,12 @@ function beginWork(msg, opts){
   }, 500);
   const handle = {
     step(next){ if(next) m.textContent = next; },
-    done(){ clearInterval(tick); box.hidden = true; el.textContent = ""; if(WORK === handle) WORK = null; }
+    done(){
+      clearTimeout(show); clearInterval(tick);
+      box.hidden = true; el.textContent = "";
+      m.textContent = "";        // a hidden aria-live region must not keep announcing stale work
+      if(WORK === handle) WORK = null;
+    }
   };
   WORK = handle;
   return handle;
