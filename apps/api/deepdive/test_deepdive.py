@@ -146,3 +146,93 @@ def test_a_form_d_offering_is_labelled_as_an_offering_and_never_as_revenue():
     assert "offering" in filed["claims"][0]["claim"]
     assert "revenue" not in filed["claims"][0]["claim"].lower()
     assert filed["claims"][0]["register"] == "filed"
+
+
+# ---------------------------------------------------------------- keyless public sources
+def _fake_http(monkeypatch, table: dict):
+    """Serve canned JSON by URL substring; anything unlisted raises, as a dead source would."""
+    import json as _json
+
+    from api.deepdive import public as pub
+
+    async def fetch(url, **_):
+        for frag, payload in table.items():
+            if frag in url:
+                return _json.dumps(payload).encode()
+        raise RuntimeError("404")
+    monkeypatch.setattr(pub._HTTP, "fetch", fetch)
+
+
+def test_edgar_names_what_each_filing_IS_so_an_offering_is_never_read_as_an_annual_report(monkeypatch):
+    import asyncio
+
+    from api.deepdive.public import edgar_filings
+    _fake_http(monkeypatch, {"submissions": {"filings": {"recent": {
+        "form": ["10-K", "D", "S-1", "SC 13G/X"], "filingDate": ["2026-02-01", "2024-05-01", "2025-01-01", "2020-01-01"],
+        "accessionNumber": ["0001-26-1", "0001-24-2", "0001-25-3", "0001-20-4"],
+        "primaryDocument": ["a.htm", "b.htm", "c.htm", "d.htm"]}}}})
+    rows, att = asyncio.run(edgar_filings(1018724))
+    claims = [r["claim"] for r in rows]
+    assert "10-K — annual report (audited)" in claims
+    assert "D — exempt offering (Form D)" in claims
+    assert not [c for c in claims if c.startswith("SC 13G/X")]      # an unrecognised form is not guessed at
+    assert att["found"] == 3 and all(r["register"] == "filed" for r in rows)
+
+
+def test_a_company_with_no_cik_says_so_rather_than_going_quiet():
+    import asyncio
+
+    from api.deepdive.public import edgar_filings
+    rows, att = asyncio.run(edgar_filings(None))
+    assert rows == [] and "no CIK" in att["result"]
+
+
+def test_wikidata_is_refused_unless_its_official_site_is_our_domain(monkeypatch):
+    """The gate that stops a three-letter company name resolving to a bank or a film."""
+    import asyncio
+
+    from api.deepdive.public import wikidata_profile
+    _fake_http(monkeypatch, {
+        "wbsearchentities": {"search": [{"id": "Q999"}]},
+        "wbgetentities": {"entities": {"Q999": {"claims": {
+            "P856": [{"mainsnak": {"datavalue": {"value": "https://somebodyelse.com"}}}],
+            "P571": [{"mainsnak": {"datavalue": {"value": {"time": "+2021-01-26T00:00:00Z"}}}}]}}}}})
+    rows, att = asyncio.run(wikidata_profile("Acme", "acme.com"))
+    assert rows == [] and "official site" in att["result"]
+
+
+def test_wikidata_is_accepted_when_the_identity_is_proven(monkeypatch):
+    import asyncio
+
+    from api.deepdive.public import wikidata_profile
+    _fake_http(monkeypatch, {
+        "wbsearchentities": {"search": [{"id": "Q1"}]},
+        "wbgetentities": {"entities": {"Q1": {"claims": {
+            "P856": [{"mainsnak": {"datavalue": {"value": "https://www.acme.com/"}}}],
+            "P571": [{"mainsnak": {"datavalue": {"value": {"time": "+2021-01-26T00:00:00Z"}}}}],
+            "P749": [{"mainsnak": {"datavalue": {"value": {"id": "Q42"}}}}]}}}}})
+    rows, att = asyncio.run(wikidata_profile("Acme", "acme.com"))
+    claims = [r["claim"] for r in rows]
+    assert "founded: 2021-01-26" in claims
+    assert not [c for c in claims if "Q42" in c]        # an unlabelled entity id tells a reader nothing
+    assert att["found"] == 1 and all(r["register"] == "stated" for r in rows)
+
+
+def test_a_github_org_that_is_not_this_company_is_refused(monkeypatch):
+    import asyncio
+
+    from api.deepdive.public import github_org
+    _fake_http(monkeypatch, {"/orgs/": {"login": "acme", "blog": "https://someone-else.io"}})
+    rows, att = asyncio.run(github_org("acme.com", "Acme"))
+    assert rows == [] and "no public org" in att["result"]
+
+
+def test_a_source_that_is_down_becomes_an_attempted_row_not_an_exception(monkeypatch):
+    import asyncio
+
+    from api.deepdive.public import gather
+    _fake_http(monkeypatch, {})       # every call raises
+    secs, att = asyncio.run(gather({"id": "acme.com", "name": "Acme", "website": "https://acme.com", "cik": 42}))
+    assert secs == []
+    assert {a["source"] for a in att} == {"SEC EDGAR (all filings)", "Wikidata", "GitHub"}
+    assert all(a["found"] == 0 for a in att)

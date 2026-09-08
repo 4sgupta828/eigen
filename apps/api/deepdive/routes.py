@@ -13,6 +13,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from . import public as public_sources
 from . import store as dstore
 from .assemble import build
 from .resolve import resolve
@@ -26,6 +27,7 @@ class DiveIn(BaseModel):
     q: str = ""                     # a name, a domain, or a company id
     company_id: str = ""            # set when the caller already picked from candidates
     refresh: bool = False           # write a new revision instead of returning the stored one
+    public: bool = True             # also read the keyless public sources (EDGAR, Wikidata, GitHub)
 
 
 def build_router(pool_of, su_store, *, user_of=None) -> APIRouter:
@@ -64,6 +66,15 @@ def build_router(pool_of, su_store, *, user_of=None) -> APIRouter:
             raise HTTPException(status_code=404, detail="we hold no company with that id")
         pages = await su_store.pages(cid)
         doss = build(c, pages)
+        if body.public:
+            # Keyless, identity-gated, and free — but a source being down must never cost the dossier.
+            try:
+                secs, att = await public_sources.gather(c)
+                doss["sections"].extend(secs)
+                doss["attempted"].extend(att)
+            except Exception:      # noqa: BLE001
+                doss["attempted"].append({"source": "Public sources", "found": 0, "unit": "sources",
+                                          "result": "could not be reached on this run"})
         meta = await dstore.save(pool, doss, owner_id=await _owner(authorization),
                                  reason="refresh" if body.refresh else "initial")
         return {"status": "ok", "cached": False, "dossier": {**doss, **meta}}
