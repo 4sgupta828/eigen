@@ -189,11 +189,17 @@
   .dgfails{margin:0;padding:0 0 0 1rem;font-family:var(--mono);font-size:.66rem;color:var(--gap);line-height:1.5;flex:1 1 100%;}
 
   /* Mode switch — Quick Q&A ⇄ Expert Panel (one segmented control, shared look in both views) */
-  .modeswitch{display:none;justify-content:center;margin:.15rem 0 1.15rem;}
+  /* The segment clips what does not fit, so on a phone a fifth mode simply vanished — unreachable,
+     with nothing to say it was there. The row scrolls instead, and still centres when it fits. */
+  .modeswitch{display:none;justify-content:flex-start;margin:.15rem 0 1.15rem;
+    overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+  .modeswitch::-webkit-scrollbar{display:none;}
   .modeswitch.on{display:flex;}
-  .modeseg{display:inline-flex;border:1px solid var(--hair);border-radius:999px;overflow:hidden;background:var(--panel2);}
+  .modeseg{display:inline-flex;border:1px solid var(--hair);border-radius:999px;overflow:hidden;background:var(--panel2);
+    flex:0 0 auto;margin-inline:auto;}
   .modeseg .mbtn{font-family:var(--mono);font-size:.72rem;letter-spacing:.04em;cursor:pointer;border:0;white-space:nowrap;
-    background:transparent;color:var(--muted);padding:.34rem 1.05rem;transition:.12s;display:inline-flex;align-items:center;gap:.35rem;}
+    background:transparent;color:var(--muted);padding:.34rem 1.05rem;transition:.12s;display:inline-flex;align-items:center;gap:.35rem;
+    min-height:36px;}
   .authtabs{display:flex;border:1px solid var(--hair);border-radius:999px;overflow:hidden;margin:.2rem 0 .5rem;}
   .authtabs .authtab{flex:1;font:inherit;font-size:.86rem;padding:.55rem .6rem;min-height:40px;border:0;background:transparent;color:var(--muted);cursor:pointer;}
   .authtabs .authtab[aria-selected="true"]{background:var(--gold);color:var(--on-accent);font-weight:600;}
