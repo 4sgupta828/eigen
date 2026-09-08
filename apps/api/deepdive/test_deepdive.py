@@ -106,11 +106,64 @@ def test_absence_is_recorded_as_a_finding_not_a_silence():
     assert by["Named founders"]["found"] == 1
 
 
-def test_hiring_intent_replaces_the_org_chart_and_reads_the_titles_we_already_hold():
-    d = build(_company(), pages=[])
-    hire = next(s for s in d["sections"] if s["title"] == "Hiring intent")["claims"][0]
-    assert hire["open_roles"] == 8
-    assert "Staff Engineer" in hire["titles"] and "AE, Enterprise" in hire["titles"]
+def test_open_roles_come_from_the_board_rows_we_already_hold():
+    """The dossier must never be thinner than the card: the card reads crawl.ats.roles, so this does."""
+    c = _company()
+    c["crawl"]["ats"] = {"board": ["ashby", "https://jobs.ashbyhq.com/acme"],
+                         "roles": [{"title": "Staff Engineer", "location": "SF", "department": "Eng", "url": "u1"},
+                                   {"title": "AE, Enterprise", "location": "NY", "department": "Sales", "url": "u2"},
+                                   {"title": "Backend Engineer", "location": "SF", "department": "Eng", "url": "u3"}]}
+    d = build(c, pages=[])
+    hire = next(s for s in d["sections"] if s["title"] == "Open roles")["claims"][0]
+    assert hire["open_roles"] == 8 and hire["roles_total"] == 3
+    assert hire["board_url"] == "https://jobs.ashbyhq.com/acme"
+    assert hire["roles"][0]["location"] == "SF"          # the card shows location and department
+    # a sample shows the SHAPE of the hiring: one per function before a second from any
+    assert [r["title"] for r in hire["roles"]][:2] == ["Staff Engineer", "AE, Enterprise"]
+
+
+def test_a_single_posting_climbs_to_the_whole_board():
+    """"30 open roles" linking to one job was a real complaint on the card."""
+    from api.deepdive.assemble import board_root
+    assert board_root("https://jobs.ashbyhq.com/acme/a1e5-cdbc") == "https://jobs.ashbyhq.com/acme"
+    assert board_root("https://boards.greenhouse.io/acme/jobs/4093") == "https://boards.greenhouse.io/acme"
+    assert board_root("") == ""
+
+
+def test_investors_are_named_and_linked_and_say_which_round():
+    """A slug is not a name and a Google search is not a link — the card learned this the hard way."""
+    from api.deepdive.assemble import investors
+    byk = {"lead_investor": [{"key": "lead_investor", "value": "a16z", "source_url": "u", "quote": "q"}],
+           "investor": [{"key": "investor", "value": "general_catalyst", "source_url": "u", "quote": "q"},
+                        {"key": "investor", "value": "unknown_fund", "source_url": "u", "quote": "q"}]}
+    fin = [{"kind": "formd", "round_name": "Series A", "event_date": "2025-03-01",
+            "amount_usd": 8000000, "investors": ["general_catalyst"], "lead": "a16z"}]
+    rows = investors(byk, fin, {"a16z": {"name": "Andreessen Horowitz", "site": "https://a16z.com"},
+                                "general_catalyst": {"name": "General Catalyst", "site": "https://gc.com"}})
+    assert rows[0]["lead"] and rows[0]["name"] == "Andreessen Horowitz"      # the lead comes first
+    assert rows[0]["rounds"][0]["round"] == "Series A"
+    gc = next(r for r in rows if r["slug"] == "general_catalyst")
+    assert gc["site"] == "https://gc.com" and gc["rounds"][0]["amount_usd"] == 8000000
+    # a firm we cannot resolve is still NAMED, just not linked
+    unk = next(r for r in rows if r["slug"] == "unknown_fund")
+    assert unk["name"] and unk["site"] == ""
+
+
+def test_the_dossier_is_a_superset_of_the_card():
+    c = _company()
+    c["crawl"]["ats"] = {"board": ["ashby", "https://jobs.ashbyhq.com/acme"],
+                         "roles": [{"title": "Staff Engineer", "location": "SF", "department": "Eng", "url": "u"}]}
+    c["facts"] += [{"key": "investor", "value": "a16z", "number": None, "display": "", "provenance": "site",
+                    "basis": "", "source_url": "u", "quote": "q", "as_of": None, "confidence": 1.0},
+                   {"key": "total_disclosed_funding", "value": "5m_20m", "number": 8000000.0,
+                    "display": "$8M", "provenance": "derived", "basis": "", "source_url": "u",
+                    "quote": "q", "as_of": None, "confidence": 1.0}]
+    c["financing"] = [{"kind": "formd", "round_name": "Series A", "amount_usd": 8000000,
+                       "offering_usd": 8000000, "event_date": "2025-03-01", "investors": ["a16z"],
+                       "lead": "a16z", "source_url": "u", "quote": "q"}]
+    titles = [s["title"] for s in build(c, pages=[], sites={})["sections"]]
+    for expected in ("Key people", "Investors", "Funding", "Funding rounds", "Open roles"):
+        assert expected in titles, expected
 
 
 def test_prose_claims_are_read_by_a_model_never_scraped_by_a_regex():

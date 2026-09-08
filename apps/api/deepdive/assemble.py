@@ -155,19 +155,114 @@ def pricing(pages: list[dict]) -> list[dict]:
              "register": "stated", "attribution": "the company's own site"} for p in hits[:2]]
 
 
-def hiring_intent(byk: dict[str, list[dict]]) -> dict:
+def board_root(url: str) -> str:
+    """The board's root from a single posting's URL — "30 open roles" must open all thirty."""
+    u = str(url or "")
+    if not u.startswith("http"):
+        return ""
+    for pat in (r"^(https?://boards\.greenhouse\.io/[^/?#]+)", r"^(https?://job-boards\.greenhouse\.io/[^/?#]+)",
+                r"^(https?://jobs\.lever\.co/[^/?#]+)", r"^(https?://jobs\.ashbyhq\.com/[^/?#]+)",
+                r"^(https?://[^/]*workable\.com/[^/?#]+)", r"^(https?://[^/]+\.recruitee\.com)",
+                r"^(https?://[^/]+\.breezy\.hr)"):
+        m = re.match(pat, u)
+        if m:
+            return m.group(1)
+    if re.search(r"[?#]", u) and re.search(r"(career|job)", u, re.I):
+        return re.sub(r"/(job|jobs)/?$", "", u.split("?")[0].split("#")[0], flags=re.I)
+    return ""
+
+
+def diverse_roles(roles: list[dict], n: int) -> list[dict]:
+    """A sample that shows the SHAPE of the hiring: one from each function before a second from any.
+
+    Ten backend postings tell a reader less than one backend, one sales and one recruiter — which is
+    the whole point of showing roles rather than a count.
+    """
+    rows = [r for r in (roles or []) if r.get("title")]
+    if len(rows) <= n:
+        return rows
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        key = (r.get("department") or "").strip().lower() or re.split(r"[\s,(/-]+", str(r["title"]).lower())[0]
+        groups.setdefault(key, []).append(r)
+    out: list[dict] = []
+    rnd = 0
+    while len(out) < n:
+        added = False
+        for g in groups.values():
+            if len(g) > rnd:
+                out.append(g[rnd]); added = True
+                if len(out) >= n:
+                    break
+        if not added:
+            break
+        rnd += 1
+    return out
+
+
+def hiring_intent(byk: dict[str, list[dict]], crawl: dict | None = None, pages: list[dict] | None = None) -> dict:
     """Open roles and their composition — the honest replacement for a guessed org chart.
 
     What a company is hiring FOR is a verifiable public fact and says more about strategy than a
-    reporting line synthesized from inflated titles ever could (docs/specs/deepdive.md §3).
+    reporting line synthesized from inflated titles ever could (docs/specs/deepdive.md §3). The roles
+    themselves are read from the ATS rows we already store — the same source the startup card uses —
+    so a dossier is never thinner than the card it expands.
     """
-    n = next((f.get("number") for f in byk.get("hiring", []) if f.get("number") is not None), None)
-    fns = [label(f.get("value") or "") for f in byk.get("hiring_function", [])]
-    src = next((f.get("source_url") for f in byk.get("hiring", []) if f.get("source_url")), "")
-    quote = next((f.get("quote") for f in byk.get("hiring", []) if f.get("quote")), "")
-    titles = [t.strip(" -•\t") for t in (quote or "").split("\n") if 3 < len(t.strip()) < 90][:12]
-    return {"open_roles": int(n) if n is not None else None, "functions": fns,
-            "board_url": src, "titles": titles}
+    ats = ((crawl or {}).get("ats") or {})
+    roles = [r for r in (ats.get("roles") or []) if isinstance(r, dict) and r.get("title")]
+    fact = next((f for f in byk.get("hiring", []) if f.get("number") is not None), {})
+    if not roles:
+        # Older rows kept the titles only inside the hiring fact's own quote.
+        quote = str(fact.get("quote") or "")
+        roles = [{"title": t.strip(), "location": "", "department": "", "url": ""}
+                 for t in re.split(r"[;\n]", quote) if len(t.strip()) > 2]
+    n = fact.get("number")
+    board = ""
+    b = ats.get("board")
+    if isinstance(b, (list, tuple)) and len(b) > 1:
+        board = str(b[1]) if str(b[1]).startswith("http") else ""
+    if not board:
+        careers = next((p for p in (pages or []) if (p.get("kind") or "") == "careers"), None)
+        board = (careers or {}).get("url") or board_root(fact.get("source_url") or "")
+    return {"open_roles": int(n) if n is not None else (len(roles) or None),
+            "functions": [label(f.get("value") or "") for f in byk.get("hiring_function", [])],
+            "board_url": board,
+            "roles": diverse_roles(roles, 8),
+            "roles_total": len(roles),
+            "titles": [r["title"] for r in diverse_roles(roles, 8)]}
+
+
+def investors(byk: dict[str, list[dict]], financing: list[dict], sites: dict | None = None) -> list[dict]:
+    """Who backed them, named once, linked to the firm's own site where we hold it.
+
+    The card learned this the hard way: an investor slug is not a name (`general_catalyst`), and a
+    Google search is not a link. A firm we cannot resolve is still named — it is simply not a link.
+    """
+    sites = sites or {}
+    leads = {f.get("value") for f in byk.get("lead_investor", []) if f.get("value")}
+    seen: dict[str, dict] = {}
+    for f in byk.get("lead_investor", []) + byk.get("investor", []):
+        slug = f.get("value")
+        if not slug or slug in seen:
+            continue
+        entry = sites.get(slug) or {}
+        seen[slug] = {"slug": slug, "name": entry.get("name") or label(slug),
+                      "site": entry.get("site") or "", "lead": slug in leads,
+                      "source_url": f.get("source_url") or "", "quote": f.get("quote") or "",
+                      "register": "stated", "rounds": []}
+    # What each one is on record for, so "who put money in when" is answerable from the card itself.
+    for ev in financing or []:
+        names = list(ev.get("investors") or []) + ([ev.get("lead")] if ev.get("lead") else [])
+        for slug in names:
+            row = seen.get(slug)
+            if not row:
+                continue
+            when = str(ev.get("event_date") or "")[:10]
+            rnd = ev.get("round_name") or ev.get("kind") or ""
+            if rnd or when:
+                row["rounds"].append({"round": rnd, "date": when,
+                                      "amount_usd": ev.get("amount_usd") or ev.get("offering_usd")})
+    return sorted(seen.values(), key=lambda r: (not r["lead"], r["name"].lower()))
 
 
 def filed_financials(c: dict) -> list[dict]:
@@ -215,6 +310,8 @@ def attempted(c: dict, byk: dict, pages: list[dict]) -> list[dict]:
         ("ATS job board", int(next((f.get("number") or 0 for f in byk.get("hiring", [])), 0) or 0), "open roles"),
         ("Granted patents", int(next((f.get("number") or 0 for f in byk.get("patents_granted", [])), 0) or 0), "patents"),
         ("Named founders", len(c.get("founders") or []), "people"),
+        ("Named investors", len({f.get("value") for f in byk.get("investor", []) + byk.get("lead_investor", [])
+                                 if f.get("value")}), "investors"),
         ("Financing events", len(c.get("financing") or []), "events"),
     ]
     out = [{"source": s, "found": n, "unit": u, "result": ("found" if n else "nothing found")} for s, n, u in rows]
@@ -255,8 +352,13 @@ def merge_sections(sections: list[dict]) -> list[dict]:
     return out
 
 
-def build(c: dict, pages: list[dict]) -> dict:
-    """The whole free dossier for one resolved company."""
+def build(c: dict, pages: list[dict], sites: dict | None = None) -> dict:
+    """The whole free dossier for one resolved company.
+
+    A strict SUPERSET of the startup card: everything the card shows — founders and their bios,
+    investors linked to their own sites, money raised across rounds, open roles with their titles —
+    plus what only a dive collects.
+    """
     byk = _by_key(c.get("facts") or [])
     terms = _subject_terms(c)
     sections = []
@@ -271,13 +373,17 @@ def build(c: dict, pages: list[dict]) -> dict:
     sections.append(_section("Key people", "people", people,
                              note="named on the company's own pages or in a filing"))
 
-    hire = hiring_intent(byk)
-    sections.append(_section("Hiring intent", "hiring",
-                             [hire] if (hire["open_roles"] or hire["functions"]) else []))
+    hire = hiring_intent(byk, c.get("crawl"), pages)
+    sections.append(_section("Open roles", "hiring",
+                             [hire] if (hire["open_roles"] or hire["functions"] or hire["roles"]) else [],
+                             note="read from the company's own job board"))
 
     money = [_fact_claim(f) for k in _MONEY_FACTS for f in byk.get(k, [])]
     sections.append(_section("Funding", "fact", money))
-    sections.append(_section("Financing events", "financing", financing_events(c)))
+    sections.append(_section("Investors", "investors", investors(byk, c.get("financing") or [], sites),
+                             note="who is on record as backing them, and in which round"))
+    sections.append(_section("Funding rounds", "financing", financing_events(c),
+                             note="every round we hold, filed or reported"))
     sections.append(_section("Filed financials", "filed", filed_financials(c),
                              note="amounts a filing states — an offering sold is not revenue"))
 

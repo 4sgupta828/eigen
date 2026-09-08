@@ -405,8 +405,14 @@
   .dd-person b{font-size:.9rem;} .dd-person em{font-style:normal;font-family:var(--mono);font-size:.66rem;color:var(--dim);}
   .dd-person p{margin:.2rem 0 0;font-size:.82rem;line-height:1.55;}
   .dd-titles{display:flex;flex-wrap:wrap;gap:.35rem;margin:.45rem 0 0;}
-  .dd-title{font-family:var(--mono);font-size:.66rem;padding:.24rem .55rem;border-radius:999px;
-    border:1px solid var(--hair);color:var(--ink);}
+  .dd-title{font-family:var(--mono);font-size:.66rem;padding:.3rem .55rem;border-radius:999px;
+    border:1px solid var(--hair);color:var(--ink);text-decoration:none;display:inline-flex;
+    align-items:center;gap:.35rem;min-height:30px;}
+  a.dd-title:hover{border-color:var(--gold);color:var(--gold);}
+  .dd-inv{font-size:.86rem;color:var(--ink);text-decoration:none;padding:.28rem .6rem;border-radius:999px;
+    border:1px solid var(--hair);display:inline-flex;align-items:center;min-height:32px;}
+  a.dd-inv.linked{border-color:var(--gold);color:var(--gold);}
+  a.dd-inv.linked:hover{background:var(--gold);color:var(--on-accent);}
   .dd-absent{border:1px dashed var(--hair);border-radius:12px;padding:.9rem 1rem;margin:0 0 2.4rem;}
   .dd-absent h3{margin:0 0 .2rem;font-size:.78rem;font-family:var(--mono);letter-spacing:.06em;
     text-transform:uppercase;color:var(--dim);}
@@ -8870,14 +8876,35 @@ async function openShare(token){
   }
 
   function hiringRow(h){
-    const n = h.open_roles;
-    const board = h.board_url;
+    const n = h.open_roles, board = h.board_url, total = h.roles_total || 0;
     const head = (n ? "<b>" + n + (n === 1 ? " open role" : " open roles") + "</b>" : "<b>hiring</b>")
-      + (board ? " " + src(board, "the board") : "")
+      + (board ? " " + src(board, n && n > 1 ? "all " + n + " positions" : "the board") : "")
       + (h.functions && h.functions.length ? ' <span class="dd-k">' + esc(h.functions.join(" \u00b7 ")) + "</span>" : "");
-    const titles = (h.titles || []).map(t => '<span class="dd-title">' + esc(t) + "</span>").join("");
+    // Titles with where and in what team: "Staff Engineer" answers a question a count cannot.
+    const rows = (h.roles || []).map(r => {
+      const where = [r.department, r.location].filter(Boolean).join(" \u00b7 ");
+      const label = esc(r.title) + (where ? ' <span class="dd-k">' + esc(where) + "</span>" : "");
+      return r.url ? '<a class="dd-title" href="' + esc(r.url) + '" target="_blank" rel="noopener">' + label + "</a>"
+                   : '<span class="dd-title">' + label + "</span>";
+    }).join("");
+    const more = (total > (h.roles || []).length && board)
+      ? '<span class="dd-k">and ' + (total - h.roles.length) + " more</span>" : "";
     return '<div class="dd-row">' + head + "</div>"
-      + (titles ? '<div class="dd-titles">' + titles + "</div>" : "");
+      + (rows ? '<div class="dd-titles">' + rows + more + "</div>" : "");
+  }
+
+  // A slug is not a name, and a search engine is not a link: the whole chip goes to the firm's site.
+  function investorRow(v){
+    const rounds = (v.rounds || []).map(r => [r.round, r.date && r.date.slice(0, 7),
+                                              r.amount_usd ? money(r.amount_usd) : ""].filter(Boolean).join(" \u00b7 "));
+    const name = esc(v.name || v.slug);
+    const chip = v.site
+      ? '<a class="dd-inv linked" href="' + esc(v.site) + '" target="_blank" rel="noopener">' + name + " \u2197</a>"
+      : '<span class="dd-inv">' + name + "</span>";
+    return '<div class="dd-row">' + (v.lead ? '<span class="dd-reg" data-r="filed" title="led a round">lead</span>' : "")
+      + chip
+      + (rounds.length ? '<span class="dd-k">' + esc(rounds.join("  \u2022  ")) + "</span>" : "")
+      + src(v.source_url) + "</div>";
   }
 
   // The host chip already names the source, so a per-row attribution beside it is the same fact
@@ -8925,7 +8952,7 @@ async function openShare(token){
   }
 
   const ROW = { fact: factRow, people: personRow, hiring: hiringRow, stated: statedRow,
-                filed: filedRow, financing: finRow, pages: pageRow };
+                filed: filedRow, financing: finRow, pages: pageRow, investors: investorRow };
 
   function sectionHtml(sec){
     const row = ROW[sec.kind] || factRow;

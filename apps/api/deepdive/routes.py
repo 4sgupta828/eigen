@@ -133,7 +133,12 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
             return {"status": "refused", "refused": True, "projection": proj, "max_usd": body.max_usd,
                     "reason": f"this dive projects ${proj['projected_usd']:.2f}, over the ${body.max_usd:.2f} cap"}
 
-        doss = build(c, pages)
+        # The investor directory turns slugs into names and links — the same map the card uses.
+        try:
+            sites = await su_store.investor_sites()
+        except Exception:      # noqa: BLE001 — investors are still named, just not linked
+            sites = {}
+        doss = build(c, pages, sites)
         doss["spend"] = {"projection": proj, "depth": depth}
         if discovered:
             doss["discovered"] = True
