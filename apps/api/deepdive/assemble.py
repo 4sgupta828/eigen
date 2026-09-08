@@ -82,7 +82,8 @@ def sentences(text: str) -> list[str]:
     """Sentences of `text`, with abbreviations kept whole and whitespace collapsed."""
     out: list[str] = []
     for part in _SENT.split((text or "").replace("\n", " ")):
-        part = " ".join(part.split())
+        # Stripped markup leaves a gap before the punctuation it used to wrap: "$18 billion ,".
+        part = re.sub(r"\s+([,;:.!?%])", r"\1", " ".join(part.split()))
         if not part:
             continue
         # If the previous piece ended on an abbreviation, this is its continuation, not a sentence.

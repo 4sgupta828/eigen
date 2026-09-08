@@ -477,3 +477,9 @@ def test_facts_carry_the_label_a_reader_sees_not_the_column_name():
     from api.deepdive.assemble import KEY_LABELS
     assert KEY_LABELS["financing_scale"] == "Latest filing sold"
     assert KEY_LABELS["last_round_months"] == "Last round age"
+
+
+def test_stripped_markup_leaves_no_gap_before_punctuation():
+    from api.deepdive.assemble import sentences
+    assert sentences("A valuation of $18 billion , according to people.") == [
+        "A valuation of $18 billion, according to people."]
