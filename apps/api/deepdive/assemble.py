@@ -63,7 +63,30 @@ def _subject_terms(c: dict) -> list[str]:
     return [t for t in terms if t and len(t) > 2]
 
 
-_SENT = re.compile(r"(?<=[.!?])\s+")
+# Splitting on every period turns "Fluidstack Ltd. raised $830 million in a Series A round." into two
+# fragments, both too short to survive, so the claim silently never existed. The abbreviations that
+# actually appear in company prose are excluded from the split.
+_ABBR = ("inc", "ltd", "llc", "corp", "co", "plc", "gmbh", "sa", "nv", "ag", "pte", "pty", "bv",
+         "mr", "mrs", "ms", "dr", "prof", "st", "no", "vs", "etc", "eg", "ie", "jr", "sr",
+         "u.s", "u.k", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec")
+_SENT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\u201c\"'])")
+
+
+def sentences(text: str) -> list[str]:
+    """Sentences of `text`, with abbreviations kept whole and whitespace collapsed."""
+    out: list[str] = []
+    for part in _SENT.split((text or "").replace("\n", " ")):
+        part = " ".join(part.split())
+        if not part:
+            continue
+        # If the previous piece ended on an abbreviation, this is its continuation, not a sentence.
+        if out:
+            tail = out[-1].rstrip(".").split(" ")[-1].lower().rstrip(",")
+            if tail in _ABBR:
+                out[-1] = out[-1] + " " + part
+                continue
+        out.append(part)
+    return out
 # Crawled pages carry navigation, card decks and footers, none of which is a sentence. A run of
 # title-case fragments with no verb is furniture; the ledger takes prose or nothing.
 _TITLE_RUN = re.compile(r"(?:\b[A-Z][a-zA-Z]+\b[ ,]*){5,}")
@@ -74,7 +97,10 @@ def reads_like_a_sentence(s: str) -> bool:
         return False
     words = s.split()
     lower = [w for w in words if w[:1].islower()]
-    if len(lower) < 5:                      # a headline stack has almost no lowercase words
+    # A headline stack is nearly all capitalised; a short factual sentence is not. A flat floor of
+    # five lowercase words looked reasonable and threw away "Fluidstack builds gigawatt-scale data
+    # centers." — four lowercase words and a perfectly good claim. Judge the ratio, not the count.
+    if len(lower) < 3 or len(lower) < 0.35 * len(words):
         return False
     return not _TITLE_RUN.search(s)
 
@@ -85,8 +111,7 @@ def stated_milestones(pages: list[dict], subject_terms: list[str], *, limit: int
     out: list[dict] = []
     for p in pages:
         url, text = p.get("url") or "", p.get("text") or ""
-        for s in _SENT.split(text.replace("\n", " ")):
-            s = " ".join(s.split())
+        for s in sentences(text):
             if not (40 <= len(s) <= 320) or not reads_like_a_sentence(s):
                 continue
             ok_m, why_m = metric_defined(s)

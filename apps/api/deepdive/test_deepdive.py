@@ -407,3 +407,54 @@ def test_every_attempted_row_can_be_rendered():
     from api.deepdive.web import _att
     for row in (_att("Web read", 0, "pages"), _att("Web read", 3, "pages")):
         assert row["result"] and row["source"] and row["unit"]
+
+
+def test_a_short_factual_sentence_is_prose_and_a_nav_bar_is_not():
+    """A flat floor of five lowercase words threw away real claims; the ratio does not."""
+    from api.deepdive.assemble import reads_like_a_sentence as prose
+    assert prose("Fluidstack builds gigawatt-scale data centers.")
+    assert prose("Fluidstack Ltd. raised $830 million in a Series A round.")
+    assert not prose("Home About Pricing Careers Blog Contact Us Sign In.")
+    assert not prose("Product Platform Solutions Docs API Reference Support.")
+
+
+def test_coverage_may_say_the_company_after_naming_it_once():
+    """295 of 329 web sentences were dropped for "does not name the company" — which is simply how
+    articles are written. Within one retrieved chunk the reference is unambiguous."""
+    from api.deepdive.web import _claims_from
+    news = ("Fluidstack Ltd. raised $830 million in a Series A round. The company operates data "
+            "centers for AI labs. It plans to add 500 megawatts of capacity next year. "
+            "Rivals such as Globex Corp. have grown faster.")
+    by = _claims_from([_Hit(news, "funding_investors_valuation", "https://bloomberg.com/x", "Bloomberg")],
+                      ["Fluidstack", "fluidstack"], "fluidstack.io")
+    kept = [c["claim"] for c in by["funding_investors_valuation"]]
+    assert any("raised $830 million" in k for k in kept)          # named outright
+    assert any(k.startswith("The company operates") for k in kept)  # anaphora, subject established
+    assert not any("Globex" in k for k in kept)                   # a peer never inherits the reference
+
+
+def test_coreference_does_not_survive_another_company_in_the_sentence():
+    from api.deepdive.web import _claims_from
+    news = "Fluidstack raised $830 million. It now resells capacity through Globex Corp."
+    by = _claims_from([_Hit(news, "competitors_traction", "https://x.com/y", "Reuters")],
+                      ["Fluidstack"], "fluidstack.io")
+    kept = [c["claim"] for rows in by.values() for c in rows]
+    assert not any("Globex" in k for k in kept)
+
+
+def test_the_web_leg_never_re_imports_the_companys_own_marketing():
+    from api.deepdive.web import _claims_from
+    by = _claims_from([_Hit("We hire people who care deeply about this problem space. "
+                            "Fluidstack builds gigawatt-scale data centers.",
+                            "product", "https://fluidstack.io/")], ["Fluidstack"], "fluidstack.io")
+    kept = [c["claim"] for rows in by.values() for c in rows]
+    assert kept == ["Fluidstack builds gigawatt-scale data centers."]
+
+
+def test_a_company_suffix_does_not_end_a_sentence():
+    """"Fluidstack Ltd. raised $830 million…" split into two fragments, both too short to keep, so
+    the claim silently never existed — the worst kind of bug: a quiet omission."""
+    from api.deepdive.assemble import sentences
+    assert sentences("Fluidstack Ltd. raised $830 million in a Series A round. It grew fast.") == [
+        "Fluidstack Ltd. raised $830 million in a Series A round.", "It grew fast."]
+    assert len(sentences("Acme Inc. and Globex Corp. signed a deal. Both grew.")) == 2

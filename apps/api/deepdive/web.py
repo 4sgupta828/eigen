@@ -21,8 +21,8 @@ from __future__ import annotations
 import os
 import re
 
-from .assemble import reads_like_a_sentence
-from .gates import _mentions, metric_defined, subject_bound
+from .assemble import reads_like_a_sentence, sentences
+from .gates import _mentions, _names as _gate_names, metric_defined, subject_bound
 
 # Copy that appears on every site and says nothing about any company.
 _BOILER = ("for more information", "please visit", "learn more", "contact us", "sign up",
@@ -34,8 +34,10 @@ _BOILER = ("for more information", "please visit", "learn more", "contact us", "
 # the customer; in an article it is whoever the journalist called. Either way it is not the company
 # speaking, and attributing it to the company is the misattribution this whole module guards against.
 _OPENS_QUOTED = ("\u201c", '"', "\u2018", "'")
+# How an article refers to a company after naming it once. Accepted only inside a chunk that DID name
+# it, and only when the sentence names no other organisation — anaphora, not a guess.
+_COREF = re.compile(r"\b(the (company|startup|firm|business|group)|it|its|they|their)\b", re.I)
 
-_SENT = re.compile(r"(?<=[.!?])\s+")
 _FIRST_PERSON = re.compile(r"\b(we|our|us)\b", re.I)
 
 # Roughly what one bounded read costs across the keyed engines. Deliberately an over-estimate: the
@@ -86,8 +88,12 @@ def _claims_from(hits, subject_terms: list[str], own_domain: str = "",
         url = ((h.facets or {}).get("url") or (h.extra or {}).get("url")
                or getattr(h.locator, "document_id", "") or h.document_id or "")
         external = facet in _EXTERNAL
-        for s in _SENT.split((h.text or "").replace("\n", " ")):
-            s = " ".join(s.split())
+        # An article names the company once and then says "the company". Within ONE retrieved chunk
+        # that reference is unambiguous, so the chunk — not every sentence — can establish the
+        # subject. Only for external coverage: the company's own pages are read properly by the
+        # site-reading leg, and letting their marketing prose in here just re-imports a manifesto.
+        chunk_names = external and _mentions(h.text or "", subject_terms)
+        for s in sentences(h.text or ""):
             if not (40 <= len(s) <= 320):
                 continue
             if not reads_like_a_sentence(s):
@@ -103,11 +109,18 @@ def _claims_from(hits, subject_terms: list[str], own_domain: str = "",
             # sentence stand on the company's own pages, which is right when we crawled the page
             # ourselves and wrong here: "We believe whoever deploys frontier infrastructure fastest
             # will shape whether AI expands human freedom" is a manifesto, not a claim about anybody.
-            if not _mentions(s, subject_terms):
+            named_here = _mentions(s, subject_terms)
+            if not named_here and not (chunk_names and _COREF.search(s)):
                 drop("does not name the company"); continue
-            ok, why = subject_bound(s, subject_terms, url=url)
-            if not ok:
-                drop(why); continue
+            if not named_here:
+                # Coreference only holds while no other organisation is in the sentence to steal it.
+                others = {n for n in _gate_names(s) if not _mentions(n, subject_terms)}
+                if others:
+                    drop("refers to a company, but names another one"); continue
+            if named_here:
+                ok, why = subject_bound(s, subject_terms, url=url)
+                if not ok:
+                    drop(why); continue
             if re.search(r"\d", s) and not metric_defined(s)[0]:
                 drop("a figure with no definition"); continue
             key = s.lower()[:80]
