@@ -408,9 +408,12 @@
   .dd-person b{font-size:.9rem;} .dd-person em{font-style:normal;font-family:var(--mono);font-size:.66rem;color:var(--dim);}
   .dd-person p{margin:.2rem 0 0;font-size:.82rem;line-height:1.55;}
   .dd-titles{display:flex;flex-wrap:wrap;gap:.35rem;margin:.45rem 0 0;}
-  .dd-title{font-family:var(--mono);font-size:.66rem;padding:.3rem .55rem;border-radius:999px;
-    border:1px solid var(--hair);color:var(--ink);text-decoration:none;display:inline-flex;
-    align-items:center;gap:.35rem;min-height:34px;max-width:100%;}
+  /* inline-block, not inline-flex: a two-line title inside a flex chip lays its meta out as a
+     second COLUMN, leaving a gap down the middle of the pill. As text it just wraps. */
+  .dd-title{font-family:var(--mono);font-size:.66rem;padding:.4rem .6rem;border-radius:14px;
+    border:1px solid var(--hair);color:var(--ink);text-decoration:none;display:inline-block;
+    line-height:1.5;max-width:100%;}
+  .dd-title .dd-k{min-width:0;margin-left:.35rem;}
   a.dd-title:hover{border-color:var(--gold);color:var(--gold);}
   .dd-inv{font-size:.86rem;color:var(--ink);text-decoration:none;padding:.28rem .6rem;border-radius:999px;
     border:1px solid var(--hair);display:inline-flex;align-items:center;min-height:32px;}
@@ -8894,7 +8897,8 @@ async function openShare(token){
                    : '<span class="dd-title">' + label + "</span>";
     }).join("");
     const more = (total > (h.roles || []).length && board)
-      ? '<span class="dd-k">and ' + (total - h.roles.length) + " more</span>" : "";
+      ? '<span class="dd-k" style="flex:1 1 100%">and ' + (total - h.roles.length)
+        + " more \u2014 " + src(board, "see them all") + "</span>" : "";
     return '<div class="dd-row">' + head + "</div>"
       + (rows ? '<div class="dd-titles">' + rows + more + "</div>" : "");
   }
