@@ -555,6 +555,47 @@ async def run_portfolio(store: StartupStore, *, funds: list[str] | None = None, 
     return {"companies": n_new, "facts": n_fact, "report": report}
 
 
+async def run_boards(store: StartupStore, *, limit: int = 500, jid: int | None = None) -> dict:
+    """Find a company's job board WITHOUT re-crawling it.
+
+    Guessing needs only the domain, so this runs over companies that have no board on record and are
+    already crawled — which is nearly all of them, and is why folding this into the crawl did
+    nothing: the crawl only visits sites it has not seen for 90 days, so a change to its discovery
+    reaches almost no one. A guess is accepted only when the board answers with real roles.
+    """
+    import json as _json
+    from .sources import ats
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""SELECT id, crawl FROM su_company
+                                   WHERE status = 'active' AND coalesce(website,'') <> ''
+                                     AND id NOT LIKE 'cik:%'
+                                     AND crawl->'ats'->>'board' IS NULL
+                                   ORDER BY updated_at DESC LIMIT $1""", limit)
+    out = {"of": len(rows), "found": 0, "roles": 0}
+    loop = asyncio.get_event_loop()
+    for i, r in enumerate(rows):
+        try:
+            roles, board = await loop.run_in_executor(None, ats.guess_board, r["id"])
+        except Exception:      # noqa: BLE001 — one unreachable board never stops the pass
+            roles, board = ([], None)
+        if board and roles:
+            crawl = r["crawl"]
+            crawl = _json.loads(crawl) if isinstance(crawl, str) else (crawl or {})
+            crawl["ats"] = {"board": list(board),
+                            "roles": [{"title": x["title"], "location": x["location"],
+                                       "department": x["department"], "url": x["url"]} for x in roles[:200]]}
+            async with pool.acquire() as conn:
+                await conn.execute("UPDATE su_company SET crawl = $2::jsonb, updated_at = now() WHERE id = $1",
+                                   r["id"], _json.dumps(crawl))
+            out["found"] += 1
+            out["roles"] += len(roles)
+        if jid and i % 25 == 0:
+            await _progress(store, jid, dict(out, done=i + 1))
+    return out
+
+
 async def run_investors(store: StartupStore, *, limit: int = 300, jid: int | None = None) -> dict:
     """Resolve investor slugs to the firms' own sites. Free: no model, no embeddings.
 
@@ -618,7 +659,7 @@ async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int
 # ------------------------------------------------------------------ runner (background thread, own loop + pool)
 RUNNERS = {"yc": run_yc, "embed": run_embed, "formd": run_formd, "match": run_match, "crawl": run_crawl, "extract": run_extract, "derive": run_derive,
            "news": run_news, "formd_companies": run_formd_companies, "portfolio": run_portfolio, "discover_sites": run_discover_sites,
-           "investors": run_investors}
+           "investors": run_investors, "boards": run_boards}
 NEEDS_PROV = {"yc", "embed", "match", "extract", "news"}
 
 
