@@ -565,8 +565,8 @@ def project_careers_cost(n: int) -> dict:
             "projected_usd": round(n * CAREERS_USD_PER_COMPANY, 2)}
 
 
-async def run_careers_roles(store: StartupStore, *, limit: int = 200, max_usd: float = 2.0,
-                            providers: "Providers | None" = None, jid: int | None = None) -> dict:
+async def run_careers_roles(store: StartupStore, prov: Providers, *, limit: int = 200,
+                            max_usd: float = 2.0, jid: int | None = None) -> dict:
     """Read open roles off careers pages we already store. SPENDS: one small model call per company.
 
     Only companies with a stored careers page and no roles on record are considered, so this never
@@ -575,6 +575,7 @@ async def run_careers_roles(store: StartupStore, *, limit: int = 200, max_usd: f
     """
     import json as _json
     from .sources import careers
+    providers = prov
     if providers is None or providers.llm_json is None:
         return {"refused": True, "why": "no model configured"}
     await store.ensure_schema()
@@ -624,14 +625,15 @@ def project_business_model_cost(n: int) -> dict:
             "projected_usd": round(n * BUSINESS_MODEL_USD_PER_COMPANY, 2)}
 
 
-async def run_business_model(store: StartupStore, *, limit: int = 200, max_usd: float = 1.0,
-                             providers: "Providers | None" = None, jid: int | None = None) -> dict:
+async def run_business_model(store: StartupStore, prov: Providers, *, limit: int = 200,
+                             max_usd: float = 1.0, jid: int | None = None) -> dict:
     """Decide how each company makes money, from what it says about itself. SPENDS: one small call.
 
     Reads the one-liner, the description and the homepage text we already store. A company whose text
     does not say how it charges gets NO fact — that is the common case and the honest one.
     """
     from .sources import business_model as bm
+    providers = prov
     if providers is None or providers.llm_json is None:
         return {"refused": True, "why": "no model configured"}
     await store.ensure_schema()

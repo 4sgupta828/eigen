@@ -354,3 +354,16 @@ def test_a_state_comes_from_the_hq_and_only_then_from_a_filing():
     # … but a company the HQ places abroad never inherits a US state from one
     got2 = derive_facts({"hq": "London, UK"}, [], [{"state": "DE"}], [], [], {})
     assert not [f for f in got2 if f["key"] == "state"]
+
+
+def test_every_spending_job_takes_providers_the_way_the_runner_passes_them():
+    """The runner calls fn(store, providers, **params) positionally for NEEDS_PROV jobs. A job that
+    declares providers keyword-only fails at run time, not at import — which is how the first
+    business-model run died in production."""
+    import inspect
+    from api.startups import pipeline as pl
+    for kind in pl.NEEDS_PROV:
+        fn = pl.RUNNERS[kind]
+        params = list(inspect.signature(fn).parameters.values())
+        positional = [p for p in params if p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD]
+        assert len(positional) >= 2, f"{kind} cannot receive providers positionally"
