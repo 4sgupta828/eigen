@@ -7155,6 +7155,9 @@ window.addEventListener("hashchange", ()=>{
 // Only listed operations count. An unlisted request (config, history writes, favourites) is
 // invisible by design: this says "your search is running", not "the network is busy".
 // ---------------------------------------------------------------------------------------------
+const BUILD = "__BUILD__";      // stamped at deploy; type EIGEN_BUILD in the console to see this tab's
+window.EIGEN_BUILD = BUILD;
+
 const WORK_OPS = [
   [/\/startups\/compile\b/,               {msg: "Reading your brief\u2026"}],
   [/\/startups\/evaluate\b/,              {msg: "Searching the index\u2026", slowAfter: 8,
@@ -7170,6 +7173,7 @@ const WORK_OPS = [
 ];
 
 const WORK = {n: 0, since: 0, op: null, timer: null, showAt: 0};
+const WORK_CEILING = 120;      // seconds; longer than any real operation
 
 function workOp(url, init){
   for(const [re, op] of WORK_OPS){
@@ -7189,6 +7193,18 @@ function workTick(){
   }
   const s = Math.round((Date.now() - WORK.since) / 1000);
   const op = WORK.op || {};
+  // Counting requests is only honest while the count can be trusted. A socket that stalls can hold a
+  // fetch open for minutes, and a bar that keeps moving then is claiming work that is not happening.
+  // Longer than any real operation (a full dive is ~45s), so this never fires on a slow answer.
+  if(s >= WORK_CEILING){
+    WORK.n = 0;
+    document.getElementById("work").hidden = true;
+    document.getElementById("work-msg").textContent = "";
+    document.getElementById("work-el").textContent = "";
+    clearInterval(WORK.timer); WORK.timer = null; WORK.op = null; WORK.since = 0;
+    if(typeof toast === "function") toast("that request stopped responding \u2014 try again");
+    return;
+  }
   // A search that answers in 200ms should not flash a bar on its way past.
   if(box.hidden && Date.now() >= WORK.showAt) box.hidden = false;
   m.textContent = (op.slowAfter && s >= op.slowAfter && op.slowMsg) ? op.slowMsg : (op.msg || "Working\u2026");
@@ -7216,7 +7232,11 @@ function workEnd(){
     const op = workOp(url, init);
     if(!op) return raw(input, init);
     workStart(op);
-    return raw(input, init).finally(workEnd);
+    let p;
+    // fetch can throw SYNCHRONOUSLY (a bad method, an illegal header) — then no promise exists to
+    // attach a finally to, and the count would never come back down.
+    try { p = raw(input, init); } catch(e){ workEnd(); throw e; }
+    return Promise.resolve(p).finally(workEnd);
   };
 })();
 

@@ -1947,6 +1947,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         console = ui.console() if ui and hasattr(ui, "console") else {}
         return {
             "vertical": getattr(svc, "vertical_name", ""),
+            "build": _BUILD,
             "sources": list(svc.sources.keys()),
             "navigation": ui.navigation() if ui else [],
             "search_facets": ui.search_facets() if ui else [],
@@ -2098,11 +2099,18 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
     import gzip as _gzip
     _HTML_CACHE: dict[str, tuple[bytes, bytes]] = {}   # name -> (raw, gzipped)
 
+    # Stamped into the shell so "which build is this tab running" is answerable. A user reporting a
+    # bug that was fixed twenty minutes ago is usually a tab that has not been reloaded, and guessing
+    # about that wastes everybody's time.
+    _BUILD = (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("EIGEN_BUILD") or "")[:12] \
+        or __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y%m%d-%H%M")
+
     def _html_response(fname: str, accept_encoding: str):
         from fastapi.responses import Response
         if fname not in _HTML_CACHE:
             page = _WEB_DIR / fname
             raw = page.read_bytes() if page.exists() else b"<h1>Eigen</h1>"
+            raw = raw.replace(b"__BUILD__", _BUILD.encode())
             _HTML_CACHE[fname] = (raw, _gzip.compress(raw, 6))
         raw, gz = _HTML_CACHE[fname]
         if "gzip" in (accept_encoding or "").lower():
