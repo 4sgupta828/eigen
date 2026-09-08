@@ -30,7 +30,11 @@ from .gates import metric_defined, subject_bound
 _FOUNDATIONS = ("founded", "country", "state", "metro", "status", "program", "tech_area")
 _MONEY_FACTS = ("stage", "total_disclosed_funding", "last_round_amount", "last_round_months",
                 "financing_scale", "evidence_strength")
-_MARKET = ("business_model", "customer", "headcount", "open_source", "patents_granted")
+_MARKET = ("headcount", "open_source", "patents_granted")
+# These two answer questions of their own — how the money is made, and who pays — so they get their
+# own headings rather than sitting in a bag of "traction".
+_MONEY_MODEL = ("business_model",)
+_WHO_BUYS = ("customer",)
 # ARR is the one self-reported money figure we hold; it belongs in the stated ledger, never in filed.
 _STATED_FACTS = ("arr",)
 
@@ -215,6 +219,38 @@ def attempted(c: dict, byk: dict, pages: list[dict]) -> list[dict]:
     return out
 
 
+def merge_sections(sections: list[dict]) -> list[dict]:
+    """One heading, one card. Several legs legitimately answer the same question — the index knows the
+    business model, the site states it, the press describes it — and rendering three cards all called
+    "How they make money" makes the reader do the joining. Order of first appearance is kept, and each
+    claim keeps its own register and source, so a filed fact never blends into a stated one."""
+    out: list[dict] = []
+    at: dict[str, int] = {}
+    for sec in sections:
+        if not sec or not sec.get("claims"):
+            continue
+        title = sec.get("title") or ""
+        # Two legs can answer one question in different SHAPES — a facet row and a quoted claim. Each
+        # claim carries the shape it was built for, so merging never renders a row with the wrong one.
+        for c in sec["claims"]:
+            c.setdefault("row", sec.get("kind") or "fact")
+        if title in at:
+            keep = out[at[title]]
+            seen = {str(c.get("claim") or c.get("display") or c.get("name") or "")[:120] for c in keep["claims"]}
+            for c in sec["claims"]:
+                k = str(c.get("claim") or c.get("display") or c.get("name") or "")[:120]
+                if k and k in seen:
+                    continue
+                seen.add(k)
+                keep["claims"].append(c)
+            if sec.get("note") and not keep.get("note"):
+                keep["note"] = sec["note"]
+        else:
+            at[title] = len(out)
+            out.append(dict(sec, claims=list(sec["claims"])))
+    return out
+
+
 def build(c: dict, pages: list[dict]) -> dict:
     """The whole free dossier for one resolved company."""
     byk = _by_key(c.get("facts") or [])
@@ -253,6 +289,11 @@ def build(c: dict, pages: list[dict]) -> dict:
     sections.append(_section("Named customers", "pages", named_customers(pages),
                              note="only customers a page names"))
 
+    sections.append(_section("How they make money", "fact",
+                             [_fact_claim(f) for k in _MONEY_MODEL for f in byk.get(k, [])],
+                             note="the model on record for this company"))
+    sections.append(_section("Who buys", "fact",
+                             [_fact_claim(f) for k in _WHO_BUYS for f in byk.get(k, [])]))
     mkt = [_fact_claim(f) for k in _MARKET for f in byk.get(k, [])]
     sections.append(_section("Model and traction", "fact", mkt))
 

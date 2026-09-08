@@ -70,7 +70,7 @@ _FACET_TITLES = {
     "customers": "Customers, as the web describes it",
     "blog_changelog": "What they have been shipping",
     "funding_investors_valuation": "Funding coverage",
-    "competitors_traction": "Market position coverage",
+    "competitors_traction": "Competition and traction, as covered",
 }
 # The two external facets are coverage ABOUT the company by somebody else.
 _EXTERNAL = ("funding_investors_valuation", "competitors_traction")

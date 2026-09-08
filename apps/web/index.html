@@ -8819,7 +8819,8 @@ async function openShare(token){
           const k = String(c.quote).slice(0, 120);
           if(seenQuote.has(k)) c = Object.assign({}, c, {quote: ""}); else seenQuote.add(k);
         }
-        return row(c);
+        // A merged section can hold rows of two shapes; each claim says which it is.
+        return (ROW[(c && c.row) || ""] || row)(c);
       } catch(e){ return ""; }
     }).join("");
     if(!body) return "";                       // a section that renders nothing does not render at all

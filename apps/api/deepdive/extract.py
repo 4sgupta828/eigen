@@ -18,26 +18,51 @@ from __future__ import annotations
 import json
 import re
 
-from .gates import metric_defined, subject_bound
+from .gates import _host_of, _mentions, metric_defined, subject_bound
+
+
+def _same_site(url: str, own_domain: str) -> bool:
+    return bool(own_domain) and _host_of(url) == _host_of(own_domain)
 
 # Closed vocabulary. A model free to invent claim kinds produces a different dossier every run and
 # nothing that can be compared across companies.
-KINDS = ("what_they_sell", "who_buys", "pricing_terms", "differentiator", "milestone",
-         "named_customer", "named_partner", "risk_or_limit")
+KINDS = ("what_they_sell", "core_technology", "how_they_make_money", "who_buys", "pricing_terms",
+         "differentiator", "competitor", "milestone", "named_customer", "named_partner", "risk_or_limit")
+# A competitor claim names ANOTHER company by design, which is the one thing `subject_bound` exists to
+# refuse. It is admissible only as a statement OUR company makes about its own competitive set — so it
+# must come from our own domain and name us. Who the press thinks competes arrives separately, through
+# the web leg's competitors facet, in the signal register.
+_ABOUT_OTHERS = ("competitor",)
 
 SYSTEM = """You read one page from a company's own website and report only what the page STATES.
 
 Return JSON: {"claims": [{"kind": "...", "text": "...", "quote": "..."}]}
 
 Rules that decide whether a claim is kept:
-- `kind` is one of: what_they_sell, who_buys, pricing_terms, differentiator, milestone,
-  named_customer, named_partner, risk_or_limit. Nothing else.
+- `kind` is one of these, and nothing else:
+  - what_they_sell        — the product or service, in one sentence.
+  - core_technology       — HOW it works: the architecture, models, hardware, data or method the page
+                            describes. Not a slogan; something a technical reader could check.
+  - how_they_make_money   — the revenue model: WHO pays and FOR WHAT (subscription, usage/metered,
+                            licence, hardware sale, marketplace take, services, ads). If the page says
+                            they do not charge yet, or describes a planned model, that is this kind
+                            too — say plainly that it is a plan.
+  - who_buys              — the customer type the page names (enterprise, developers, SMBs, government…).
+  - pricing_terms         — an actual price, tier or contract term.
+  - differentiator        — what they claim sets them apart, where the page gives a REASON, not an adjective.
+  - competitor            — a company this page names as an alternative or competitor to THEM.
+  - milestone             — something achieved, with a defined figure and a date if given.
+  - named_customer        — a customer named on the page.
+  - named_partner         — a partner or supplier named on the page.
+  - risk_or_limit         — a limitation, caveat or dependency the page states about itself.
 - `quote` MUST be copied CHARACTER FOR CHARACTER from the page. Do not fix typos, do not shorten
   across an ellipsis, do not join two sentences. A quote that does not appear in the page verbatim
   causes the claim to be thrown away.
 - `text` is one plain sentence saying what the quote establishes about THIS company.
-- Only claims about the company whose page this is. A customer testimonial, a partner's product, or a
-  competitor named in a comparison is NOT a claim about this company — skip it.
+- Only claims about the company whose page this is. A customer testimonial or a partner's own product
+  is NOT a claim about this company — skip it. The one exception is `competitor`, where naming the
+  other company IS the point; the quote must still be this company's own comparison.
+- "We help teams move faster" is not how_they_make_money. Who pays, and for what, or skip it.
 - A number without a unit and a definition ("up 300%", "10x faster") is not a milestone. Skip it.
 - Marketing adjectives are not claims. "The leading platform" says nothing; skip it.
 - If the page states nothing that qualifies, return {"claims": []}. An empty answer is a correct answer.
@@ -74,9 +99,17 @@ def keep(claim: dict, *, page_text: str, page_url: str, subject_terms: list[str]
         return False, "no usable sentence"
     if not verbatim(quote, page_text):
         return False, "quote is not verbatim in the page"
-    ok, why = subject_bound(quote, subject_terms, url=page_url, own_domain=own_domain)
-    if not ok:
-        return False, why
+    if kind in _ABOUT_OTHERS:
+        # Our own comparison of ourselves to somebody else: it has to be our page, and it has to
+        # mention us, or it is just a sentence about another company.
+        if not _same_site(page_url, own_domain):
+            return False, "a competitor claim must come from the company's own site"
+        if not _mentions(quote, subject_terms):
+            return False, "a competitor claim must name the company making it"
+    else:
+        ok, why = subject_bound(quote, subject_terms, url=page_url, own_domain=own_domain)
+        if not ok:
+            return False, why
     if kind in _NUMERIC_KINDS and re.search(r"\d", quote):
         ok, why = metric_defined(quote)
         if not ok:
@@ -84,13 +117,16 @@ def keep(claim: dict, *, page_text: str, page_url: str, subject_terms: list[str]
     return True, ""
 
 
-_TITLES = {"what_they_sell": "What they sell", "who_buys": "Who buys", "pricing_terms": "Pricing and terms",
-           "differentiator": "What they say makes them different", "milestone": "Stated milestones",
+_TITLES = {"what_they_sell": "What they sell", "core_technology": "How it works",
+           "how_they_make_money": "How they make money", "who_buys": "Who buys",
+           "pricing_terms": "Pricing and terms", "differentiator": "What they say makes them different",
+           "competitor": "Who they compare themselves to", "milestone": "Stated milestones",
            "named_customer": "Named customers", "named_partner": "Named partners",
            "risk_or_limit": "Limits they state themselves"}
-# Order the reader wants: what it is, who it's for, on what terms, then the softer material.
-_ORDER = ("what_they_sell", "who_buys", "pricing_terms", "named_customer", "named_partner",
-          "differentiator", "milestone", "risk_or_limit")
+# The order a diligence reader wants: what it is, how it works, how it earns, who pays, who they are
+# up against — then the softer material.
+_ORDER = ("what_they_sell", "core_technology", "how_they_make_money", "who_buys", "pricing_terms",
+          "named_customer", "competitor", "named_partner", "differentiator", "milestone", "risk_or_limit")
 
 
 def sections_from(kept: list[dict]) -> list[dict]:
@@ -102,10 +138,15 @@ def sections_from(kept: list[dict]) -> list[dict]:
         rows = by.get(kind) or []
         if not rows:
             continue
+        note = ("who this company names as its competition — their framing of the market, not ours"
+                if kind == "competitor" else
+                "how the money is made, as the company states it — a plan is labelled as a plan"
+                if kind == "how_they_make_money" else
+                "the company's own words, each backed by a quote that appears on the page")
         out.append({"title": _TITLES[kind], "kind": "stated",
                     "claims": [{"claim": r["text"], "quote": r["quote"], "source_url": r["source_url"],
                                 "register": "stated", "attribution": "the company's own site"} for r in rows],
-                    "note": "the company's own words, each backed by a quote that appears on the page"})
+                    "note": note})
     return out
 
 

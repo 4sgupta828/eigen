@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from . import discover as discovery
 from . import public as public_sources
 from . import store as dstore
-from .assemble import build
+from .assemble import build, merge_sections
 from .resolve import resolve
 
 DEPTHS = ("held", "read", "full")
@@ -161,6 +161,8 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
             doss["attempted"].extend(got["attempted"])
             doss["spend"]["web_dropped"] = got.get("dropped") or {}
 
+        # Every leg has contributed; one heading, one card.
+        doss["sections"] = merge_sections(doss["sections"])
         meta = await dstore.save(pool, doss, owner_id=await _owner(authorization),
                                  reason=depth if body.refresh or depth != "held" else "initial")
         return {"status": "ok", "cached": False, "dossier": {**doss, **meta}}

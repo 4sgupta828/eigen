@@ -554,3 +554,62 @@ def test_name_matching_is_stricter_than_the_read_time_matcher():
     assert m("ElevenLabs", "elevenlabs.io") and m("Eleven Labs", "elevenlabs.io")
     assert m("Fluidstack", "fluidstack.io")
     assert not m("Acme", "globex.com")
+
+
+# ---------------------------------------------------------------- the deeper questions
+def test_the_dossier_answers_how_it_works_how_it_earns_and_who_it_is_up_against():
+    from api.deepdive.extract import _ORDER, KINDS, sections_from
+    for k in ("core_technology", "how_they_make_money", "competitor"):
+        assert k in KINDS and k in _ORDER
+    kept = [{"kind": "core_technology", "text": "Runs a distributed vector index on FPGAs.",
+             "quote": "q1", "source_url": "https://acme.com/tech"},
+            {"kind": "how_they_make_money", "text": "Charged per million queries.", "quote": "q2",
+             "source_url": "https://acme.com/pricing"},
+            {"kind": "competitor", "text": "Compares itself to Globex.", "quote": "q3",
+             "source_url": "https://acme.com/compare"}]
+    titles = [s["title"] for s in sections_from(kept)]
+    assert titles == ["How it works", "How they make money", "Who they compare themselves to"]
+
+
+def test_a_competitor_claim_must_be_the_companys_own_comparison():
+    """It names another company on purpose — the one thing the subject gate refuses — so it is
+    admissible only from our own site, naming us."""
+    from api.deepdive.extract import keep
+    page = "Acme is faster than Globex for hybrid search."
+    ok, _ = keep({"kind": "competitor", "text": "x", "quote": page},
+                 page_text=page, page_url="https://acme.com/compare", subject_terms=["Acme"],
+                 own_domain="acme.com")
+    assert ok
+    ok, why = keep({"kind": "competitor", "text": "x", "quote": page},
+                   page_text=page, page_url="https://someoneelse.com/x", subject_terms=["Acme"],
+                   own_domain="acme.com")
+    assert not ok and "own site" in why
+    ok, why = keep({"kind": "competitor", "text": "x", "quote": "Globex leads hybrid search."},
+                   page_text="Globex leads hybrid search.", page_url="https://acme.com/compare",
+                   subject_terms=["Acme"], own_domain="acme.com")
+    assert not ok and "must name the company" in why
+
+
+def test_one_heading_one_card():
+    """The index knows the business model, the site states it and the press describes it — three
+    cards with the same title makes the reader do the joining."""
+    from api.deepdive.assemble import merge_sections
+    out = merge_sections([
+        {"title": "How they make money", "kind": "fact", "claims": [{"display": "usage"}], "note": "n1"},
+        {"title": "Named customers", "kind": "pages", "claims": []},
+        {"title": "How they make money", "kind": "stated",
+         "claims": [{"claim": "Charged per million queries."}, {"display": "usage"}]},
+    ])
+    assert [s["title"] for s in out] == ["How they make money"]
+    assert len(out[0]["claims"]) == 2          # the duplicate value is not repeated
+    assert out[0]["note"] == "n1"
+
+
+def test_a_merged_section_renders_each_row_in_its_own_shape():
+    from api.deepdive.assemble import merge_sections
+    out = merge_sections([
+        {"title": "Named customers", "kind": "pages", "claims": [{"source_url": "u", "excerpt": "x"}]},
+        {"title": "Named customers", "kind": "stated", "claims": [{"claim": "Globex uses it."}]},
+    ])
+    rows = out[0]["claims"]
+    assert [r["row"] for r in rows] == ["pages", "stated"]
