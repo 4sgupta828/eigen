@@ -345,6 +345,11 @@
     .vo-chip{font-size:.66rem;padding:.36rem .6rem;}
   }
   /* ===== Working — the shared "something is happening" banner ===== */
+  /* `hidden` is only display:none from the UA sheet, and ANY author display declaration beats it —
+     so `.work{display:flex}` kept this banner on screen at rest: an empty pill with a parked bar
+     that started moving whenever a search ran. That is the spinner that would not go away. The id
+     selector outranks the class, so hidden means hidden. */
+  #work[hidden]{display:none;}
   .work{display:flex;align-items:center;gap:.6rem;margin:.6rem 0 .2rem;padding:.55rem .75rem;
     border:1px solid var(--hair);border-radius:10px;background:var(--panel2);}
   .work-bar{position:relative;flex:0 0 84px;height:3px;border-radius:2px;background:var(--hair);overflow:hidden;}
