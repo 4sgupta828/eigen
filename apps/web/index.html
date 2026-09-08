@@ -7173,11 +7173,11 @@ const BUILD = "__BUILD__";      // stamped at deploy; type EIGEN_BUILD in the co
 window.EIGEN_BUILD = BUILD;
 
 const WORK_OPS = [
-  [/\/startups\/compile\b/,               {msg: "Reading your brief\u2026"}],
-  [/\/startups\/evaluate\b/,              {msg: "Searching the index\u2026", slowAfter: 8,
+  [/\/startups\/compile\b/,               {family: "startups", msg: "Reading your brief\u2026"}],
+  [/\/startups\/evaluate\b/,              {family: "startups", msg: "Searching the index\u2026", slowAfter: 8,
                                            slowMsg: "Still searching \u2014 merging the variant searches\u2026"}],
-  [/\/startups\/maps\/[^/]+\/navigate/,   {msg: "Searching the index\u2026"}],
-  [/\/startups\/group\b/,                 {msg: "Grouping these companies\u2026", slowAfter: 10,
+  [/\/startups\/maps\/[^/]+\/navigate/,   {family: "startups", msg: "Searching the index\u2026"}],
+  [/\/startups\/group\b/,                 {family: "startups", msg: "Grouping these companies\u2026", slowAfter: 10,
                                            slowMsg: "Still grouping \u2014 reading the whole result set\u2026"}],
   [/\/voices\/search\b/,                  {msg: "Searching what founders and investors said\u2026"}],
   [/\/voices\/summarize\b/,               {msg: "Reading this moment\u2026"}],
@@ -7186,7 +7186,7 @@ const WORK_OPS = [
                                            skip: init => /"project_only"\s*:\s*true/.test(String((init || {}).body || ""))}],
 ];
 
-const WORK = {n: 0, since: 0, op: null, timer: null, showAt: 0};
+const WORK = {n: 0, since: 0, op: null, timer: null, showAt: 0, idleSince: Date.now()};
 const WORK_CEILING = 120;      // seconds; longer than any real operation
 
 function workOp(url, init){
@@ -7235,8 +7235,46 @@ function workStart(op){
 
 function workEnd(){
   WORK.n = Math.max(0, WORK.n - 1);
+  if(WORK.n === 0) WORK.idleSince = Date.now();
   workTick();
 }
+
+// Is a request of this family in flight? Every indicator in the app should ask this rather than keep
+// its own boolean — a flag set in one place and cleared in another is how a spinner gets stranded.
+function workingOn(family){
+  return WORK.n > 0 && (!family || ((WORK.op || {}).family === family));
+}
+
+// A spinner that outlives its work is a bug we cannot always prevent — this makes it recoverable.
+// Only fires when NOTHING has been in flight for a while, and only clears the flags the app owns,
+// so a streamed answer (which is not a fetch we count) is never interrupted.
+const WORK_IDLE_SWEEP = 15000;
+setInterval(function(){
+  if(WORK.n > 0 || !WORK.idleSince || Date.now() - WORK.idleSince < WORK_IDLE_SWEEP) return;
+  try{
+    if(typeof STATE === "object" && STATE && (STATE.busy || STATE.autoBusy)){
+      STATE.busy = false; STATE.autoBusy = false;
+      if(typeof renderRail === "function") renderRail();
+      if(typeof renderResults === "function") renderResults();
+    }
+    document.body.classList.remove("su-busy");
+  }catch(e){ /* a sweep that throws must not become the thing that breaks the page */ }
+}, 5000);
+
+// One command in the console when something looks stuck: what is spinning, and is anything running.
+window.EIGEN_SPIN = function(){
+  const seen = [];
+  document.querySelectorAll(".su-spin, .work, .status, .spin, .sg-busy, .frail-apply, .panelstatus")
+    .forEach(function(el){
+      const r = el.getBoundingClientRect();
+      if(el.hidden || !r.width || !r.height) return;
+      seen.push({what: el.className || el.tagName, says: (el.textContent || "").trim().slice(0, 70),
+                 inside: (el.closest("section[id],div[id]") || {}).id || ""});
+    });
+  return {build: BUILD, inflight: WORK.n, op: (WORK.op || {}).msg || null,
+          idleFor: WORK.idleSince ? Math.round((Date.now() - WORK.idleSince) / 1000) + "s" : null,
+          spinning: seen};
+};
 
 // One seam for every mode. Wrapping fetch is what makes "it always stops" true rather than hoped for.
 (function(){
@@ -7403,7 +7441,7 @@ function railHtml(){
   // and a "show the new first" button; the pool (matched-every-must) before → after.
   const df = STATE.lastDiff;
   const diffLine = (!n && df) ? `<span class="frail-done">Applied ✓ — ${STATE.data.rows.length} shown${df.added.length?` · <b>${df.added.length} new</b>`:""}${df.removedNames.length?` · ${df.removedNames.length} dropped`:""}${!df.added.length && !df.removedNames.length ? " · same rows, order may differ" : ""}${(df.matchedBefore!=null && df.matchedAfter!=null && df.matchedBefore!==df.matchedAfter)?` · pool ${df.matchedBefore} → ${df.matchedAfter}`:""}</span>${df.removedNames.length?` <details class="su-diff"><summary>what dropped</summary>${esc(df.removedNames.slice(0,30).join(", "))}${df.removedNames.length>30?" …":""}</details>`:""}${df.added.length && !STATE.newFirst ? ` <span class="su-note">(corner flag)</span> <button type="button" class="btn" id="su-shownew">Show the ${df.added.length} new first</button>` : ""}` : "";
-  const apply = STATE.busy ? `<div class="frail-apply"><span class="su-spin"></span><b>Applying…</b> re-evaluating the index with your changes</div>`
+  const apply = workingOn("startups") ? `<div class="frail-apply"><span class="su-spin"></span><b>Applying…</b> re-evaluating the index with your changes</div>`
                 : n ? `<div class="frail-apply"><b>${n} change${n===1?"":"s"} pending</b> — nothing runs until you apply. <button type="button" class="btn primary" id="apply">Apply</button><button type="button" class="btn" id="reset">Reset</button></div>`
                   : `<div class="frail-apply">${diffLine || "Tap chips to stage changes, then apply once."} ${lowMust}</div>`;
   const rx = (d.relaxed||[]).filter(n => n.rule === "relaxed"); let relaxedLine = "";
