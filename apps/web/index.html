@@ -7161,8 +7161,8 @@ function cardHtml(row){
   // find who is hiring, and a hiring signal buried between "est. 2023" and "5 people" is invisible
   // to them. Where we hold the actual titles they are named here, because "3 open roles" answers a
   // filter while "Senior Platform Engineer" answers the question.
-  const roleObjs = (((co.crawl || {}).ats || {}).roles) || [];
-  const board = boardUrlOf(co.crawl);
+  const roleObjs = rolesOf(co.crawl, hiring);
+  const board = rolesLinkOf(co.crawl, hiring);
   let hiringStrip = "";
   if(hiring || roleObjs.length){
     const titles = roleObjs.slice(0, 3).map(r => esc(r.title)).join(" · ");
@@ -7251,6 +7251,30 @@ $("#su-results").addEventListener("click", async e=>{
 });
 // Where a company's job board lives, from the token we stored. Shared by the card face and the
 // expanded card, because a reader looking for roles should be able to reach them from either.
+// Where the open roles actually are. The crawl's role list is the best source, but a later crawl
+// that found no board overwrote it for 416 companies whose titles survive in the hiring fact's own
+// quote — "Senior Software Engineer; Regional Director; …". Reading that back turns "we did not keep
+// the postings" into the list the reader came for.
+function rolesOf(crawl, hiringFact){
+  const kept = (((crawl || {}).ats || {}).roles) || [];
+  if(kept.length) return kept;
+  const q = String((hiringFact || {}).quote || "");
+  if(!q) return [];
+  return [...new Set(q.split(/\s*;\s*/).map(t => t.trim()).filter(t => t.length > 2))]
+    .map(t => ({title: t, location: "", department: "", url: ""}));
+}
+// The best link we can offer for those roles: the board, else the page the count came from, else the
+// careers page we crawled.
+function rolesLinkOf(crawl, hiringFact){
+  const b = boardUrlOf(crawl);
+  if(b) return b;
+  const src = String((hiringFact || {}).source_url || "");
+  if(src.startsWith("http")) return src;
+  const pages = ((crawl || {}).pages) || [];
+  const careers = pages.find(p => p.kind === "careers");
+  return careers ? careers.url : "";
+}
+
 function boardUrlOf(crawl){
   const b = (((crawl || {}).ats || {}).board) || [];
   const kind = Array.isArray(b) ? b[0] : "", token = Array.isArray(b) ? b[1] : "";
@@ -7321,7 +7345,8 @@ function drawerHtml(co){
   const byKey = k => facts.filter(f => f.key === k);
   const pick = keys => keys.flatMap(byKey);
   const crawl = co.crawl || {};
-  const roles = ((crawl.ats || {}).roles) || [];
+  const hiringFact = (facts.find(f => f.key === "hiring") || {});
+  const roles = rolesOf(crawl, hiringFact);
   const sec = (cls, title, body, note) => body
     ? `<section class="d-card ${cls}"><h5>${esc(title)}${note ? ` <span class="d-note">${esc(note)}</span>` : ""}</h5>${body}</section>` : "";
 
@@ -7390,7 +7415,8 @@ function drawerHtml(co){
 
   // ── hiring ─────────────────────────────────────────────────────────────────────────────────────
   const hireFacts = pick(HIRE_KEYS);
-  const roleHref = r => r.url || boardUrl() || "";
+  const board = rolesLinkOf(crawl, hiringFact);
+  const roleHref = r => r.url || board || "";
   const roleList = roles.slice(0, 12).map(r => {
     const href = roleHref(r);
     const inner = `${esc(r.title || "role")}` + (r.location ? `<span class="d-rloc">${esc(r.location)}</span>` : "");
@@ -7401,14 +7427,10 @@ function drawerHtml(co){
   // We know the COUNT for far more companies than we kept the postings for — the count comes from
   // their board, the titles only survive when we crawled it ourselves. Rather than showing a bare
   // number with nothing to click, link the board we counted so the reader can go and see the roles.
-  const boardUrl = () => boardUrlOf(crawl);
-    if(!kind || !token) return "";
-
-  const board = boardUrl();
   const noRoles = !roleList && hireFacts.length
     ? (board
-        ? `<a class="d-role" href="${esc(board)}" target="_blank" rel="noopener">See the roles on their job board<span class="d-rloc">↗</span></a>`
-        : `<div class="d-note">Counted from their job board; we did not keep the postings.</div>`)
+        ? `<a class="d-role" href="${esc(board)}" target="_blank" rel="noopener">See the roles where we counted them<span class="d-rloc">↗</span></a>`
+        : `<div class="d-note">Counted from their job board, which we could not read back.</div>`)
     : "";
   const hiring = sec("hiring", "Open roles",
     (hireFacts.length ? `<div class="d-stats">${uniqStats(hireFacts).map(statHtml).join("")}</div>` : "")

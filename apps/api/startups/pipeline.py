@@ -615,6 +615,64 @@ async def run_careers_roles(store: StartupStore, *, limit: int = 200, max_usd: f
     return out
 
 
+# One short classification per company: ~600 tokens in, ~80 out on gpt-4o-mini.
+BUSINESS_MODEL_USD_PER_COMPANY = float(os.environ.get("EIGEN_STARTUP_BM_USD", "0.00015"))
+
+
+def project_business_model_cost(n: int) -> dict:
+    return {"companies": n, "usd_per_company": BUSINESS_MODEL_USD_PER_COMPANY,
+            "projected_usd": round(n * BUSINESS_MODEL_USD_PER_COMPANY, 2)}
+
+
+async def run_business_model(store: StartupStore, *, limit: int = 200, max_usd: float = 1.0,
+                             providers: "Providers | None" = None, jid: int | None = None) -> dict:
+    """Decide how each company makes money, from what it says about itself. SPENDS: one small call.
+
+    Reads the one-liner, the description and the homepage text we already store. A company whose text
+    does not say how it charges gets NO fact — that is the common case and the honest one.
+    """
+    from .sources import business_model as bm
+    if providers is None or providers.llm_json is None:
+        return {"refused": True, "why": "no model configured"}
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""SELECT c.id, c.name, c.one_liner, c.description,
+                                          (SELECT p.text FROM su_page p
+                                            WHERE p.company_id = c.id AND p.kind = 'home' LIMIT 1) AS home
+                                   FROM su_company c
+                                   WHERE c.status = 'active'
+                                     AND (coalesce(c.one_liner,'') <> '' OR coalesce(c.description,'') <> '')
+                                     AND NOT EXISTS (SELECT 1 FROM su_fact f
+                                                     WHERE f.company_id = c.id AND f.key = 'business_model')
+                                   ORDER BY c.updated_at DESC LIMIT $1""", limit)
+    proj = project_business_model_cost(len(rows))
+    if proj["projected_usd"] > max_usd:
+        return {"refused": True, "projection": proj, "max_usd": max_usd}
+
+    out = {"of": len(rows), "read": 0, "decided": 0, "unknown": 0, "projection": proj}
+    for i, r in enumerate(rows):
+        src = "\n".join(x for x in (r["one_liner"] or "", r["description"] or "", (r["home"] or "")[:1500]) if x)
+        try:
+            data = await providers.llm_json(bm.SYSTEM,
+                                            bm.user_payload(r["name"] or r["id"], r["one_liner"] or "",
+                                                            r["description"] or "", (r["home"] or "")[:1500]))
+        except Exception:      # noqa: BLE001 — one failure never stops the pass
+            continue
+        out["read"] += 1
+        got = bm.validate(data or {}, src)
+        if not got:
+            out["unknown"] += 1
+            continue
+        await store.replace_facts(r["id"], "model", [{
+            "key": "business_model", "value": got["value"], "quote": got["quote"],
+            "source_url": "", "basis": "self_described", "confidence": 0.7}])
+        out["decided"] += 1
+        if jid and i % 20 == 0:
+            await _progress(store, jid, dict(out, done=i + 1))
+    return out
+
+
 async def run_boards(store: StartupStore, *, limit: int = 500, jid: int | None = None) -> dict:
     """Find a company's job board WITHOUT re-crawling it.
 
@@ -719,8 +777,9 @@ async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int
 # ------------------------------------------------------------------ runner (background thread, own loop + pool)
 RUNNERS = {"yc": run_yc, "embed": run_embed, "formd": run_formd, "match": run_match, "crawl": run_crawl, "extract": run_extract, "derive": run_derive,
            "news": run_news, "formd_companies": run_formd_companies, "portfolio": run_portfolio, "discover_sites": run_discover_sites,
-           "investors": run_investors, "boards": run_boards, "careers_roles": run_careers_roles}
-NEEDS_PROV = {"yc", "embed", "match", "extract", "news", "careers_roles"}
+           "investors": run_investors, "boards": run_boards, "careers_roles": run_careers_roles,
+           "business_model": run_business_model}
+NEEDS_PROV = {"yc", "embed", "match", "extract", "news", "careers_roles", "business_model"}
 
 
 async def start_job(store: StartupStore, dsn: str, kind: str, params: dict, *, providers: Providers | None = None) -> int:
