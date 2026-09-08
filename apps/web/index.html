@@ -7246,19 +7246,20 @@ function workingOn(family){
 }
 
 // A spinner that outlives its work is a bug we cannot always prevent — this makes it recoverable.
-// Only fires when NOTHING has been in flight for a while, and only clears the flags the app owns,
-// so a streamed answer (which is not a fetch we count) is never interrupted.
+// Each mode is its own IIFE, so a sweep at top level cannot SEE the flags it would clear (the same
+// scoping that hid `usd` and `beginWork`). The module that owns a flag says how to clear it; the
+// sweep only decides when. It fires when NOTHING has been in flight for fifteen seconds, and never
+// touches a streamed answer, because a stream is not a fetch this counts.
 const WORK_IDLE_SWEEP = 15000;
+const WORK_SWEEPERS = [];
+function onIdleSweep(fn){ if(typeof fn === "function") WORK_SWEEPERS.push(fn); }
 setInterval(function(){
   if(WORK.n > 0 || !WORK.idleSince || Date.now() - WORK.idleSince < WORK_IDLE_SWEEP) return;
-  try{
-    if(typeof STATE === "object" && STATE && (STATE.busy || STATE.autoBusy)){
-      STATE.busy = false; STATE.autoBusy = false;
-      if(typeof renderRail === "function") renderRail();
-      if(typeof renderResults === "function") renderResults();
-    }
-    document.body.classList.remove("su-busy");
-  }catch(e){ /* a sweep that throws must not become the thing that breaks the page */ }
+  document.body.classList.remove("su-busy");
+  for(const fn of WORK_SWEEPERS){
+    try{ if(fn()) WORK.swept = (WORK.swept || 0) + 1; }
+    catch(e){ /* a sweep that throws must not become the thing that breaks the page */ }
+  }
 }, 5000);
 
 // One command in the console when something looks stuck: what is spinning, and is anything running.
@@ -7271,7 +7272,7 @@ window.EIGEN_SPIN = function(){
       seen.push({what: el.className || el.tagName, says: (el.textContent || "").trim().slice(0, 70),
                  inside: (el.closest("section[id],div[id]") || {}).id || ""});
     });
-  return {build: BUILD, inflight: WORK.n, op: (WORK.op || {}).msg || null,
+  return {build: BUILD, inflight: WORK.n, op: (WORK.op || {}).msg || null, swept: WORK.swept || 0,
           idleFor: WORK.idleSince ? Math.round((Date.now() - WORK.idleSince) / 1000) + "s" : null,
           spinning: seen};
 };
@@ -8341,6 +8342,13 @@ function renderShared(snap){
                       + ". Search again to see the index as it is now."}]);
 }
 
+// If these are still set with nothing in flight, they are stranded — clear them and re-render.
+onIdleSweep(function(){
+  if(!STATE.busy && !STATE.autoBusy) return false;
+  STATE.busy = false; STATE.autoBusy = false;
+  renderRail(); renderResults();
+  return true;
+});
 window.SU = { search: runCompile, enter, onAuth, runContract, reset, renderShared };
 
 })();
@@ -8872,6 +8880,7 @@ async function openShare(token){
     }catch(e){ /* a missing strip is never worth breaking a card over */ }
   }
 
+  onIdleSweep(function(){ if(!STATE.busy) return false; STATE.busy = false; return true; });
   window.VO = { search, enter, forCompany, showSaved, renderFrozen };
 })();
 
@@ -9230,6 +9239,7 @@ async function openShare(token){
     }
   }
 
+  onIdleSweep(function(){ if(!STATE.busy) return false; STATE.busy = false; return true; });
   window.DD = { search, enter, dive, renderShared };
 })();
 </script>
