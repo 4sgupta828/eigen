@@ -344,6 +344,18 @@
     .vo-body{padding:0 .8rem .8rem;}
     .vo-chip{font-size:.66rem;padding:.36rem .6rem;}
   }
+  /* ===== Working — the shared "something is happening" banner ===== */
+  .work{display:flex;align-items:center;gap:.6rem;margin:.6rem 0 .2rem;padding:.55rem .75rem;
+    border:1px solid var(--hair);border-radius:10px;background:var(--panel2);}
+  .work-bar{position:relative;flex:0 0 84px;height:3px;border-radius:2px;background:var(--hair);overflow:hidden;}
+  .work-bar i{position:absolute;inset:0 auto 0 0;width:38%;border-radius:2px;background:var(--gold);
+    animation:workslide 1.15s ease-in-out infinite;}
+  @keyframes workslide{0%{left:-38%}100%{left:100%}}
+  .work-msg{font-family:var(--mono);font-size:.7rem;color:var(--ink);letter-spacing:.02em;flex:1 1 auto;}
+  .work-el{font-family:var(--mono);font-size:.66rem;color:var(--dim);white-space:nowrap;}
+  @media (prefers-reduced-motion:reduce){ .work-bar i{animation:none;width:100%;opacity:.5;} }
+  @media (max-width:560px){ .work{gap:.45rem;padding:.5rem .6rem;} .work-bar{flex-basis:52px;} }
+
   /* ===== DeepDive — one company, read end to end (body[data-mode="deepdive"]) =====
      Two registers, two colours, and they never blend: FILED is what a filing states, STATED is what
      the company claims. The Manifest of Absence is deliberately as prominent as the findings —
@@ -2007,6 +2019,13 @@
 
 <section class="panelbody" id="panelbody" hidden aria-label="Expert panel"></section>
   <section class="triagebody" id="triagebody" hidden aria-label="Guided intake"></section>
+<!-- One progress banner for every mode. A search that takes 45 seconds with nothing on screen looks
+     broken, and the honest fix is to say what is happening and how long it has been happening. -->
+<div id="work" class="work" role="status" aria-live="polite" hidden>
+  <span class="work-bar"><i></i></span>
+  <span class="work-msg" id="work-msg"></span>
+  <span class="work-el" id="work-el"></span>
+</div>
 <section id="guidedbody" aria-label="Guided startup search"></section>
 <section id="voicesbody" aria-label="Voices — first-person startup content">
   <div class="vo-filters" id="vo-filters">
@@ -7179,6 +7198,34 @@ $("#su-myMaps").addEventListener("click", showMyMaps);
 const GL = { formd:"▣", press:"▤", site:"▢", yc:"◈", ats:"⚙", derived:"∑", portfolio:"◇" };
 const PROV_TITLE = { formd:"SEC Form D filing", press:"press", site:"the company's own site (self-reported)", yc:"Y Combinator directory", ats:"ATS job board", derived:"computed from the facts below", portfolio:"investor portfolio page" };
 
+// One progress banner, shared by every mode (docs: the user could not tell a search had started).
+// `beginWork` returns a handle: `.step()` changes the message as the work moves on, `.done()` clears
+// it. The elapsed seconds appear once a wait is long enough to worry about, and a long-running read
+// says what it is waiting on rather than pretending to be nearly finished.
+let WORK = null;
+function beginWork(msg, opts){
+  opts = opts || {};
+  const box = document.getElementById("work"), m = document.getElementById("work-msg"),
+        el = document.getElementById("work-el");
+  if(!box) return {step(){}, done(){}};
+  if(WORK) WORK.done();
+  const started = Date.now();
+  m.textContent = msg || "Working\u2026";
+  el.textContent = "";
+  box.hidden = false;
+  const tick = setInterval(() => {
+    const s = Math.round((Date.now() - started) / 1000);
+    el.textContent = s >= 3 ? s + "s" : "";
+    if(opts.slowAfter && s === opts.slowAfter && opts.slowMsg) m.textContent = opts.slowMsg;
+  }, 500);
+  const handle = {
+    step(next){ if(next) m.textContent = next; },
+    done(){ clearInterval(tick); box.hidden = true; el.textContent = ""; if(WORK === handle) WORK = null; }
+  };
+  WORK = handle;
+  return handle;
+}
+
 function toast(m){ const t=$("#su-toast"); t.textContent=m; t.classList.add("on"); setTimeout(()=>t.classList.remove("on"), 2200); }
 function label(key, v){ const L=STATE.labels||{}; if(v==="unknown") return "unknown"; return (L.values||{})[v] || String(v).replace(/_/g," "); }
 function klabel(key){ const L=STATE.labels||{}; return (L.keys||{})[key] || key; }
@@ -8021,6 +8068,7 @@ function renderNotes(notes){ $("#su-notes").innerHTML = (notes&&notes.length) ? 
 // ---------- run
 async function runCompile(text){
   STATE.busy=true; document.body.classList.add("su-busy");
+  const W = beginWork("Reading your brief\u2026");
   try{
     const r=await fetch("/startups/compile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text})});
     if(!r.ok){ toast("could not compile: "+(await r.text()).slice(0,120)); return; }
@@ -8037,15 +8085,21 @@ async function runCompile(text){
       d.contract.must = Object.assign({}, must, {country: ["us"]});
       notes.push("Showing United States by default — press Worldwide, or pick a country, to widen it.");
     }
+    W.step("Searching the index\u2026");
     renderNotes(notes); STATE.brief=text; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.merge={mode:"merged"}; STATE.mergeOff=[]; renderMapBar(); await runEvaluate(d.contract);
     history.replaceState(null,"","#startups?b="+encodeURIComponent(text));
-  } finally { STATE.busy=false; document.body.classList.remove("su-busy"); }
+  } finally { STATE.busy=false; document.body.classList.remove("su-busy"); W.done(); }
 }
 async function runEvaluate(contract, opts){
   opts = opts || {};
   const prev = (opts.diff && STATE.data) ? STATE.data.rows : null;          // an Apply: remember what was showing
   STATE.newFirst=false;
   STATE.busy=true; renderRail();
+  // A re-run from the rail has no compile in front of it, so it opens its own banner; when compile
+  // is already showing one, that banner keeps running and this must not close it.
+  const own = !WORK;
+  const W = WORK || beginWork(opts.diff ? "Applying your changes\u2026" : "Searching the index\u2026",
+                              {slowAfter: 8, slowMsg: "Still searching \u2014 merging the variant searches\u2026"});
   try{
     const m=STATE.map;
     const url = m ? `/startups/maps/${m.id}/navigate${m.share?"?share="+encodeURIComponent(m.share):""}` : "/startups/evaluate";
@@ -8066,7 +8120,7 @@ async function runEvaluate(contract, opts){
     rememberStartupSearch(d.contract || contract, STATE.brief, (d.rows || []).length);
     renderCoverage(); renderRail(); renderResults();
     if(prev){ const el=$("#su-rail"); if(el) el.scrollIntoView({block:"start", behavior:"smooth"}); }
-  } finally { STATE.busy=false; renderRail(); }
+  } finally { STATE.busy=false; renderRail(); if(own) W.done(); }
 }
 if(EXAMPLES.length){
   $("#su-examples").innerHTML = EXAMPLES.map(x=>`<button type="button" class="su-ex">${esc(x)}</button>`).join("");
@@ -8489,6 +8543,8 @@ async function openShare(token){
     if(winEl) winEl.hidden = !!STATE.q;
     note().textContent = "Searching what people actually said\u2026";
     cards().innerHTML = "";
+    const W = beginWork(STATE.q ? "Searching what founders and investors said\u2026"
+                                : "Loading what landed recently\u2026");
     try{
       const r = await fetch("/voices/search", {method:"POST",
         headers: Object.assign({"content-type":"application/json"}, authHeaders()),
@@ -8504,7 +8560,7 @@ async function openShare(token){
     }catch(e){
       cards().innerHTML = "";
       note().textContent = "Voices search failed: " + (e && e.message ? e.message : e);
-    }finally{ STATE.busy = false; }
+    }finally{ STATE.busy = false; W.done(); }
   }
 
   function wire(){
@@ -8910,8 +8966,14 @@ async function openShare(token){
     try{
       if(!(await confirmSpend(body))){ STATE.busy = false; note().textContent = "Nothing was spent."; return; }
     }catch(e){ STATE.busy = false; note().textContent = "Could not price that read."; return; }
-    note().textContent = body.depth === "held" ? "Reading everything we hold on this company\u2026"
-      : "Reading the company\u2026 this one goes out to the network.";
+    note().textContent = "";
+    const deep = body.depth !== "held";
+    const W = beginWork(body.discover || body.accept_domain ? "Looking for the company on the web\u2026"
+                        : deep ? "Reading the company\u2026" : "Reading what we hold on this company\u2026",
+                        {slowAfter: 6,
+                         slowMsg: deep ? "Reading their own pages, then the public record\u2026"
+                                       : "Checking EDGAR, Wikidata and public code\u2026"});
+    if(body.depth === "full") setTimeout(() => W.step("Reading independent coverage\u2026"), 18000);
     out().innerHTML = "";
     try{
       const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
@@ -8933,7 +8995,7 @@ async function openShare(token){
       if(again) again.addEventListener("click", e => { e.preventDefault(); dive({company_id: STATE.cid, refresh: true}); });
     }catch(e){
       note().textContent = "That dive failed to load. " + (e && e.message ? e.message : "");
-    }finally{ STATE.busy = false; }
+    }finally{ STATE.busy = false; W.done(); }
   }
 
   async function search(q){
