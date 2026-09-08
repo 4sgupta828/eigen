@@ -6918,13 +6918,7 @@ window.addEventListener("hashchange", ()=>{
 // ===== Startup Search — inline mode (ported from apps/web/startups.html; ids/classes prefixed su-) =====
 (function(){
 
-const EXAMPLES = [
-  "seed to series A AI infra startups with ≥ $5M raised, not YC",
-  "YC robotics companies founded after 2023 that are hiring engineers",
-  "fintech startups selling to enterprises with a filing-backed round in the last 12 months",
-  "developer tools startups with 2–3 founders, founders from Google or Stripe",
-  "bio / health startups with over $20M disclosed funding and a stated series B",
-];
+const EXAMPLES = [];    // no seeded example searches — the placeholder already shows the shape
 const STATE = { contract:null, draft:null, data:null, labels:null, busy:false, open:null, map:null, brief:"",
                 sort:"relevance", groupBy:"", openGroups:{}, auto:null, autoBusy:false };
 // ---------- account: the shell owns USER, the identity modal and the token header
@@ -7835,8 +7829,10 @@ async function runEvaluate(contract, opts){
     if(prev){ const el=$("#su-rail"); if(el) el.scrollIntoView({block:"start", behavior:"smooth"}); }
   } finally { STATE.busy=false; renderRail(); }
 }
-$("#su-examples").innerHTML = EXAMPLES.map(x=>`<button type="button" class="su-ex">${esc(x)}</button>`).join("");
-$("#su-examples").addEventListener("click", e=>{ const b=e.target.closest(".su-ex"); if(b){ q.value=b.textContent; runCompile(b.textContent); } });
+if(EXAMPLES.length){
+  $("#su-examples").innerHTML = EXAMPLES.map(x=>`<button type="button" class="su-ex">${esc(x)}</button>`).join("");
+  $("#su-examples").addEventListener("click", e=>{ const b=e.target.closest(".su-ex"); if(b){ q.value=b.textContent; runCompile(b.textContent); } });
+}
 $("#su-covLink").addEventListener("click", async e=>{ e.preventDefault(); const r=await fetch("/startups/coverage"); const c=await r.json(); STATE.indexCov=c; STATE.labels=c.labels; renderCoverage();
   const jobs=(c.jobs||[]).slice(0,5).map(j=>`${j.kind} ${j.status} ${JSON.stringify(j.progress).slice(0,120)}`).join("\n"); if(jobs) toast(jobs.split("\n")[0]); });
 let entered=false;
