@@ -442,9 +442,13 @@
   #startupsbody .d-note{font-family:var(--mono);font-size:.62rem;color:var(--muted);text-transform:none;letter-spacing:0;}
   #startupsbody .d-lede{margin:0 0 .45rem;font-size:.92rem;line-height:1.5;font-weight:600;}
   #startupsbody .d-about{margin:0 0 .5rem;font-size:.83rem;line-height:1.62;max-width:70ch;color:var(--ink);}
-  #startupsbody .d-tagfind{margin-left:.2rem;text-decoration:none;color:var(--muted);}
-  #startupsbody .d-tagfind:hover{color:var(--ink);}
   #startupsbody a.d-tag.inv{text-decoration:none;}
+  #startupsbody .d-tag.inv.linked{border-color:var(--verified);background:color-mix(in srgb, var(--verified) 10%, transparent);font-weight:600;}
+  #startupsbody .d-tag.inv.linked:hover{background:color-mix(in srgb, var(--verified) 20%, transparent);}
+  #startupsbody .d-invamt{font-family:var(--mono);font-size:.58rem;opacity:.85;}
+  #startupsbody .su-tag.su-inv.linked{border-color:var(--verified);color:var(--verified);font-weight:600;text-decoration:none;
+    background:color-mix(in srgb, var(--verified) 8%, transparent);}
+  #startupsbody .su-tag.su-inv.linked:hover{background:color-mix(in srgb, var(--verified) 18%, transparent);}
   /* a number is the answer; its name is the caption underneath */
   #startupsbody .d-stats{display:flex;flex-wrap:wrap;gap:.55rem .9rem;margin:.2rem 0 .1rem;}
   #startupsbody .d-stat{min-width:6.5rem;}
@@ -457,6 +461,7 @@
   #startupsbody .d-person:first-of-type{border-top:0;padding-top:0;}
   #startupsbody .d-pname{font-size:.92rem;font-weight:650;line-height:1.35;}
   #startupsbody .d-prole{font-size:.76rem;color:var(--muted);line-height:1.45;margin-top:.05rem;}
+  #startupsbody .d-bio{margin:.28rem 0 .1rem;font-size:.82rem;line-height:1.6;max-width:70ch;}
   #startupsbody .d-tag{display:inline-block;font-family:var(--mono);font-size:.62rem;border:1px solid var(--hair);
     border-radius:999px;padding:.05rem .4rem;margin:.1rem .15rem 0 0;color:var(--ink);}
   #startupsbody .d-tag.inv{border-color:color-mix(in srgb, var(--verified) 45%, transparent);color:var(--verified);}
@@ -7129,10 +7134,13 @@ function cardHtml(row){
   if(arr) money.push(`<span class="su-tag self" title="${esc(arr.quote)}">${provGlyph(arr)}self-reported ARR ${esc(arr.display||usd(arr.number))}</span>`);
   // Investor slugs are not names: "slow_ventures, gfc, soma_capital" is how we store them, not how
   // anyone writes them. Each one is shown as a name and links to the firm when we hold its site.
-  const invSites = (STATE.labels || {}).investor_sites || {};
-  const invName = v => label("investor", v) || String(v).replace(/_/g, " ");
-  const invChip = (v, pre) => invSites[v]
-    ? `<a class="su-tag su-inv" href="${esc(invSites[v])}" target="_blank" rel="noopener noreferrer" title="${esc(invName(v))} — their site">${pre||""}${esc(invName(v))} ↗</a>`
+  const invDir = (STATE.labels || {}).investor_sites || {};
+  const invName = v => (invDir[v] && invDir[v].name) || label("investor", v) || String(v).replace(/_/g, " ");
+  const invSite = v => (invDir[v] && invDir[v].site) || "";
+  // The whole chip is the link. A tiny icon beside a name is a target nobody hits, and a search
+  // engine is not where someone asking about an investor wants to be sent.
+  const invChip = (v, pre) => invSite(v)
+    ? `<a class="su-tag su-inv linked" href="${esc(invSite(v))}" target="_blank" rel="noopener noreferrer" title="${esc(invName(v))} — their own site">${pre||""}${esc(invName(v))} ↗</a>`
     : `<span class="su-tag su-inv">${pre||""}${esc(invName(v))}</span>`;
   const who=[]; for(const v of lead) who.push(invChip(v, "lead: "));
   for(const v of inv.slice(0,3)) who.push(invChip(v));
@@ -7280,7 +7288,8 @@ function drawerHtml(co){
     const bio = f.bio || f.quote || "";
     return `<div class="d-person"><div class="d-pname">${founderHtml(f, co.name || co.id)}</div>`
       + `<div class="d-prole">${esc(f.title || "founder")}${prior ? ` &middot; previously ${prior}` : ""}</div>`
-      + (bio ? `<details class="d-whydet"><summary>bio</summary><q>${esc(String(bio).slice(0, 500))}</q></details>` : "")
+      // A founder's bio is the reason to care about the founder — it does not belong behind a fold.
+      + (bio ? `<p class="d-bio">${esc(String(bio).slice(0, 700))}${String(bio).length > 700 ? "…" : ""}</p>` : "")
       + `</div>`;
   }).join("");
   const team = pick(TEAM_KEYS).filter(f => f.key !== "founder_prior_company");
@@ -7295,14 +7304,23 @@ function drawerHtml(co){
   // portfolio page we crawl — the facet value IS that fund's slug — so those names link directly.
   // For a firm we do not hold, the name is plain text and a small search sits beside it: a guessed
   // URL for a venture firm is as wrong as a guessed profile for a person.
-  const sites = (STATE.labels || {}).investor_sites || {};
+  // Which rounds each investor is named in. Nobody publishes a per-investor cheque, so this is the
+  // honest breakdown: the rounds they backed and how big each was, not an invented allocation.
+  const dir = (STATE.labels || {}).investor_sites || {};
+  const nameOf = v => (dir[v] && dir[v].name) || label("investor", v) || String(v).replace(/_/g, " ");
+  const roundsFor = v => (co.financing || []).filter(e =>
+    (e.lead && String(e.lead).toLowerCase().includes(String(v).replace(/_/g, " ").toLowerCase()))
+    || (e.investors || []).some(x => String(x).toLowerCase().includes(String(v).replace(/_/g, " ").toLowerCase())));
   const invValues = [...new Set(investors.map(f => String(f.value || "")).filter(Boolean))];
   const invTags = invValues.map(v => {
-    const shown = label("investor", v) || v.replace(/_/g, " ");
-    const site = sites[v];
+    const site = (dir[v] || {}).site;
+    const rs = roundsFor(v);
+    const amounts = rs.map(e => e.amount_usd ? usd(e.amount_usd) : "").filter(Boolean);
+    const detail = amounts.length ? ` <span class="d-invamt">${esc(amounts.join(" · "))}</span>` : "";
+    const inner = `${esc(nameOf(v))}${detail}`;
     return site
-      ? `<a class="d-tag inv" href="${esc(site)}" target="_blank" rel="noopener noreferrer" title="${esc(shown)} — their site">${esc(shown)} ↗</a>`
-      : `<span class="d-tag inv">${esc(shown)}<a class="d-tagfind" href="https://www.google.com/search?q=${encodeURIComponent(shown + " venture capital")}" target="_blank" rel="noopener noreferrer" title="We do not hold this firm's site — this searches for it">⌕</a></span>`;
+      ? `<a class="d-tag inv linked" href="${esc(site)}" target="_blank" rel="noopener noreferrer" title="${esc(nameOf(v))} — their own site">${inner} ↗</a>`
+      : `<span class="d-tag inv">${inner}</span>`;
   }).join("");
   const rounds = (co.financing || []).map(e => {
     const who2 = [e.lead ? "led by " + e.lead : "", (e.investors || []).join(", ")].filter(Boolean).join(" · ");

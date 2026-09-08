@@ -137,6 +137,15 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
             raise HTTPException(status_code=401, detail="sign in to save maps")
         return u
 
+    async def _labels_with_investors() -> dict:
+        """The rail's labels plus the investor directory, so a name on a card can become a link."""
+        out = labels()
+        try:
+            out["investor_sites"] = await store.investor_sites()
+        except Exception:      # noqa: BLE001 — a missing directory costs links, never a response
+            out["investor_sites"] = {}
+        return out
+
     async def _evaluate_core(c: Contract, counts: bool = True) -> dict:
         errs = validate_contract(c, SCHEMA)
         if errs:
@@ -180,7 +189,7 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
                 out["relaxed"] = relaxed
                 rows = out["rows"]
                 out["coverage"]["index"] = await store.coverage()
-                out["labels"] = labels()
+                out["labels"] = await _labels_with_investors()
                 return out
         if mode == "merged" and c.text and providers.llm_json:
             try:
@@ -196,7 +205,7 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         out["relaxed"] = relaxed
         rows = out["rows"]
         out["coverage"]["index"] = await store.coverage()
-        out["labels"] = labels()
+        out["labels"] = await _labels_with_investors()
         if not rows:
             ic = await index_counts(store)
             why = {}
@@ -224,7 +233,7 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         from .intake import StartupIntake
         svc = StartupIntake(llm_json=providers.llm_json, counts_fn=_counts_for_intake, compile_fn=_compile_for_intake, slice_fn=_slice, coverage_fn=lambda: store.coverage())
         out = await svc.step(state=body.state, message=body.message, answer=body.answer, search_now_flag=body.search_now)
-        out["labels"] = labels()
+        out["labels"] = await _labels_with_investors()
         return out
 
     # ---- Startup Maps: a saved search is a durable, per-account artifact (contract + snapshot + revisions + share link)

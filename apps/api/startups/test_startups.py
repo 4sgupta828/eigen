@@ -298,3 +298,18 @@ def test_founder_links_from_pages_match_by_name_never_guess():
     assert out["Jane Doe"] == {"linkedin": "https://www.linkedin.com/in/jane-doe-123/", "twitter": "https://twitter.com/janedoe"}
     assert out["Bob Ray"] == {"linkedin": "https://www.linkedin.com/in/someone-else/"}      # the anchor text names him
     assert "Cher" not in out
+
+
+def test_a_board_token_is_only_guessed_from_a_real_domain():
+    from api.startups.sources import ats
+    assert ats.guess_token("reflex.dev") == "reflex"
+    assert ats.guess_token("aurelius-systems.com") == "aureliussystems"
+    # a filing-only company has no domain to guess from, and a two-letter name is not distinctive
+    assert ats.guess_board("cik:12345") == ([], None)
+    assert ats.guess_board("ai.co") == ([], None)
+
+
+def test_every_board_we_can_read_has_a_url_template():
+    from api.startups.sources.ats import BOARD_URL
+    for kind, tmpl in BOARD_URL.items():
+        assert "{token}" in tmpl and tmpl.startswith("https://"), kind

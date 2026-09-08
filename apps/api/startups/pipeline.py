@@ -272,6 +272,13 @@ async def run_crawl(store: StartupStore, *, ids: list[str] | None = None, limit:
         if pages:
             try:
                 roles, board = await asyncio.get_event_loop().run_in_executor(None, ats.hiring_for, [p["html"] for p in pages])
+                # Most companies never link their board from a page we read — measured, 90 careers
+                # pages with no board on record carried one only 11 times. When the pages say
+                # nothing, try the company's own name as a board token; a guess is accepted only if
+                # the board answers with real roles.
+                if not board:
+                    roles, board = await asyncio.get_event_loop().run_in_executor(
+                        None, ats.guess_board, r["id"])
             except Exception:   # noqa: BLE001
                 roles, board = ([], None)
         meta = {"at": date.today().isoformat(), "pages": [{"kind": p["kind"], "url": p["url"], "chars": len(p["text"])} for p in pages],
@@ -548,6 +555,29 @@ async def run_portfolio(store: StartupStore, *, funds: list[str] | None = None, 
     return {"companies": n_new, "facts": n_fact, "report": report}
 
 
+async def run_investors(store: StartupStore, *, limit: int = 300, jid: int | None = None) -> dict:
+    """Resolve investor slugs to the firms' own sites. Free: no model, no embeddings.
+
+    Runs over the slugs that actually appear on companies, commonest first, so the names a reader is
+    most likely to meet become links first. An unresolved slug is still recorded, with an empty site,
+    so the same question is not asked again on every pass.
+    """
+    from .sources.investors import display_name, resolve
+    slugs = await store.unresolved_investors(limit)
+    out = {"of": len(slugs), "resolved": 0, "unresolved": 0}
+    for i, slug in enumerate(slugs):
+        try:
+            rec = resolve(slug)
+        except Exception:      # noqa: BLE001 — one bad name never stops the pass
+            rec = None
+        await store.upsert_investor(rec or {"slug": slug, "name": display_name(slug), "site": "",
+                                            "basis": "unresolved"})
+        out["resolved" if (rec and rec.get("site")) else "unresolved"] += 1
+        if jid and i % 20 == 0:
+            await _progress(store, jid, dict(out, done=i + 1))
+    return out
+
+
 async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int | None = None) -> dict:
     """Filing-only companies (cik:<n>) get a website from Clearbit's autocomplete when the suggested name equals
     the issuer's. When a site-keyed company with that domain already exists, the filing identity MERGES into it
@@ -587,7 +617,8 @@ async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int
 
 # ------------------------------------------------------------------ runner (background thread, own loop + pool)
 RUNNERS = {"yc": run_yc, "embed": run_embed, "formd": run_formd, "match": run_match, "crawl": run_crawl, "extract": run_extract, "derive": run_derive,
-           "news": run_news, "formd_companies": run_formd_companies, "portfolio": run_portfolio, "discover_sites": run_discover_sites}
+           "news": run_news, "formd_companies": run_formd_companies, "portfolio": run_portfolio, "discover_sites": run_discover_sites,
+           "investors": run_investors}
 NEEDS_PROV = {"yc", "embed", "match", "extract", "news"}
 
 

@@ -147,8 +147,10 @@ def labels() -> dict:
     return {"keys": {k.key: k.label for k in SCHEMA.keys}, "values": VALUE_LABELS,
             "types": {k.key: k.type.value for k in SCHEMA.keys}, "order": KEY_ORDER,
             "units": {k.key: k.unit for k in SCHEMA.keys if k.unit}, "version": SCHEMA_VERSION,
-            # where an investor actually lives, so a name on a card can be clicked
-            "investor_sites": investor_sites()}
+            # the resolved investor directory is layered on by the router (store-backed); this is the
+            # verified-by-construction floor, so labels are useful even before that job has run
+            "investor_sites": {k: {"name": k.replace("_", " ").title(), "site": v}
+                               for k, v in investor_sites().items()}}
 
 
 # Form D's revenue-range box, verbatim options → our ordinal (anything else, incl. "Decline to Disclose", is unknown).

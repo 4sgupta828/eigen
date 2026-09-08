@@ -170,6 +170,13 @@ CREATE TABLE IF NOT EXISTS su_list (
     created_at   timestamptz NOT NULL DEFAULT now(),
     updated_at   timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS su_investor (
+    slug        text PRIMARY KEY,
+    name        text NOT NULL DEFAULT '',
+    site        text NOT NULL DEFAULT '',
+    basis       text NOT NULL DEFAULT '',
+    checked_at  timestamptz NOT NULL DEFAULT now());
+
 CREATE TABLE IF NOT EXISTS su_job (
     id           bigserial PRIMARY KEY,
     kind         text NOT NULL,          -- yc | formd | site | derive | extract
@@ -460,6 +467,33 @@ class StartupStore:
         for c in out.values():
             c["crawl"] = json.loads(c["crawl"]) if isinstance(c.get("crawl"), str) else (c.get("crawl") or {})
         return out
+
+    async def upsert_investor(self, rec: dict) -> None:
+        pool = await self.pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO su_investor (slug, name, site, basis, checked_at) VALUES ($1,$2,$3,$4, now()) "
+                "ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, site = EXCLUDED.site, "
+                "    basis = EXCLUDED.basis, checked_at = now()",
+                rec["slug"], rec.get("name", "")[:120], rec.get("site", "")[:300], rec.get("basis", "")[:32])
+
+    async def investor_sites(self) -> dict:
+        """{slug → {name, site}} for every investor we have resolved. Unresolved ones are absent."""
+        pool = await self.pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("SELECT slug, name, site FROM su_investor WHERE site <> ''")
+        return {r["slug"]: {"name": r["name"], "site": r["site"]} for r in rows}
+
+    async def unresolved_investors(self, limit: int = 400) -> list[str]:
+        """Investor slugs that appear on companies but have no directory row yet."""
+        pool = await self.pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT f.value, count(*) n FROM su_fact f "
+                "LEFT JOIN su_investor i ON i.slug = f.value "
+                "WHERE f.key IN ('investor','lead_investor') AND f.value IS NOT NULL AND i.slug IS NULL "
+                "GROUP BY f.value ORDER BY n DESC LIMIT $1", int(limit))
+        return [r["value"] for r in rows]
 
     async def coverage(self) -> dict:
         await self.ensure_schema()
