@@ -348,8 +348,8 @@
   .work{display:flex;align-items:center;gap:.6rem;margin:.6rem 0 .2rem;padding:.55rem .75rem;
     border:1px solid var(--hair);border-radius:10px;background:var(--panel2);}
   .work-bar{position:relative;flex:0 0 84px;height:3px;border-radius:2px;background:var(--hair);overflow:hidden;}
-  .work-bar i{position:absolute;inset:0 auto 0 0;width:38%;border-radius:2px;background:var(--gold);
-    animation:workslide 1.15s ease-in-out infinite;}
+  .work-bar i{position:absolute;inset:0 auto 0 0;width:38%;border-radius:2px;background:var(--gold);}
+  .work:not([hidden]) .work-bar i{animation:workslide 1.15s ease-in-out infinite;}
   @keyframes workslide{0%{left:-38%}100%{left:100%}}
   .work-msg{font-family:var(--mono);font-size:.7rem;color:var(--ink);letter-spacing:.02em;flex:1 1 auto;}
   .work-el{font-family:var(--mono);font-size:.66rem;color:var(--dim);white-space:nowrap;}
@@ -357,81 +357,111 @@
   @media (max-width:560px){ .work{gap:.45rem;padding:.5rem .6rem;} .work-bar{flex-basis:52px;} }
 
   /* ===== DeepDive — one company, read end to end (body[data-mode="deepdive"]) =====
-     Two registers, two colours, and they never blend: FILED is what a filing states, STATED is what
-     the company claims. The Manifest of Absence is deliberately as prominent as the findings —
-     "zero granted patents" is a diligence answer, not an empty slot. */
+     Three registers, three treatments, never blended: FILED is a number a filing states, STATED is a
+     claim the company made, SIGNAL is how it is being covered. Each section carries a mark and an
+     accent so the eye finds "how they make money" without reading every heading, and the things a
+     reader came for — a name, an amount, a person — carry the weight. */
   #deepdivebody{display:none;}
   body[data-mode="deepdive"] #deepdivebody{display:block;}
   body[data-mode="deepdive"] #out, body[data-mode="deepdive"] #effort{display:none !important;}
   .dd-note{font-family:var(--mono);font-size:.68rem;color:var(--dim);margin:.7rem 0 0;line-height:1.5;}
-  .dd-cands{display:grid;gap:.5rem;margin:1rem 0;}
+  .dd-cands{display:grid;gap:.5rem;margin:.6rem 0 1rem;}
   .dd-cand{display:flex;gap:.7rem;align-items:baseline;width:100%;text-align:left;cursor:pointer;
     padding:.7rem .85rem;border:1px solid var(--hair);border-radius:10px;background:var(--panel2);color:var(--ink);}
   .dd-cand:hover{border-color:var(--gold);}
   .dd-cand b{font-size:.95rem;}
   .dd-cand span{font-family:var(--mono);font-size:.66rem;color:var(--dim);}
-  .dd-head{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;margin:1.1rem 0 .3rem;
-    max-width:100%;min-width:0;}
+  .dd-listhead{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--dim);margin:1.2rem 0 .1rem;display:flex;align-items:center;gap:.45rem;}
+  .dd-listhead span{color:var(--muted);letter-spacing:0;text-transform:none;font-size:.66rem;}
+
+  .dd-head{display:flex;gap:.75rem;align-items:flex-start;flex-wrap:wrap;margin:1.2rem 0 .3rem;max-width:100%;min-width:0;}
   .dd-head > *{min-width:0;}
-  .dd-head h2{margin:0;font-size:1.35rem;letter-spacing:-.01em;}
-  .dd-head .dd-sub{font-family:var(--mono);font-size:.7rem;color:var(--dim);width:100%;margin:.15rem 0 0;}
-  .dd-secs{display:grid;gap:.9rem;margin:1.1rem 0 2.4rem;}
-  .dd-sec{border:1px solid var(--hair);border-radius:12px;background:var(--panel2);padding:.9rem 1rem;}
-  .dd-sec > h3{margin:0 0 .5rem;font-size:.78rem;font-family:var(--mono);letter-spacing:.06em;
-    text-transform:uppercase;color:var(--dim);}
-  .dd-sec .dd-secnote{font-family:var(--mono);font-size:.64rem;color:var(--dim);margin:-.3rem 0 .6rem;line-height:1.5;}
-  .dd-rows{display:grid;gap:.45rem;}
-  .dd-row{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;font-size:.86rem;line-height:1.55;}
-  .dd-v{flex:1 1 12rem;min-width:0;}
-  .dd-k{font-family:var(--mono);font-size:.66rem;color:var(--dim);min-width:9.5rem;}
-  .dd-v{color:var(--ink);}
+  .dd-logo{flex:0 0 44px;width:44px;height:44px;border-radius:11px;object-fit:contain;
+    background:var(--panel2);border:1px solid var(--hair);padding:4px;display:block;}
+  .dd-logo.dd-mono{display:grid;place-items:center;font-family:var(--mono);font-size:.9rem;
+    font-weight:700;color:var(--muted);padding:0;letter-spacing:.02em;}
+  .dd-headmain{flex:1 1 12rem;min-width:0;}
+  .dd-head h2{margin:0;font-family:var(--serif);font-size:1.5rem;line-height:1.15;letter-spacing:-.01em;color:var(--ink);}
+  .dd-head .dd-line{font-size:.92rem;color:var(--ink);margin:.2rem 0 0;line-height:1.45;}
+  .dd-sub{font-family:var(--mono);font-size:.66rem;color:var(--dim);width:100%;margin:.4rem 0 0;
+    display:flex;flex-wrap:wrap;gap:.15rem .5rem;align-items:center;}
+
+  .dd-secs{display:grid;gap:.75rem;margin:1.1rem 0 2.4rem;}
+  .dd-sec{border:1px solid var(--hair);border-left:3px solid var(--hair);border-radius:12px;
+    background:var(--panel2);padding:.85rem 1rem;}
+  .dd-sec > h3{margin:0 0 .5rem;font-size:.72rem;font-family:var(--mono);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:.45rem;}
+  .dd-sec > h3 .dd-ico{font-size:.9rem;line-height:1;}
+  .dd-sec[data-kind="filed"], .dd-sec[data-kind="financing"]{border-left-color:var(--verified,#2f7d5b);}
+  .dd-sec[data-kind="stated"]{border-left-color:var(--gold);}
+  .dd-sec[data-kind="people"], .dd-sec[data-kind="investors"]{border-left-color:#6b7fd7;}
+  .dd-sec[data-kind="hiring"]{border-left-color:#c9822f;}
+  .dd-sec .dd-secnote{font-family:var(--mono);font-size:.63rem;color:var(--dim);margin:-.25rem 0 .6rem;line-height:1.5;}
+  .dd-rows{display:grid;gap:.5rem;}
+  .dd-row{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;font-size:.88rem;line-height:1.55;}
+  .dd-row + .dd-row{border-top:1px solid var(--hair);padding-top:.5rem;}
+  .dd-v{flex:1 1 12rem;min-width:0;color:var(--ink);}
   .dd-row > .dd-quote{flex:1 1 100%;}
-  .dd-reg{font-family:var(--mono);font-size:.58rem;letter-spacing:.06em;text-transform:uppercase;
-    padding:.1rem .4rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);}
-  .dd-reg[data-r="filed"]{color:var(--ok,#2f7d5b);border-color:currentColor;}
+  .dd-k{font-family:var(--mono);font-size:.65rem;color:var(--dim);min-width:9.5rem;letter-spacing:.02em;}
+  .dd-num{font-variant-numeric:tabular-nums;font-size:1.05rem;font-weight:650;color:var(--ink);letter-spacing:-.01em;}
+  .dd-reg{font-family:var(--mono);font-size:.56rem;letter-spacing:.07em;text-transform:uppercase;
+    padding:.12rem .42rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);flex:none;}
+  .dd-reg[data-r="filed"]{color:var(--verified,#2f7d5b);border-color:currentColor;}
   .dd-reg[data-r="stated"]{color:var(--gold);border-color:currentColor;}
-  /* Coverage is the LOWEST register: what the press says, never an established fact. It is dimmer
-     than a filing and dimmer than the company's own claim, on purpose. */
   .dd-reg[data-r="signal"]{color:var(--muted);border-style:dashed;}
+  .dd-src{font-family:var(--mono);font-size:.63rem;color:var(--dim);text-decoration:none;
+    display:inline-flex;align-items:center;gap:.3rem;min-height:32px;padding:.1rem .5rem;
+    border:1px solid var(--hair);border-radius:8px;white-space:nowrap;max-width:100%;
+    overflow:hidden;text-overflow:ellipsis;}
+  .dd-src:hover{color:var(--gold);border-color:var(--gold);background:var(--panel);}
+  .dd-quote{font-size:.8rem;color:var(--dim);border-left:2px solid var(--hair);padding-left:.65rem;
+    margin:.2rem 0 0;line-height:1.6;}
+
+  .dd-people{display:grid;gap:.7rem;}
+  .dd-person{display:flex;gap:.6rem;align-items:flex-start;}
+  .dd-av{flex:0 0 34px;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+    background:var(--panel);border:1px solid var(--hair);font-family:var(--mono);font-size:.7rem;
+    font-weight:700;color:var(--muted);}
+  .dd-pmain{min-width:0;flex:1;}
+  .dd-person b{font-size:.95rem;color:var(--ink);}
+  .dd-person em{font-style:normal;font-family:var(--mono);font-size:.64rem;color:var(--dim);margin-left:.35rem;}
+  .dd-person p{margin:.25rem 0 0;font-size:.84rem;line-height:1.55;color:var(--ink);}
+  .dd-plink{font-family:var(--mono);font-size:.6rem;text-decoration:none;color:var(--dim);
+    border:1px solid var(--hair);border-radius:6px;padding:.15rem .35rem;min-height:26px;
+    display:inline-flex;align-items:center;margin-left:.3rem;}
+  .dd-plink:hover{color:var(--gold);border-color:var(--gold);}
+
+  .dd-titles{display:flex;flex-wrap:wrap;gap:.35rem;margin:.5rem 0 0;}
+  .dd-title{font-family:var(--mono);font-size:.66rem;padding:.4rem .6rem;border-radius:14px;
+    border:1px solid var(--hair);color:var(--ink);text-decoration:none;display:inline-block;
+    line-height:1.5;max-width:100%;background:var(--panel);}
+  a.dd-title:hover{border-color:var(--gold);color:var(--gold);}
+  .dd-title .dd-k{min-width:0;margin-left:.35rem;}
+  .dd-inv{font-size:.92rem;color:var(--ink);text-decoration:none;padding:.3rem .65rem;border-radius:999px;
+    border:1px solid var(--hair);display:inline-flex;align-items:center;gap:.35rem;min-height:34px;font-weight:560;}
+  a.dd-inv.linked{border-color:var(--gold);color:var(--gold);}
+  a.dd-inv.linked:hover{background:var(--gold);color:var(--on-accent);}
+
+  .dd-absent{border:1px dashed var(--hair);border-radius:12px;padding:.9rem 1rem;margin:0 0 2.4rem;}
+  .dd-absent h3{margin:0 0 .2rem;font-size:.72rem;font-family:var(--mono);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--dim);}
+  .dd-absent p{font-family:var(--mono);font-size:.63rem;color:var(--dim);margin:0 0 .6rem;line-height:1.5;}
+  .dd-att{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.4rem;}
+  .dd-attrow{display:flex;justify-content:space-between;gap:.5rem;font-family:var(--mono);font-size:.67rem;
+    padding:.4rem .55rem;border-radius:8px;background:var(--panel);}
+  .dd-attrow[data-found="0"]{color:var(--dim);opacity:.85;}
+  .dd-attrow b{font-weight:600;color:var(--ink);}
+  .dd-attrow[data-found="0"] b{color:var(--dim);font-weight:500;}
+
   .dd-depth{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin:.5rem 0 0;}
   .dd-depth .dd-dbtn{font-family:var(--mono);font-size:.66rem;padding:.34rem .7rem;border-radius:999px;
     border:1px solid var(--hair);background:var(--panel2);color:var(--dim);cursor:pointer;min-height:34px;}
   .dd-depth .dd-dbtn[aria-pressed="true"]{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
   .dd-cost{font-family:var(--mono);font-size:.63rem;color:var(--dim);}
-  .dd-src{font-family:var(--mono);font-size:.64rem;color:var(--dim);text-decoration:none;
-    display:inline-flex;align-items:center;min-height:32px;padding:.1rem .45rem;
-    border:1px solid var(--hair);border-radius:8px;white-space:nowrap;
-    max-width:100%;overflow:hidden;text-overflow:ellipsis;}
-  .dd-src:hover{color:var(--gold);border-color:var(--gold);}
-  .dd-quote{font-size:.78rem;color:var(--dim);border-left:2px solid var(--hair);padding-left:.6rem;margin:.15rem 0 0;}
-  .dd-people{display:grid;gap:.6rem;}
-  .dd-person b{font-size:.9rem;} .dd-person em{font-style:normal;font-family:var(--mono);font-size:.66rem;color:var(--dim);}
-  .dd-person p{margin:.2rem 0 0;font-size:.82rem;line-height:1.55;}
-  .dd-titles{display:flex;flex-wrap:wrap;gap:.35rem;margin:.45rem 0 0;}
-  /* inline-block, not inline-flex: a two-line title inside a flex chip lays its meta out as a
-     second COLUMN, leaving a gap down the middle of the pill. As text it just wraps. */
-  .dd-title{font-family:var(--mono);font-size:.66rem;padding:.4rem .6rem;border-radius:14px;
-    border:1px solid var(--hair);color:var(--ink);text-decoration:none;display:inline-block;
-    line-height:1.5;max-width:100%;}
-  .dd-title .dd-k{min-width:0;margin-left:.35rem;}
-  a.dd-title:hover{border-color:var(--gold);color:var(--gold);}
-  .dd-inv{font-size:.86rem;color:var(--ink);text-decoration:none;padding:.28rem .6rem;border-radius:999px;
-    border:1px solid var(--hair);display:inline-flex;align-items:center;min-height:32px;}
-  a.dd-inv.linked{border-color:var(--gold);color:var(--gold);}
-  a.dd-inv.linked:hover{background:var(--gold);color:var(--on-accent);}
-  .dd-absent{border:1px dashed var(--hair);border-radius:12px;padding:.9rem 1rem;margin:0 0 2.4rem;}
-  .dd-absent h3{margin:0 0 .2rem;font-size:.78rem;font-family:var(--mono);letter-spacing:.06em;
-    text-transform:uppercase;color:var(--dim);}
-  .dd-absent p{font-family:var(--mono);font-size:.64rem;color:var(--dim);margin:0 0 .6rem;line-height:1.5;}
-  .dd-att{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.4rem;}
-  .dd-attrow{display:flex;justify-content:space-between;gap:.5rem;font-family:var(--mono);font-size:.68rem;
-    padding:.35rem .5rem;border-radius:8px;background:var(--panel);}
-  .dd-attrow[data-found="0"]{color:var(--dim);}
-  .dd-attrow b{font-weight:600;}
   @media (max-width:560px){
-    .dd-k{min-width:auto;} .dd-head h2{font-size:1.15rem;}
+    .dd-k{min-width:auto;} .dd-head h2{font-size:1.25rem;}
     .dd-att{grid-template-columns:1fr;}
-    /* Every link on this page is a source someone will want to open on a phone. */
     .dd-src{min-height:38px;padding:.3rem .6rem;}
     .dd-title, .dd-inv{min-height:38px;}
     .dd-row{gap:.4rem;}
@@ -8949,10 +8979,15 @@ async function openShare(token){
       + esc(label || host(url)) + " \u2197</a>";
   }
 
+  // Weight belongs on money and counts. A founding YEAR is a number too, and setting it in the same
+  // 1.05rem tabular face made "2023" shout as loudly as "$281.1M".
+  const BIG_KEYS = new Set(["financing_scale", "total_disclosed_funding", "last_round_amount", "arr",
+                            "non_dilutive", "headcount", "hiring", "patents_granted"]);
   function factRow(c){
     const v = c.display || c.label || c.value || "";
+    const big = BIG_KEYS.has(c.key) || /^[$\u20ac\u00a3]/.test(String(v).trim());
     return '<div class="dd-row"><span class="dd-k">' + esc(c.key_label || String(c.key || "").replace(/_/g, " ")) + "</span>"
-      + '<span class="dd-v">' + esc(v) + "</span>"
+      + '<span class="dd-v' + (big ? " dd-num" : "") + '">' + esc(v) + "</span>"
       + (c.provenance ? '<span class="dd-reg" title="' + esc((c.sources || []).length > 1
           ? (c.sources || []).join(" and ") + " agree" : "") + '">' + esc(c.provenance)
           + ((c.sources || []).length > 1 ? " +" + ((c.sources || []).length - 1) : "") + "</span>" : "")
@@ -8961,14 +8996,19 @@ async function openShare(token){
       + "</div>";
   }
 
+  const PLINK = {linkedin: "in", twitter: "\ud835\udd4f", x: "\ud835\udd4f", github: "gh", site: "www"};
   function personRow(p){
     const links = p.links || {};
-    const l = Object.keys(links).map(k => src(links[k], k)).join(" ");
-    return '<div class="dd-person"><b>' + esc(p.name || "") + "</b> "
-      + (p.title ? "<em>" + esc(p.title) + "</em> " : "") + l + " " + src(p.source_url)
+    const marks = Object.keys(links).map(k =>
+      '<a class="dd-plink" href="' + esc(links[k]) + '" target="_blank" rel="noopener" title="'
+      + esc(k) + '">' + esc(PLINK[k] || k) + "</a>").join("");
+    const initials = esc((p.name || "?").split(/\s+/).map(w => w[0] || "").join("").slice(0, 2).toUpperCase());
+    return '<div class="dd-person"><span class="dd-av">' + initials + "</span>"
+      + '<span class="dd-pmain"><b>' + esc(p.name || "") + "</b>"
+      + (p.title ? "<em>" + esc(p.title) + "</em>" : "") + marks
       + (p.bio ? "<p>" + esc(p.bio) + "</p>" : "")
       + ((p.prior || []).length ? '<p class="dd-quote">previously: ' + esc(p.prior.join(", ")) + "</p>" : "")
-      + "</div>";
+      + "</span></div>";
   }
 
   function hiringRow(h){
@@ -9037,7 +9077,7 @@ async function openShare(token){
   function finRow(c){
     return '<div class="dd-row">' + reg(c.register)
       + '<span class="dd-v"><b>' + esc(ROUND_LABEL[c.round] || c.round || "round") + "</b> "
-      + esc(money(c.amount_usd)) + "</span>"
+      + '<span class="dd-num">' + esc(money(c.amount_usd)) + "</span></span>"
       + (c.date ? ' <span class="dd-k">' + esc(c.date) + "</span>" : "")
       + ((c.investors || []).length ? '<span class="dd-k">' + esc(c.investors.join(", ")) + "</span>" : "")
       + src(c.source_url) + "</div>";
@@ -9050,6 +9090,19 @@ async function openShare(token){
 
   const ROW = { fact: factRow, people: personRow, hiring: hiringRow, stated: statedRow,
                 filed: filedRow, financing: finRow, pages: pageRow, investors: investorRow };
+
+  // A mark per section, so the eye finds "how they make money" without reading every heading.
+  const SECTION_ICON = {
+    "Foundations": "\u25c8", "Key people": "\u25cf", "Open roles": "\u2691", "Investors": "\u25c6",
+    "Funding": "\u25b3", "Funding rounds": "\u25b3", "Filed financials": "\u2637",
+    "What they have filed": "\u2637", "Stated milestones": "\u2726", "Pricing and terms": "\u25a4",
+    "Named customers": "\u25cb", "How they make money": "\u25a3", "Who buys": "\u25cb",
+    "What they sell": "\u25b8", "How it works": "\u2699", "What they say makes them different": "\u2726",
+    "Who they compare themselves to": "\u21c4", "Named partners": "\u25cb",
+    "Limits they state themselves": "\u26a0", "Reference profile": "\u25a7", "Public code": "\u2328",
+    "Funding coverage": "\u25cc", "Competition and traction, as covered": "\u25cc",
+    "Model and traction": "\u25a4",
+  };
 
   function sectionHtml(sec){
     const row = ROW[sec.kind] || factRow;
@@ -9067,7 +9120,10 @@ async function openShare(token){
       } catch(e){ return ""; }
     }).join("");
     if(!body) return "";                       // a section that renders nothing does not render at all
-    return '<section class="dd-sec"><h3>' + esc(sec.title || "") + "</h3>"
+    const ico = SECTION_ICON[sec.title];
+    return '<section class="dd-sec" data-kind="' + esc(sec.kind || "") + '"><h3>'
+      + (ico ? '<span class="dd-ico" aria-hidden="true">' + ico + "</span>" : "")
+      + esc(sec.title || "") + "</h3>"
       + (sec.note ? '<p class="dd-secnote">' + esc(sec.note) + "</p>" : "")
       + '<div class="dd-rows">' + body + "</div></section>";
   }
@@ -9085,16 +9141,33 @@ async function openShare(token){
       + '<div class="dd-att">' + rows + "</div></div>";
   }
 
+  // The company mark: a favicon is the only logo available without a key, with Google's as the
+  // fallback and initials when both fail — the same ladder the startup card climbs.
+  function logoHtml(c){
+    const host = String(c.id || "").indexOf("cik:") === 0 ? "" : c.id;
+    const mono = esc(String(c.name || c.id || "?").trim().slice(0, 2).toUpperCase());
+    if(!host) return '<span class="dd-logo dd-mono">' + mono + "</span>";
+    return '<img class="dd-logo" src="https://icons.duckduckgo.com/ip3/' + esc(host) + '.ico" alt="" '
+      + 'loading="lazy" referrerpolicy="no-referrer" '
+      + "onerror=\"this.onerror=null;this.src='https://www.google.com/s2/favicons?sz=128&domain="
+      + esc(host) + "';\" "
+      + "onload=\"if(this.naturalWidth<=1){this.replaceWith(Object.assign(document.createElement('span'),"
+      + "{className:'dd-logo dd-mono',textContent:'" + mono + "'}));}\">";
+  }
+
   function render(d){
     const c = d.company || {};
     const when = (d.updated_at || d.as_of || "").slice(0, 10);
-    const bits = [c.hq, c.yc_batch ? "YC " + c.yc_batch : "", c.cik ? "CIK " + c.cik : "",
-                  d.basis === "held" ? "assembled from what we already hold" : d.basis].filter(Boolean);
-    out().innerHTML = '<div class="dd-head"><h2>' + esc(c.name || c.id || "") + "</h2>"
-      + (c.website ? src(c.website) : "")
-      + '<p class="dd-sub">' + esc(c.one_liner || "") + (bits.length ? " \u00b7 " + esc(bits.join(" \u00b7 ")) : "")
-      + (when ? " \u00b7 as of " + esc(when) : "")
-      + (d.revision ? " \u00b7 revision " + d.revision : "") + "</p></div>"
+    const depth = {held: "what we hold", "held+read": "their site, read",
+                   "held+read+web": "their site and the web, read"}[d.basis] || d.basis;
+    const bits = [c.hq, c.yc_batch ? "YC " + c.yc_batch : "", c.cik ? "SEC CIK " + c.cik : "",
+                  depth, when ? "as of " + when : "",
+                  d.revision ? "revision " + d.revision : ""].filter(Boolean);
+    out().innerHTML = '<div class="dd-head">' + logoHtml(c)
+      + '<span class="dd-headmain"><h2>' + esc(c.name || c.id || "") + "</h2>"
+      + (c.one_liner ? '<p class="dd-line">' + esc(c.one_liner) + "</p>" : "")
+      + "</span>" + (c.website ? src(c.website) : "")
+      + '<p class="dd-sub">' + bits.map(b => esc(b)).join(' <span class="c-dot">\u00b7</span> ') + "</p></div>"
       + '<div class="dd-secs">' + (d.sections || []).map(sectionHtml).join("") + "</div>"
       + absenceHtml(d.attempted);
     STATE.dossier = d; STATE.cid = c.id || "";
@@ -9207,8 +9280,10 @@ async function openShare(token){
       const rows = d.dossiers || [];
       if(auto && STATE.dossier) return;              // a dive landed while this was in flight
       if(!rows.length){ note().textContent = "No company has been dived yet. Type a name above."; out().innerHTML = ""; return; }
-      note().textContent = rows.length + (rows.length === 1 ? " company dived" : " companies dived") + " \u00b7 click one to open it";
-      out().innerHTML = '<div class="dd-cands">' + rows.map((c, i) =>
+      note().textContent = "";
+      out().innerHTML = '<div class="dd-listhead">\u2317 Deep dived <span>' + rows.length
+        + (rows.length === 1 ? " company" : " companies") + " \u00b7 open one to read it</span></div>"
+        + '<div class="dd-cands">' + rows.map((c, i) =>
         '<button type="button" class="dd-cand" data-open="' + i + '"><b>' + esc(c.title || c.company_id) + "</b>"
         + "<span>" + esc(c.sections + " sections \u00b7 " + (c.updated_at || "").slice(0, 10)) + "</span></button>").join("") + "</div>";
       out().querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () =>
