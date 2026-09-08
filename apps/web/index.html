@@ -899,21 +899,28 @@
   .spiritanim{width:100%;max-width:340px;margin:0 auto .7rem;display:block;overflow:visible;}
   .spiritanim .sa-map{stroke:var(--hair);stroke-width:1;stroke-dasharray:2 5;opacity:.7;}
   .spiritanim .sa-node{fill:var(--muted);opacity:.45;}
-  .spiritanim .sa-scan{animation:saSweep 3.6s ease-in-out infinite;transform-box:view-box;}
+  /* This plays and SETTLES. An infinite decorative loop is indistinguishable from "the app is
+     working" — reported as a spinner that would not stop, and it was running under every mode. Three
+     passes, then it rests in the state the animation was telling a story about: the beam parked and
+     the person found. `backwards` holds the first frame through the delay so nothing flashes first. */
+  .spiritanim .sa-scan{animation:saSweep 3.6s ease-in-out 3 backwards;transform-box:view-box;}
   .spiritanim .sa-beam{stroke:var(--gold);stroke-width:2;stroke-linecap:round;opacity:.6;}
   .spiritanim .sa-beam-soft{stroke:var(--gold);stroke-width:9;stroke-linecap:round;opacity:.18;}
   .spiritanim .sa-cap{fill:var(--gold);opacity:.85;}
-  .spiritanim .sa-glow{fill:var(--gold);opacity:0;transform-box:fill-box;transform-origin:center;animation:saLit 3.6s ease-in-out infinite;}
+  .spiritanim .sa-glow{fill:var(--gold);opacity:0;transform-box:fill-box;transform-origin:center;animation:saLit 3.6s ease-in-out 3 backwards;}
   .spiritanim .sa-g0{animation-delay:.30s}.spiritanim .sa-g1{animation-delay:.82s}.spiritanim .sa-g2{animation-delay:1.34s}
   .spiritanim .sa-g3{animation-delay:2.39s}.spiritanim .sa-g4{animation-delay:2.91s}.spiritanim .sa-g5{animation-delay:3.43s}
   .spiritanim .sa-person .sa-h{fill:var(--muted);opacity:.5;}
-  .spiritanim .sa-found{opacity:0;animation:saFound 3.6s ease-in-out infinite;animation-delay:1.87s;}
+  .spiritanim .sa-found{opacity:1;animation:saFound 3.6s ease-in-out 3 backwards;animation-delay:1.87s;}
   .spiritanim .sa-found .sa-h{fill:var(--gold);opacity:1;}
   @keyframes saSweep{0%{transform:translateX(-138px);opacity:0}5%{opacity:.9}88%{opacity:.9}100%{transform:translateX(138px);opacity:0}}
   @keyframes saLit{0%{opacity:0;transform:scale(.6)}4%{opacity:.95;transform:scale(1.5)}14%{opacity:.4;transform:scale(1)}22%,100%{opacity:0;transform:scale(.6)}}
   @keyframes saFound{0%{opacity:0}4%{opacity:1}20%{opacity:1}26%,100%{opacity:0}}
   @media (prefers-reduced-motion: reduce){ .spiritanim .sa-scan,.spiritanim .sa-glow,.spiritanim .sa-found{animation:none;} .spiritanim .sa-scan{transform:translateX(0);opacity:.9;} .spiritanim .sa-found{opacity:1;} .spiritanim .sa-glow{opacity:0;} }
-  body.chatting .mission{display:none;}
+  /* The mission belongs to the landing. In a search mode it is a beam sweeping above your results,
+     which is noise at best and looks like work in progress at worst. */
+  body.chatting .mission,
+  body[data-mode]:not([data-mode="qa"]) .mission{display:none;}
   #effort{display:none !important;}   /* effort control removed from the landing (owner, 2026-09-06) */
   .motto{display:flex;align-items:flex-start;justify-content:center;gap:1.2rem;flex-wrap:wrap;
     margin-top:2.6rem;font-family:var(--mono);font-size:.72rem;letter-spacing:.3em;
