@@ -9107,12 +9107,14 @@ async function openShare(token){
     await dive({q: q});
   }
 
-  async function recent(){
+  async function recent(opts){
+    const auto = !!(opts && opts.auto);
     note().textContent = "Loading recent dives\u2026";
     try{
       const r = await fetch("/deepdives?limit=40", {headers: ddAuth()});
       const d = await r.json();
       const rows = d.dossiers || [];
+      if(auto && STATE.dossier) return;              // a dive landed while this was in flight
       if(!rows.length){ note().textContent = "No company has been dived yet. Type a name above."; out().innerHTML = ""; return; }
       note().textContent = rows.length + (rows.length === 1 ? " company dived" : " companies dived") + " \u00b7 click one to open it";
       out().innerHTML = '<div class="dd-cands">' + rows.map((c, i) =>
@@ -9169,10 +9171,13 @@ async function openShare(token){
   function enter(fresh){
     wire();
     if(fresh){ STATE.dossier = null; STATE.cid = ""; out().innerHTML = ""; }
+    // A link that names a company is about to load it. Fetching the recent-dives list here too is a
+    // race the list can win — landing on someone's dossier and being shown a menu instead.
+    if(/^#(deepdive\/|dd\/)/.test(location.hash || "")) return;
     if(!out().innerHTML){
       note().textContent = "Type a company name or its domain. A name we cannot pin to one company "
         + "comes back as a choice rather than a guess.";
-      recent();
+      recent({auto: true});
     }
   }
 
