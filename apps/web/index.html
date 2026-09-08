@@ -6699,9 +6699,9 @@ window.addEventListener("hashchange", ()=>{
   function readyHtml(r){
     return `<div class="sg-ready"><div class="sg-ready-h">Here's what I'll search — adjust it in the rail after, or start over</div>
       <div class="sg-understood">${esc(r.understood)}</div><div class="sg-chips">${chipsHtml(r.contract||{})}</div>
-      <div class="sg-pool"><b>${r.pool||0}</b> startups match every must right now.</div>
-      ${(r.recipes||[]).length?`<div class="sg-readings"><div class="sg-ready-h">Readings the search will merge — each measured against the index</div>${r.recipes.map(x=>`<div class="sg-reading"><b>${esc(x.name==="strict"?"strict — as read":x.name==="default"?"compiled reading ranks instead":x.name==="loose"?"every relaxable filter ranks":x.name.replace(/^relaxed:/,"without ").replace(/_/g," "))}</b> · ${x.pool!=null?(x.pool>=2001?"2000+":x.pool)+" in its pool":"not measured"} <span class="c-dom">${esc(x.why)}</span></div>`).join("")}</div>`:""}
-      ${(r.diagnostics||[]).length?`<div class="sg-notes">${r.diagnostics.map(d=>`your must <b>${esc(d.label)}: ${esc(d.values)}</b> leaves ${d.pool_with} — without it ${d.pool_without>=2001?"2000+":d.pool_without}`).join("<br>")}</div>`:""}
+      <div class="sg-pool"><b>${r.pool||0}</b> startups match every filter right now.</div>
+      ${(r.recipes||[]).length?`<div class="sg-readings"><div class="sg-ready-h">Your brief can be read more than one way. The search runs each of these and merges the results.</div>${r.recipes.map(x=>`<div class="sg-reading"><b>${esc(readingName(x.name))}</b> · ${esc(readingPool(x.pool))} <span class="c-dom">${esc(readingWhy(x.name))}</span></div>`).join("")}</div>`:""}
+      ${(r.diagnostics||[]).length?`<div class="sg-notes">${r.diagnostics.map(d=>`filtering on <b>${esc(d.label)}: ${esc(d.values)}</b> leaves ${d.pool_with} startups — without it, ${d.pool_without>=2001?"2000+":d.pool_without}`).join("<br>")}</div>`:""}
       ${(r.notes||[]).length?`<div class="sg-notes">${r.notes.map(n=>esc(n)).join("<br>")}</div>`:""}
       <div class="sg-actions"><button type="button" class="sg-btn primary" id="sg-go">◆ Search these startups</button><button type="button" class="sg-btn" id="sg-restart">Start over</button></div>
       ${(r.advice||[]).length?`<ul class="sg-advice">${r.advice.map(a=>`<li>${esc(a)}</li>`).join("")}</ul>`:""}</div>`;
@@ -6857,6 +6857,36 @@ const PROV_TITLE = { formd:"SEC Form D filing", press:"press", site:"the company
 function toast(m){ const t=$("#su-toast"); t.textContent=m; t.classList.add("on"); setTimeout(()=>t.classList.remove("on"), 2200); }
 function label(key, v){ const L=STATE.labels||{}; if(v==="unknown") return "unknown"; return (L.values||{})[v] || String(v).replace(/_/g," "); }
 function klabel(key){ const L=STATE.labels||{}; return (L.keys||{})[key] || key; }
+
+// ---- Readings, in words a reader can act on ------------------------------------------------------
+// A brief compiles into filters, some of which YOU set as chips and some of which we inferred from
+// your words. The search runs several readings of the same brief and merges them. The old labels
+// ("compiled reading ranks instead") described the machinery; these describe what each reading DOES
+// to the results, which is the only part worth a reader's attention.
+function readingName(name, key){
+  if(name === "strict") return "all filters";
+  if(name === "default") return "only your filters";
+  if(name === "loose") return "fewest filters";
+  if(name.indexOf("relaxed:") === 0) return "without " + klabel(name.slice(8)).toLowerCase();
+  if(name.indexOf("reading:") === 0){
+    const rest = name.slice(8), eq = rest.indexOf("=");
+    return eq > 0 ? "reading " + klabel(rest.slice(0, eq)).toLowerCase() + " as " + rest.slice(eq + 1).replace(/_/g, " ")
+                  : "another reading";
+  }
+  return name.replace(/_/g, " ");
+}
+function readingWhy(name){
+  if(name === "strict") return "every filter from your brief applied, yours and ours";
+  if(name === "default") return "the filters we guessed from your words stop excluding anyone and only push matches up; your own chips still filter";
+  if(name === "loose") return "every optional filter only pushes matches up";
+  if(name.indexOf("relaxed:") === 0) return klabel(name.slice(8)) + " stops excluding anyone and only pushes matches up";
+  if(name.indexOf("reading:") === 0) return "the same words read a different way";
+  return "";
+}
+function readingPool(pool){
+  if(pool == null) return "not measured";
+  return (pool >= 2001 ? "2000+" : pool) + " startups matched";
+}
 function usd(x){ x=Number(x||0); if(x>=1e9) return "$"+(x/1e9).toFixed(1)+"B"; if(x>=1e6) return "$"+(x/1e6).toFixed(1).replace(/\.0$/,"")+"M"; if(x>=1e3) return "$"+Math.round(x/1e3)+"k"; return "$"+Math.round(x); }
 
 // ---------- contract editing (mirror of the kernel's edit cycle)
@@ -6921,15 +6951,19 @@ function railHtml(){
     const sum = (d.relaxed||[]).find(n => n.rule === "relax_summary") || {};
     const strict = sum.strict_slice != null ? `${sum.strict_slice >= 2001 ? "2000+" : sum.strict_slice} matched every filter` : "few matched every filter";
     const item = n => `<span class="su-relaxed${n.user?" yours":""}">${n.range ? "≥/≤ " : "▲ "}<b>${esc(klabel(n.key))}</b> ${n.values ? esc(n.values.map(v=>label(n.key, v)).join(" / ")) : esc(rangeLabel(n.key, n.range||{}))}${n.range ? " — no longer filters" : ""}${n.user ? " <i>(your chip)</i>" : ""}</span>`;
-    relaxedLine = `<div class="frail-row su-relaxedrow"><span class="frail-k" title="too few matched every filter, so the least important ones now rank first instead — tap a chip to make it a must again">Showing more</span><span class="su-mergesum">${esc(strict)} — these now rank first instead of filtering: </span>${rx.map(item).join("")}</div>`;
+    relaxedLine = `<div class="frail-row su-relaxedrow"><span class="frail-k" title="too few startups matched every filter, so the least important ones stopped excluding anyone — tap a chip to make it a filter again">Widened to show more</span><span class="su-mergesum">${esc(strict)} — these now rank first instead of filtering: </span>${rx.map(item).join("")}</div>`;
   }
   const mg = d.merge; let mergeLine = "";
   if(mg){
-    const rec = (mg.recipes||[]).map(x => { const off=(STATE.mergeOff||[]).includes(x.name); const nm = x.name==="strict"?"strict":x.name==="default"?"compiled reading ranks":x.name==="loose"?"all relaxable rank":x.name.replace(/^relaxed:/,"without ").replace(/_/g," ").replace(/^reading:/,"reading "); return `<button type="button" class="su-recipe${off?" off":""}" data-recipe="${esc(x.name)}" title="${esc(x.why)} — ${x.pool!=null?x.pool+" in its pool":""} · ${x.head_fits||0} judged fits · tap to switch ${off?"on":"off"}">${off?"◌ ":"● "}${esc(nm)}${x.pool!=null?`<b>${x.pool>=2001?"2000+":x.pool}</b>`:""}</button>`; }).join("");
-    const offNote = (STATE.mergeOff||[]).length ? ` <button type="button" class="su-recipe" id="su-recipes-all">all readings on</button>` : "";
-    mergeLine = `<div class="frail-row su-merge"><span class="frail-k" title="one blind model read of the top of the merged list, against your words">Model read</span><span class="su-mergesum">${mg.graded?`<b>${mg.fits}</b> of ${mg.graded} graded fit · ${mg.partials} partial · ${mg.nos} not${mg.weak?` · <span class="su-weak">weak — sharpen the words or loosen a must</span>`:""}`:"ungraded"}</span></div><div class="frail-row"><span class="frail-k" title="the readings merged into this list — switch one off to re-run without it">Readings</span>${rec}${offNote}</div>`;
+    const rec = (mg.recipes||[]).map(x => {
+      const off = (STATE.mergeOff||[]).includes(x.name);
+      const tip = `${readingWhy(x.name)} · ${readingPool(x.pool)} · ${x.head_fits||0} of them the model judged a fit · tap to ${off?"put this reading back":"drop this reading"}`;
+      return `<button type="button" class="su-recipe${off?" off":""}" data-recipe="${esc(x.name)}" title="${esc(tip)}">${off?"◌ ":"● "}${esc(readingName(x.name))}${x.pool!=null?`<b>${x.pool>=2001?"2000+":x.pool}</b>`:""}</button>`;
+    }).join("");
+    const offNote = (STATE.mergeOff||[]).length ? ` <button type="button" class="su-recipe" id="su-recipes-all">put them all back</button>` : "";
+    mergeLine = `<div class="frail-row su-merge"><span class="frail-k" title="a model read the top of this list without knowing how it was built, and said whether each one answers your words">Checked by a model</span><span class="su-mergesum">${mg.graded?`<b>${mg.fits}</b> of ${mg.graded} checked actually fit · ${mg.partials} partly · ${mg.nos} not${mg.weak?` · <span class="su-weak">weak — sharpen the words or drop a filter</span>`:""}`:"not checked"}</span></div><div class="frail-row"><span class="frail-k" title="your brief has more than one reasonable reading, so each was run separately and the results merged. The number is how many startups that reading matched. Tap one to re-run without it.">How we read it</span>${rec}${offNote}</div>`;
   }
-  return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Navigate</b> · ${d.coverage.matched ?? 0} match every must ${rank}<span style="margin-left:auto;">● must · ▲ prefer · ▼ avoid</span></div>${relaxedLine}${mergeLine}${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
+  return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Refine</b> · ${d.coverage.matched ?? 0} match every filter ${rank}<span style="margin-left:auto;">● must have · ▲ nice to have · ▼ avoid</span></div>${relaxedLine}${mergeLine}${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
 }
 function pill(m,key,text,v){ const g=m==="must"?"●":m==="prefer"?"▲":"▼"; return `<span class="fpill">${g} ${esc(klabel(key))}: ${esc(text)}<button type="button" data-off="${esc(key)}" data-value="${esc(v)}" data-mode="${m}" title="remove">✕</button></span>`; }
 function rangeLabel(key, r){ const u=((STATE.labels||{}).units||{})[key]||""; const f=x=>u==="usd"?usd(x):String(x); return (r.min!=null?"≥ "+f(r.min):"")+(r.min!=null&&r.max!=null?" · ":"")+(r.max!=null?"≤ "+f(r.max):"")+(u&&u!=="usd"?" "+u:""); }
