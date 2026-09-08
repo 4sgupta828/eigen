@@ -313,3 +313,30 @@ def test_every_board_we_can_read_has_a_url_template():
     from api.startups.sources.ats import BOARD_URL
     for kind, tmpl in BOARD_URL.items():
         assert "{token}" in tmpl and tmpl.startswith("https://"), kind
+
+
+def test_an_area_the_brief_did_not_name_ranks_instead_of_filtering():
+    """'Ecommerce Startups' compiled to a hard tech_area=consumer. That is not what ecommerce means:
+    it excluded every ecommerce company filed under enterprise software and admitted every consumer
+    company that sells nothing online."""
+    c, notes = cp.build_contract({"text": "ecommerce startups", "must": {"tech_area": ["consumer"]}},
+                                 coverage={"tech_area": 0.5},
+                                 value_counts={"tech_area": {"consumer": 900}}, brief="Ecommerce Startups")
+    assert "tech_area" not in c.must
+    assert c.prefer.get("tech_area") == ["consumer"]
+    assert any("ranks results instead of filtering" in n for n in notes)
+
+
+def test_an_area_the_brief_did_name_still_filters():
+    c, notes = cp.build_contract({"text": "robotics startups", "must": {"tech_area": ["robotics"]}},
+                                 coverage={"tech_area": 0.5},
+                                 value_counts={"tech_area": {"robotics": 300}}, brief="robotics startups")
+    assert c.must.get("tech_area") == ["robotics"] and not any("ranks results" in n for n in notes)
+
+
+def test_the_named_area_survives_when_one_of_several_was_approximated():
+    c, _ = cp.build_contract({"text": "fintech and ecommerce", "must": {"tech_area": ["fintech", "consumer"]}},
+                             coverage={"tech_area": 0.5},
+                             value_counts={"tech_area": {"fintech": 500, "consumer": 900}},
+                             brief="fintech and ecommerce startups")
+    assert c.must.get("tech_area") == ["fintech"] and "consumer" in c.prefer.get("tech_area", [])

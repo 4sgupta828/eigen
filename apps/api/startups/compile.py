@@ -99,6 +99,36 @@ def brief_names_a_stage(text: str) -> bool:
     return bool(_STAGE_WORDS.search(text or ""))
 
 
+# What each coarse area is actually called, so we can tell "the brief said this" from "we picked the
+# nearest one". Only the words a person would write; the point is recognition, not a thesaurus.
+AREA_WORDS = {
+    "ai_infra": ("ai infra", "inference", "gpu", "model serving", "ml infra"),
+    "llm_apps": ("llm", "genai", "generative ai", "chatbot", "copilot"),
+    "agents": ("agent", "agents", "agentic"),
+    "devtools": ("devtool", "developer tool", "developer tools", "ide", "ci/cd"),
+    "data": ("data", "analytics", "warehouse", "etl", "database"),
+    "security": ("security", "cyber", "infosec", "appsec"),
+    "robotics": ("robot", "robotics", "autonomy", "drone"),
+    "hardware_semis": ("hardware", "semiconductor", "chip", "chips", "silicon"),
+    "bio_health": ("bio", "biotech", "health", "healthcare", "medical", "clinical"),
+    "climate_energy": ("climate", "energy", "solar", "battery", "carbon"),
+    "fintech": ("fintech", "payments", "banking", "lending", "insurance"),
+    "consumer": ("consumer", "d2c", "social app", "mobile app"),
+    "enterprise_saas": ("enterprise", "saas", "b2b software"),
+    "space_defense": ("space", "defense", "defence", "satellite", "aerospace"),
+    "other": (),
+}
+
+
+def area_named_in(brief: str, area: str) -> bool:
+    """Did the brief actually SAY this area, rather than us choosing it as the nearest one?"""
+    b = " " + re.sub(r"[^a-z0-9]+", " ", (brief or "").lower()) + " "
+    words = AREA_WORDS.get(area, ())
+    if any(" " + w + " " in b for w in words):
+        return True
+    return " " + area.replace("_", " ") + " " in b
+
+
 def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dict | None = None, limit: int = 60, brief: str = "") -> tuple[Contract, list[str]]:
     """Model JSON → validated Contract + notes. `coverage` = known-rate per key (0..1) from the index (a key
     absent from it is known for nobody); `value_counts` = index-wide count per key per value, so a must on a
@@ -108,6 +138,27 @@ def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dic
     prefer = _clean_map(out.get("prefer"), numeric_ok=False)
     avoid = _clean_map(out.get("avoid"), numeric_ok=False)
     exclude = _clean_map(out.get("must_not"), numeric_ok=False)
+    # An AREA the brief did not name is an approximation, and an approximation must not filter.
+    # "Ecommerce Startups" compiled to a hard tech_area=consumer, which is not what ecommerce means:
+    # it excluded every ecommerce company filed under enterprise software and admitted every consumer
+    # company that sells nothing online. The vocabulary is coarse on purpose; when the brief's own
+    # word is not in it, the nearest area ranks instead of filtering and the words do the work.
+    if brief and must.get("tech_area"):
+        named = [v for v in must["tech_area"] if area_named_in(brief, v)]
+        approximated = [v for v in must["tech_area"] if v not in named]
+        if approximated:
+            if named:
+                must["tech_area"] = named
+            else:
+                must.pop("tech_area")
+            for v in approximated:
+                prefer.setdefault("tech_area", [])
+                if v not in prefer["tech_area"]:
+                    prefer["tech_area"].append(v)
+            notes.append("\u201c" + brief.strip()[:40] + "\u201d has no exact area in our vocabulary, so "
+                         + ", ".join(v.replace("_", " ") for v in approximated)
+                         + " ranks results instead of filtering them out")
+
     # a STAGE only when the brief names one — the model tends to assume "startups" means seed / series A
     if brief and not brief_names_a_stage(brief):
         must.pop("stage", None); prefer.pop("stage", None); avoid.pop("stage", None)

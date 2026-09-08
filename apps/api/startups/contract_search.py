@@ -246,8 +246,19 @@ async def merged_search(c: Contract, *, user_keys: set, evaluate_fn: Callable[..
                 if rid and fit in ("yes", "partial", "no"):
                     verdicts[rid] = {"fit": fit, "why": str(v.get("why") or "")[:80]}
     timings["judge"] = round(_t.monotonic() - t2, 2); timings["total"] = round(_t.monotonic() - t0, 2)
-    ordered = order_by_verdicts(fused, verdicts, head=JUDGE_HEAD)
     tallies = {k: sum(1 for v in verdicts.values() if v["fit"] == k) for k in ("yes", "partial", "no")}
+    # A judge that finds NOTHING it will call a fit has not measured this list — it has failed to
+    # read it. Observed on "ecommerce startups", where it graded "Shopify for LatAm" and "Mobile
+    # storefronts for Shopify" as no. Letting those verdicts reorder puts the best rows at the
+    # bottom, so a judge with no fits is reported and ignored for ORDERING; the similarity order,
+    # which was right, stands.
+    judge_trusted = tallies["yes"] > 0
+    ordered = order_by_verdicts(fused, verdicts, head=JUDGE_HEAD) if judge_trusted else list(fused)
+    if not judge_trusted and verdicts:
+        for r in ordered:
+            rid = str(r.get("id"))
+            if rid in verdicts:
+                r["_fit"], r["_why"] = verdicts[rid]["fit"], verdicts[rid]["why"]
     per_recipe = []
     for r, o in zip(surv, outs):
         rows_r = lists[r.name]; ids_r = {str(x.get("id")) for x in rows_r}
@@ -263,7 +274,8 @@ async def merged_search(c: Contract, *, user_keys: set, evaluate_fn: Callable[..
         r["rank"] = i + 1
     merge = {"recipes": per_recipe, "off": [n for n in off if any(x.name == n for x in ladder)], "ladder": [x.name for x in ladder],
              "head": len(head), "graded": len(verdicts), "fits": tallies["yes"], "partials": tallies["partial"], "nos": tallies["no"],
-             "weak": bool(items) and tallies["yes"] < WEAK_FITS, "judge_error": judge_error, "prec10": head_precision(ordered, verdicts, k=10),
+             "weak": bool(items) and tallies["yes"] < WEAK_FITS, "judge_error": judge_error,
+             "judge_used_for_order": judge_trusted, "prec10": head_precision(ordered, verdicts, k=10),
              "union": len(fused), "timings": timings}
     return {"rows": rows, "counts": strict.get("counts") or {}, "coverage": dict(strict.get("coverage") or {}), "contract": strict.get("contract") or c.to_dict(),
             "labels": strict.get("labels"), "merge": merge}

@@ -92,3 +92,14 @@ def test_relaxing_goes_least_important_first_compiled_before_the_users_and_never
     assert notes[-1]["rule"] == "relax_summary" and notes[-1]["strict_slice"] == 2 and len(out["rows"]) >= 12
     final = Contract.from_dict(out["contract"])
     assert final.prefer.get("metro") == ["boston"] and "hiring" not in final.must and final.must["tech_area"] == ["robotics"]
+
+
+def test_a_judge_that_finds_no_fits_does_not_get_to_reorder():
+    """Observed on 'ecommerce startups': the judge graded 'Shopify for LatAm' and 'Mobile
+    storefronts for Shopify' as no, and its ordering pushed the best rows to the bottom. A judge
+    with zero fits has not measured the list, so its verdicts are reported and ignored for order."""
+    import inspect
+    from api.startups import contract_search as cs
+    src = inspect.getsource(cs.merged_search)
+    assert "judge_trusted = tallies[\"yes\"] > 0" in src
+    assert "order_by_verdicts(fused, verdicts, head=JUDGE_HEAD) if judge_trusted else list(fused)" in src
