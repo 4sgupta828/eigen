@@ -7298,7 +7298,14 @@ function drawerHtml(co){
     "");
 
   // ── money ──────────────────────────────────────────────────────────────────────────────────────
-  const moneyFacts = pick(MONEY_KEYS);
+  // financing_scale is a restatement of an amount we already show — Flexport rendered "$933.7M last
+  // round" and "$933.7M financing scale" side by side. A second name for the same number is not a
+  // second fact, so it is dropped whenever it equals one.
+  const moneyRaw = pick(MONEY_KEYS);
+  const shownAmounts = new Set(moneyRaw.filter(f => f.key !== "financing_scale")
+    .map(f => Math.round(Number(f.number || 0))).filter(Boolean));
+  const moneyFacts = moneyRaw.filter(f =>
+    !(f.key === "financing_scale" && shownAmounts.has(Math.round(Number(f.number || 0)))));
   const investors = byKey("investor").concat(byKey("lead_investor"));
   // An investor's name should take you to the investor. We hold the firm's site for every fund whose
   // portfolio page we crawl — the facet value IS that fund's slug — so those names link directly.
