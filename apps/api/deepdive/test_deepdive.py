@@ -636,3 +636,11 @@ def test_a_crawled_page_is_offered_as_a_link_not_as_its_navigation():
     for row in pricing(pages) + named_customers(pages):
         assert "Skip to main content" not in json.dumps(row)
         assert row["source_url"] and row["claim"]
+
+
+def test_search_snippets_arrive_escaped_and_truncated():
+    from api.deepdive.assemble import sentences
+    assert sentences("Secureframe&#x27;s latest funding round is Angel....") == [
+        "Secureframe's latest funding round is Angel."]
+    assert sentences("Secureframe raised a total of $78.71M…") == [
+        "Secureframe raised a total of $78.71M."]

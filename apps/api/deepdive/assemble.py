@@ -16,6 +16,7 @@ estimate, and nothing extrapolates a current number from an old one.
 """
 from __future__ import annotations
 
+import html
 import re
 from datetime import date
 
@@ -83,11 +84,18 @@ _SENT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\u201c\"'])")
 
 
 def sentences(text: str) -> list[str]:
-    """Sentences of `text`, with abbreviations kept whole and whitespace collapsed."""
+    """Sentences of `text`: entities decoded, abbreviations kept whole, whitespace collapsed.
+
+    Search snippets arrive HTML-escaped and truncated — "Secureframe&#x27;s latest funding round"
+    and "raised a total of $78.71M…" — so entities are decoded and a trailing ellipsis becomes a
+    full stop rather than being carried onto the page.
+    """
     out: list[str] = []
-    for part in _SENT.split((text or "").replace("\n", " ")):
+    text = html.unescape(text or "")
+    for part in _SENT.split(text.replace("\n", " ")):
         # Stripped markup leaves a gap before the punctuation it used to wrap: "$18 billion ,".
         part = re.sub(r"\s+([,;:.!?%])", r"\1", " ".join(part.split()))
+        part = re.sub(r"(?:\.\s*){2,}$|\u2026\.?$", ".", part)
         if not part:
             continue
         # If the previous piece ended on an abbreviation, this is its continuation, not a sentence.
