@@ -458,3 +458,13 @@ def test_a_company_suffix_does_not_end_a_sentence():
     assert sentences("Fluidstack Ltd. raised $830 million in a Series A round. It grew fast.") == [
         "Fluidstack Ltd. raised $830 million in a Series A round.", "It grew fast."]
     assert len(sentences("Acme Inc. and Globex Corp. signed a deal. Both grew.")) == 2
+
+
+def test_markup_never_reaches_a_claim():
+    """"a target valuation of <strong>$18 billion</strong>" rendered with the tags on the page."""
+    from api.deepdive.web import _claims_from
+    by = _claims_from([_Hit("Fluidstack is raising at a valuation of <strong>$18 billion</strong>, "
+                            "people briefed on the matter said.", "funding_investors_valuation",
+                            "https://bloomberg.com/x", "Bloomberg")], ["Fluidstack"], "fluidstack.io")
+    kept = [c["claim"] for rows in by.values() for c in rows]
+    assert kept and "<" not in kept[0] and "$18 billion" in kept[0]

@@ -36,6 +36,7 @@ _BOILER = ("for more information", "please visit", "learn more", "contact us", "
 _OPENS_QUOTED = ("\u201c", '"', "\u2018", "'")
 # How an article refers to a company after naming it once. Accepted only inside a chunk that DID name
 # it, and only when the sentence names no other organisation — anaphora, not a guess.
+_TAGS = re.compile(r"<[^>]{1,80}>")
 _COREF = re.compile(r"\b(the (company|startup|firm|business|group)|it|its|they|their)\b", re.I)
 
 _FIRST_PERSON = re.compile(r"\b(we|our|us)\b", re.I)
@@ -93,7 +94,8 @@ def _claims_from(hits, subject_terms: list[str], own_domain: str = "",
         # subject. Only for external coverage: the company's own pages are read properly by the
         # site-reading leg, and letting their marketing prose in here just re-imports a manifesto.
         chunk_names = external and _mentions(h.text or "", subject_terms)
-        for s in sentences(h.text or ""):
+        # Web extractors leave markup behind: "<strong>$18 billion</strong>" reached the page.
+        for s in sentences(_TAGS.sub(" ", h.text or "")):
             if not (40 <= len(s) <= 320):
                 continue
             if not reads_like_a_sentence(s):

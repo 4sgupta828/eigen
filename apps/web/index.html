@@ -8778,10 +8778,23 @@ async function openShare(token){
       + src(c.source_url) + "</div>";
   }
 
+  // Its own formatter: `usd` lives inside the Startups module's closure, so reaching for it here
+  // silently fell through to a raw 450000000 on the page.
+  function money(x){
+    const n = Number(x || 0);
+    if(!n) return "";
+    if(n >= 1e9) return "$" + (n / 1e9).toFixed(1).replace(/\.0$/, "") + "B";
+    if(n >= 1e6) return "$" + (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+    if(n >= 1e3) return "$" + Math.round(n / 1e3) + "k";
+    return "$" + Math.round(n);
+  }
+  // The stored `kind` is a table name, not something to show a reader.
+  const ROUND_LABEL = {formd: "SEC Form D offering", press: "reported round", portfolio: "reported round"};
+
   function finRow(c){
-    const amt = (typeof usd === "function" && c.amount_usd) ? usd(c.amount_usd) : (c.amount_usd || "");
     return '<div class="dd-row">' + reg(c.register)
-      + '<span class="dd-v"><b>' + esc(c.round || "round") + "</b> " + esc(String(amt)) + "</span>"
+      + '<span class="dd-v"><b>' + esc(ROUND_LABEL[c.round] || c.round || "round") + "</b> "
+      + esc(money(c.amount_usd)) + "</span>"
       + (c.date ? ' <span class="dd-k">' + esc(c.date) + "</span>" : "")
       + ((c.investors || []).length ? '<span class="dd-k">' + esc(c.investors.join(", ")) + "</span>" : "")
       + src(c.source_url) + "</div>";
