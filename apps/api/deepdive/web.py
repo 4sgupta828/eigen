@@ -22,7 +22,7 @@ import os
 import re
 
 from .assemble import reads_like_a_sentence
-from .gates import metric_defined, subject_bound
+from .gates import _mentions, metric_defined, subject_bound
 
 # Copy that appears on every site and says nothing about any company.
 _BOILER = ("for more information", "please visit", "learn more", "contact us", "sign up",
@@ -91,10 +91,12 @@ def _claims_from(hits, subject_terms: list[str], own_domain: str = "") -> dict[s
                 continue                                  # somebody else is speaking
             if external and _FIRST_PERSON.search(s):
                 continue                                  # "we" in coverage is never the company
-            # On the open web nothing establishes the subject except the sentence itself: the
-            # page-owner leniency that a company's own crawled pages get does not apply here, and
-            # without it a landing-page manifesto ("For most of human history, you farmed or you
-            # starved.") is correctly not a claim about anybody.
+            # On the open web the sentence must NAME the company. `subject_bound` lets a first-person
+            # sentence stand on the company's own pages, which is right when we crawled the page
+            # ourselves and wrong here: "We believe whoever deploys frontier infrastructure fastest
+            # will shape whether AI expands human freedom" is a manifesto, not a claim about anybody.
+            if not _mentions(s, subject_terms):
+                continue
             ok, _why = subject_bound(s, subject_terms, url=url)
             if not ok:
                 continue
@@ -121,29 +123,36 @@ async def read_web(company: dict, *, manifest, subject_terms: list[str]) -> dict
     name = company.get("name") or company.get("id") or ""
     own = company.get("website") or company.get("id") or ""
     if not (templates and name):
-        return {"sections": [], "attempted": [{"source": "Web read", "found": 0, "unit": "pages",
-                                               "result": "not configured for this deployment"}],
-                "projection": {}}
+        return {"sections": [], "projection": {},
+                "attempted": [_att("Web read", 0, "pages", "not configured for this deployment")]}
     try:
         hits = await retrieve_deep_company(company=name, templates=templates, source=_source(manifest),
                                            tenant_id="default")
     except Exception:      # noqa: BLE001 — the dossier stands without this leg
-        return {"sections": [], "attempted": [{"source": "Web read", "found": 0, "unit": "pages",
-                                               "result": "unavailable on this run"}],
-                "projection": project_web_cost(templates)}
+        return {"sections": [], "projection": project_web_cost(templates),
+                "attempted": [_att("Web read", 0, "pages", "unavailable on this run")]}
     by = _claims_from(hits, subject_terms, own)
-    sections = []
+    sections, own_rows = [], []
     for facet, rows in by.items():
-        external = facet in _EXTERNAL
-        sections.append({
-            "title": _FACET_TITLES.get(facet, facet.replace("_", " ")),
-            "kind": "stated", "claims": rows,
-            "note": ("how the press and analysts describe this — coverage, not an established fact, "
-                     "and never a substitute for a filing") if external else
-                    "read from the company's own pages on the open web",
-        })
+        if facet in _EXTERNAL:
+            sections.append({
+                "title": _FACET_TITLES[facet], "kind": "stated", "claims": rows,
+                "note": "how the press and analysts describe this — coverage, not an established "
+                        "fact, and never a substitute for a filing",
+            })
+        else:
+            own_rows.extend(rows)
+    if own_rows:
+        sections.insert(0, {"title": "Their own pages, read from the web", "kind": "stated",
+                            "claims": own_rows[:12],
+                            "note": "the company's own words, found on the open web"})
+    kept = sum(len(v) for v in by.values())
     return {"sections": sections,
-            "attempted": [{"source": "Web read", "found": len(hits), "unit": "pages"},
-                          {"source": "Web claims kept", "found": sum(len(v) for v in by.values()),
-                           "unit": "claims"}],
+            "attempted": [_att("Web read", len(hits), "pages"), _att("Web claims kept", kept, "claims")],
             "projection": project_web_cost(templates)}
+
+
+def _att(source: str, found: int, unit: str, result: str = "") -> dict:
+    """Every attempted row carries a `result`; the Manifest of Absence renders it when found is 0."""
+    return {"source": source, "found": found, "unit": unit,
+            "result": result or ("found" if found else "nothing found")}

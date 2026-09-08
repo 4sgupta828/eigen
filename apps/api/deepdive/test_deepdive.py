@@ -384,3 +384,26 @@ def test_the_dive_is_projected_before_it_is_run():
     assert full["projected_usd"] > read["projected_usd"] and full["web_usd"] > 0
     # the page count is capped, so a company with a huge site cannot blow past the projection
     assert project("read", 500, None)["pages"] == 14
+
+
+def test_a_manifesto_on_the_web_is_not_a_claim_even_in_the_first_person():
+    """Survived the first tightening: `subject_bound` lets first person stand on a company's own
+    pages, which is right for a page we crawled and wrong for one we found on the web."""
+    from api.deepdive.web import _claims_from
+    by = _claims_from([
+        _Hit("We believe whoever deploys frontier infrastructure fastest will shape whether AI expands human freedom.",
+             "founders_team", "https://fluidstack.io/"),
+        _Hit("We hire people who care deeply about this problem space.", "founders_team", "https://fluidstack.io/"),
+        _Hit("Fluidstack builds infrastructure for the leading AI labs and deploys clusters at speed.",
+             "product", "https://fluidstack.io/"),
+    ], ["Fluidstack", "fluidstack"], "fluidstack.io")
+    kept = [c["claim"] for rows in by.values() for c in rows]
+    assert kept == ["Fluidstack builds infrastructure for the leading AI labs and deploys clusters at speed."]
+
+
+def test_every_attempted_row_can_be_rendered():
+    """The Manifest of Absence reads `result` when nothing was found; a row without one printed
+    "undefined" on the page."""
+    from api.deepdive.web import _att
+    for row in (_att("Web read", 0, "pages"), _att("Web read", 3, "pages")):
+        assert row["result"] and row["source"] and row["unit"]
