@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from eigen_kernel.facets import Contract, evaluate, matches_must, validate_contract
 
-from . import compile as compile_mod, pipeline
+from . import compile as compile_mod, pipeline, ranking
 from .schema import KIND, SCHEMA, WEIGHTS, labels
 from .store import StartupStore
 
@@ -50,6 +50,7 @@ class CompileIn(BaseModel):
 
 class EvaluateIn(BaseModel):
     contract: dict
+    sort: str = "relevance"     # see ranking.SORTS — relevance, funding, hiring, youngest, …
 
 
 class ListIn(BaseModel):
@@ -270,6 +271,10 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         from .contract_search import merge_options
         c = Contract.from_dict(body.contract); c.kind = KIND
         out = await _evaluate(c, merge_options(body.contract))
+        # Relevance answers "who matches my words"; these answer "who raised most", "who is hiring
+        # hardest", "who has been at this longest" — the questions that make a long list navigable.
+        out["ranking"] = ranking.apply(out.get("rows") or [], body.sort)
+        out["sorts"] = ranking.options()
         out["map"] = {"id": m["id"], "title": m["title"], "revision": m["revision"], "owner": m["owner"]}
         return out
 
@@ -313,6 +318,10 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         c = Contract.from_dict(body.contract)
         c.kind = KIND
         out = await _evaluate(c, merge_options(body.contract))
+        # Relevance answers "who matches my words"; these answer "who raised most", "who is hiring
+        # hardest", "who has been at this longest" — the questions that make a long list navigable.
+        out["ranking"] = ranking.apply(out.get("rows") or [], body.sort)
+        out["sorts"] = ranking.options()
         # a private note of what was asked, so a line of enquiry can be resumed later
         try:
             u = await user_of(x_eigen_token) if user_of else None

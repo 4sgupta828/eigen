@@ -367,6 +367,10 @@
   #startupsbody .su-hroles{font-size:.78rem;line-height:1.45;color:var(--ink);}
   #startupsbody .su-hgo{margin-left:auto;color:#5b8def;font-size:.75rem;}
   @media (max-width:560px){ #startupsbody .su-hiring{padding:.35rem .5rem;} #startupsbody .su-hroles{font-size:.74rem;} }
+  #startupsbody .su-sortrow{align-items:center;}
+  #startupsbody .su-sort{font-family:var(--mono);font-size:.72rem;padding:.28rem .4rem;border-radius:7px;
+    border:1px solid var(--hair);background:var(--panel2);color:var(--ink);min-height:32px;cursor:pointer;}
+  #startupsbody .su-sort:hover{border-color:var(--gold);}
   #startupsbody .su-fname{font-weight:600;}
   #startupsbody .su-frole{color:var(--muted);font-size:.74rem;margin-left:.28rem;}
   #startupsbody .su-fl{margin-left:.25rem;font-family:var(--mono);font-size:.6rem;text-decoration:none;
@@ -7044,6 +7048,19 @@ function railHtml(){
     const item = n => `<span class="su-relaxed${n.user?" yours":""}">${n.range ? "≥/≤ " : "▲ "}<b>${esc(klabel(n.key))}</b> ${n.values ? esc(n.values.map(v=>label(n.key, v)).join(" / ")) : esc(rangeLabel(n.key, n.range||{}))}${n.range ? " — no longer filters" : ""}${n.user ? " <i>(your chip)</i>" : ""}</span>`;
     relaxedLine = `<div class="frail-row su-relaxedrow"><span class="frail-k" title="too few startups matched every filter, so the least important ones stopped excluding anyone — tap a chip to make it a filter again">Widened to show more</span><span class="su-mergesum">${esc(strict)} — these now rank first instead of filtering: </span>${rx.map(item).join("")}</div>`;
   }
+  // Sorting the list is a first-class question ("who raised most", "who is hiring hardest"), so the
+  // control sits with the results rather than inside a menu. The label says what could not be ranked,
+  // because a company with no funding on record is still in the list and should not look like a bug.
+  let sortLine = "";
+  if((d.sorts || []).length){
+    const cur = (d.ranking || {}).sort || "relevance";
+    const opts = d.sorts.map(o => `<option value="${esc(o.key)}"${o.key === cur ? " selected" : ""} title="${esc(o.why)}">${esc(o.label)}</option>`).join("");
+    const un = (d.ranking || {}).unranked || 0;
+    sortLine = `<div class="frail-row su-sortrow"><span class="frail-k" title="how this list is ordered">Order by</span>`
+      + `<select id="su-sort" class="su-sort">${opts}</select>`
+      + (un ? `<span class="su-mergesum">${un} of these have no ${esc(((d.sorts.find(o => o.key === cur) || {}).label || "").toLowerCase())} on record — they keep their place at the end</span>` : "")
+      + `</div>`;
+  }
   const mg = d.merge; let mergeLine = "";
   if(mg){
     // One plain sentence, and the controls only for whoever wants them. The row used to open with a
@@ -7071,12 +7088,16 @@ function railHtml(){
     mergeLine = `<div class="frail-row su-merge"><span class="frail-k" title="a model read the top of this list without being told how it was built, and said whether each company answers your words">Spot-checked</span><span class="su-mergesum">${mg.graded?`<b>${mg.fits}</b> of the top ${mg.graded} really do fit · ${mg.partials} partly · ${mg.nos} do not${mg.weak?` · <span class="su-weak">weak — sharpen the words or drop a filter</span>`:""}`:"not checked"}</span></div>`
       + `<div class="frail-row su-mix"><span class="frail-k" title="how this list was put together">In this list</span><span class="su-mergesum">${sentence}${controls}</span></div>`;
   }
-  return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Refine</b> · ${d.coverage.matched ?? 0} match every filter ${rank}<span style="margin-left:auto;">● must have · ▲ nice to have · ▼ avoid</span></div>${relaxedLine}${mergeLine}${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
+  return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Refine</b> · ${d.coverage.matched ?? 0} match every filter ${rank}<span style="margin-left:auto;">● must have · ▲ nice to have · ▼ avoid</span></div>${sortLine}${relaxedLine}${mergeLine}${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
 }
 function pill(m,key,text,v){ const g=m==="must"?"●":m==="prefer"?"▲":"▼"; return `<span class="fpill">${g} ${esc(klabel(key))}: ${esc(text)}<button type="button" data-off="${esc(key)}" data-value="${esc(v)}" data-mode="${m}" title="remove">✕</button></span>`; }
 function rangeLabel(key, r){ const u=((STATE.labels||{}).units||{})[key]||""; const f=x=>u==="usd"?usd(x):String(x); return (r.min!=null?"≥ "+f(r.min):"")+(r.min!=null&&r.max!=null?" · ":"")+(r.max!=null?"≤ "+f(r.max):"")+(u&&u!=="usd"?" "+u:""); }
 
 function renderRail(){ $("#su-rail").innerHTML = railHtml(); }
+$("#su-rail").addEventListener("change", e=>{
+  const sel = e.target.closest("#su-sort");
+  if(sel){ STATE.sort = sel.value; runEvaluate(STATE.contract, {noRelax: true}); }
+});
 $("#su-rail").addEventListener("click", e=>{
   const chip=e.target.closest(".fchip"); if(chip && !chip.disabled){ STATE.draft = edit(STATE.draft||STATE.contract, chip.dataset.key, chip.dataset.value, "cycle"); renderRail(); return; }
   const off=e.target.closest("[data-off]"); if(off){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); if(off.dataset.value==="__range__"){ delete c[off.dataset.mode][off.dataset.off]; STATE.draft=c; } else STATE.draft=edit(c, off.dataset.off, off.dataset.value, "off"); renderRail(); return; }
@@ -7517,7 +7538,7 @@ async function runEvaluate(contract, opts){
     const url = m ? `/startups/maps/${m.id}/navigate${m.share?"?share="+encodeURIComponent(m.share):""}` : "/startups/evaluate";
     if(contract && contract.merge) STATE.merge = contract.merge;                       // merge options ride every re-run (rail edits included)
     const payload = {...contract, merge: {...(STATE.merge||{mode:"merged"}), off: (STATE.mergeOff||[]), relax: !opts.diff && !opts.noRelax}};
-    const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json",...authHeaders()},body:JSON.stringify({contract: payload})});
+    const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json",...authHeaders()},body:JSON.stringify({contract: payload, sort: STATE.sort || "relevance"})});
     if(!r.ok){ toast("evaluate failed: "+(await r.text()).slice(0,120)); STATE.lastDiff=null; return; }
     const d=await r.json(); STATE.data=d; STATE.contract=d.contract; STATE.draft=null; STATE.labels=d.labels; STATE.open=null;
     STATE.merge = STATE.merge || {mode:"merged"};
