@@ -5439,7 +5439,6 @@ async function askQuestion(question, opts){
     if(THREAD.session_id) payload.session_id = THREAD.session_id;
   }
   const body = JSON.stringify(payload);
-  go.classList.add("loading", "stopmode"); go.title = "Stop";   // clickable STOP while running (not disabled)
   const sg = out.querySelector("#suggest"); if(sg) sg.remove();
   if(conv){
     // Show the question IMMEDIATELY as a pending turn — it never vanishes during the wait.
@@ -5480,6 +5479,10 @@ async function askQuestion(question, opts){
     }catch(_){}
     return false;
   };
+  // Set immediately before the try whose finally removes it. It used to be set forty lines earlier,
+  // with renderThread() and the whole setup in between: anything throwing there left the button
+  // spinning and reading "Stop" forever, with no finally in sight. The same shape as the /refine bug.
+  go.classList.add("loading", "stopmode"); go.title = "Stop";   // clickable STOP while running (not disabled)
   try{
     if(STREAM_ENABLED){                                   // live agent trace → final answer
       let engUsed = null;
@@ -7270,7 +7273,7 @@ function onIdleSweep(fn){ if(typeof fn === "function") WORK_SWEEPERS.push(fn); }
 setInterval(function(){
   if(WORK.n > 0 || !WORK.idleSince || Date.now() - WORK.idleSince < WORK_IDLE_SWEEP) return;
   document.body.classList.remove("su-busy");
-  const stuckGo = document.querySelector("button.go.loading");
+  const stuckGo = document.querySelector("button.go.loading:not(.stopmode)");
   if(stuckGo){ stuckGo.classList.remove("loading"); stuckGo.disabled = false; WORK.swept = (WORK.swept || 0) + 1; }
   for(const fn of WORK_SWEEPERS){
     try{ if(fn()) WORK.swept = (WORK.swept || 0) + 1; }
