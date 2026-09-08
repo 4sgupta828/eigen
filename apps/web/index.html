@@ -357,6 +357,14 @@
   #startupsbody .su-relaxed{display:inline-flex;align-items:center;gap:.25rem;min-height:30px;padding:.15rem .55rem;border:1px solid rgba(var(--gold-rgb),.5);border-radius:999px;color:var(--ink);font-size:.74rem;white-space:nowrap;}
   #startupsbody .su-relaxed.yours{border-style:dashed;} #startupsbody .su-relaxed i{color:var(--muted);font-style:normal;font-size:.68rem;}
   #startupsbody .su-relaxedrow{flex-wrap:wrap;} #startupsbody .su-weak{color:var(--gap);font-weight:600;}
+  #startupsbody .su-fname{font-weight:600;}
+  #startupsbody .su-frole{color:var(--muted);font-size:.74rem;margin-left:.28rem;}
+  #startupsbody .su-fl{margin-left:.25rem;font-family:var(--mono);font-size:.6rem;text-decoration:none;
+    color:var(--gold);border:1px solid color-mix(in srgb, var(--gold) 45%, transparent);border-radius:4px;padding:0 .22rem;}
+  #startupsbody .su-fl:hover{background:color-mix(in srgb, var(--gold) 12%, transparent);}
+  #startupsbody .su-fl.su-find{border:0;text-decoration:underline;text-underline-offset:2px;padding:0;}
+  #startupsbody .su-gapk{font-family:var(--mono);font-size:.6rem;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--muted);margin-right:.3rem;}
   #startupsbody .su-fitpill{font-size:.68rem;font-weight:600;padding:.1rem .5rem;border-radius:999px;border:1px solid var(--hair);color:var(--muted);}
   #startupsbody .su-fitpill.fit-yes{color:var(--verified);border-color:var(--verified);background:rgba(19,122,84,.08);}
   #startupsbody .su-fitpill.fit-partial{color:var(--gap);border-color:var(--gap);} #startupsbody .su-fitpill.fit-no{color:var(--warn);border-color:var(--warn);text-decoration:line-through;}
@@ -7071,10 +7079,17 @@ $("#su-rail").addEventListener("change", e=>{ if(e.target.id==="rank"){ const c=
 // clearly labelled "find on LinkedIn" search (name + company + title + linkedin — roster's proxy), never a guessed profile.
 function linkedinSearchUrl(name, company, title){ const bits=[name, company, (title||"").split(" ").slice(0,3).join(" ")].filter(Boolean); return "https://www.google.com/search?q="+encodeURIComponent(bits.join(" ").slice(0,160)+" linkedin"); }
 function founderHtml(f, company){
+  // Name first and plain, role after it quietly, then the profile links as two small badges. The
+  // old order interleaved them — "Kion Fallah in (Founder/CEO) 𝕏" — so the eye had to sort out
+  // which fragment was the person.
   const li=(f.links||{}).linkedin, x=(f.links||{}).twitter;
-  const name = li ? `<a class="su-fl" href="${esc(li)}" target="_blank" rel="noopener noreferrer" title="LinkedIn profile (stated by the source)">${esc(f.name)} <span class="su-in">in</span></a>`
-                  : `<span>${esc(f.name)}</span> <a class="su-fl su-find" href="${esc(linkedinSearchUrl(f.name, company, f.title))}" target="_blank" rel="noopener noreferrer" title="No profile link on record — a LinkedIn search for this name and company">find on LinkedIn ⌕</a>`;
-  return name + (f.title ? ` <span class="c-dom">(${esc(f.title.slice(0,28))})</span>` : "") + (x ? ` <a class="su-fl" href="${esc(x)}" target="_blank" rel="noopener noreferrer" title="X / Twitter">𝕏</a>` : "");
+  const badges = [];
+  if(li) badges.push(`<a class="su-fl" href="${esc(li)}" target="_blank" rel="noopener noreferrer" title="LinkedIn profile, as the source stated it">in</a>`);
+  if(x) badges.push(`<a class="su-fl" href="${esc(x)}" target="_blank" rel="noopener noreferrer" title="X profile, as the source stated it">𝕏</a>`);
+  if(!li) badges.push(`<a class="su-fl su-find" href="${esc(linkedinSearchUrl(f.name, company, f.title))}" target="_blank" rel="noopener noreferrer" title="We hold no profile for this person — this searches LinkedIn for them">find ⌕</a>`);
+  return `<span class="su-fname">${esc(f.name)}</span>`
+    + (f.title ? `<span class="su-frole">${esc(f.title.slice(0,28))}</span>` : "")
+    + badges.join("");
 }
 function factsOf(co){ const by={}; for(const f of (co.facts||[])){ (by[f.key]=by[f.key]||[]).push(f); } return by; }
 function pick(by, key){ const a=by[key]||[]; const pref=["formd","derived","press","yc","site","ats"]; a.sort((x,y)=>pref.indexOf(x.provenance)-pref.indexOf(y.provenance)); return a[0]; }
@@ -7086,11 +7101,24 @@ function cardHtml(row){
   const areas=(by.tech_area||[]).map(f=>f.value), progs=(by.program||[]).map(f=>f.value), hc=pick(by,"headcount"), hiring=pick(by,"hiring"), hf=(by.hiring_function||[]).map(f=>f.value);
   const founders=co.founders||[], fpc=(by.founder_prior_company||[]).map(f=>f.value), country=(by.country||[]).map(f=>f.value), metro=(by.metro||[]).map(f=>f.value);
   const founded=pick(by,"founded"), status=pick(by,"status"), ev=pick(by,"evidence_strength");
+  // Money is ONE statement, not three tags repeating a number. A company whose only funding record is
+  // a single filing was showing "filing: $125.2M sold", "$125.2M disclosed" and "last $125.2M · 57
+  // months ago" side by side — the same fact wearing three hats.
   const money=[];
   if(stage) money.push(`<span class="su-tag su-stage">${provGlyph(stage)}${esc(label("stage",stage.value))}</span>`);
-  if(scale && !stage) money.push(`<span class="su-tag scale" title="latest Form D amount sold — a filing, not a stage">${provGlyph(scale)}filing: ${esc(scale.display||usd(scale.number))} sold</span>`);
-  if(total) money.push(`<span class="su-tag money" title="${esc(total.quote)}">${provGlyph(total)}${esc(total.display||usd(total.number))} disclosed</span>`);
-  if(last && lastM) money.push(`<span class="su-tag money" title="${esc(last.quote)}">${provGlyph(last)}last ${esc(last.display||usd(last.number))} · ${esc(lastM.display)}</span>`);
+  const amt = f => f ? Math.round(Number(f.number || 0)) : 0;
+  const raised = total || scale;
+  if(raised){
+    const same = amt(last) && amt(last) === amt(raised);
+    const bits = [];
+    if(lastM) bits.push(same ? `its only round, ${esc(lastM.display)}` : esc(lastM.display));
+    else if(!total && scale) bits.push("from an SEC filing");
+    if(!same && last) bits.push(`last ${esc(last.display || usd(last.number))}`);
+    money.push(`<span class="su-tag money" title="${esc(raised.quote || "")}">${provGlyph(raised)}`
+      + `${esc(raised.display || usd(raised.number))} raised${bits.length ? " · " + bits.join(" · ") : ""}</span>`);
+  }else if(last){
+    money.push(`<span class="su-tag money" title="${esc(last.quote||"")}">${provGlyph(last)}last round ${esc(last.display||usd(last.number))}${lastM?" · "+esc(lastM.display):""}</span>`);
+  }
   if(rr) money.push(`<span class="su-tag" title="${esc(rr.quote)}">${provGlyph(rr)}revenue ${esc(label("revenue_range",rr.value))} (filing)</span>`);
   if(arr) money.push(`<span class="su-tag self" title="${esc(arr.quote)}">${provGlyph(arr)}self-reported ARR ${esc(arr.display||usd(arr.number))}</span>`);
   const who=[]; if(lead.length) who.push(`<span class="su-tag" title="lead investor (stated)">lead: ${esc(lead.join(", "))}</span>`);
@@ -7100,11 +7128,37 @@ function cardHtml(row){
   const sig=[]; if(hiring) sig.push(`<span class="su-tag sig" title="${esc(hiring.quote)}">⚙ ${esc(hiring.display)}${hf.length?" · "+esc(hf.slice(0,3).join(", ")):""}</span>`);
   if(ev) sig.push(`<span class="su-tag sig">${esc(label("evidence_strength",ev.value))}</span>`);
   const people = founders.length ? `<div class="c-people"><b>${founders.length} founder${founders.length>1?"s":""}</b> · ${founders.slice(0,4).map(f=>founderHtml(f, co.name||id)).join(", ")}${fpc.length?` · from ${esc(fpc.slice(0,3).join(", "))}`:""}</div>` : "";
-  const gaps=[]; if(!total && !scale) gaps.push("no funding source found"); if(!stage) gaps.push("no stated round"); if(!founders.length) gaps.push("founders not found");
-  if((co.crawl||{}).failed && (co.crawl.failed||[]).length && !(co.crawl.pages||[]).length) gaps.push("site could not be read");
-  if(id.startsWith("cik:")) gaps.push("no website on record (known from SEC filings only)");
-  const why=(row.reasons||[]).slice(0,3).join(" · ");
-  const fit = row.fit ? `<span class="su-fitpill fit-${esc(row.fit)}" title="${esc((row.fit_why||"")+" — a model read against your words, not a fact"+(row.found_by&&Object.keys(row.found_by).length?" · found by "+Object.keys(row.found_by).map(k=>k.replace(/^relaxed:/,"without ").replace(/_/g," ")).join(", "):""))}">${row.fit==="yes"?"reads as a fit":row.fit==="partial"?"partial fit":"not a fit"} · model</span>` : "";
+  // What we do NOT know, as one list of field names rather than a sentence per hole. A reader
+  // scanning ten cards wants to see the shape of the gap, not read five different phrasings of it.
+  const unknown = [];
+  if(!total && !scale) unknown.push("funding");
+  if(!stage) unknown.push("stage");
+  if(!founders.length) unknown.push("founders");
+  if(!(co.facts||[]).some(f => f.key === "tech_area")) unknown.push("tech area");
+  if(!(co.facts||[]).some(f => f.key === "headcount")) unknown.push("headcount");
+  if(!(co.facts||[]).some(f => f.key === "business_model")) unknown.push("business model");
+  const cantRead = [];
+  if((co.crawl||{}).failed && (co.crawl.failed||[]).length && !(co.crawl.pages||[]).length) cantRead.push("their site could not be read");
+  if(id.startsWith("cik:")) cantRead.push("no website on record — known from SEC filings only");
+  // The scorer's reasons often restate a gap we already list ("stage: unknown" under "Not known:
+  // stage"). Saying it twice makes a card look like it is arguing with itself.
+  // The scorer's reasons restate what the tags already show ("tech area: ai infra" beside an
+  // "AI infra" tag) or a gap we already list ("stage: unknown" under "Not known: stage"). Either
+  // way the card ends up arguing with itself, so a reason only survives if it says something new.
+  const shownKeys = ["tech_area", "metro", "country", "founded", "headcount", "program", "stage",
+                     "business_model", "status", "hiring", "evidence_strength", "investor",
+                     "total_disclosed_funding", "last_round_amount", "financing_scale"];
+  const shownLabels = shownKeys.map(k => String(klabel(k)).toLowerCase());
+  const why=(row.reasons||[]).filter(r => {
+    const t = String(r).toLowerCase();
+    if(t.includes("unknown") && unknown.some(u => t.includes(u.split(" ")[0]))) return false;
+    return !shownLabels.some(l => l && t.startsWith(l + ":"));
+  }).slice(0,3).join(" · ");
+  // The spot-check verdict. "partial fit · model" told the reader the machinery ("model") and left
+  // them to guess the rest. Only a doubt is worth their attention: a clean fit needs no badge, and
+  // the two that do get one say what the doubt IS in the tooltip.
+  const fit = (row.fit === "partial" || row.fit === "no")
+    ? `<span class="su-fitpill fit-${esc(row.fit)}" title="${esc((row.fit_why || "checked against your words") + (row.found_by && Object.keys(row.found_by).length ? " · found by " + Object.keys(row.found_by).map(k => k.replace(/^relaxed:/, "without ").replace(/_/g, " ")).join(", ") : ""))}">${row.fit === "partial" ? "only partly what you asked for" : "probably not what you asked for"}</span>` : "";
   const isNew = !!(STATE.lastDiff && STATE.lastDiff.added.includes(id));
   return `<div class="card${STATE.open===id?" su-open":""}${isNew?" is-new":""}" data-id="${esc(id)}">${isNew?`<span class="su-newflag" title="Not in the previous result">new</span>`:""}
     <div class="c-head"><a class="c-name" href="${esc(co.website||(id.startsWith("cik:")?"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK="+id.slice(4):"https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id.startsWith("cik:")?"SEC CIK "+id.slice(4):id)}</span>${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
@@ -7114,9 +7168,10 @@ function cardHtml(row){
     ${people}
     ${sig.length?`<div class="c-row">${sig.join("")}</div>`:""}
     ${fit?`<div class="c-row">${fit}</div>`:""}
-    ${gaps.length?`<div class="su-gaps">gaps: ${esc(gaps.join(" · "))}</div>`:""}
+    ${unknown.length?`<div class="su-gaps"><span class="su-gapk">Not known</span> ${esc(unknown.join(" · "))}</div>`:""}
+    ${cantRead.length?`<div class="su-gaps">${esc(cantRead.join(" · "))}</div>`:""}
     ${why?`<div class="c-why">${esc(why)}</div>`:""}
-    <div class="c-acts"><button type="button" data-open="${esc(id)}">${STATE.open===id?"▴ hide evidence":"▾ evidence"}</button></div>
+    <div class="c-acts"><button type="button" data-open="${esc(id)}">${STATE.open===id?"▴ less":"▾ more"}</button></div>
     <div class="drawer" id="drawer-${esc(id)}" ${STATE.open===id?"":"hidden"}></div>
   </div>`;
 }
@@ -7138,7 +7193,7 @@ $("#su-results").addEventListener("click", async e=>{
   if(!b && (!card || e.target.closest("a") || e.target.closest(".drawer"))) return;
   const id=(b||card).dataset.open||card.dataset.id;
   STATE.open = STATE.open===id ? null : id; renderResults();
-  if(STATE.open===id){ const dr=$(`#drawer-${CSS.escape(id)}`); dr.innerHTML=`<span class="su-spin"></span>loading the evidence…`; try{ const r=await fetch("/startups/"+encodeURIComponent(id)); const co=await r.json(); dr.innerHTML=drawerHtml(co); dr.scrollIntoView({block:"nearest"});
+  if(STATE.open===id){ const dr=$(`#drawer-${CSS.escape(id)}`); dr.innerHTML=`<span class="su-spin"></span>loading…`; try{ const r=await fetch("/startups/"+encodeURIComponent(id)); const co=await r.json(); dr.innerHTML=drawerHtml(co); dr.scrollIntoView({block:"nearest"});
     // …then, if this company's own founder was a podcast guest, a strip of what they said. Absent for
     // almost every company (a few percent of episodes bind), so it is added after and never awaited.
     if(window.VO) VO.forCompany(id, dr);
