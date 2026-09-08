@@ -7140,6 +7140,34 @@ window.addEventListener("hashchange", ()=>{
   window.SG = { send: (t) => send(t), enter };
 })();
 
+// One progress banner, shared by every mode (docs: the user could not tell a search had started).
+// `beginWork` returns a handle: `.step()` changes the message as the work moves on, `.done()` clears
+// it. The elapsed seconds appear once a wait is long enough to worry about, and a long-running read
+// says what it is waiting on rather than pretending to be nearly finished.
+let WORK = null;
+function beginWork(msg, opts){
+  opts = opts || {};
+  const box = document.getElementById("work"), m = document.getElementById("work-msg"),
+        el = document.getElementById("work-el");
+  if(!box) return {step(){}, done(){}};
+  if(WORK) WORK.done();
+  const started = Date.now();
+  m.textContent = msg || "Working\u2026";
+  el.textContent = "";
+  box.hidden = false;
+  const tick = setInterval(() => {
+    const s = Math.round((Date.now() - started) / 1000);
+    el.textContent = s >= 3 ? s + "s" : "";
+    if(opts.slowAfter && s === opts.slowAfter && opts.slowMsg) m.textContent = opts.slowMsg;
+  }, 500);
+  const handle = {
+    step(next){ if(next) m.textContent = next; },
+    done(){ clearInterval(tick); box.hidden = true; el.textContent = ""; if(WORK === handle) WORK = null; }
+  };
+  WORK = handle;
+  return handle;
+}
+
 // ===== Startup Search — inline mode (ported from apps/web/startups.html; ids/classes prefixed su-) =====
 (function(){
 
@@ -7197,34 +7225,6 @@ $("#su-saveMap").addEventListener("click", saveMap);
 $("#su-myMaps").addEventListener("click", showMyMaps);
 const GL = { formd:"▣", press:"▤", site:"▢", yc:"◈", ats:"⚙", derived:"∑", portfolio:"◇" };
 const PROV_TITLE = { formd:"SEC Form D filing", press:"press", site:"the company's own site (self-reported)", yc:"Y Combinator directory", ats:"ATS job board", derived:"computed from the facts below", portfolio:"investor portfolio page" };
-
-// One progress banner, shared by every mode (docs: the user could not tell a search had started).
-// `beginWork` returns a handle: `.step()` changes the message as the work moves on, `.done()` clears
-// it. The elapsed seconds appear once a wait is long enough to worry about, and a long-running read
-// says what it is waiting on rather than pretending to be nearly finished.
-let WORK = null;
-function beginWork(msg, opts){
-  opts = opts || {};
-  const box = document.getElementById("work"), m = document.getElementById("work-msg"),
-        el = document.getElementById("work-el");
-  if(!box) return {step(){}, done(){}};
-  if(WORK) WORK.done();
-  const started = Date.now();
-  m.textContent = msg || "Working\u2026";
-  el.textContent = "";
-  box.hidden = false;
-  const tick = setInterval(() => {
-    const s = Math.round((Date.now() - started) / 1000);
-    el.textContent = s >= 3 ? s + "s" : "";
-    if(opts.slowAfter && s === opts.slowAfter && opts.slowMsg) m.textContent = opts.slowMsg;
-  }, 500);
-  const handle = {
-    step(next){ if(next) m.textContent = next; },
-    done(){ clearInterval(tick); box.hidden = true; el.textContent = ""; if(WORK === handle) WORK = null; }
-  };
-  WORK = handle;
-  return handle;
-}
 
 function toast(m){ const t=$("#su-toast"); t.textContent=m; t.classList.add("on"); setTimeout(()=>t.classList.remove("on"), 2200); }
 function label(key, v){ const L=STATE.labels||{}; if(v==="unknown") return "unknown"; return (L.values||{})[v] || String(v).replace(/_/g," "); }
