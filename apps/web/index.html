@@ -445,14 +445,31 @@
   #startupsbody .frail.busy{opacity:.6;pointer-events:none;}
   /* cards */
   #startupsbody .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:.7rem;margin-top:.6rem;}
-  #startupsbody .card{border:1px solid var(--hair);border-radius:14px;background:var(--panel);padding:.8rem .9rem;display:flex;flex-direction:column;gap:.35rem;cursor:pointer;}
-  #startupsbody .card:hover{border-color:var(--gold);}
-  #startupsbody .card.su-open{grid-column:1 / -1;cursor:default;}
-  #startupsbody .c-head{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;}
-  #startupsbody .c-name{font-weight:700;font-size:1.02rem;color:var(--ink);text-decoration:none;} .c-name:hover{text-decoration:underline;}
+  /* The card: a company mark, a name, then the facts. The mark is what makes a list of forty
+     scannable — a reader recognises Stripe's icon before they read "Stripe". Everything else is
+     hierarchy: one strong line, one quiet line, then tags that never compete with either. */
+  #startupsbody .card{border:1px solid var(--hair);border-radius:14px;background:var(--panel);
+    padding:.85rem .95rem;display:flex;flex-direction:column;gap:.4rem;cursor:pointer;
+    transition:border-color .15s ease, box-shadow .15s ease, transform .12s ease;}
+  #startupsbody .card:hover{border-color:color-mix(in srgb, var(--gold) 55%, var(--hair));
+    box-shadow:0 10px 28px -22px rgba(0,0,0,.55);}
+  #startupsbody .card.su-open{grid-column:1 / -1;cursor:default;box-shadow:none;}
+  #startupsbody .c-head{display:flex;align-items:flex-start;gap:.6rem;}
+  #startupsbody .c-logo{flex:0 0 34px;width:34px;height:34px;border-radius:9px;object-fit:contain;
+    background:var(--panel2);border:1px solid var(--hair);padding:3px;display:block;}
+  #startupsbody .c-logo.c-mono{display:grid;place-items:center;font-family:var(--mono);font-size:.74rem;
+    font-weight:700;color:var(--muted);padding:0;letter-spacing:.02em;}
+  #startupsbody .c-headmain{min-width:0;flex:1;}
+  #startupsbody .c-name{font-weight:680;font-size:1.02rem;line-height:1.25;color:var(--ink);
+    text-decoration:none;letter-spacing:-.006em;display:inline-block;}
+  #startupsbody .c-name:hover{color:var(--gold);}
+  #startupsbody .c-go{font-size:.72rem;color:var(--muted);}
+  #startupsbody .c-sub{font-family:var(--mono);font-size:.63rem;color:var(--muted);margin-top:.12rem;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #startupsbody .c-dot{opacity:.45;}
   #startupsbody .c-dom{font-family:var(--mono);font-size:.68rem;color:var(--muted);}
-  #startupsbody .c-match{margin-left:auto;font-family:var(--mono);font-size:.66rem;color:var(--muted);}
-  #startupsbody .su-line{font-size:.86rem;color:var(--ink);}
+  #startupsbody .c-match{font-family:var(--mono);font-size:.62rem;color:var(--muted);flex:none;padding-top:.15rem;}
+  #startupsbody .su-line{font-size:.88rem;line-height:1.45;color:var(--ink);}
   #startupsbody .c-row{display:flex;flex-wrap:wrap;gap:.3rem;align-items:center;}
   #startupsbody .su-tag{font-size:.7rem;padding:.12rem .5rem;border-radius:999px;border:1px solid var(--hair);background:var(--panel2);color:var(--ink);white-space:nowrap;}
   #startupsbody .su-tag.su-stage{border-color:var(--gold);color:var(--gold-strong);font-weight:700;}
@@ -7411,8 +7428,30 @@ function cardHtml(row){
   // over the whole list, which is where the rail reports it.
   const fit = "";
   const isNew = !!(STATE.lastDiff && STATE.lastDiff.added.includes(id));
+  // A company should be recognisable before it is read. Favicons are the only company mark available
+  // without a key — Clearbit's logo endpoint is gone — and DuckDuckGo serves them for almost every
+  // domain, with Google's as the fallback and a monogram when both fail. A logo that 404s must never
+  // leave a hole, so each step is an onerror away from the next.
+  const host = id.startsWith("cik:") ? "" : id;
+  const mono = esc((co.name || id).trim().slice(0, 2).toUpperCase());
+  const logo = host
+    ? `<img class="c-logo" src="https://icons.duckduckgo.com/ip3/${esc(host)}.ico" alt="" loading="lazy"
+         referrerpolicy="no-referrer"
+         onerror="this.onerror=null;this.src='https://www.google.com/s2/favicons?sz=128&domain=${esc(host)}';this.dataset.fb=1;"
+         onload="if(this.naturalWidth<=1){this.replaceWith(Object.assign(document.createElement('span'),{className:'c-logo c-mono',textContent:'${mono}'}));}">`
+    : `<span class="c-logo c-mono">${mono}</span>`;
+  const site = esc(co.website || (id.startsWith("cik:")
+    ? "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=" + id.slice(4) : "https://" + id));
+  const place = [metro.length ? label("metro", metro[0]) : "", country.length ? label("country", country[0]) : ""].filter(Boolean).join(", ");
+  const sub = [id.startsWith("cik:") ? "SEC CIK " + id.slice(4) : id, place, founded ? "est. " + founded.display : ""].filter(Boolean);
   return `<div class="card${STATE.open===id?" su-open":""}${isNew?" is-new":""}" data-id="${esc(id)}">${isNew?`<span class="su-newflag" title="Not in the previous result">new</span>`:""}
-    <div class="c-head"><a class="c-name" href="${esc(co.website||(id.startsWith("cik:")?"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK="+id.slice(4):"https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id.startsWith("cik:")?"SEC CIK "+id.slice(4):id)}</span>${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
+    <div class="c-head">${logo}
+      <div class="c-headmain">
+        <a class="c-name" href="${site}" target="_blank" rel="noopener">${esc(co.name||id)} <span class="c-go">↗</span></a>
+        <div class="c-sub">${sub.map(x=>esc(x)).join(" <span class=\"c-dot\">·</span> ")}</div>
+      </div>
+      ${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}
+    </div>
     ${co.one_liner?`<div class="su-line">${esc(co.one_liner)}</div>`:""}
     ${money.length?`<div class="c-row">${money.join("")}</div>`:""}
     ${(what||who.length)?`<div class="c-row">${what}${who.join("")}</div>`:""}
