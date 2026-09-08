@@ -354,7 +354,7 @@ async def derive_one(store: StartupStore, cid: str) -> int:
     filings = [dict(f, source_url=formd.edgar_url({"cik": c.get("cik"), "accession": f.get("accession")})) for f in c.get("filings") or []]
     facts = derive.derive_facts(c, c.get("financing") or [], filings, c.get("founders") or [], roles, rf)
     keys = ["total_disclosed_funding", "last_round_amount", "last_round_months", "stage", "financing_scale", "revenue_range", "investor", "lead_investor",
-            "founder_count", "founder_prior_company", "hiring", "hiring_function", "evidence_strength"]
+            "founder_count", "founder_prior_company", "hiring", "hiring_function", "evidence_strength", "state"]
     return await store.replace_facts(cid, "derived", facts, keys=keys)
 
 

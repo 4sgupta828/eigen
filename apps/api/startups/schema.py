@@ -72,6 +72,10 @@ SCHEMA = FacetSchema(keys=(
     # ---- place and time ----
     FacetKey(key="country", type=FacetType.set, kinds=C, label="Country", top_n=12, guidance="lowercase ISO-ish code of the HQ country (us, uk, de, in, ca, fr, il)"),
     FacetKey(key="metro", type=FacetType.set, kinds=C, label="Metro", top_n=15, guidance="normalized HQ metro token (bay_area, new_york, london, boston, seattle, los_angeles, austin)"),
+    # Between country and metro: the level people actually say when they mean a jurisdiction ("Delaware
+    # companies", "anyone in Texas"), and the only level a Form D filing states outright.
+    FacetKey(key="state", type=FacetType.set, kinds=C, label="State / region", top_n=15,
+             guidance="lowercase state or province code of the HQ (ca, ny, ma, tx, wa, on, bc) — US and Canada only"),
     FacetKey(key="founded", type=FacetType.numeric, kinds=C, label="Founded", unit="year", bands=YEAR_BANDS, guidance="the founding year when stated"),
     # ---- momentum signals (structured; never sentiment) ----
     FacetKey(key="hiring", type=FacetType.numeric, kinds=C, label="Open roles", unit="roles", bands=HIRING_BANDS, guidance="(from the company's ATS board)"),

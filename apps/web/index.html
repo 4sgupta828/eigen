@@ -389,6 +389,10 @@
   #startupsbody .sgroup-why{font-size:.74rem;color:var(--muted);margin-left:auto;font-style:italic;}
   #startupsbody .sgroup .grid{margin-top:.6rem;}
   @media (max-width:560px){ #startupsbody .sgroup-why{display:none;} }
+  #startupsbody .su-whererow{align-items:center;gap:.35rem;}
+  #startupsbody .su-where{font-family:var(--mono);font-size:.7rem;padding:.26rem .35rem;border-radius:7px;
+    border:1px solid var(--hair);background:var(--panel2);color:var(--ink);min-height:32px;cursor:pointer;max-width:12rem;}
+  #startupsbody .su-where:hover{border-color:var(--gold);}
   #startupsbody .su-sortrow{align-items:center;}
   #startupsbody .su-sort{font-family:var(--mono);font-size:.72rem;padding:.28rem .4rem;border-radius:7px;
     border:1px solid var(--hair);background:var(--panel2);color:var(--ink);min-height:32px;cursor:pointer;}
@@ -7071,6 +7075,33 @@ function railHtml(){
     const item = n => `<span class="su-relaxed${n.user?" yours":""}">${n.range ? "≥/≤ " : "▲ "}<b>${esc(klabel(n.key))}</b> ${n.values ? esc(n.values.map(v=>label(n.key, v)).join(" / ")) : esc(rangeLabel(n.key, n.range||{}))}${n.range ? " — no longer filters" : ""}${n.user ? " <i>(your chip)</i>" : ""}</span>`;
     relaxedLine = `<div class="frail-row su-relaxedrow"><span class="frail-k" title="too few startups matched every filter, so the least important ones stopped excluding anyone — tap a chip to make it a filter again">Widened to show more</span><span class="su-mergesum">${esc(strict)} — these now rank first instead of filtering: </span>${rx.map(item).join("")}</div>`;
   }
+  // WHERE is a question people ask before anything else, and it has levels: the whole world, a
+  // country, a state, a city. The rail can already filter by any facet, but geography buried among
+  // twenty chips is not the same as being able to say "only Texas". This reads the counts already in
+  // the response, so it offers only places these results actually contain.
+  let whereLine = "";
+  {
+    const counts = d.counts || {};
+    const level = (key, label) => {
+      const vals = Object.entries(counts[key] || {})
+        .filter(([v, n]) => v && v !== "unknown" && n)
+        .sort((a, b) => b[1] - a[1]).slice(0, 24);
+      if(!vals.length) return "";
+      const cur = ((STATE.draft || STATE.contract || {}).must || {})[key] || [];
+      const opts = vals.map(([v, n]) =>
+        `<option value="${esc(v)}"${cur.includes(v) ? " selected" : ""}>${esc(label(key, v) || String(v).replace(/_/g, " "))} (${n})</option>`).join("");
+      return `<select class="su-where" data-wherekey="${esc(key)}"><option value="">${esc(label)}</option>${opts}</select>`;
+    };
+    const anySet = ["country", "state", "metro"].some(k => (((STATE.draft || STATE.contract || {}).must || {})[k] || []).length);
+    const sels = [level("country", "Any country"), level("state", "Any state"), level("metro", "Any city")].filter(Boolean).join("");
+    if(sels){
+      whereLine = `<div class="frail-row su-whererow"><span class="frail-k" title="restrict these results to a place — the counts are of these results, not the whole index">Where</span>`
+        + sels
+        + (anySet ? `<button type="button" class="su-recipe" id="su-worldwide">Worldwide</button>` : "")
+        + `</div>`;
+    }
+  }
+
   // Sorting the list is a first-class question ("who raised most", "who is hiring hardest"), so the
   // control sits with the results rather than inside a menu. The label says what could not be ranked,
   // because a company with no funding on record is still in the list and should not look like a bug.
@@ -7111,7 +7142,7 @@ function railHtml(){
     mergeLine = `<div class="frail-row su-merge"><span class="frail-k" title="a model read the top of this list without being told how it was built, and said whether each company answers your words">Spot-checked</span><span class="su-mergesum">${mg.graded?`<b>${mg.fits}</b> of the top ${mg.graded} really do fit · ${mg.partials} partly · ${mg.nos} do not${mg.weak?` · <span class="su-weak">weak — sharpen the words or drop a filter</span>`:""}`:"not checked"}</span></div>`
       + `<div class="frail-row su-mix"><span class="frail-k" title="how this list was put together">In this list</span><span class="su-mergesum">${sentence}${controls}</span></div>`;
   }
-  return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Refine</b> · ${d.coverage.matched ?? 0} match every filter ${rank}<span style="margin-left:auto;">● must have · ▲ nice to have · ▼ avoid</span></div>${sortLine}${relaxedLine}${mergeLine}${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
+  return `<div class="frail${STATE.busy?" busy":""}"><div class="frail-h"><b>Refine</b> · ${d.coverage.matched ?? 0} match every filter ${rank}<span style="margin-left:auto;">● must have · ▲ nice to have · ▼ avoid</span></div>${whereLine}${sortLine}${relaxedLine}${mergeLine}${rows}${pills.length?`<div class="frail-pills">${pills.join("")}</div>`:""}${apply}</div>`;
 }
 function pill(m,key,text,v){ const g=m==="must"?"●":m==="prefer"?"▲":"▼"; return `<span class="fpill">${g} ${esc(klabel(key))}: ${esc(text)}<button type="button" data-off="${esc(key)}" data-value="${esc(v)}" data-mode="${m}" title="remove">✕</button></span>`; }
 function rangeLabel(key, r){ const u=((STATE.labels||{}).units||{})[key]||""; const f=x=>u==="usd"?usd(x):String(x); return (r.min!=null?"≥ "+f(r.min):"")+(r.min!=null&&r.max!=null?" · ":"")+(r.max!=null?"≤ "+f(r.max):"")+(u&&u!=="usd"?" "+u:""); }
@@ -7129,16 +7160,32 @@ $("#su-results").addEventListener("click", e=>{
   const head = e.target.closest("[data-groupopen]");
   if(head){
     const k = head.dataset.groupopen;
-    STATE.openGroups[k] = STATE.openGroups[k] === false;   // a group is open unless closed
+    STATE.openGroups[k] = !STATE.openGroups[k];
     renderResults();
     return;
   }
 }, true);
 $("#su-rail").addEventListener("change", e=>{
+  const where = e.target.closest("[data-wherekey]");
+  if(where){
+    const key = where.dataset.wherekey, val = where.value;
+    const c = JSON.parse(JSON.stringify(STATE.draft || STATE.contract || {}));
+    c.must = c.must || {};
+    if(val) c.must[key] = [val]; else delete c.must[key];
+    STATE.draft = c; runEvaluate(c, {noRelax: true});
+    return;
+  }
   const sel = e.target.closest("#su-sort");
   if(sel){ STATE.sort = sel.value; runEvaluate(STATE.contract, {noRelax: true}); }
 });
 $("#su-rail").addEventListener("click", e=>{
+  if(e.target.closest("#su-worldwide")){
+    const c = JSON.parse(JSON.stringify(STATE.draft || STATE.contract || {}));
+    c.must = c.must || {};
+    for(const k of ["country", "state", "metro"]) delete c.must[k];
+    STATE.draft = c; runEvaluate(c, {noRelax: true});
+    return;
+  }
   const chip=e.target.closest(".fchip"); if(chip && !chip.disabled){ STATE.draft = edit(STATE.draft||STATE.contract, chip.dataset.key, chip.dataset.value, "cycle"); renderRail(); return; }
   const off=e.target.closest("[data-off]"); if(off){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); if(off.dataset.value==="__range__"){ delete c[off.dataset.mode][off.dataset.off]; STATE.draft=c; } else STATE.draft=edit(c, off.dataset.off, off.dataset.value, "off"); renderRail(); return; }
   const ux=e.target.closest("[data-unexclude]"); if(ux){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); const ex=(c.scope||{}).exclude||{}; ex[ux.dataset.unexclude]=(ex[ux.dataset.unexclude]||[]).filter(v=>v!==ux.dataset.value); if(!ex[ux.dataset.unexclude].length) delete ex[ux.dataset.unexclude]; c.scope=Object.keys(ex).length?{exclude:ex}:{}; STATE.draft=c; renderRail(); return; }
@@ -7161,7 +7208,7 @@ $("#su-results").addEventListener("click", e=>{
   const head = e.target.closest("[data-groupopen]");
   if(head){
     const k = head.dataset.groupopen;
-    STATE.openGroups[k] = STATE.openGroups[k] === false;   // a group is open unless closed
+    STATE.openGroups[k] = !STATE.openGroups[k];
     renderResults();
     return;
   }
@@ -7386,7 +7433,10 @@ function groupedResultsHtml(d){
   const groups = groupsOf(d);
   if(!groups) return `<div class="grid">${(d.rows || []).map(cardHtml).join("")}</div>`;
   return groups.map((g, i) => {
-    const open = STATE.openGroups[g.name] !== false;      // open by default: a closed list hides the answer
+    // Collapsed by default: the point of grouping is to see the SHAPE of the result set — how many
+    // groups there are and how big each is — and a page of open groups is just the flat list again
+    // with headings in it.
+    const open = STATE.openGroups[g.name] === true;
     return `<section class="sgroup${open ? " open" : ""}">`
       + `<button type="button" class="sgroup-head" data-groupopen="${esc(g.name)}">`
       +   `<span class="sgroup-caret">${open ? "▾" : "▸"}</span>`

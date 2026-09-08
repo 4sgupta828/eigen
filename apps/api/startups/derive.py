@@ -27,10 +27,66 @@ def _d(v) -> date | None:
         return None
 
 
+# Two-letter subdivisions we can read with confidence. A code we do not know is left alone rather
+# than invented: "Washington, DC" is a place, "Cambridge, UK" is not a state, and guessing either
+# would put a company in a jurisdiction it is not in.
+US_STATES = {"al","ak","az","ar","ca","co","ct","de","fl","ga","hi","id","il","in","ia","ks","ky",
+             "la","me","md","ma","mi","mn","ms","mo","mt","ne","nv","nh","nj","nm","ny","nc","nd",
+             "oh","ok","or","pa","ri","sc","sd","tn","tx","ut","vt","va","wa","wv","wi","wy","dc"}
+CA_PROVINCES = {"ab","bc","mb","nb","nl","ns","nt","nu","on","pe","qc","sk","yt"}
+
+
+# Countries whose presence in an HQ string means a US or Canadian filing address is not where the
+# company is. Cheap and deliberately partial: it only has to catch the common non-US HQs we hold.
+_ELSEWHERE = ("uk", "united kingdom", "india", "germany", "france", "singapore", "israel", "spain",
+              "netherlands", "australia", "brazil", "mexico", "japan", "china", "sweden", "ireland",
+              "switzerland", "poland", "nigeria", "kenya", "indonesia", "argentina", "chile", "colombia")
+
+
+def _hq_is_elsewhere(hq: str) -> bool:
+    last = [p.strip().lower() for p in str(hq or "").split(",")][-1:] or [""]
+    return any(last[0] == c or last[0].endswith(" " + c) for c in _ELSEWHERE)
+
+
+def state_of(hq: str) -> str:
+    """The state or province an HQ string states, or "".
+
+    HQ strings arrive as "San Francisco, CA, USA" or "Toronto, ON, Canada" — the subdivision is the
+    middle field. Only codes we recognise are accepted, so a European city with a two-letter region
+    abbreviation does not become a US state.
+    """
+    parts = [p.strip().lower() for p in str(hq or "").split(",")]
+    for p in parts[1:]:
+        code = p.replace(".", "")
+        if len(code) == 2 and (code in US_STATES or code in CA_PROVINCES):
+            return code
+    return ""
+
+
 def derive_facts(company: dict, financing: list[dict], filings: list[dict], founders: list[dict], roles: list[dict],
                  role_functions: dict[str, str], *, today: date | None = None) -> list[dict]:
     today = today or date.today()
     facts: list[dict] = []
+    # WHERE they are, at the level people actually say. The HQ string states it ("San Francisco, CA,
+    # USA"), and for a filing-backed company so does the filing itself — two independent sources for
+    # the same jurisdiction, and neither is guessed when the text does not carry one.
+    hq = str(company.get("hq") or "")
+    st = state_of(hq)
+    if not st and not _hq_is_elsewhere(hq):
+        # A Form D states the issuer's business address, and the distribution says it is a real one
+        # (California 2,483, New York 1,099, Delaware only 258 — incorporation states would invert
+        # that). It is used only when the HQ does not already place the company in another country,
+        # so a London company does not acquire a US state from a filing.
+        for f in (filings or []):
+            code = str(f.get("state") or "").strip().lower()
+            if code in US_STATES or code in CA_PROVINCES:
+                st = code
+                break
+    if st:
+        facts.append({"key": "state", "value": st, "basis": "hq_or_filing",
+                      "quote": (company.get("hq") or "").strip()[:120] or f"state on the SEC filing: {st.upper()}",
+                      "confidence": 0.9})
+
     fin = [dict(e, event_date=_d(e.get("event_date"))) for e in financing]
     formd = [dict(f, sale_date=_d(f.get("sale_date")), filing_date=_d(f.get("filing_date"))) for f in filings]
 

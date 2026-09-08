@@ -340,3 +340,17 @@ def test_the_named_area_survives_when_one_of_several_was_approximated():
                              value_counts={"tech_area": {"fintech": 500, "consumer": 900}},
                              brief="fintech and ecommerce startups")
     assert c.must.get("tech_area") == ["fintech"] and "consumer" in c.prefer.get("tech_area", [])
+
+
+def test_a_state_comes_from_the_hq_and_only_then_from_a_filing():
+    from api.startups.derive import derive_facts, state_of
+    assert state_of("San Francisco, CA, USA") == "ca" and state_of("Toronto, ON, Canada") == "on"
+    assert state_of("London, UK") == "" and state_of("Bengaluru, India") == ""
+
+    # a filing fills the gap for a company whose HQ we do not hold …
+    got = derive_facts({"hq": ""}, [], [{"state": "MA"}], [], [], {})
+    assert [f["value"] for f in got if f["key"] == "state"] == ["ma"]
+
+    # … but a company the HQ places abroad never inherits a US state from one
+    got2 = derive_facts({"hq": "London, UK"}, [], [{"state": "DE"}], [], [], {})
+    assert not [f for f in got2 if f["key"] == "state"]
