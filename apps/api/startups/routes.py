@@ -155,7 +155,14 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
             if kind == "auto":
                 continue
             vals = [(grouping_mod.values_for(r, source, this_year=year) or [""])[0] for r in rows]
-            e = eligible(vals, kind=kind)
+            # Thresholds tuned to THIS index, not to a dense one. Measured on a 60-row result set:
+            # "what they build" was excluded for having 9 groups against a limit of 8, and "where they
+            # are" for 27% unstated against a limit of 25% — the two most useful cuts, both lost on a
+            # technicality. A dimension where 40% is unknown still organises the 60% that is known,
+            # and the unknown rows are shown as their own group with their own size, so nothing is
+            # hidden. What stays strict is the rule that matters: a single value swallowing the set
+            # organises nothing.
+            e = eligible(vals, kind=kind, max_unstated=0.60, max_groups=12)
             if e.ok:
                 out.append({"key": key, "label": label, "score": round(e.score, 3),
                             "groups": e.groups, "known": round(e.known, 3), "source": source})

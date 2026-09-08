@@ -72,3 +72,26 @@ def test_a_proposed_segmentation_is_made_safe_before_it_is_shown():
     assert all(len(set(g.ids)) == len(g.ids) for g in groups)
     assert 2 in groups[0].ids and all(2 not in g.ids for g in groups[1:])   # single membership
     assert any("99" in n for n in notes)             # an id outside the set is reported, not silently kept
+
+
+def test_the_thresholds_fit_this_index_not_a_dense_one():
+    """Measured on a real 60-row result set: 'what they build' was hidden for having 9 groups against
+    a limit of 8, and 'where they are' for 27% unstated against a limit of 25%. Both are useful cuts
+    and both were lost on a technicality."""
+    from eigen_kernel.facets.grouping import eligible
+    nine_groups = [f"area{i%9}" for i in range(54)] + [""] * 6
+    assert not eligible(nine_groups, kind="categorical").ok                       # the old limit
+    assert eligible(nine_groups, kind="categorical", max_unstated=0.60, max_groups=12).ok
+
+    quarter_unknown = ["bay_area"] * 20 + ["new_york"] * 12 + ["london"] * 12 + [""] * 16
+    assert not eligible(quarter_unknown, kind="identity").ok
+    assert eligible(quarter_unknown, kind="identity", max_unstated=0.60, max_groups=12).ok
+
+
+def test_what_stays_strict_is_the_rule_that_matters():
+    """A dimension where one value swallows the set organises nothing, however much is stated."""
+    from eigen_kernel.facets.grouping import eligible
+    swallowed = ["yc"] * 55 + ["techstars"] * 5
+    assert not eligible(swallowed, kind="categorical", max_unstated=0.60, max_groups=12).ok
+    almost_nothing = ["saas"] * 6 + [""] * 54
+    assert not eligible(almost_nothing, kind="categorical", max_unstated=0.60, max_groups=12).ok
