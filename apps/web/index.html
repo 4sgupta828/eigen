@@ -367,6 +367,28 @@
   #startupsbody .su-hroles{font-size:.78rem;line-height:1.45;color:var(--ink);}
   #startupsbody .su-hgo{margin-left:auto;color:#5b8def;font-size:.75rem;}
   @media (max-width:560px){ #startupsbody .su-hiring{padding:.35rem .5rem;} #startupsbody .su-hroles{font-size:.74rem;} }
+  /* grouping: chips to choose a cut, then collapsible sections. A group is a way of READING the
+     list, so opening one never re-runs anything. */
+  #startupsbody .sgroup-bar{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin:.2rem 0 .8rem;}
+  #startupsbody .sgroup-k{font-family:var(--mono);font-size:.63rem;letter-spacing:.05em;color:var(--muted);
+    text-transform:uppercase;margin-right:.2rem;}
+  #startupsbody .sgroup-opt{font-family:var(--mono);font-size:.68rem;padding:.3rem .6rem;border-radius:999px;
+    border:1px solid var(--hair);background:var(--panel2);color:var(--dim);cursor:pointer;min-height:32px;}
+  #startupsbody .sgroup-opt:hover{color:var(--ink);border-color:var(--gold);}
+  #startupsbody .sgroup-opt.on{background:var(--gold);color:var(--on-accent);border-color:var(--gold);font-weight:600;}
+  #startupsbody .sgroup-opt.auto{border-style:dashed;}
+  #startupsbody .sgroup-note{font-family:var(--mono);font-size:.63rem;color:var(--muted);margin-left:.3rem;}
+  #startupsbody .sgroup{margin:0 0 1rem;}
+  #startupsbody .sgroup-head{display:flex;gap:.5rem;align-items:baseline;width:100%;text-align:left;
+    background:none;border:0;border-bottom:1px solid var(--hair);padding:.4rem .1rem;cursor:pointer;
+    color:inherit;font:inherit;min-height:36px;}
+  #startupsbody .sgroup-head:hover .sgroup-name{color:var(--gold);}
+  #startupsbody .sgroup-caret{color:var(--muted);font-size:.7rem;}
+  #startupsbody .sgroup-name{font-weight:650;font-size:.92rem;}
+  #startupsbody .sgroup-n{font-family:var(--mono);font-size:.65rem;color:var(--muted);}
+  #startupsbody .sgroup-why{font-size:.74rem;color:var(--muted);margin-left:auto;font-style:italic;}
+  #startupsbody .sgroup .grid{margin-top:.6rem;}
+  @media (max-width:560px){ #startupsbody .sgroup-why{display:none;} }
   #startupsbody .su-sortrow{align-items:center;}
   #startupsbody .su-sort{font-family:var(--mono);font-size:.72rem;padding:.28rem .4rem;border-radius:7px;
     border:1px solid var(--hair);background:var(--panel2);color:var(--ink);min-height:32px;cursor:pointer;}
@@ -6895,7 +6917,8 @@ const EXAMPLES = [
   "developer tools startups with 2–3 founders, founders from Google or Stripe",
   "bio / health startups with over $20M disclosed funding and a stated series B",
 ];
-const STATE = { contract:null, draft:null, data:null, labels:null, busy:false, open:null, map:null, brief:"" };
+const STATE = { contract:null, draft:null, data:null, labels:null, busy:false, open:null, map:null, brief:"",
+                sort:"relevance", groupBy:"", openGroups:{}, auto:null, autoBusy:false };
 // ---------- account: the shell owns USER, the identity modal and the token header
 function openAuth(mode){ AUTH_MODE = mode || "login"; if(typeof updateAuthUI==="function") updateAuthUI(); const m=$("#idmodal"); if(m) m.hidden=false; }
 function sessionExpired(){ USER=null; try{ localStorage.removeItem("eigen_user"); }catch(e){} if(typeof maybeShowAuthButtons==="function") maybeShowAuthButtons(); openAuth("login"); const err=$("#iderr"); if(err) err.textContent="Your sign-in expired — please sign in again."; }
@@ -7094,6 +7117,23 @@ function pill(m,key,text,v){ const g=m==="must"?"●":m==="prefer"?"▲":"▼"; 
 function rangeLabel(key, r){ const u=((STATE.labels||{}).units||{})[key]||""; const f=x=>u==="usd"?usd(x):String(x); return (r.min!=null?"≥ "+f(r.min):"")+(r.min!=null&&r.max!=null?" · ":"")+(r.max!=null?"≤ "+f(r.max):"")+(u&&u!=="usd"?" "+u:""); }
 
 function renderRail(){ $("#su-rail").innerHTML = railHtml(); }
+$("#su-results").addEventListener("click", e=>{
+  const chip = e.target.closest("[data-group]");
+  if(chip){
+    STATE.groupBy = chip.dataset.group || "";
+    STATE.openGroups = {};
+    if(STATE.groupBy === "auto" && !STATE.auto){ requestAutoGroups(); return; }
+    renderResults();
+    return;
+  }
+  const head = e.target.closest("[data-groupopen]");
+  if(head){
+    const k = head.dataset.groupopen;
+    STATE.openGroups[k] = STATE.openGroups[k] === false;   // a group is open unless closed
+    renderResults();
+    return;
+  }
+}, true);
 $("#su-rail").addEventListener("change", e=>{
   const sel = e.target.closest("#su-sort");
   if(sel){ STATE.sort = sel.value; runEvaluate(STATE.contract, {noRelax: true}); }
@@ -7109,6 +7149,23 @@ $("#su-rail").addEventListener("click", e=>{
   if(e.target.id==="su-shownew"){ const nw=new Set((STATE.lastDiff||{}).added||[]); STATE.data.rows=STATE.data.rows.slice().sort((x,y)=>(nw.has(y.id)?1:0)-(nw.has(x.id)?1:0)); STATE.newFirst=true; renderRail(); renderResults(); $("#su-results").scrollIntoView({block:"start",behavior:"smooth"}); return; }
 });
 $("#su-rail").addEventListener("dblclick", e=>{ const chip=e.target.closest(".fchip"); if(chip && chip.dataset.key==="stage" && chip.dataset.value!=="unknown"){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); c.center={key:"stage", value:chip.dataset.value, span:1}; STATE.draft=c; renderRail(); } });
+$("#su-results").addEventListener("click", e=>{
+  const chip = e.target.closest("[data-group]");
+  if(chip){
+    STATE.groupBy = chip.dataset.group || "";
+    STATE.openGroups = {};
+    if(STATE.groupBy === "auto" && !STATE.auto){ requestAutoGroups(); return; }
+    renderResults();
+    return;
+  }
+  const head = e.target.closest("[data-groupopen]");
+  if(head){
+    const k = head.dataset.groupopen;
+    STATE.openGroups[k] = STATE.openGroups[k] === false;   // a group is open unless closed
+    renderResults();
+    return;
+  }
+}, true);
 $("#su-rail").addEventListener("change", e=>{ if(e.target.id==="rank"){ const c=JSON.parse(JSON.stringify(STATE.draft||STATE.contract)); c.rank_by=e.target.value; STATE.draft=c; renderRail(); } });
 
 // ---------- cards
@@ -7257,7 +7314,103 @@ function renderResults(){
     }
     box.innerHTML=`<div class="su-empty">No startup in the index satisfies every must.${lines.length?`<ul style="text-align:left;margin:.6rem auto 0;max-width:640px;padding-left:1.2rem;font-size:.82rem">${lines.join("")}</ul>`:""}<div style="margin-top:.5rem">Tap a ● must chip in the rail to turn it into a ▲ preference, then Apply.</div></div>`; return; }
   d.rows.forEach((r,i)=>{ r.rank=i+1; });
-  box.innerHTML = `<div class="grid">${d.rows.map(cardHtml).join("")}</div>`;
+  box.innerHTML = groupBarHtml(d) + groupedResultsHtml(d);
+}
+
+// ---- grouping the results ------------------------------------------------------------------------
+// Two ways to cut a list, and only one of them costs anything. The facet dimensions are free and are
+// offered only when they would actually organise THESE rows; Auto is one model call the reader asks
+// for. A group is a way of reading the list, not a filter — opening one never re-runs the search.
+function groupBarHtml(d){
+  const opts = d.group_options || [];
+  if(!opts.length || (d.rows || []).length < 6) return "";
+  const cur = STATE.groupBy || "";
+  const chip = (key, label, title) =>
+    `<button type="button" class="sgroup-opt${cur === key ? " on" : ""}${key === "auto" ? " auto" : ""}" data-group="${esc(key)}" title="${esc(title || "")}">${esc(label)}${key === "auto" ? " ✨" : ""}</button>`;
+  const chips = [chip("", "Ungrouped", "one flat list, ranked")]
+    .concat(opts.map(o => chip(o.key, o.label, o.groups ? `${o.groups} groups here` : (o.why || ""))));
+  const note = STATE.autoBusy ? '<span class="sgroup-note">segmenting…</span>'
+    : (STATE.auto && STATE.auto.source === "fallback"
+        ? '<span class="sgroup-note">grouped by shared words — the model was unavailable</span>' : "");
+  return `<div class="sgroup-bar"><span class="sgroup-k">Group by</span>${chips.join("")}${note}</div>`;
+}
+
+function groupsOf(d){
+  const by = STATE.groupBy;
+  if(!by) return null;
+  if(by === "auto"){
+    const a = STATE.auto;
+    if(!a || !(a.groups || []).length) return null;
+    const byId = new Map((d.rows || []).map(r => [r.id, r]));
+    const out = a.groups.map(g => ({name: g.name, why: g.why,
+                                    rows: (g.ids || []).map(id => byId.get(id)).filter(Boolean)}));
+    const left = (a.leftovers || []).map(id => byId.get(id)).filter(Boolean);
+    if(left.length) out.push({name: "Everything else", why: "", rows: left});
+    return out.filter(g => g.rows.length);
+  }
+  const opt = (d.group_options || []).find(o => o.key === by);
+  if(!opt || !opt.source) return null;
+  const buckets = new Map();
+  for(const r of (d.rows || [])){
+    const vals = valuesForRow(r, opt.source);
+    const key = vals.length ? vals[0] : "";
+    const name = key ? (label(by, key) || String(key).replace(/_/g, " ")) : "Not stated";
+    if(!buckets.has(name)) buckets.set(name, []);
+    buckets.get(name).push(r);
+  }
+  return [...buckets.entries()]
+    .map(([name, rows]) => ({name, why: "", rows, stated: name !== "Not stated"}))
+    .sort((a, b) => (b.stated - a.stated) || (b.rows.length - a.rows.length));
+}
+
+// The client mirrors the server's dimension sources so a grouping needs no extra round trip.
+function valuesForRow(r, source){
+  if(source.startsWith("facet:")) return ((r.facets || {})[source.split(":")[1]] || []).map(String);
+  const num = k => { const n = (r.numeric || {})[k];
+    if(typeof n === "number") return n;
+    const f = (((r.company || {}).facts) || []).find(x => x.key === k && typeof x.number === "number");
+    return f ? f.number : null; };
+  if(source === "derived:funding_band"){
+    const n = num("total_disclosed_funding"); if(n == null) return [];
+    return [n < 1e6 ? "under $1M" : n < 5e6 ? "$1M–5M" : n < 2e7 ? "$5M–20M" : n < 1e8 ? "$20M–100M" : "$100M+"];
+  }
+  if(source === "derived:age_band"){
+    const y = num("founded"); if(!y || y < 1900) return [];
+    const age = Math.max(0, new Date().getFullYear() - y);
+    return [age < 2 ? "under 2 years" : age < 5 ? "2–5 years" : age < 10 ? "5–10 years" : "10+ years"];
+  }
+  return [];
+}
+
+function groupedResultsHtml(d){
+  const groups = groupsOf(d);
+  if(!groups) return `<div class="grid">${(d.rows || []).map(cardHtml).join("")}</div>`;
+  return groups.map((g, i) => {
+    const open = STATE.openGroups[g.name] !== false;      // open by default: a closed list hides the answer
+    return `<section class="sgroup${open ? " open" : ""}">`
+      + `<button type="button" class="sgroup-head" data-groupopen="${esc(g.name)}">`
+      +   `<span class="sgroup-caret">${open ? "▾" : "▸"}</span>`
+      +   `<span class="sgroup-name">${esc(g.name)}</span>`
+      +   `<span class="sgroup-n">${g.rows.length} startup${g.rows.length === 1 ? "" : "s"}</span>`
+      +   (g.why ? `<span class="sgroup-why">${esc(g.why)}</span>` : "")
+      + `</button>`
+      + (open ? `<div class="grid">${g.rows.map(cardHtml).join("")}</div>` : "")
+      + `</section>`;
+  }).join("");
+}
+
+async function requestAutoGroups(){
+  const d = STATE.data;
+  if(!d || STATE.auto || STATE.autoBusy) return;          // already segmented: never call twice
+  STATE.autoBusy = true; renderResults();
+  try{
+    const rows = (d.rows || []).slice(0, 200).map(r => ({id: r.id,
+      company: {name: (r.company || {}).name, one_liner: (r.company || {}).one_liner}}));
+    const res = await fetch("/startups/group", {method: "POST",
+      headers: {"content-type": "application/json"}, body: JSON.stringify({rows, question: STATE.brief || ""})});
+    STATE.auto = await res.json();
+  }catch(e){ STATE.auto = {groups: [], leftovers: [], source: "none", notes: [String(e)]}; }
+  finally{ STATE.autoBusy = false; renderResults(); }
 }
 $("#su-results").addEventListener("click", async e=>{
   const b=e.target.closest("[data-open]"); const card=e.target.closest(".card");
@@ -7540,7 +7693,7 @@ async function runEvaluate(contract, opts){
     const payload = {...contract, merge: {...(STATE.merge||{mode:"merged"}), off: (STATE.mergeOff||[]), relax: !opts.diff && !opts.noRelax}};
     const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json",...authHeaders()},body:JSON.stringify({contract: payload, sort: STATE.sort || "relevance"})});
     if(!r.ok){ toast("evaluate failed: "+(await r.text()).slice(0,120)); STATE.lastDiff=null; return; }
-    const d=await r.json(); STATE.data=d; STATE.contract=d.contract; STATE.draft=null; STATE.labels=d.labels; STATE.open=null;
+    const d=await r.json(); STATE.data=d; STATE.auto=null; STATE.openGroups={}; STATE.contract=d.contract; STATE.draft=null; STATE.labels=d.labels; STATE.open=null;
     STATE.merge = STATE.merge || {mode:"merged"};
     if(prev){
       const was = new Map(prev.map(x=>[x.id, x])), now = new Set(d.rows.map(x=>x.id));
@@ -7575,6 +7728,7 @@ function rememberStartupSearch(contract, brief, hits){
 
 function runContract(contract, brief){ STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.brief=brief||""; if(brief) q.value=brief; STATE.merge=contract.merge||{mode:"merged"}; STATE.mergeOff=[]; renderNotes([]); renderMapBar(); return runEvaluate(contract); }
 function reset(){
+  STATE.groupBy=""; STATE.openGroups={}; STATE.auto=null; STATE.autoBusy=false;
   STATE.data=null; STATE.contract=null; STATE.draft=null; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.mergeOff=[]; STATE.brief=""; STATE.open=null; STATE.busy=false;
   renderNotes([]); renderMapBar(); $("#su-rail").innerHTML=""; $("#su-results").innerHTML=""; const mp=$("#su-mapsPanel"); if(mp) mp.hidden=true;
   renderCoverage();

@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from eigen_kernel.facets import Contract, evaluate, matches_must, validate_contract
 
-from . import compile as compile_mod, pipeline, ranking
+from . import compile as compile_mod, grouping as grouping_mod, pipeline, ranking
 from .schema import KIND, SCHEMA, WEIGHTS, labels
 from .store import StartupStore
 
@@ -57,6 +57,11 @@ class ListIn(BaseModel):
     name: str
     contract: dict
     rows: list = []
+
+
+class GroupIn(BaseModel):
+    rows: list = []               # the rows on screen: {id, company:{name, one_liner}} — max 200
+    question: str = ""
 
 
 class JobIn(BaseModel):
@@ -137,6 +142,24 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         if not u:
             raise HTTPException(status_code=401, detail="sign in to save maps")
         return u
+
+    def _group_options(rows: list) -> list[dict]:
+        """Which dimensions would actually organise THESE rows. Free: pure Python over the rows we
+        already returned. A dimension that fails is absent from the menu rather than offered empty."""
+        from datetime import date
+        from eigen_kernel.facets.grouping import eligible
+        year = date.today().year
+        out = [{"key": "auto", "label": "Auto", "score": 1e9,
+                "why": "let a model segment these by what the companies do"}]
+        for key, label, source, kind in grouping_mod.GROUP_DIMENSIONS:
+            if kind == "auto":
+                continue
+            vals = [(grouping_mod.values_for(r, source, this_year=year) or [""])[0] for r in rows]
+            e = eligible(vals, kind=kind)
+            if e.ok:
+                out.append({"key": key, "label": label, "score": round(e.score, 3),
+                            "groups": e.groups, "known": round(e.known, 3), "source": source})
+        return sorted(out, key=lambda o: -o["score"])
 
     async def _labels_with_investors() -> dict:
         """The rail's labels plus the investor directory, so a name on a card can become a link."""
@@ -275,6 +298,7 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         # hardest", "who has been at this longest" — the questions that make a long list navigable.
         out["ranking"] = ranking.apply(out.get("rows") or [], body.sort)
         out["sorts"] = ranking.options()
+        out["group_options"] = _group_options(out.get("rows") or [])
         out["map"] = {"id": m["id"], "title": m["title"], "revision": m["revision"], "owner": m["owner"]}
         return out
 
@@ -322,6 +346,7 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         # hardest", "who has been at this longest" — the questions that make a long list navigable.
         out["ranking"] = ranking.apply(out.get("rows") or [], body.sort)
         out["sorts"] = ranking.options()
+        out["group_options"] = _group_options(out.get("rows") or [])
         # a private note of what was asked, so a line of enquiry can be resumed later
         try:
             u = await user_of(x_eigen_token) if user_of else None
@@ -338,6 +363,58 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         except Exception:   # noqa: BLE001 — history must never break the search
             pass
         return out
+
+    @r.post("/startups/group")
+    async def group_rows(body: GroupIn) -> dict:
+        """Segment the rows on screen by what the companies DO. One model call, only when asked.
+
+        Costs about a tenth of a cent and takes a couple of seconds. Any failure falls back to the
+        free token split rather than to an error — a grouping is a convenience, and losing it must
+        never lose the results.
+        """
+        from eigen_kernel.facets.grouping import enforce, token_groups
+        rows = (body.rows or [])[:200]
+        if len(rows) < 6:
+            return {"groups": [], "leftovers": list(range(len(rows))), "source": "none",
+                    "notes": ["too few companies to group"]}
+        lines = "\n".join(grouping_mod.row_line(i, r) for i, r in enumerate(rows))[:12000]
+        ids = [str(r.get("id") or i) for i, r in enumerate(rows)]
+        notes: list[str] = []
+        proposed = []
+        source = "fallback"
+        if providers.llm_json:
+            try:
+                data = await providers.llm_json(grouping_mod.segment_prompt(), lines)
+                proposed = (data or {}).get("groups") or []
+                source = "model"
+                gs, left, ns = enforce(proposed, len(rows))
+                dom = next((n for n in ns if n.startswith("dominant")), "")
+                if dom:      # one group swallowing the set is a list, not a segmentation: ask once more
+                    name = dom.split("'")[1] if "'" in dom else ""
+                    big = max((len(g.ids) for g in gs), default=0)
+                    data2 = await providers.llm_json(
+                        grouping_mod.resegment_prompt(name, big, len(rows)), lines)
+                    gs2, left2, ns2 = enforce((data2 or {}).get("groups") or [], len(rows))
+                    if gs2 and not any(n.startswith("dominant") for n in ns2):
+                        gs, left, ns = gs2, left2, ns2
+                        notes.append("re-asked: the first answer had one dominant group")
+                proposed = gs
+                notes += ns
+            except Exception as e:      # noqa: BLE001 — a grouping must never cost the results
+                notes.append(f"the model was unavailable ({type(e).__name__}); grouped by shared words")
+                proposed, source = [], "fallback"
+        if not proposed:
+            toks = [set(str((r.get("company") or {}).get("one_liner") or "").lower().split()) for r in rows]
+            proposed, left, ns = token_groups(toks)
+            notes += ns
+            source = "fallback"
+            gs, left = proposed, left
+        else:
+            gs = proposed
+        return {"groups": [{"name": g.name, "why": g.why, "key": g.key,
+                            "ids": [ids[i] for i in g.ids if 0 <= i < len(ids)]} for g in gs],
+                "leftovers": [ids[i] for i in left if 0 <= i < len(ids)],
+                "source": source, "notes": notes[:6]}
 
     @r.get("/startups/coverage")
     async def coverage() -> dict:
