@@ -148,6 +148,36 @@ async def _choose_domain(
     return non_ref[0][0] if non_ref else ""
 
 
+async def resolve_own_domain(
+    *,
+    entity: str,
+    templates: Mapping[str, Any],
+    source: RetrievalSource,
+    tenant_id: str,
+    workspace_id: str | None = None,
+    llm=None,
+    budget=None,
+) -> str:
+    """The registrable domain that IS this entity's own site, or "" when none can be established.
+
+    Use a WIDE candidate pool: an entity's own site is a low-authority (self-reported) tier and gets
+    reranked BELOW wikipedia/press, so a narrow top-5 can miss it entirely — pull ~15 candidates so
+    `_choose_domain` can find the name-matching one. Reference, press and social domains are never
+    returned: "" means "no own domain found", which callers must treat as a refusal, not a default.
+    """
+    entity_s = (entity or "").strip()
+    if not entity_s or source is None or not templates:
+        return ""
+    query_t = str(templates.get("domain_query_template") or "{company} official website")
+    hits = await source.search(RetrievalRequest(
+        query=_render(query_t, company=entity_s, domain=""), tenant_id=tenant_id,
+        workspace_id=workspace_id, k=_DOMAIN_CANDIDATES, web_open=True,
+        web_max_results=_DOMAIN_CANDIDATES, web_max_chars=2000, web_max_chunks_per_page=1,
+        web_extra_facets={"source_kind": "corp_eng", "web_role": "official"}))
+    return await _choose_domain(entity_s, hits, llm=llm,
+                                prompt=str(templates.get("domain_prompt") or ""), budget=budget)
+
+
 async def retrieve_deep_company(
     *,
     company: str,
@@ -176,20 +206,9 @@ async def retrieve_deep_company(
             1, int(templates.get("max_chunks_per_page") or _DEFAULT_MAX_CHUNKS_PER_PAGE))
         concurrency = max(1, int(templates.get("concurrency") or 3))
 
-        # Resolve the company's OWN domain. Use a WIDE candidate pool: the company's own site is a
-        # low-authority (self-reported) tier and gets reranked BELOW wikipedia/press, so a narrow top-5
-        # can miss it entirely — pull ~15 candidates so `_choose_domain` can find the name-matching one.
-        domain_query_t = str(templates.get("domain_query_template") or "{company} official website")
-        domain_query = _render(domain_query_t, company=company_s, domain="")
-        domain_hits = await source.search(RetrievalRequest(
-            query=domain_query, tenant_id=tenant_id, workspace_id=workspace_id,
-            k=_DOMAIN_CANDIDATES, web_open=True, web_max_results=_DOMAIN_CANDIDATES,
-            web_max_chars=2000, web_max_chunks_per_page=1,
-            web_extra_facets={"source_kind": "corp_eng", "web_role": "official"}))
-        domain = await _choose_domain(
-            company_s, domain_hits, llm=llm,
-            prompt=str(templates.get("domain_prompt") or ""),
-            budget=budget)
+        domain = await resolve_own_domain(
+            entity=company_s, templates=templates, source=source, tenant_id=tenant_id,
+            workspace_id=workspace_id, llm=llm, budget=budget)
 
         # Internal facets read the company's OWN site (self-reported). If we could NOT resolve a real
         # company domain (only reference/press domains surfaced), SKIP the internal leg rather than read

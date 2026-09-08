@@ -19,6 +19,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from . import discover as discovery
 from . import public as public_sources
 from . import store as dstore
 from .assemble import build
@@ -41,6 +42,8 @@ class DiveIn(BaseModel):
     refresh: bool = False           # write a new revision instead of returning the stored one
     public: bool = True             # the keyless public sources (EDGAR, Wikidata, GitHub) — free
     depth: str = "held"             # held | read | full
+    discover: bool = False          # a name we do not hold: look for it on the web and admit it
+    accept_domain: str = ""         # the caller confirmed an unsure match
     max_usd: float = 0.50           # refuse before spending more than this
     project_only: bool = False      # return the projection and spend nothing
 
@@ -75,15 +78,31 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
     async def dd_dive(body: DiveIn, authorization: str = Header(default="")):
         depth = body.depth if body.depth in DEPTHS else "held"
         cid = (body.company_id or "").strip().lower()
+        pool = await pool_of()
+        discovered = False
+        if not cid and body.accept_domain:
+            # The caller looked at an unsure match and said yes. Admit it under the name they typed.
+            await discovery.admit(su_store, domain=body.accept_domain.lower(), name=body.q or body.accept_domain)
+            cid, discovered = body.accept_domain.lower(), True
         if not cid:
-            res = await resolve(await pool_of(), body.q)
-            if res["status"] != "resolved":
+            res = await resolve(pool, body.q)
+            if res["status"] == "resolved":
+                cid = res["company"]["id"]
+            elif res["status"] == "unknown" and body.discover:
+                found = await discovery.find(body.q, manifest=manifest, llm=_llm(providers))
+                if found["status"] != "found":
+                    return {"status": found["status"], "reason": found["why"],
+                            "candidates": [], "discovered": found,
+                            "projection": discovery.project_discover_cost()}
+                await discovery.admit(su_store, domain=found["domain"], name=body.q)
+                cid, discovered = found["domain"], True
+            else:
                 # A refusal carries the candidates so the caller can pick — it never guesses.
                 return {"status": res["status"], "reason": res.get("reason", ""),
-                        "candidates": res["candidates"]}
-            cid = res["company"]["id"]
+                        "candidates": res["candidates"],
+                        "can_discover": res["status"] == "unknown",
+                        "projection": discovery.project_discover_cost()}
 
-        pool = await pool_of()
         if depth == "held" and not body.refresh:
             held = await dstore.get(pool, company_id=cid)
             if held:
@@ -93,6 +112,12 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
         if not c:
             raise HTTPException(status_code=404, detail="we hold no company with that id")
         pages = await su_store.pages(cid)
+        if discovered and not pages:
+            # A company we just met has nothing but a domain, so "what we hold" would be an empty
+            # page. Reading their site is HTTP, not a model — free, and the difference between a
+            # dossier and a stub.
+            pages = await _deep_crawl(su_store, c, pages)
+            c = await su_store.company(cid) or c
 
         # ---- the gate: project first, spend after, never the other way round
         proj = project(depth, max(len(pages), 6 if depth != "held" else 0),
@@ -105,6 +130,10 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
 
         doss = build(c, pages)
         doss["spend"] = {"projection": proj, "depth": depth}
+        if discovered:
+            doss["discovered"] = True
+            doss["attempted"].insert(0, {"source": "Web discovery", "found": 1, "unit": "company",
+                                         "result": "not in the index — found and read from the web"})
 
         if body.public:
             # Keyless, identity-gated, and free — but a source being down must never cost the dossier.
@@ -156,6 +185,12 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
         return {"dossiers": await dstore.recent(await pool_of(), limit=min(200, max(1, limit)))}
 
     return r
+
+
+def _llm(providers):
+    """The kernel's domain picker wants a `.complete()` LLM; the startups providers expose JSON chat.
+    When there is no such client the resolver still works — it falls back to name matching."""
+    return getattr(providers, "complete_llm", None)
 
 
 def _terms(c: dict) -> list[str]:

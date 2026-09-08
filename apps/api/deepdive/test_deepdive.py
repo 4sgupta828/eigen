@@ -483,3 +483,74 @@ def test_stripped_markup_leaves_no_gap_before_punctuation():
     from api.deepdive.assemble import sentences
     assert sentences("A valuation of $18 billion , according to people.") == [
         "A valuation of $18 billion, according to people."]
+
+
+# ---------------------------------------------------------------- discovery
+def test_a_name_we_do_not_hold_is_an_offer_not_a_dead_end(monkeypatch):
+    """Reported from production: typing a company we have not indexed ended the dive with
+    "no company we hold matches that name" — true, and useless."""
+    import asyncio
+
+    from api.deepdive import discover
+
+    async def fake_resolve(**kw):
+        return "blazel.com"
+    monkeypatch.setattr("eigen_kernel.research.deep_company.resolve_own_domain", fake_resolve)
+
+    class M:
+        company_reader = {"domain_query_template": "{company} official website"}
+    got = asyncio.run(discover.find("Blazel", manifest=M()))
+    assert got["status"] == "found" and got["domain"] == "blazel.com"
+
+
+def test_a_domain_that_is_not_the_company_asked_for_is_offered_not_assumed(monkeypatch):
+    import asyncio
+
+    from api.deepdive import discover
+
+    async def fake_resolve(**kw):
+        return "globex.com"
+    monkeypatch.setattr("eigen_kernel.research.deep_company.resolve_own_domain", fake_resolve)
+
+    class M:
+        company_reader = {"domain_query_template": "{company} official website"}
+    got = asyncio.run(discover.find("Blazel", manifest=M()))
+    assert got["status"] == "unsure" and got["domain"] == "globex.com"
+
+
+def test_a_short_name_is_confirmed_rather_than_assumed(monkeypatch):
+    """"GFC" resolves to whichever GFC the web ranks highest; the investor work showed what that costs."""
+    import asyncio
+
+    from api.deepdive import discover
+
+    async def fake_resolve(**kw):
+        return "gfc.nl"
+    monkeypatch.setattr("eigen_kernel.research.deep_company.resolve_own_domain", fake_resolve)
+
+    class M:
+        company_reader = {"domain_query_template": "{company} official website"}
+    got = asyncio.run(discover.find("GFC", manifest=M()))
+    assert got["status"] == "unsure"
+
+
+def test_a_web_search_that_finds_nothing_says_so(monkeypatch):
+    import asyncio
+
+    from api.deepdive import discover
+
+    async def fake_resolve(**kw):
+        return ""
+    monkeypatch.setattr("eigen_kernel.research.deep_company.resolve_own_domain", fake_resolve)
+
+    class M:
+        company_reader = {"domain_query_template": "{company} official website"}
+    got = asyncio.run(discover.find("Zzqq Nonexistent", manifest=M()))
+    assert got["status"] == "unknown" and not got["domain"]
+
+
+def test_name_matching_is_stricter_than_the_read_time_matcher():
+    from api.deepdive.discover import name_matches_domain as m
+    assert m("ElevenLabs", "elevenlabs.io") and m("Eleven Labs", "elevenlabs.io")
+    assert m("Fluidstack", "fluidstack.io")
+    assert not m("Acme", "globex.com")

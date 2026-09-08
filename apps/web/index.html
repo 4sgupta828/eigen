@@ -8856,19 +8856,40 @@ async function openShare(token){
     STATE.dossier = d; STATE.cid = c.id || "";
   }
 
-  function renderCandidates(res){
+  function renderCandidates(res, q){
     const cs = res.candidates || [];
     note().textContent = res.reason || "Which company do you mean?";
-    out().innerHTML = '<div class="dd-cands">' + cs.map((c, i) =>
+    const usd = ((res.projection || {}).projected_usd || 0.01).toFixed(2);
+    // The index holds a fraction of the companies a question can be about, so "we do not hold it"
+    // must be an offer, not a dead end.
+    const offer = res.can_discover
+      ? '<button type="button" class="dd-cand" id="dd-find"><b>\u2315 Look for '
+        + esc(q || "it") + " on the web</b><span>we do not hold this company \u2014 find their own "
+        + "site, read it, and add it \u00b7 about $" + usd + "</span></button>"
+      : "";
+    // An unsure match names what we found and asks, rather than quietly diving into the wrong company.
+    const unsure = (res.status === "unsure" && (res.discovered || {}).domain)
+      ? '<button type="button" class="dd-cand" id="dd-accept"><b>\u2713 Yes, use '
+        + esc(res.discovered.domain) + "</b><span>" + esc(res.reason || "") + "</span></button>"
+      : "";
+    out().innerHTML = '<div class="dd-cands">' + offer + unsure + cs.map((c, i) =>
       '<button type="button" class="dd-cand" data-pick="' + i + '"><b>' + esc(c.name || c.id) + "</b>"
       + "<span>" + esc([c.id, c.hq, c.one_liner].filter(Boolean).join(" \u00b7 ").slice(0, 120)) + "</span></button>").join("")
       + "</div>";
     out().querySelectorAll("[data-pick]").forEach(b => b.addEventListener("click", () =>
       dive({company_id: cs[Number(b.dataset.pick)].id})));
+    const find = document.getElementById("dd-find");
+    if(find) find.addEventListener("click", () => dive({q: q, discover: true}));
+    const acc = document.getElementById("dd-accept");
+    if(acc) acc.addEventListener("click", () => dive({q: q, accept_domain: res.discovered.domain}));
   }
 
   // Nothing above "what we hold" runs without the number being shown first and the answer being yes.
   async function confirmSpend(body){
+    if(body.discover || body.accept_domain){
+      return window.confirm("This searches the web for the company's own site and reads it.\n\n"
+        + "Projected cost: about $0.01\n\nGo ahead?");
+    }
     if((body.depth || "held") === "held") return true;
     const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
                                         body: JSON.stringify(Object.assign({}, body, {project_only: true}))});
@@ -8884,6 +8905,7 @@ async function openShare(token){
     if(STATE.busy) return;
     STATE.busy = true;
     body = Object.assign({depth: STATE.depth}, body);
+    if(body.q) STATE.lastQ = body.q;
     try{
       if(!(await confirmSpend(body))){ STATE.busy = false; note().textContent = "Nothing was spent."; return; }
     }catch(e){ STATE.busy = false; note().textContent = "Could not price that read."; return; }
@@ -8894,7 +8916,8 @@ async function openShare(token){
       const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
                                           body: JSON.stringify(body)});
       const d = await r.json();
-      if(d.status === "ambiguous" || d.status === "unknown"){ renderCandidates(d); return; }
+      if(d.status === "ambiguous" || d.status === "unknown" || d.status === "unsure"){
+        renderCandidates(d, body.q || STATE.lastQ || ""); return; }
       if(d.status === "refused"){ note().textContent = d.reason || "That dive costs more than the cap allows."; return; }
       if(!d.dossier){ note().textContent = d.detail || "Nothing came back for that company."; return; }
       const n = (d.dossier.sections || []).length;
