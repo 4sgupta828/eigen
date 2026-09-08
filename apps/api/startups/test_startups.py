@@ -318,13 +318,23 @@ def test_every_board_we_can_read_has_a_url_template():
 def test_an_area_the_brief_did_not_name_ranks_instead_of_filtering():
     """'Ecommerce Startups' compiled to a hard tech_area=consumer. That is not what ecommerce means:
     it excluded every ecommerce company filed under enterprise software and admitted every consumer
-    company that sells nothing online."""
+    company that sells nothing online. Ecommerce is its own area now, so the brief's own word is
+    restored — but the model's approximation still must not filter."""
     c, notes = cp.build_contract({"text": "ecommerce startups", "must": {"tech_area": ["consumer"]}},
                                  coverage={"tech_area": 0.5},
                                  value_counts={"tech_area": {"consumer": 900}}, brief="Ecommerce Startups")
-    assert "tech_area" not in c.must
-    assert c.prefer.get("tech_area") == ["consumer"]
+    assert "consumer" not in (c.must.get("tech_area") or [])
+    assert "consumer" in c.prefer.get("tech_area", [])
+    assert "ecommerce" in (c.must.get("tech_area") or []) + c.prefer.get("tech_area", [])
     assert any("instead of filtering" in n for n in notes)
+
+
+def test_the_brief_s_own_area_filters_once_the_index_holds_it():
+    """The same brief, with the index actually carrying ecommerce companies: now it filters."""
+    c, _ = cp.build_contract({"text": "ecommerce startups", "must": {}},
+                             coverage={"tech_area": 0.5},
+                             value_counts={"tech_area": {"ecommerce": 216}}, brief="Ecommerce Startups")
+    assert c.must.get("tech_area") == ["ecommerce"]
 
 
 def test_an_area_the_brief_did_name_still_filters():

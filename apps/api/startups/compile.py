@@ -136,6 +136,36 @@ AREA_WORDS = {
 }
 
 
+# Terms of art: words that name ONE sector and nothing else. Unlike the lists above — which include
+# broad words like "data", "sales" and "media" that a brief can use innocently — any of these in a
+# brief is the user naming their area outright.
+AREA_TERMS = {
+    "ecommerce": ("ecommerce", "e commerce", "dtc", "d2c", "shopify"),
+    "fintech": ("fintech",), "insurance": ("insurtech", "insurance"),
+    "legal_compliance": ("legaltech", "legal tech", "regtech", "compliance"),
+    "proptech": ("proptech", "real estate"), "edtech": ("edtech", "ed tech"),
+    "hr_people": ("hrtech", "hr tech", "recruiting", "payroll"),
+    "martech_sales": ("martech", "adtech", "ad tech", "go to market", "gtm"),
+    "logistics_supply": ("logistics", "supply chain", "freight"),
+    "agtech_food": ("agtech", "ag tech", "agriculture"),
+    "crypto_web3": ("crypto", "blockchain", "web3", "defi"),
+    "govtech": ("govtech", "gov tech", "public sector"),
+    "gaming_media": ("gaming", "video games"), "mobility": ("mobility", "trucking", "autonomous driving"),
+    "manufacturing": ("manufacturing",), "quantum": ("quantum",),
+    "climate_energy": ("climate tech", "climatetech", "cleantech"),
+    "bio_health": ("biotech", "healthtech", "health tech", "digital health"),
+    "security": ("cybersecurity", "cyber security", "infosec"),
+    "space_defense": ("defense tech", "defensetech", "spacetech"),
+    "robotics": ("robotics",), "devtools": ("devtools", "developer tools"),
+}
+
+
+def areas_named_outright(brief: str) -> list[str]:
+    """Areas the brief names in so many words. Used only to RESTORE an area the model dropped."""
+    b = " " + re.sub(r"[^a-z0-9]+", " ", (brief or "").lower()) + " "
+    return [a for a, terms in AREA_TERMS.items() if any(" " + t + " " in b for t in terms)]
+
+
 def area_named_in(brief: str, area: str) -> bool:
     """Did the brief actually SAY this area, rather than us choosing it as the nearest one?"""
     b = " " + re.sub(r"[^a-z0-9]+", " ", (brief or "").lower()) + " "
@@ -173,6 +203,16 @@ def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dic
                     prefer["tech_area"].append(v)
             notes.append("No exact area for this — ranking by "
                          + ", ".join(v.replace("_", " ") for v in approximated) + " instead of filtering")
+
+    # The mirror of the rule above: an area the brief NAMES OUTRIGHT must not be lost. "insurtech
+    # startups" came back with no tech_area at all, so nothing was filtered and all 17,613 companies
+    # were merely ranked. Restoring it only when the model gave none, and only for terms of art that
+    # name one sector and nothing else, so a brief that merely mentions "sales" is untouched.
+    if brief and not must.get("tech_area"):
+        outright = areas_named_outright(brief)
+        if len(outright) == 1:
+            must["tech_area"] = outright
+            notes.append("Filtering by " + outright[0].replace("_", " ") + " — your brief named it")
 
     # a STAGE only when the brief names one — the model tends to assume "startups" means seed / series A
     if brief and not brief_names_a_stage(brief):

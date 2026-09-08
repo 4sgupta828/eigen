@@ -54,3 +54,27 @@ def test_at_most_two_areas_and_never_one_the_company_already_has():
 def test_a_word_boundary_is_required():
     """"ev" inside "development" is not electric vehicles; "crop" inside "cropped" is not agriculture."""
     assert areas_for("Our development platform ships cropped images to developers.") == []
+
+
+def test_an_area_the_brief_names_outright_is_never_lost():
+    """"insurtech startups" came back with no tech_area at all, so nothing was filtered and all
+    17,613 companies were merely ranked."""
+    import api.startups.compile as cp
+    c, notes = cp.build_contract({"text": "insurtech startups", "must": {}}, brief="insurtech startups")
+    assert c.must.get("tech_area") == ["insurance"]
+    assert any("named it" in n for n in notes)
+
+
+def test_a_brief_that_merely_mentions_a_broad_word_is_untouched():
+    """"data" and "sales" appear in briefs innocently; only terms of art restore an area."""
+    import api.startups.compile as cp
+    c, _ = cp.build_contract({"text": "startups with a great sales team", "must": {}},
+                             brief="startups with a great sales team")
+    assert "tech_area" not in c.must
+
+
+def test_a_brief_naming_two_sectors_is_left_to_the_model():
+    import api.startups.compile as cp
+    c, _ = cp.build_contract({"text": "fintech and proptech startups", "must": {}},
+                             brief="fintech and proptech startups")
+    assert "tech_area" not in c.must          # ambiguous: rank, do not guess which one to filter on
