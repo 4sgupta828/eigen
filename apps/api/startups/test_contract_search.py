@@ -101,5 +101,14 @@ def test_a_judge_that_finds_no_fits_does_not_get_to_reorder():
     import inspect
     from api.startups import contract_search as cs
     src = inspect.getsource(cs.merged_search)
-    assert "judge_trusted = tallies[\"yes\"] > 0" in src
+    assert 'judge_trusted = tallies["yes"] >= 2' in src
     assert "order_by_verdicts(fused, verdicts, head=JUDGE_HEAD) if judge_trusted else list(fused)" in src
+
+
+def test_the_judge_must_endorse_more_than_a_token_row_to_reorder():
+    """One yes out of eight was enough to let a failing judge reorder the list around itself."""
+    def trusted(yes, graded):
+        return yes >= 2 and yes >= 0.15 * max(1, graded)
+    assert not trusted(1, 8)          # the observed failure
+    assert not trusted(0, 40)
+    assert trusted(3, 20) and trusted(2, 8)

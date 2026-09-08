@@ -252,7 +252,11 @@ async def merged_search(c: Contract, *, user_keys: set, evaluate_fn: Callable[..
     # storefronts for Shopify" as no. Letting those verdicts reorder puts the best rows at the
     # bottom, so a judge with no fits is reported and ignored for ORDERING; the similarity order,
     # which was right, stands.
-    judge_trusted = tallies["yes"] > 0
+    # "At least one fit" was too weak a test: on "ecommerce startups" the judge endorsed exactly one
+    # of eight rows that were all plainly ecommerce, and that single yes was enough to let it reorder
+    # the list around itself. A judge that endorses almost nothing is not discriminating between
+    # rows, it is failing to read them, so it must clear a real bar before it may reorder.
+    judge_trusted = tallies["yes"] >= 2 and tallies["yes"] >= 0.15 * max(1, len(verdicts))
     ordered = order_by_verdicts(fused, verdicts, head=JUDGE_HEAD) if judge_trusted else list(fused)
     if not judge_trusted and verdicts:
         for r in ordered:
