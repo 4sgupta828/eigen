@@ -109,7 +109,7 @@ def derive_facts(company: dict, financing: list[dict], filings: list[dict], foun
 
     # --- hiring from the ATS board
     if roles:
-        facts.append({"key": "hiring", "number": float(len(roles)), "display": f"{len(roles)} open roles", "basis": "ats_board",
+        facts.append({"key": "hiring", "number": float(len(roles)), "display": f"{len(roles)} open role" + ("" if len(roles) == 1 else "s"), "basis": "ats_board",
                       "quote": "; ".join((r.get("title") or "")[:60] for r in roles[:8]), "source_url": (roles[0].get("url") or ""), "as_of": today})
         fns = sorted({fn for fn in role_functions.values()})
         for fn in fns:

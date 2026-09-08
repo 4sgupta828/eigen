@@ -7238,9 +7238,27 @@ function drawerHtml(co){
   const roleList = roles.slice(0, 12).map(r =>
     `<a class="d-role" href="${esc(r.url || "#")}" target="_blank" rel="noopener">${esc(r.title || "role")}`
     + (r.location ? `<span class="d-rloc">${esc(r.location)}</span>` : "") + `</a>`).join("");
+  // We know the COUNT for far more companies than we kept the postings for — the count comes from
+  // their board, the titles only survive when we crawled it ourselves. Rather than showing a bare
+  // number with nothing to click, link the board we counted so the reader can go and see the roles.
+  const boardUrl = ats => {
+    const b = ((crawl.ats || {}).board) || [];
+    const kind = Array.isArray(b) ? b[0] : "", token = Array.isArray(b) ? b[1] : "";
+    if(!kind || !token) return "";
+    if(kind === "greenhouse") return "https://boards.greenhouse.io/" + token;
+    if(kind === "lever") return "https://jobs.lever.co/" + token;
+    if(kind === "ashby") return "https://jobs.ashbyhq.com/" + token;
+    return "";
+  };
+  const board = boardUrl();
+  const noRoles = !roleList && hireFacts.length
+    ? (board
+        ? `<a class="d-role" href="${esc(board)}" target="_blank" rel="noopener">See the roles on their job board<span class="d-rloc">↗</span></a>`
+        : `<div class="d-note">Counted from their job board; we did not keep the postings.</div>`)
+    : "";
   const hiring = sec("hiring", "Open roles",
     (hireFacts.length ? `<div class="d-stats">${uniqStats(hireFacts).map(statHtml).join("")}</div>` : "")
-    + (roleList ? `<div class="d-roles">${roleList}</div>` : "")
+    + (roleList ? `<div class="d-roles">${roleList}</div>` : noRoles)
     + (roles.length > 12 ? `<div class="d-note">and ${roles.length - 12} more on their board</div>` : ""));
 
   // ── what they do ───────────────────────────────────────────────────────────────────────────────
