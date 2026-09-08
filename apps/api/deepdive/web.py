@@ -46,8 +46,21 @@ _FIRST_PERSON = re.compile(r"\b(we|our|us)\b", re.I)
 WEB_USD_PER_QUERY = float(os.environ.get("EIGEN_DEEPDIVE_WEB_USD", "0.006"))
 
 
+def external_only(templates: dict) -> dict:
+    """The reader's templates with the internal (own-site) facets removed.
+
+    Their own pages are read properly by the site-reading leg — with a model, against verbatim
+    quotes. Asking the web for them again returns the same copy unextracted, so this is both less
+    noise and fewer paid queries.
+    """
+    t = dict(templates or {})
+    t["internal"] = {}
+    t["max_queries"] = max(1, len(t.get("external") or {}))
+    return t
+
+
 def project_web_cost(templates: dict) -> dict:
-    n = int(templates.get("max_queries") or 8)
+    n = max(1, len((templates or {}).get("external") or {}))
     return {"queries": n, "usd_per_query": WEB_USD_PER_QUERY,
             "projected_usd": round(n * WEB_USD_PER_QUERY, 3)}
 
@@ -63,12 +76,6 @@ def _source(manifest):
 
 
 _FACET_TITLES = {
-    "founders_team": "Team, as the web describes it",
-    "product": "Product, as the web describes it",
-    "technology": "Technology, as the web describes it",
-    "pricing": "Pricing, as the web describes it",
-    "customers": "Customers, as the web describes it",
-    "blog_changelog": "What they have been shipping",
     "funding_investors_valuation": "Funding coverage",
     "competitors_traction": "Competition and traction, as covered",
 }
@@ -149,28 +156,18 @@ async def read_web(company: dict, *, manifest, subject_terms: list[str]) -> dict
         return {"sections": [], "projection": {},
                 "attempted": [_att("Web read", 0, "pages", "not configured for this deployment")]}
     try:
-        hits = await retrieve_deep_company(company=name, templates=templates, source=_source(manifest),
-                                           tenant_id="default")
+        hits = await retrieve_deep_company(company=name, templates=external_only(templates),
+                                           source=_source(manifest), tenant_id="default")
     except Exception:      # noqa: BLE001 — the dossier stands without this leg
         return {"sections": [], "projection": project_web_cost(templates),
                 "attempted": [_att("Web read", 0, "pages", "unavailable on this run")]}
     tally: dict = {}
     by = _claims_from(hits, subject_terms, own, tally=tally)
-    sections, own_rows = [], []
-    for facet, rows in by.items():
-        if facet in _EXTERNAL:
-            sections.append({
-                "title": _FACET_TITLES[facet], "kind": "stated", "claims": rows,
-                "note": "how the press and analysts describe this — coverage, not an established "
-                        "fact, and never a substitute for a filing",
-            })
-        else:
-            own_rows.extend(rows)
-    if own_rows:
-        sections.insert(0, {"title": "Their own pages, read from the web", "kind": "stated",
-                            "claims": own_rows[:12],
-                            "note": "the company's own words, found on the open web"})
-    kept = sum(len(v) for v in by.values())
+    sections = [{"title": _FACET_TITLES[facet], "kind": "stated", "claims": rows,
+                 "note": "how the press and analysts describe this — coverage, not an established "
+                         "fact, and never a substitute for a filing"}
+                for facet, rows in by.items() if facet in _EXTERNAL]
+    kept = sum(len(rows) for facet, rows in by.items() if facet in _EXTERNAL)
     return {"sections": sections,
             "attempted": [_att("Web read", len(hits), "pages"),
                           _att("Web claims kept", kept, "claims",

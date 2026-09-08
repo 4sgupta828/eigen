@@ -139,16 +139,17 @@ def stated_milestones(pages: list[dict], subject_terms: list[str], *, limit: int
 
 
 def named_customers(pages: list[dict]) -> list[dict]:
-    """Customers only where a page NAMES them. We record the page, not a count we inferred."""
+    """The pages that name customers. A crawled page's opening characters are its navigation, not its
+    content, so the row is the LINK — the model reads these pages properly at depth `read`."""
     hits = [p for p in pages if any(k in (p.get("url") or "").lower() for k in _CUSTOMER_PATHS)]
-    return [{"source_url": p["url"], "excerpt": " ".join((p.get("text") or "").split())[:400],
-             "register": "stated", "attribution": "the company's own customer page"} for p in hits[:6]]
+    return [{"claim": "They publish a customers page", "source_url": p["url"],
+             "register": "stated", "attribution": "the company's own site"} for p in hits[:3]]
 
 
 def pricing(pages: list[dict]) -> list[dict]:
     hits = [p for p in pages if any(k in (p.get("url") or "").lower() for k in _PRICING_PATHS)]
-    return [{"source_url": p["url"], "excerpt": " ".join((p.get("text") or "").split())[:600],
-             "register": "stated", "attribution": "the company's own pricing page"} for p in hits[:3]]
+    return [{"claim": "They publish prices", "source_url": p["url"],
+             "register": "stated", "attribution": "the company's own site"} for p in hits[:2]]
 
 
 def hiring_intent(byk: dict[str, list[dict]]) -> dict:
@@ -285,9 +286,8 @@ def build(c: dict, pages: list[dict]) -> dict:
     sections.append(_section("Stated milestones", "stated", stated_rows,
                              note="what the company has claimed publicly — never treated as a filed number"))
 
-    sections.append(_section("Product and pricing", "pages", pricing(pages)))
-    sections.append(_section("Named customers", "pages", named_customers(pages),
-                             note="only customers a page names"))
+    sections.append(_section("Pricing and terms", "stated", pricing(pages)))
+    sections.append(_section("Named customers", "stated", named_customers(pages)))
 
     sections.append(_section("How they make money", "fact",
                              [_fact_claim(f) for k in _MONEY_MODEL for f in byk.get(k, [])],

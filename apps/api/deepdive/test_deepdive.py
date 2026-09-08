@@ -5,6 +5,8 @@ wrong, which is what the "Evidence Is Typed" directive requires of every gate we
 """
 from __future__ import annotations
 
+import json
+
 from api.deepdive.assemble import build, named_customers, pricing, stated_milestones
 from api.deepdive.gates import metric_defined, subject_bound
 from api.deepdive.resolve import as_domain, norm
@@ -613,3 +615,24 @@ def test_a_merged_section_renders_each_row_in_its_own_shape():
     ])
     rows = out[0]["claims"]
     assert [r["row"] for r in rows] == ["pages", "stated"]
+
+
+def test_the_web_leg_does_not_re_read_pages_we_read_properly_ourselves():
+    """The internal facets returned the company's own copy UNextracted — the same pages the
+    site-reading leg reads with a model against verbatim quotes. Less noise, and fewer paid queries."""
+    from api.deepdive.web import external_only, project_web_cost
+    t = {"internal": {"a": "x", "b": "y", "c": "z"}, "external": {"funding": "f", "competitors": "c"},
+         "max_queries": 8}
+    assert external_only(t)["internal"] == {}
+    assert external_only(t)["max_queries"] == 2
+    assert project_web_cost(t)["queries"] == 2
+
+
+def test_a_crawled_page_is_offered_as_a_link_not_as_its_navigation():
+    """"Secureframe packages Skip to main content CMMC Pause…" was rendered as a claim: the first
+    600 characters of a crawled page are its nav bar."""
+    pages = [{"url": "https://acme.com/pricing", "text": "Skip to main content Home Product Pricing"},
+             {"url": "https://acme.com/customers", "text": "Skip to main content Trusted by"}]
+    for row in pricing(pages) + named_customers(pages):
+        assert "Skip to main content" not in json.dumps(row)
+        assert row["source_url"] and row["claim"]
