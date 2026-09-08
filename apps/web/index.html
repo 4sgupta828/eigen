@@ -389,6 +389,7 @@
   #startupsbody .sgroup-why{font-size:.74rem;color:var(--muted);margin-left:auto;font-style:italic;}
   #startupsbody .sgroup .grid{margin-top:.6rem;}
   @media (max-width:560px){ #startupsbody .sgroup-why{display:none;} }
+  #startupsbody .frail-collapsed{padding:.4rem .5rem;}
   #startupsbody .su-whererow{align-items:center;gap:.35rem;}
   #startupsbody .su-where{font-family:var(--mono);font-size:.7rem;padding:.26rem .35rem;border-radius:7px;
     border:1px solid var(--hair);background:var(--panel2);color:var(--ink);min-height:32px;cursor:pointer;max-width:12rem;}
@@ -6920,7 +6921,8 @@ window.addEventListener("hashchange", ()=>{
 
 const EXAMPLES = [];    // no seeded example searches — the placeholder already shows the shape
 const STATE = { contract:null, draft:null, data:null, labels:null, busy:false, open:null, map:null, brief:"",
-                sort:"relevance", groupBy:"", openGroups:{}, auto:null, autoBusy:false };
+                sort:"relevance", groupBy:"", openGroups:{}, auto:null, autoBusy:false,
+                railCollapsed:false };
 // ---------- account: the shell owns USER, the identity modal and the token header
 function openAuth(mode){ AUTH_MODE = mode || "login"; if(typeof updateAuthUI==="function") updateAuthUI(); const m=$("#idmodal"); if(m) m.hidden=false; }
 function sessionExpired(){ USER=null; try{ localStorage.removeItem("eigen_user"); }catch(e){} if(typeof maybeShowAuthButtons==="function") maybeShowAuthButtons(); openAuth("login"); const err=$("#iderr"); if(err) err.textContent="Your sign-in expired — please sign in again."; }
@@ -7152,6 +7154,14 @@ function rangeLabel(key, r){ const u=((STATE.labels||{}).units||{})[key]||""; co
 // place, saying so, and everything else still renders.
 function renderRail(){
   try{
+    // A shared link arrives as a page to READ. Its recipient did not build the search and mostly is
+    // not about to edit it, so the refine panel starts collapsed and one click opens it.
+    if(STATE.railCollapsed){
+      const n = ((STATE.data || {}).coverage || {}).matched;
+      $("#su-rail").innerHTML = `<div class="frail frail-collapsed"><button type="button" id="su-railopen" class="su-recipe">`
+        + `▸ Refine this search${n != null ? ` · ${n} match every filter` : ""}</button></div>`;
+      return;
+    }
     $("#su-rail").innerHTML = railHtml();
   }catch(err){
     console.error("rail failed to render", err);
@@ -7174,6 +7184,7 @@ $("#su-rail").addEventListener("change", e=>{
   if(sel){ STATE.sort = sel.value; runEvaluate(STATE.contract, {noRelax: true}); }
 });
 $("#su-rail").addEventListener("click", e=>{
+  if(e.target.closest("#su-railopen")){ STATE.railCollapsed = false; renderRail(); return; }
   if(e.target.closest("#su-worldwide")){
     const c = JSON.parse(JSON.stringify(STATE.draft || STATE.contract || {}));
     c.must = c.must || {};
@@ -7786,6 +7797,7 @@ async function runCompile(text){
   try{
     const r=await fetch("/startups/compile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text})});
     if(!r.ok){ toast("could not compile: "+(await r.text()).slice(0,120)); return; }
+    STATE.railCollapsed = false;                  // their own search: the controls belong open
     const d=await r.json();
     // A new search starts in the United States unless the brief says otherwise. Most of the index is
     // American and most questions are about it, so this is the answer people mean — but it is a
@@ -7913,6 +7925,7 @@ function reset(){
 })();
 
 function renderShared(snap){
+  STATE.railCollapsed = true;                     // a link is read before it is edited
   // A frozen page of cards, rendered by the same code that renders a live one.
   const pay = snap.payload || {};
   STATE.data = {rows: pay.rows || [], counts: pay.counts || {}, coverage: pay.coverage || {},
