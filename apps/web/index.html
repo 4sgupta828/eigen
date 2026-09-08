@@ -370,7 +370,9 @@
   .dd-cand:hover{border-color:var(--gold);}
   .dd-cand b{font-size:.95rem;}
   .dd-cand span{font-family:var(--mono);font-size:.66rem;color:var(--dim);}
-  .dd-head{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;margin:1.1rem 0 .3rem;}
+  .dd-head{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;margin:1.1rem 0 .3rem;
+    max-width:100%;min-width:0;}
+  .dd-head > *{min-width:0;}
   .dd-head h2{margin:0;font-size:1.35rem;letter-spacing:-.01em;}
   .dd-head .dd-sub{font-family:var(--mono);font-size:.7rem;color:var(--dim);width:100%;margin:.15rem 0 0;}
   .dd-secs{display:grid;gap:.9rem;margin:1.1rem 0 2.4rem;}
@@ -397,8 +399,9 @@
   .dd-depth .dd-dbtn[aria-pressed="true"]{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
   .dd-cost{font-family:var(--mono);font-size:.63rem;color:var(--dim);}
   .dd-src{font-family:var(--mono);font-size:.64rem;color:var(--dim);text-decoration:none;
-    display:inline-flex;align-items:center;min-height:30px;padding:.1rem .45rem;
-    border:1px solid var(--hair);border-radius:8px;white-space:nowrap;}
+    display:inline-flex;align-items:center;min-height:32px;padding:.1rem .45rem;
+    border:1px solid var(--hair);border-radius:8px;white-space:nowrap;
+    max-width:100%;overflow:hidden;text-overflow:ellipsis;}
   .dd-src:hover{color:var(--gold);border-color:var(--gold);}
   .dd-quote{font-size:.78rem;color:var(--dim);border-left:2px solid var(--hair);padding-left:.6rem;margin:.15rem 0 0;}
   .dd-people{display:grid;gap:.6rem;}
@@ -407,7 +410,7 @@
   .dd-titles{display:flex;flex-wrap:wrap;gap:.35rem;margin:.45rem 0 0;}
   .dd-title{font-family:var(--mono);font-size:.66rem;padding:.3rem .55rem;border-radius:999px;
     border:1px solid var(--hair);color:var(--ink);text-decoration:none;display:inline-flex;
-    align-items:center;gap:.35rem;min-height:30px;}
+    align-items:center;gap:.35rem;min-height:34px;max-width:100%;}
   a.dd-title:hover{border-color:var(--gold);color:var(--gold);}
   .dd-inv{font-size:.86rem;color:var(--ink);text-decoration:none;padding:.28rem .6rem;border-radius:999px;
     border:1px solid var(--hair);display:inline-flex;align-items:center;min-height:32px;}
@@ -427,6 +430,7 @@
     .dd-att{grid-template-columns:1fr;}
     /* Every link on this page is a source someone will want to open on a phone. */
     .dd-src{min-height:38px;padding:.3rem .6rem;}
+    .dd-title, .dd-inv{min-height:38px;}
     .dd-row{gap:.4rem;}
   }
   /* ===== Startup Search — an inline MODE of the shell (body[data-mode="startups"]) ===== */
@@ -8996,7 +9000,7 @@ async function openShare(token){
     const bits = [c.hq, c.yc_batch ? "YC " + c.yc_batch : "", c.cik ? "CIK " + c.cik : "",
                   d.basis === "held" ? "assembled from what we already hold" : d.basis].filter(Boolean);
     out().innerHTML = '<div class="dd-head"><h2>' + esc(c.name || c.id || "") + "</h2>"
-      + (c.website ? src(c.website, c.website.replace(/^https?:\/\//, "")) : "")
+      + (c.website ? src(c.website) : "")
       + '<p class="dd-sub">' + esc(c.one_liner || "") + (bits.length ? " \u00b7 " + esc(bits.join(" \u00b7 ")) : "")
       + (when ? " \u00b7 as of " + esc(when) : "")
       + (d.revision ? " \u00b7 revision " + d.revision : "") + "</p></div>"
