@@ -2096,8 +2096,10 @@ async function loadConfig(){
     DYN_ENGINES = !!c.dynamic_engines_enabled;
     if(ACCOUNTS_ENABLED){
       const ex = $("#idextra"); if(ex) ex.hidden = false;   // reveal profession/NPI/country in the gate
-      // an existing local-only user predates accounts → ask them to register once (prefilled)
-      if(USER && USER.email && !USER.token){
+      // an existing local-only user predates accounts → ask them to register once (prefilled).
+      // Not while they are reading a link someone sent them: a shared page must open for anyone.
+      const _shared = (typeof isSharedLink === "function") && isSharedLink();
+      if(USER && USER.email && !USER.token && !_shared){
         if(USER.name) $("#idname").value = USER.name;
         if(USER.email) $("#idemail").value = USER.email;
         $("#idmodal").hidden = false;
@@ -6106,8 +6108,19 @@ $("#sback").addEventListener("click", ()=>{
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !sessionsEl.hidden) closeSessions(); });
 
 // ---- identity gate (name + email captured at landing, stored per session) ----
-function initIdentity(){
+// A SHARED LINK is exempt. Someone who was sent a frozen page is a reader, not a user of the app:
+// asking them to create an account before they can see what a colleague sent makes the link useless
+// for the one thing it exists to do. They can still sign in from the header afterwards, and the gate
+// returns the moment they leave the shared view to use the app themselves.
+function isSharedLink(){ return /^#share\//.test(location.hash || ""); }
+
+function initIdentity(opts){
+  opts = opts || {};
   try{ USER = JSON.parse(localStorage.getItem("eigen_user")||"null"); }catch(e){ USER = null; }
+  if(isSharedLink() && !opts.force){
+    const m = $("#idmodal"); if(m) m.hidden = true;      // in case a race opened it first
+    return;
+  }
   // Show the gate for new users AND for returning users who predate the disclaimer (never attested).
   if(!USER || !USER.email || !USER.disclaimer_ack){
     if(USER){ if(USER.name) $("#idname").value = USER.name; if(USER.email) $("#idemail").value = USER.email; }
@@ -6420,6 +6433,7 @@ initIdentity();
 // was taken — a link that silently re-ran the query would show the recipient something else.
 async function loadSharedView(token){
   try{
+    const m = $("#idmodal"); if(m) m.hidden = true;     // a reader of a link is never gated
     const snap = await openShare(token);
     if(snap.mode === "voices" && window.VO){ setMode("voices"); VO.renderFrozen(snap); }
     else if(snap.mode === "startups" && window.SU){ setMode("startups"); SU.renderShared(snap); }
@@ -7665,7 +7679,10 @@ async function openShare(token){
     cards().innerHTML = ms.map(cardHtml).join("");
     const live = document.getElementById("vo-live");
     if(live) live.addEventListener("click", e => { e.preventDefault();
-      history.replaceState(null, "", location.pathname + "#voices"); enter(true); });
+      history.replaceState(null, "", location.pathname + "#voices");
+      // no longer reading someone's link — the landing gate applies again
+      if(typeof initIdentity === "function") initIdentity({force: true});
+      enter(true); });
   }
 
   function enter(fresh){
