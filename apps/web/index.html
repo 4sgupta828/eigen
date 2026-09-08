@@ -365,9 +365,6 @@
   #startupsbody .su-fl.su-find{border:0;text-decoration:underline;text-underline-offset:2px;padding:0;}
   #startupsbody .su-gapk{font-family:var(--mono);font-size:.6rem;letter-spacing:.05em;text-transform:uppercase;
     color:var(--muted);margin-right:.3rem;}
-  #startupsbody .su-fitpill{font-size:.68rem;font-weight:600;padding:.1rem .5rem;border-radius:999px;border:1px solid var(--hair);color:var(--muted);}
-  #startupsbody .su-fitpill.fit-yes{color:var(--verified);border-color:var(--verified);background:rgba(19,122,84,.08);}
-  #startupsbody .su-fitpill.fit-partial{color:var(--gap);border-color:var(--gap);} #startupsbody .su-fitpill.fit-no{color:var(--warn);border-color:var(--warn);text-decoration:line-through;}
   #startupsbody .su-newflag{position:absolute;top:-1px;right:-1px;z-index:2;font-family:var(--mono);font-size:.58rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
     color:var(--on-accent);background:var(--gold);padding:.18rem .55rem .2rem;border-radius:0 12px 0 10px;box-shadow:0 1px 3px rgba(0,0,0,.18);pointer-events:none;}
   #startupsbody .card.is-new{border-color:rgba(var(--gold-rgb),.6);}
@@ -7171,12 +7168,11 @@ function cardHtml(row){
     if(t.includes("unknown") && unknown.some(u => t.includes(u.split(" ")[0]))) return false;
     return !shownLabels.some(l => l && t.startsWith(l + ":"));
   }).slice(0,3).join(" · ");
-  // Only a clear MISS gets a badge. Most of the head grades "partial", so badging that put the same
-  // sentence on card after card — a label repeated down the page stops being information and becomes
-  // wallpaper. The partial count still appears once, in the rail's spot-check line, where a count
-  // belongs.
-  const fit = (row.fit === "no")
-    ? `<span class="su-fitpill fit-no" title="${esc((row.fit_why || "checked against your words") + (row.found_by && Object.keys(row.found_by).length ? " · found by " + Object.keys(row.found_by).map(k => k.replace(/^relaxed:/, "without ").replace(/_/g, " ")).join(", ") : ""))}">probably not what you asked for</span>` : "";
+  // No per-card verdict at all. A model's grade of one company is a judgment about our search, not a
+  // fact about the company, and printing it on the card — struck through, no less — told a reader
+  // the row was junk while still showing it to them. The spot-check belongs in one place, as a count
+  // over the whole list, which is where the rail reports it.
+  const fit = "";
   const isNew = !!(STATE.lastDiff && STATE.lastDiff.added.includes(id));
   return `<div class="card${STATE.open===id?" su-open":""}${isNew?" is-new":""}" data-id="${esc(id)}">${isNew?`<span class="su-newflag" title="Not in the previous result">new</span>`:""}
     <div class="c-head"><a class="c-name" href="${esc(co.website||(id.startsWith("cik:")?"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK="+id.slice(4):"https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id.startsWith("cik:")?"SEC CIK "+id.slice(4):id)}</span>${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
@@ -7185,7 +7181,6 @@ function cardHtml(row){
     ${(what||who.length)?`<div class="c-row">${what}${who.join("")}</div>`:""}
     ${people}
     ${sig.length?`<div class="c-row">${sig.join("")}</div>`:""}
-    ${fit?`<div class="c-row">${fit}</div>`:""}
     ${unknown.length?`<div class="su-gaps"><span class="su-gapk">Not known</span> ${esc(unknown.join(" · "))}</div>`:""}
     ${cantRead.length?`<div class="su-gaps">${esc(cantRead.join(" · "))}</div>`:""}
     ${why?`<div class="c-why">${esc(why)}</div>`:""}
