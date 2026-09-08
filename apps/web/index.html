@@ -7149,7 +7149,19 @@ function railHtml(){
 function pill(m,key,text,v){ const g=m==="must"?"●":m==="prefer"?"▲":"▼"; return `<span class="fpill">${g} ${esc(klabel(key))}: ${esc(text)}<button type="button" data-off="${esc(key)}" data-value="${esc(v)}" data-mode="${m}" title="remove">✕</button></span>`; }
 function rangeLabel(key, r){ const u=((STATE.labels||{}).units||{})[key]||""; const f=x=>u==="usd"?usd(x):String(x); return (r.min!=null?"≥ "+f(r.min):"")+(r.min!=null&&r.max!=null?" · ":"")+(r.max!=null?"≤ "+f(r.max):"")+(u&&u!=="usd"?" "+u:""); }
 
-function renderRail(){ $("#su-rail").innerHTML = railHtml(); }
+// The results are the product; the rail is navigation. A throw in the rail used to take the results
+// down with it — a shadowed name in one control emptied the whole page — so the rail now fails in
+// place, saying so, and everything else still renders.
+function renderRail(){
+  try{
+    $("#su-rail").innerHTML = railHtml();
+  }catch(err){
+    console.error("rail failed to render", err);
+    $("#su-rail").innerHTML = `<div class="frail"><div class="frail-h"><b>Refine</b></div>`
+      + `<div class="c-dom">The refine panel could not be drawn (${esc(String(err && err.message || err))}). `
+      + `The results below are unaffected.</div></div>`;
+  }
+}
 $("#su-results").addEventListener("click", e=>{
   const chip = e.target.closest("[data-group]");
   if(chip){
