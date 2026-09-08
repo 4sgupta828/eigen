@@ -7792,7 +7792,19 @@ async function runCompile(text){
   try{
     const r=await fetch("/startups/compile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text})});
     if(!r.ok){ toast("could not compile: "+(await r.text()).slice(0,120)); return; }
-    const d=await r.json(); renderNotes(d.notes); STATE.brief=text; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.merge={mode:"merged"}; STATE.mergeOff=[]; renderMapBar(); await runEvaluate(d.contract);
+    const d=await r.json();
+    // A new search starts in the United States unless the brief says otherwise. Most of the index is
+    // American and most questions are about it, so this is the answer people mean — but it is a
+    // DEFAULT, not a rule: the note says it was applied and Worldwide clears it in one click. Only a
+    // brief that named no place at all gets it, so "startups in Berlin" is never quietly moved.
+    const notes = (d.notes || []).slice();
+    const must = (d.contract && d.contract.must) || {};
+    const placed = ["country", "state", "metro"].some(k => (must[k] || []).length);
+    if(d.contract && !placed){
+      d.contract.must = Object.assign({}, must, {country: ["us"]});
+      notes.push("Showing United States by default — press Worldwide, or pick a country, to widen it.");
+    }
+    renderNotes(notes); STATE.brief=text; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.merge={mode:"merged"}; STATE.mergeOff=[]; renderMapBar(); await runEvaluate(d.contract);
     history.replaceState(null,"","#startups?b="+encodeURIComponent(text));
   } finally { STATE.busy=false; document.body.classList.remove("su-busy"); }
 }
