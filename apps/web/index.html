@@ -711,10 +711,14 @@
   #startupsbody .toast.on{opacity:1;}
   #startupsbody .su-spin{display:inline-block;width:14px;height:14px;border:2px solid var(--hair);border-top-color:var(--gold);border-radius:50%;animation:s 1s linear infinite;vertical-align:middle;margin-right:.35rem;}
   @keyframes s{to{transform:rotate(360deg);}}
+  /* Ported from the standalone startups page, where these selectors owned the whole document. In the
+     shell they do not: `#go` is the composer's 44px round send button, so an unscoped `#go{width:100%}`
+     turned it into a full-width ellipse on every phone. A mode's stylesheet may not restyle the shell. */
   @media (max-width:560px){
-  #startupsbody .wrap{padding:.7rem .7rem 3rem;} .askbox{flex-direction:column;} #go{width:100%;}
-  #startupsbody .frail-k{min-width:76px;font-size:.58rem;} .fchip{font-size:.7rem;} .grid{grid-template-columns:1fr;}
-  #startupsbody .fact{grid-template-columns:1fr;} header nav{margin-left:0;} h1{font-size:1.1rem;}
+  #startupsbody .wrap{padding:.7rem .7rem 3rem;} #startupsbody .askbox{flex-direction:column;}
+  #startupsbody .frail-k{min-width:76px;font-size:.58rem;} #startupsbody .fchip{font-size:.7rem;}
+  #startupsbody .grid{grid-template-columns:1fr;}
+  #startupsbody .fact{grid-template-columns:1fr;}
   }
 
   .modeseg .mbtn[hidden]{display:none !important;}   /* a disabled mode's tab stays out (the display rule above would otherwise override `hidden`) */
