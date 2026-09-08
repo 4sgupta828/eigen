@@ -368,8 +368,10 @@
     padding:.1rem .4rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);}
   .dd-reg[data-r="filed"]{color:var(--ok,#2f7d5b);border-color:currentColor;}
   .dd-reg[data-r="stated"]{color:var(--gold);border-color:currentColor;}
-  .dd-src{font-family:var(--mono);font-size:.62rem;color:var(--dim);text-decoration:underline;}
-  .dd-src:hover{color:var(--gold);}
+  .dd-src{font-family:var(--mono);font-size:.64rem;color:var(--dim);text-decoration:none;
+    display:inline-flex;align-items:center;min-height:30px;padding:.1rem .45rem;
+    border:1px solid var(--hair);border-radius:8px;white-space:nowrap;}
+  .dd-src:hover{color:var(--gold);border-color:var(--gold);}
   .dd-quote{font-size:.78rem;color:var(--dim);border-left:2px solid var(--hair);padding-left:.6rem;margin:.15rem 0 0;}
   .dd-people{display:grid;gap:.6rem;}
   .dd-person b{font-size:.9rem;} .dd-person em{font-style:normal;font-family:var(--mono);font-size:.66rem;color:var(--dim);}
@@ -389,6 +391,9 @@
   @media (max-width:560px){
     .dd-k{min-width:auto;} .dd-head h2{font-size:1.15rem;}
     .dd-att{grid-template-columns:1fr;}
+    /* Every link on this page is a source someone will want to open on a phone. */
+    .dd-src{min-height:38px;padding:.3rem .6rem;}
+    .dd-row{gap:.4rem;}
   }
   /* ===== Startup Search — an inline MODE of the shell (body[data-mode="startups"]) ===== */
   body[data-mode="startups"] #startupsbody{display:block;}
@@ -8689,9 +8694,13 @@ async function openShare(token){
     return '<span class="dd-reg" data-r="' + esc(r) + '" title="' + esc(why) + '">' + esc(r) + "</span>";
   }
 
+  // A row of ten links all reading "where" tells the reader nothing and is 14px tall on a phone.
+  // The host names the source, and the chip is a real tap target.
+  function host(u){ try { return new URL(u).hostname.replace(/^www\./, ""); } catch(e){ return "source"; } }
   function src(url, label){
     if(!url) return "";
-    return '<a class="dd-src" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(label || "source") + "</a>";
+    return '<a class="dd-src" href="' + esc(url) + '" target="_blank" rel="noopener">'
+      + esc(label || host(url)) + " \u2197</a>";
   }
 
   function factRow(c){
@@ -8699,7 +8708,7 @@ async function openShare(token){
     return '<div class="dd-row"><span class="dd-k">' + esc(String(c.key || "").replace(/_/g, " ")) + "</span>"
       + '<span class="dd-v">' + esc(v) + "</span>"
       + (c.provenance ? '<span class="dd-reg">' + esc(c.provenance) + "</span>" : "")
-      + src(c.source_url, "source")
+      + src(c.source_url)
       + (c.quote ? '<div class="dd-quote">\u201c' + esc(String(c.quote).slice(0, 240)) + "\u201d</div>" : "")
       + "</div>";
   }
@@ -8708,7 +8717,7 @@ async function openShare(token){
     const links = p.links || {};
     const l = Object.keys(links).map(k => src(links[k], k)).join(" ");
     return '<div class="dd-person"><b>' + esc(p.name || "") + "</b> "
-      + (p.title ? "<em>" + esc(p.title) + "</em> " : "") + l + " " + src(p.source_url, "source")
+      + (p.title ? "<em>" + esc(p.title) + "</em> " : "") + l + " " + src(p.source_url)
       + (p.bio ? "<p>" + esc(p.bio) + "</p>" : "")
       + ((p.prior || []).length ? '<p class="dd-quote">previously: ' + esc(p.prior.join(", ")) + "</p>" : "")
       + "</div>";
@@ -8727,7 +8736,7 @@ async function openShare(token){
 
   function statedRow(c){
     return '<div class="dd-row">' + reg(c.register)
-      + '<span class="dd-v">' + esc(c.claim || "") + "</span> " + src(c.source_url, "where")
+      + '<span class="dd-v">' + esc(c.claim || "") + "</span> " + src(c.source_url)
       + (c.attribution ? ' <span class="dd-k">' + esc(c.attribution) + "</span>" : "")
       + (c.quote ? '<div class="dd-quote">\u201c' + esc(String(c.quote).slice(0, 200)) + "\u201d</div>" : "")
       + "</div>";
@@ -8737,7 +8746,7 @@ async function openShare(token){
     return '<div class="dd-row">' + reg("filed")
       + '<span class="dd-v">' + esc(c.claim || "") + "</span>"
       + (c.filing_date ? ' <span class="dd-k">' + esc(c.filing_date) + "</span>" : "")
-      + " " + src(c.source_url, "EDGAR") + "</div>";
+      + " " + src(c.source_url) + "</div>";
   }
 
   function finRow(c){
@@ -8746,11 +8755,11 @@ async function openShare(token){
       + '<span class="dd-v"><b>' + esc(c.round || "round") + "</b> " + esc(String(amt)) + "</span>"
       + (c.date ? ' <span class="dd-k">' + esc(c.date) + "</span>" : "")
       + ((c.investors || []).length ? ' <span class="dd-k">' + esc(c.investors.join(", ")) + "</span>" : "")
-      + " " + src(c.source_url, "source") + "</div>";
+      + " " + src(c.source_url) + "</div>";
   }
 
   function pageRow(c){
-    return '<div class="dd-row">' + reg(c.register) + " " + src(c.source_url, c.source_url || "page")
+    return '<div class="dd-row">' + reg(c.register) + " " + src(c.source_url)
       + '<div class="dd-quote">' + esc(String(c.excerpt || "").slice(0, 320)) + "\u2026</div></div>";
   }
 
