@@ -516,8 +516,9 @@
   #startupsbody .su-examples{display:flex;flex-wrap:wrap;gap:.35rem;margin:.55rem 0 .2rem;}
   #startupsbody .su-ex{font-size:.76rem;padding:.3rem .65rem;border:1px dashed var(--hair);border-radius:999px;background:transparent;color:var(--muted);min-height:34px;}
   #startupsbody .su-ex:hover{color:var(--ink);border-color:var(--gold);}
-  #startupsbody .notes{margin:.6rem 0 0;padding:.5rem .75rem;border-left:3px solid var(--gap);background:var(--panel);border-radius:8px;font-size:.8rem;color:var(--muted);}
-  #startupsbody .notes li{margin:.1rem 0;}
+  #startupsbody .notes{margin:.6rem 0 0;padding:.4rem .7rem;border-left:3px solid var(--gap);background:var(--panel);
+    border-radius:8px;font-size:.76rem;color:var(--muted);line-height:1.55;}
+  #startupsbody .notes b{color:var(--dim);font-weight:600;letter-spacing:.02em;}
   #startupsbody .cov{display:flex;flex-wrap:wrap;gap:.4rem .9rem;align-items:center;margin:.8rem 0 .4rem;font-size:.8rem;color:var(--muted);}
   #startupsbody .cov b{color:var(--ink);} .cov .warn{color:var(--warn);font-weight:600;}
   /* rail */
@@ -8148,7 +8149,13 @@ function renderCoverage(){
   if(d && d.coverage && d.coverage.degraded) parts.push(`<span class="warn" title="a model provider is unavailable — results are filtered by the chips but not ranked by the words">⚠ ${esc(d.coverage.degraded)}</span>`);
   box.innerHTML=parts.join("<span style='color:var(--hair)'>|</span>");
 }
-function renderNotes(notes){ $("#su-notes").innerHTML = (notes&&notes.length) ? `<div class="notes">How your brief was read:<ul style="margin:.2rem 0 0 1rem;padding:0">${notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul></div>` : ""; }
+// A heading, a bulleted list and a full sentence per note is a paragraph where a line does. These
+// are footnotes on how the brief was read, not findings: one line, separated by dots.
+function renderNotes(notes){
+  $("#su-notes").innerHTML = (notes && notes.length)
+    ? `<div class="notes"><b>Read as</b> ${notes.map(n => esc(String(n).replace(/\.$/, ""))).join(" <span class=\"c-dot\">·</span> ")}</div>`
+    : "";
+}
 
 // ---------- run
 async function runCompile(text){
