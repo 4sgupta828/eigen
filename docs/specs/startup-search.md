@@ -688,3 +688,57 @@ at all until credit is added. Nothing else blocks it — the pages are already i
 **When it is done.** Coverage for `arr` (29 companies today), `customer` (439), `business_model` (527) and
 `founder_prior_company` (104) should rise by roughly the extraction hit rate seen so far — job 19 turned 512
 companies into 2,777 facts, about 5.4 facts per company.
+
+
+## 15. Hiring, investors and the expanded card (2026-09-08)
+
+### The hiring gap, and what actually closed it
+We knew a company was hiring for 914 of 17,665 and held the actual roles for 1,014. Three routes were
+measured before any was built:
+
+| Route | Measured result | Verdict |
+| --- | --- | --- |
+| Parse more board types off careers pages | 90 pages with no board on record carried one only 11 times (greenhouse 8, ashby 2, pinpoint 1) | Worth adding, small |
+| Guess the board token from the domain | a live board for 9% of a 120-company sample | **Built** |
+| YC's own job board | the company page points at a login; Work at a Startup renders roles client-side | Rejected |
+
+The guess is accepted only when the board answers with REAL ROLES — an empty board proves nothing
+about whose it is. In production the first 600-company pass found **188 boards and 2,284 roles**, a
+31% hit rate, far above the sample's 9%, because it ran on the most recently updated companies first.
+
+**An operational lesson worth keeping.** The guess was first folded into the crawler, and the crawl
+examined ZERO companies: it only visits sites it has not seen for 90 days, and nearly everything had
+been crawled that week. A change to discovery logic reaches nobody when the thing that triggers it
+does not run. It is now its own job (`boards`) keyed on "has no board on record", which is where the
+gap actually is.
+
+### Reading roles off the page itself
+Most companies use no board at all, so `careers_roles` reads the stored careers-page text with a
+small model call. The discipline is the extractor's: a title must appear VERBATIM on the page or it
+is dropped, team and benefit headings are refused, and "not hiring" is the right answer rather than
+something to pad — a model asked for open roles will otherwise invent plausible ones for a page that
+says it has none. Cost is gated by projection like extraction: ~$0.0005 a company, $2.15 for all
+4,300 stored careers pages.
+
+### Investors that link
+`su_investor` maps an investor slug to the firm's site, filled by the `investors` job from two
+sources: the fund portfolio pages we crawl (verified by construction), then a keyless name lookup
+behind a gate. The gate is load-bearing — ungated, that lookup resolves "gfc" to GF Securities, "8vc"
+to a community college and "accel" to Accela. It requires the slug's words to OPEN the suggested
+name, so "bessemer" may resolve to "Bessemer Venture Partners" while "accel" may not resolve to
+"Accela".
+
+Production then showed the gate was still too loose: single-token slugs produced AVP Beach Volleyball
+for "avp", Bond Collective for "bond", Town & Country for "town" and a Dutch news site for "gfc".
+Some single tokens were right (crv, ivp, jmi, usvp) and nothing in the answer distinguished them, so
+ALL single-token lookups are refused. 219 resolutions became 145 trustworthy ones.
+
+Per-investor cheque sizes are not published anywhere, so the card shows the ROUNDS an investor is
+named in and those rounds' sizes — the honest breakdown rather than an invented allocation.
+
+### The expanded card
+Grouped the way the questions come — Founders, Money, Open roles, What they do — each keyed by its
+own colour, numbers set large with the field name as a caption, quotes folded behind "why we believe
+this", and the company's own description leading "What they do" because the thesis in their words is
+the one thing facets cannot reconstruct. Facts that two sources agree on render once carrying both
+provenance chips; `financing_scale` is dropped when it merely restates an amount already shown.
