@@ -611,6 +611,21 @@
     font:inherit;color:var(--ink);padding:.6rem .7rem;margin-bottom:.6rem;}
   /* product-settings modal (reuses the idcard shell) */
   .setbtn{font-size:.95rem;line-height:1;padding:.35rem .55rem;}
+  /* Settings is a PAGE. As a modal it was a 25rem card, which cannot hold a table of accounts —
+     the list was there and simply had nowhere to be. */
+  .setpage[hidden]{display:none;}
+  .setpage{position:fixed;inset:0;z-index:70;background:var(--bg);overflow:auto;padding:1.4rem 1.2rem 3rem;}
+  .setcard{max-width:64rem;margin:0 auto;}
+  .setcard h2{font-family:var(--serif);font-size:1.5rem;margin:0 0 1rem;}
+  .setclose{position:absolute;top:1rem;right:1.2rem;background:none;border:1px solid var(--hair);
+    border-radius:999px;color:var(--dim);cursor:pointer;font-size:.8rem;padding:.3rem .7rem;min-height:34px;}
+  .setclose:hover{color:var(--ink);border-color:var(--gold);}
+  .setpage .setrow{display:flex;flex-wrap:wrap;gap:.6rem;align-items:baseline;padding:.6rem .2rem;
+    border-bottom:1px solid var(--hair);}
+  .setpage .sethint{flex:1 1 22rem;color:var(--muted);font-size:.76rem;line-height:1.5;}
+  .setpage details.setold{margin-top:1.2rem;}
+  .setpage details.setold summary{font-family:var(--mono);font-size:.68rem;color:var(--muted);cursor:pointer;
+    padding:.4rem 0;min-height:30px;}
   .aa-tbl{width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.72rem;}
   .aa-tbl th{text-align:left;font-family:var(--mono);font-size:.6rem;letter-spacing:.04em;text-transform:uppercase;
     color:var(--muted);border-bottom:1px solid var(--hair);padding:.25rem .4rem;white-space:nowrap;}
@@ -2005,8 +2020,8 @@
 </div>
 
 <!-- product settings (admin, password-gated) — live flag toggles, no redeploy -->
-<div class="idmodal" id="setmodal" hidden>
-  <div class="idcard">
+<div class="setpage" id="setmodal" hidden>
+  <div class="setcard">
     <h2>⚙ Product settings</h2>
     <div id="setlock">
       <p>Admin only — enter the settings password.</p>
@@ -6328,12 +6343,16 @@ $("#idmodal").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#idgo").cl
 
 // ---- product settings (⚙, password-gated): live flag toggles served by /admin/settings ----
 const SET_LABELS = {
+  reasoned_default_enabled: ["Dynamic engine selection", "Auto-routes each question: management/case → decision-first engine · why/how → understanding engine (causal model) · evidence lookup → standard synthesis."],
   duel_enabled:      ["A/B duel answers", "Fresh questions run BOTH engines with a which-is-better vote (2× cost/question)"],
-  triage_enabled:    ["Guided intake mode", "The ◍ Guided clarify-then-route mode"],
+  triage_enabled:    ["Guided intake mode", "The ◍ Guided clarify-then-route mode for Q&A — Startup Search has its own Guided mode, which this does not control"],
   ask_panel_enabled: ["Expert Panel", "The ◈ multi-analyst panel mode"],
-  reasoned_default_enabled: ["Dynamic engine selection", "Auto-routes each question: management/case → decision-first engine · why/how → understanding engine (causal model) · evidence lookup → standard synthesis. Duel arms unaffected."],
 };
+// Toggles for modes this product no longer shows. They are off, nothing routes to them, and they are
+// kept behind a fold rather than deleted so turning one back on stays a click and not a code change.
+const SET_RETIRED = new Set(["duel_enabled", "triage_enabled", "ask_panel_enabled"]);
 function openSettings(){
+  if(location.hash !== "#settings") history.pushState(null, "", "#settings");
   $("#setmodal").hidden = false;
   const unlocked = sessionStorage.getItem("eigen_apw");
   $("#setlock").hidden = !!unlocked;
@@ -6356,14 +6375,19 @@ async function loadSettingsUI(){
 }
 function renderSettingsUI(d){
   const body = $("#setbody"); body.hidden = false;
-  const rows = Object.entries(d.settings || {}).map(([k, s]) => {
+  const rowFor = ([k, s]) => {
     const [label, hint] = SET_LABELS[k] || [k, ""];
     const opt = (v, t) => `<option value="${v}" ${s.override === v ? "selected" : ""}>${t}</option>`;
     return `<div class="setrow"><b>${esc(label)}</b>
       <select data-k="${k}">${opt("", "Default (" + (s.env_default ? "on" : "off") + ")")}${opt("on", "On")}${opt("off", "Off")}</select>
       <span class="setlive ${s.resolved ? "on" : ""}">${s.resolved ? "ACTIVE" : "off"}</span>
       <span class="sethint">${esc(hint)}</span></div>`;
-  }).join("");
+  };
+  const entries = Object.entries(d.settings || {});
+  const live = entries.filter(([k]) => !SET_RETIRED.has(k));
+  const retired = entries.filter(([k]) => SET_RETIRED.has(k));
+  const rows = live.map(rowFor).join("")
+    + (retired.length ? `<details class="setold"><summary>Retired modes (${retired.length}) — off, and nothing routes to them</summary>${retired.map(rowFor).join("")}</details>` : "");
   body.innerHTML = rows + `<div class="sethint" style="margin-top:.6rem;">Applies to the API within ~15 s; this page picks it up on the next reload.</div>` +
     `<div class="setrow"><b>⬡ Relationship graph</b><button type="button" class="idgo" id="setgraph" style="width:auto;padding:.3rem .8rem;font-size:.78rem;">Open console</button>
      <span class="sethint">Curated knowledge edges powering retrieval expansion + the is-it-helping quality watch.</span></div>` +
@@ -6380,6 +6404,7 @@ function renderSettingsUI(d){
   if(ibtn) ibtn.addEventListener("click", () => { $("#setmodal").hidden = true; openIngest(); });
   const abtn = body.querySelector("#setaccts");
   if(abtn) abtn.addEventListener("click", loadAccountsList);
+  loadAccountsList();          // the page is mostly for this; do not make them ask for it
   const pbtn = body.querySelector("#setperf");
   if(pbtn) pbtn.addEventListener("click", () => {   // pass the unlocked admin pw so /admin/perf opens directly
     try{ sessionStorage.setItem("eigen-admin-pw", sessionStorage.getItem("eigen_apw") || ""); }catch(e){}
@@ -6425,7 +6450,10 @@ async function loadAccountsList(){
 $("#setbtn").addEventListener("click", openSettings);
 $("#setgo").addEventListener("click", loadSettingsUI);
 $("#setpw").addEventListener("keydown", e => { if(e.key === "Enter") loadSettingsUI(); });
-$("#setclose").addEventListener("click", () => { $("#setmodal").hidden = true; });
+$("#setclose").addEventListener("click", () => {
+  $("#setmodal").hidden = true;
+  if(location.hash === "#settings") history.replaceState(null, "", location.pathname + location.search);
+});
 $("#setmodal").addEventListener("click", e => { if(e.target === $("#setmodal")) $("#setmodal").hidden = true; });
 
 // ---- relationship-graph console (⬡, password-gated, read-only) ----
@@ -6618,6 +6646,7 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel �
   else if(location.hash === "#triage" && TRIAGE_ENABLED){ setMode("triage"); }
   else if(location.hash.indexOf("#startups") === 0 && STARTUPS_ENABLED){ setMode("startups", {params: new URLSearchParams(location.hash.split("?")[1] || "")}); }
   else if(location.hash === "#guided" && STARTUPS_ENABLED){ setMode("guided"); }
+  else if(location.hash === "#settings"){ openSettings(); }
   else if(location.hash === "#graph"){ openGraphConsole(); }
   else if(location.hash === "#ingest"){ openIngest(); }
   else if(location.hash === "#terms"){ openTermsPage(); }
