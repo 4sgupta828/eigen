@@ -117,11 +117,38 @@ VALUE_LABELS = {
 KEY_ORDER = [k.key for k in SCHEMA.keys if k.navigable]
 
 
+def investor_sites() -> dict:
+    """{investor slug → the firm's own site}, derived from the portfolio pages we already crawl.
+
+    The investor facet's values ARE these slugs — `a16z`, `general_catalyst` — because that is where
+    the affiliation came from, so the map needs no new data and no guessing. A firm we do not hold
+    is simply absent, and the UI offers a search rather than inventing a URL.
+    """
+    import json
+    from pathlib import Path
+    from urllib.parse import urlsplit
+    out: dict[str, str] = {}
+    f = Path(__file__).with_name("data") / "portfolios.json"
+    try:
+        rows = json.loads(f.read_text())
+    except Exception:      # noqa: BLE001 — a missing file costs links, never a response
+        return out
+    for r in rows:
+        slug, url = str(r.get("fund") or ""), str(r.get("url") or "")
+        if not slug or not url.startswith("http"):
+            continue
+        parts = urlsplit(url)
+        out[slug] = f"{parts.scheme}://{parts.netloc}"
+    return out
+
+
 def labels() -> dict:
     """What the UI needs to render the rail: key labels, value labels, types, order."""
     return {"keys": {k.key: k.label for k in SCHEMA.keys}, "values": VALUE_LABELS,
             "types": {k.key: k.type.value for k in SCHEMA.keys}, "order": KEY_ORDER,
-            "units": {k.key: k.unit for k in SCHEMA.keys if k.unit}, "version": SCHEMA_VERSION}
+            "units": {k.key: k.unit for k in SCHEMA.keys if k.unit}, "version": SCHEMA_VERSION,
+            # where an investor actually lives, so a name on a card can be clicked
+            "investor_sites": investor_sites()}
 
 
 # Form D's revenue-range box, verbatim options → our ordinal (anything else, incl. "Decline to Disclose", is unknown).

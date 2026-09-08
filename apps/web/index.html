@@ -443,7 +443,11 @@
   #startupsbody .d-card h5{margin:0 0 .45rem;font-family:var(--mono);font-size:.63rem;letter-spacing:.08em;
     text-transform:uppercase;color:var(--d-accent);font-weight:700;}
   #startupsbody .d-note{font-family:var(--mono);font-size:.62rem;color:var(--muted);text-transform:none;letter-spacing:0;}
-  #startupsbody .d-lede{margin:0 0 .5rem;font-size:.9rem;line-height:1.5;}
+  #startupsbody .d-lede{margin:0 0 .45rem;font-size:.92rem;line-height:1.5;font-weight:600;}
+  #startupsbody .d-about{margin:0 0 .5rem;font-size:.83rem;line-height:1.62;max-width:70ch;color:var(--ink);}
+  #startupsbody .d-tagfind{margin-left:.2rem;text-decoration:none;color:var(--muted);}
+  #startupsbody .d-tagfind:hover{color:var(--ink);}
+  #startupsbody a.d-tag.inv{text-decoration:none;}
   /* a number is the answer; its name is the caption underneath */
   #startupsbody .d-stats{display:flex;flex-wrap:wrap;gap:.55rem .9rem;margin:.2rem 0 .1rem;}
   #startupsbody .d-stat{min-width:6.5rem;}
@@ -7259,7 +7263,11 @@ function drawerHtml(co){
     ? `<section class="d-card ${cls}"><h5>${esc(title)}${note ? ` <span class="d-note">${esc(note)}</span>` : ""}</h5>${body}</section>` : "";
 
   // ── who ────────────────────────────────────────────────────────────────────────────────────────
-  const founders = (co.founders || []).map(f => {
+  // The card face already lists the founders' names and links. The drawer repeats them only when it
+  // has more to say — a bio, or where they worked before. Otherwise the section is dropped, because
+  // a section that restates the line above it makes the reader check whether they misread it.
+  const adds = (co.founders || []).some(f => f.bio || f.quote || (f.prior_companies || []).length);
+  const founders = !adds ? "" : (co.founders || []).map(f => {
     const prior = (f.prior_companies || []).map(c => `<span class="d-tag">${esc(c)}</span>`).join("");
     const bio = f.bio || f.quote || "";
     return `<div class="d-person"><div class="d-pname">${founderHtml(f, co.name || co.id)}</div>`
@@ -7268,15 +7276,26 @@ function drawerHtml(co){
       + `</div>`;
   }).join("");
   const team = pick(TEAM_KEYS).filter(f => f.key !== "founder_prior_company");
-  const who = sec("who", "Founders", founders
+  const who = sec("who", founders ? "More on the founders" : "Team", founders
     + (team.length ? `<div class="d-stats">${uniqStats(team).map(statHtml).join("")}</div>` + whyFold(team) : ""),
-    founders ? "" : "none on record");
+    "");
 
   // ── money ──────────────────────────────────────────────────────────────────────────────────────
   const moneyFacts = pick(MONEY_KEYS);
   const investors = byKey("investor").concat(byKey("lead_investor"));
-  const invTags = [...new Set(investors.flatMap(f => String(f.display || label(f.key, f.value)).split(/,\s*/)))]
-    .filter(Boolean).map(v => `<span class="d-tag inv">${esc(v)}</span>`).join("");
+  // An investor's name should take you to the investor. We hold the firm's site for every fund whose
+  // portfolio page we crawl — the facet value IS that fund's slug — so those names link directly.
+  // For a firm we do not hold, the name is plain text and a small search sits beside it: a guessed
+  // URL for a venture firm is as wrong as a guessed profile for a person.
+  const sites = (STATE.labels || {}).investor_sites || {};
+  const invValues = [...new Set(investors.map(f => String(f.value || "")).filter(Boolean))];
+  const invTags = invValues.map(v => {
+    const shown = label("investor", v) || v.replace(/_/g, " ");
+    const site = sites[v];
+    return site
+      ? `<a class="d-tag inv" href="${esc(site)}" target="_blank" rel="noopener noreferrer" title="${esc(shown)} — their site">${esc(shown)} ↗</a>`
+      : `<span class="d-tag inv">${esc(shown)}<a class="d-tagfind" href="https://www.google.com/search?q=${encodeURIComponent(shown + " venture capital")}" target="_blank" rel="noopener noreferrer" title="We do not hold this firm's site — this searches for it">⌕</a></span>`;
+  }).join("");
   const rounds = (co.financing || []).map(e => {
     const who2 = [e.lead ? "led by " + e.lead : "", (e.investors || []).join(", ")].filter(Boolean).join(" · ");
     return `<div class="d-round"><div class="d-roundv">${e.amount_usd ? esc(usd(e.amount_usd)) : "amount not stated"}</div>`
@@ -7320,10 +7339,20 @@ function drawerHtml(co){
   // ── what they do ───────────────────────────────────────────────────────────────────────────────
   const whatFacts = pick(WHAT_KEYS);
   const customers = (crawl.customers || []).map(c => `<span class="d-tag">${esc(c.name)}</span>`).join("");
+  // The company's own account of itself — the thesis and the wedge in their words, which is the one
+  // thing a reader cannot reconstruct from facets. It was collected all along and never shown.
+  const about = String(co.description || "").trim();
+  const aboutHtml = about
+    ? (about.length > 420
+        ? `<p class="d-about">${esc(about.slice(0, 420))}…</p><details class="d-whydet"><summary>read the rest</summary><p class="d-about">${esc(about.slice(420, 3000))}</p></details>`
+        : `<p class="d-about">${esc(about)}</p>`)
+    : "";
   const what = sec("what", "What they do",
     (co.one_liner ? `<p class="d-lede">${esc(co.one_liner)}</p>` : "")
+    + aboutHtml
     + (whatFacts.length ? `<div class="d-stats">${uniqStats(whatFacts).map(statHtml).join("")}</div>` : "")
-    + (customers ? `<div class="d-tags"><span class="d-tagsk">Named customers</span>${customers}</div>` : "")
+    + (customers ? `<div class="d-tags"><span class="d-tagsk">Customers they name</span>${customers}</div>` : "")
+    + (!customers && !about ? `<div class="d-note">Their site has not been read yet, so their own account of what they do is missing.</div>` : "")
     + whyFold(whatFacts));
 
   // ── anything we have not placed, plus where it all came from ────────────────────────────────────
