@@ -90,8 +90,10 @@ def segment_prompt(max_groups: int = 7) -> str:
         "- Never segment by funding stage, city, investor, accelerator or company size. The reader "
         "can already group by those, and a group that repeats one of them is wasted.\n"
         "- Never make a group out of a word nearly every row shares — that word is the search itself.\n"
-        "- Every id belongs to at most one group. Leaving a company out is fine and better than "
-        "forcing it somewhere it does not belong.\n"
+        "- Every id belongs to at most one group. MOST companies should land in one: leaving a few "
+        "out is fine, leaving half the list out is a segmentation that did not do its job. Prefer a "
+        "slightly broader group to a large leftover pile, but never force a company somewhere it "
+        "plainly does not belong.\n"
         "- name: 2 to 4 words a reader would recognise. why: at most 8 words, what the group has in "
         "common.\n"
         'Return ONLY JSON: {"groups":[{"name":str,"why":str,"ids":[int]}]}'

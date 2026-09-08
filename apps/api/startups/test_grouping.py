@@ -95,3 +95,10 @@ def test_what_stays_strict_is_the_rule_that_matters():
     assert not eligible(swallowed, kind="categorical", max_unstated=0.60, max_groups=12).ok
     almost_nothing = ["saas"] * 6 + [""] * 54
     assert not eligible(almost_nothing, kind="categorical", max_unstated=0.60, max_groups=12).ok
+
+
+def test_the_prompt_asks_for_most_of_the_list_to_land_somewhere():
+    """A production run put 20 of 40 companies in leftovers. Half the list in 'Everything else' is a
+    segmentation that did not do its job."""
+    p = segment_prompt()
+    assert "leaving half the list out" in p and "MOST companies should land in one" in p
