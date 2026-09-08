@@ -24,3 +24,16 @@ def test_a_slug_reads_as_a_name():
 def test_a_fund_whose_portfolio_we_crawl_needs_no_lookup():
     r = resolve("a16z")
     assert r and r["basis"] == "portfolio_page" and r["site"].startswith("https://a16z.com")
+
+
+def test_a_single_token_never_resolves_by_lookup():
+    """Run over the real index, one-word slugs produced AVP Beach Volleyball for 'avp', Bond
+    Collective for 'bond', Town & Country for 'town' and a Dutch news site for 'gfc'. Some one-word
+    slugs were right, and nothing in the answer distinguished them, so none are accepted."""
+    for slug in ("avp", "bond", "town", "gfc", "wing", "zoom", "nba"):
+        assert resolve(slug) is None, slug
+
+
+def test_a_multi_word_name_may_resolve():
+    r = resolve("slow_ventures")
+    assert r is None or (r["site"].startswith("http") and r["basis"] in ("name_lookup", "portfolio_page"))

@@ -69,10 +69,19 @@ def curated_sites() -> dict:
 
 
 def resolve(slug: str) -> dict | None:
-    """{slug, name, site, basis} or None. Never guesses."""
+    """{slug, name, site, basis} or None. Never guesses.
+
+    A curated fund resolves on sight. Everything else must be a MULTI-WORD name, because one short
+    token carries too little identity: run over the real index, single-token slugs resolved "avp" to
+    AVP Beach Volleyball, "bond" to Bond Collective, "town" to Town & Country and "gfc" to a Dutch
+    news site. Some single tokens were right — crv, ivp, jmi — and nothing in the answer told them
+    apart from the wrong ones, which is the whole argument for refusing them.
+    """
     curated = curated_sites().get(slug)
     if curated:
         return {"slug": slug, "name": display_name(slug), "site": curated, "basis": "portfolio_page"}
+    if len(words(slug)) < 2:
+        return None
     name = display_name(slug)
     for s in suggest(name)[:5]:
         dom = http.registrable_domain(str(s.get("domain") or ""))
