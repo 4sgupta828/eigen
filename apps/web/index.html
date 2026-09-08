@@ -7154,11 +7154,12 @@ function cardHtml(row){
     if(t.includes("unknown") && unknown.some(u => t.includes(u.split(" ")[0]))) return false;
     return !shownLabels.some(l => l && t.startsWith(l + ":"));
   }).slice(0,3).join(" · ");
-  // The spot-check verdict. "partial fit · model" told the reader the machinery ("model") and left
-  // them to guess the rest. Only a doubt is worth their attention: a clean fit needs no badge, and
-  // the two that do get one say what the doubt IS in the tooltip.
-  const fit = (row.fit === "partial" || row.fit === "no")
-    ? `<span class="su-fitpill fit-${esc(row.fit)}" title="${esc((row.fit_why || "checked against your words") + (row.found_by && Object.keys(row.found_by).length ? " · found by " + Object.keys(row.found_by).map(k => k.replace(/^relaxed:/, "without ").replace(/_/g, " ")).join(", ") : ""))}">${row.fit === "partial" ? "only partly what you asked for" : "probably not what you asked for"}</span>` : "";
+  // Only a clear MISS gets a badge. Most of the head grades "partial", so badging that put the same
+  // sentence on card after card — a label repeated down the page stops being information and becomes
+  // wallpaper. The partial count still appears once, in the rail's spot-check line, where a count
+  // belongs.
+  const fit = (row.fit === "no")
+    ? `<span class="su-fitpill fit-no" title="${esc((row.fit_why || "checked against your words") + (row.found_by && Object.keys(row.found_by).length ? " · found by " + Object.keys(row.found_by).map(k => k.replace(/^relaxed:/, "without ").replace(/_/g, " ")).join(", ") : ""))}">probably not what you asked for</span>` : "";
   const isNew = !!(STATE.lastDiff && STATE.lastDiff.added.includes(id));
   return `<div class="card${STATE.open===id?" su-open":""}${isNew?" is-new":""}" data-id="${esc(id)}">${isNew?`<span class="su-newflag" title="Not in the previous result">new</span>`:""}
     <div class="c-head"><a class="c-name" href="${esc(co.website||(id.startsWith("cik:")?"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK="+id.slice(4):"https://"+id))}" target="_blank" rel="noopener">${esc(co.name||id)} ↗</a><span class="c-dom">${esc(id.startsWith("cik:")?"SEC CIK "+id.slice(4):id)}</span>${row.rank!=null?`<span class="c-match">#${row.rank}</span>`:""}</div>
