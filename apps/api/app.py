@@ -1875,6 +1875,12 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         app.include_router(_su_router(_su_store, _su_pipeline.Providers.from_env(), dsn=_su_dsn,
                                       admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""), user_of=_shell_user))
 
+        # DeepDive — a diligence pre-flight on ONE resolved company (docs/specs/deepdive.md).
+        # Flag-gated, and everything mounted here is free: it reads rows we already hold.
+        from api.deepdive.routes import build_router as _dd_router, deepdive_enabled as _dd_on
+        if _dd_on():
+            app.include_router(_dd_router(_su_pool, _su_store, user_of=_shell_user))
+
         @app.on_event("startup")
         async def _su_orphan_jobs():
             """A restart kills the job threads: mark their rows so waiters and operators see it, not 'running' forever."""
