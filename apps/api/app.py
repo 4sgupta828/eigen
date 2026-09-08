@@ -1779,6 +1779,34 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 raise HTTPException(status_code=404, detail="that link has expired or never existed")
             return snap
 
+        @app.get("/admin/users")
+        async def admin_users(limit: int = 500, x_eigen_token: str = Header(default="")) -> dict:
+            """Who has registered and what each has done. PII, so it is gated twice over.
+
+            The caller must be signed in AND their email must be on the admin list. When no list is
+            configured the earliest-registered account — the owner — is the only admin, and the
+            response says so, because an access rule nobody can see is a rule nobody can check.
+
+            Activity is counts only. What someone searched for is theirs; whether anyone is searching
+            at all is the founder's question, and a count answers it without reading their questions.
+            """
+            st = _accounts()
+            if st is None or not accounts_enabled():
+                raise HTTPException(status_code=404, detail="accounts are not enabled here")
+            u = await _shell_user(x_eigen_token)
+            if not u:
+                raise HTTPException(status_code=401, detail="sign in first")
+            allow = [e.strip().lower() for e in os.environ.get("EIGEN_ADMIN_EMAILS", "").split(",") if e.strip()]
+            basis = "admin list"
+            if not allow:
+                owner = await st.first_user_email()
+                allow, basis = ([owner.lower()] if owner else []), "owner (the earliest-registered account)"
+            if str(u.get("email", "")).lower() not in allow:
+                raise HTTPException(status_code=403,
+                                    detail="this account is not an admin — set EIGEN_ADMIN_EMAILS to say who is")
+            users = await st.accounts_overview(limit=limit)
+            return {"users": users, "count": len(users), "admin_basis": basis}
+
         @app.get("/history")
         async def search_history(mode: str = "", x_eigen_token: str = Header(default="")) -> dict:
             """A private list of what this account searched, newest first."""

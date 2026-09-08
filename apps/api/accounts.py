@@ -317,6 +317,63 @@ class AccountStore:
                 "by_day": by_day, "recent": recent,
                 "users": {"registered": n_users, "npi_verified": n_verified}}
 
+    async def first_user_email(self) -> str:
+        """The earliest-registered account: the owner, when no admin list is configured."""
+        await self._ensure()
+        async with (await self._get_pool()).acquire() as conn:
+            return (await conn.fetchval(
+                "SELECT email FROM eigen_user WHERE vertical=$1 ORDER BY created_at ASC LIMIT 1",
+                self._vertical) or "")
+
+    async def accounts_overview(self, *, limit: int = 500) -> list[dict]:
+        """Who has registered and what each has DONE — counts only, never what they searched for.
+
+        The activity numbers are deliberately bare integers. A count answers "is anyone using this"
+        without turning an admin screen into a log of other people's questions, which is what the
+        query text would be. PII either way, so the caller gates access.
+        """
+        await self._ensure()
+        async with (await self._get_pool()).acquire() as conn:
+            # the history and map tables are optional: a deployment without Startup Search has neither
+            for ddl in ("CREATE TABLE IF NOT EXISTS eigen_search_history (user_id text NOT NULL, "
+                        "mode text NOT NULL, fingerprint text NOT NULL, title text NOT NULL DEFAULT '', "
+                        "query jsonb NOT NULL DEFAULT '{}'::jsonb, hits int NOT NULL DEFAULT 0, "
+                        "runs int NOT NULL DEFAULT 1, last_at timestamptz NOT NULL DEFAULT now(), "
+                        "PRIMARY KEY (user_id, mode, fingerprint))",):
+                await conn.execute(ddl)
+            # Each activity count sits behind a feature that may not be installed. A deployment
+            # without Startup Search has no map table; one without Voices has no favourites. A count
+            # we cannot take is reported as None rather than failing the whole screen.
+            counts = {
+                "searches": "(SELECT count(*) FROM eigen_search_history h WHERE h.user_id = u.id)",
+                "runs": "(SELECT coalesce(sum(h.runs), 0) FROM eigen_search_history h WHERE h.user_id = u.id)",
+                "last_search": "(SELECT max(h.last_at) FROM eigen_search_history h WHERE h.user_id = u.id)",
+                "maps": "(SELECT count(*) FROM su_map m WHERE m.owner_id = u.id)",
+                "kept": "(SELECT count(*) FROM vo_favorite f WHERE f.user_id = u.id)",
+                "shares": "(SELECT count(*) FROM eigen_share s WHERE s.owner_id = u.id)",
+            }
+            usable = {}
+            for name, expr in counts.items():
+                try:
+                    await conn.fetchval(f"SELECT {expr} FROM eigen_user u WHERE false")
+                    usable[name] = expr
+                except Exception:      # noqa: BLE001 — the feature behind it is simply not installed
+                    usable[name] = None
+            cols = ", ".join(f"{e} AS {n}" for n, e in usable.items() if e)
+            rows = await conn.fetch(
+                f"""SELECT u.id, u.name, u.email, u.created_at, u.last_seen,
+                           (u.pw_hash IS NOT NULL) AS has_password{(", " + cols) if cols else ""}
+                    FROM eigen_user u WHERE u.vertical=$1 ORDER BY u.created_at DESC LIMIT $2""",
+                self._vertical, int(max(1, min(limit, 5000))))
+        out = []
+        for r in rows:
+            d = dict(r)
+            for k in ("created_at", "last_seen", "last_search"):
+                if d.get(k) is not None:
+                    d[k] = d[k].isoformat()
+            out.append(d)
+        return out
+
     async def list_users(self, *, limit: int = 500) -> list[dict]:
         """All registered users (newest first) — name, email, profession, country, NPI-verified,
         registered + last-seen timestamps. Admin-only (PII); the caller gates access."""
