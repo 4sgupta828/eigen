@@ -742,3 +742,53 @@ own colour, numbers set large with the field name as a caption, quotes folded be
 this", and the company's own description leading "What they do" because the thesis in their words is
 the one thing facets cannot reconstruct. Facts that two sources agree on render once carrying both
 provenance chips; `financing_scale` is dropped when it merely restates an amount already shown.
+
+## 16. Navigating a result set (2026-09-08)
+
+### Ranking
+Nine orderings, each from a fact we hold: most raised, biggest last round, funded most recently,
+hiring hardest, newest, longest running, largest team, revenue on record, relevance. A company
+missing the field keeps its place at the end and the control says how many could not be ranked — a
+"top by funding" list that quietly hid 8,600 companies would misrepresent the index. There is no
+profitability ordering because we hold profit for nobody; the nearest real signals are offered under
+their own names with their coverage stated.
+
+### Grouping (ported from roster)
+Free facet dimensions plus one opt-in model call, and the eligibility rule decides which dimensions
+appear — judged on the rows in front of the reader, never on the index.
+
+**Thresholds are ours, not roster's.** Measured on a 60-row result set, "what they build" was hidden
+for having 9 groups against a limit of 8, and "where they are" for 27% unstated against a limit of
+25%. Our index is sparser by nature (a company known from a filing carries far less than one we
+crawled), so unstated tolerance is 0.60 and the group cap 12. What stays strict is the rule that
+matters: one value swallowing the set organises nothing, so "Accelerator" stays hidden when every
+company in the list is a YC company.
+
+**Auto** segments by what the companies DO and is given neither sector, city, investor nor stage —
+the free controls already cut by those, so a model reaching for them would spend a call to duplicate
+a control. One dominant group earns exactly one re-ask; any failure falls back to the free token
+split. Groups render collapsed, because the point of grouping is to see the shape of the set.
+
+### Geography
+Country, state and city, plus Worldwide. `state` is a new open-set key derived from the HQ string
+("San Francisco, CA, USA") and, for a company whose HQ we do not hold, from a Form D filing — used
+only when the HQ does not already place the company in another country, so a London company never
+inherits a US state. Delaware was the risk worth checking and the distribution cleared it: filings
+state real business addresses (CA 2,483, NY 1,099, DE 258), not incorporation states.
+
+A new search defaults to the United States, any city. It is a DEFAULT: the note says so, Worldwide
+clears it, and only a brief that named no place at all gets it.
+
+### Two relevance faults found from a shared link
+1. **An approximated area was filtering.** "Ecommerce Startups" compiled to a hard `tech_area=consumer`,
+   which excluded every ecommerce company filed under enterprise software and admitted every consumer
+   company that sells nothing online. An area the brief did not NAME is now a preference.
+2. **A judge with almost no fits was reordering.** It graded "Shopify for LatAm" as not-a-fit and moved
+   the best rows down. It must now endorse at least two rows and 15% of what it graded, or its
+   verdicts are reported and the similarity order stands.
+
+### Accounts
+`GET /admin/users` — email, name, joined, last seen, searches, runs, last search, maps, kept moments,
+shares. Counts only, never query text. Gated by a signed-in account on `EIGEN_ADMIN_EMAILS` (or, with
+no list, the earliest-registered account), and the response states which rule granted access. The
+settings password does not gate it: that password is a product-toggle gate and says so.
