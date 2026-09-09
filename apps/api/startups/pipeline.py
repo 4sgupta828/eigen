@@ -586,10 +586,21 @@ async def run_portfolio(store: StartupStore, *, funds: list[str] | None = None, 
             out.setdefault(r["domain"], {"name": r["name"], "website": r["website"], "via": "profile", "profile": r["profile"]})
         return {"fund": e["fund"], "kind": e["kind"], "url": e["url"], "profiles": len(prof), "companies": out}
 
-    results = await asyncio.gather(*[loop.run_in_executor(ex, _one, e) for e in entries], return_exceptions=True)
+    async def _guarded(e: dict):
+        """One fund, paired with its entry, never raising — as_completed loses the argument otherwise."""
+        try:
+            return e, await loop.run_in_executor(ex, _one, e)
+        except Exception as err:      # noqa: BLE001 — one fund's failure is one line in the report
+            return e, err
+
     n_new = n_fact = 0
     report = {}
-    for e, res in zip(entries, results):
+    # as_completed, not gather: gather returns nothing until the LAST fund is done, and the only
+    # heartbeat this job has is the one written per fund below. A forty-fund pass reading thousands of
+    # profile pages sat silent for longer than the thirty-minute watchdog allows and was killed as a
+    # zombie. Now each fund reports the moment it lands.
+    for fut in asyncio.as_completed([_guarded(e) for e in entries]):
+        e, res = await fut
         if isinstance(res, Exception):
             report[e["fund"]] = f"error {res!s:.80}"
             continue
