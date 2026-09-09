@@ -821,9 +821,10 @@ async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int
     await store.ensure_schema()
     pool = await store.pool()
     async with pool.acquire() as conn:
-            # Any row an earlier pass gave a website to while leaving the note behind is repaired here,
+        # Any row an earlier pass gave a website to while leaving the note behind is repaired here,
         # so the fix reaches the 6,714 companies that were found before this code existed.
-        await conn.execute("UPDATE su_company SET one_liner = replace(one_liner, $1, $2) WHERE website <> '' AND one_liner LIKE '%' || $1 || '%'", FORMD_NOTE_NO_SITE, FORMD_NOTE)
+        tag = await conn.execute("UPDATE su_company SET one_liner = replace(one_liner, $1, $2) WHERE website <> '' AND position($1 in one_liner) > 0", FORMD_NOTE_NO_SITE, FORMD_NOTE)
+        n_repaired = int(tag.split()[-1]) if tag else 0
         rows = await conn.fetch("SELECT id, name, cik FROM su_company WHERE id LIKE 'cik:%' AND website = '' AND status = 'active' AND coalesce(crawl->>'lookup_at', '') = '' LIMIT $1", limit)
     n_q = n_hit = n_merged = 0
     for r in rows:
@@ -852,7 +853,7 @@ async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int
         if jid and n_q % 50 == 0:
             await _progress(store, jid, {"queried": n_q, "sites_found": n_hit, "merged": n_merged, "of": len(rows)})
         await asyncio.sleep(0.6)
-    return {"queried": n_q, "sites_found": n_hit, "merged": n_merged}
+    return {"queried": n_q, "sites_found": n_hit, "merged": n_merged, "one_liners_repaired": n_repaired}
 
 
 # ------------------------------------------------------------------ runner (background thread, own loop + pool)
