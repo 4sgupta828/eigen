@@ -46,3 +46,6 @@ pip-wheel-metadata/
 
 # Provider cassettes are recorded per-env; keep large recordings out unless intentionally committed
 # evals/cassettes/   # (uncomment to ignore; left tracked so a curated replay set can be committed)
+
+# Local session scratch notes (never part of the repo)
+claude_session.txt
