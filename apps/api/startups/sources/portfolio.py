@@ -24,6 +24,8 @@ _DENY = ("linkedin.com", "twitter.com", "x.com", "facebook.com", "instagram.com"
          "sentry.io", "intercom.io", "segment.com", "vercel.app", "netlify.app", "github.io", "pages.dev", "schema.org", "w3.org", "gravatar.com")
 _RESOURCE = re.compile(r'(?is)<(?:script|iframe|source)\b[^>]*\bsrc\s*=\s*["\']([^"\']+)["\']|<link\b[^>]*\bhref\s*=\s*["\']([^"\']+)["\']')
 _URL_IN_TEXT = re.compile(r"https?://[A-Za-z0-9.\-]+\.[A-Za-z]{2,}(?:/[^\s\"'<>)\\]*)?")
+# a URL segment that identifies a section rather than a company
+_GENERIC_SLUG = re.compile(r"(?i)^(portfolio|companies|company|index|home|all|list|page|\d+)$")
 _BAD_NAME = re.compile(r"^(read more|learn more|visit|website|view|more|link|home|open|→|›|»|company|portfolio|\s*)$", re.I)
 
 
@@ -223,15 +225,50 @@ def profile_name(html: str, page_url: str) -> str:
     slug_name = re.sub(r"[-_]+", " ", slug).strip().title()
     tseg = re.split(r"\s[|\-–—:]\s", title)[0].strip()
     tseg = re.sub(r"(?i)^(portfolio|company|companies)\s*[:\-–]\s*", "", tseg)
-    # a heading that reads like a tagline (many words) is not the name; the slug or the title's first segment is
+    # THE SLUG FIRST. Every one of Kleiner Perkins' 413 company pages serves the same <title>, so a
+    # title-first rule named all 413 "Perspectives" — and the directory dutifully resolved that to
+    # perspectivesltd.com, a company with no connection to any of them. The slug is per-page by
+    # construction: it is the part of the URL that made this a profile page at all. A title is only
+    # better when the slug says nothing.
     fund_word = own.split(".")[0]
-    if tseg and len(tseg.split()) <= 4 and fund_word not in tseg.lower():
+    if slug_name and not _GENERIC_SLUG.match(slug):
+        name = slug_name
+    elif tseg and len(tseg.split()) <= 4 and fund_word not in tseg.lower():
         name = tseg
     elif h1t and len(h1t.split()) <= 3 and fund_word not in h1t.lower():
         name = h1t
     else:
         name = slug_name
     return name[:80]
+
+
+def same_page(requested: str, final: str) -> bool:
+    """Did the profile URL we asked for actually serve that profile?
+
+    Kleiner Perkins' sitemap still lists 413 /company/<slug>/ pages and every one of them now
+    redirects to a single article index. Read the landing page and all 413 "companies" are one
+    article category wearing 413 names. http→https, a trailing slash and a www prefix are the same
+    page; a different path is a different page."""
+    def key(u: str) -> tuple[str, str]:
+        m = re.match(r"(?is)^https?://([^/?#]+)([^?#]*)", (u or "").strip())
+        if not m:
+            return ("", (u or "").strip().lower())
+        host = m.group(1).lower()
+        host = host[4:] if host.startswith("www.") else host
+        return (host, (m.group(2) or "/").rstrip("/").lower() or "/")
+    return key(requested) == key(final or requested)
+
+
+def name_echoes_domain(name: str, domain: str) -> bool:
+    """Is this domain plausibly THIS company's, rather than some other company with a similar name?
+
+    The congruence check on a directory answer. Without it a page misread as "Perspectives" binds
+    perspectivesltd.com to whatever company the page was actually about."""
+    key = re.sub(r"[^a-z0-9]", "", (name or "").lower())
+    dl = re.sub(r"[^a-z0-9]", "", (domain or "").split(".")[0].lower())
+    if len(key) < 3 or len(dl) < 3:
+        return False
+    return key.startswith(dl[:5]) or dl.startswith(key[:5]) or key in dl or dl in key
 
 
 def parse_profile(html: str, page_url: str) -> dict | None:

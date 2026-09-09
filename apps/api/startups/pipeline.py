@@ -563,7 +563,7 @@ async def run_portfolio(store: StartupStore, *, funds: list[str] | None = None, 
         found: list[dict] = []
         for u in prof:
             f = site.http.get(u, min_gap=1.5)
-            if not f.ok:
+            if not f.ok or not pf.same_page(u, f.final_url):
                 continue
             r = pf.parse_profile(f.text, f.final_url)
             if not r:
@@ -575,6 +575,8 @@ async def run_portfolio(store: StartupStore, *, funds: list[str] | None = None, 
                 nm = pf.profile_name(f.text, f.final_url)
                 hit = lookup.website_for(nm) if nm and len(nm) > 2 else None
                 _time.sleep(0.4)                    # a different host from the fund: its own pacing
+                if hit and not pf.name_echoes_domain(nm, hit["domain"]):
+                    hit = None                      # a real company, but not the one this page is about
                 if hit:
                     r = {"name": nm, "website": f"https://{hit['domain']}", "domain": hit["domain"]}
             if r:

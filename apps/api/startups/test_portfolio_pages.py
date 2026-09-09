@@ -79,7 +79,30 @@ def test_a_profile_page_that_links_nothing_still_names_its_company():
     html = "<html><head><title>BedRock Systems | Kleiner Perkins</title></head><body></body></html>"
     url = "https://www.kleinerperkins.com/company/bedrock-systems/"
     assert pf.parse_profile(html, url) is None          # nothing on the page IS the company's site
-    assert pf.profile_name(html, url) == "BedRock Systems"
+    assert pf.profile_name(html, url) == "Bedrock Systems"
+
+
+def test_one_title_served_on_every_page_does_not_name_them_all_the_same():
+    """Kleiner Perkins serves the same <title> on all 413 of its company pages. Reading the title
+    first named every one of them "Perspectives", and the directory resolved that to a real and
+    entirely unrelated company. Only the "same domain on three profiles is chrome" rule kept it out
+    of the database."""
+    page = "<html><head><title>Perspectives</title></head><body></body></html>"
+    names = {pf.profile_name(page, f"https://www.kleinerperkins.com/company/{s}/")
+             for s in ("bedrock-systems", "rebellion-defense", "lumafield")}
+    assert names == {"Bedrock Systems", "Rebellion Defense", "Lumafield"}
+
+
+def test_a_directory_answer_about_a_different_company_is_refused():
+    assert pf.name_echoes_domain("Bedrock Systems", "bedrocksystems.com")
+    assert pf.name_echoes_domain("Viz Ai", "viz.ai")
+    assert not pf.name_echoes_domain("Bedrock Systems", "perspectivesltd.com")
+    assert not pf.name_echoes_domain("Lumafield", "perspectivesltd.com")
+
+
+def test_a_slug_that_names_a_section_falls_back_to_the_title():
+    html = "<html><head><title>Acme</title></head><body></body></html>"
+    assert pf.profile_name(html, "https://fund.example/companies/portfolio/") == "Acme"
 
 
 def test_a_profile_with_only_a_slug_is_named_from_the_slug():
@@ -92,3 +115,11 @@ def test_a_profile_that_does_link_its_company_is_unchanged():
             '<a href="https://acme.com">Visit website</a></body></html>')
     got = pf.parse_profile(html, "https://fund.example/companies/acme/")
     assert got and got["domain"] == "acme.com" and got["name"] == "Acme"
+
+
+def test_a_profile_url_that_redirects_elsewhere_is_not_that_company():
+    K = "https://www.kleinerperkins.com"
+    assert not pf.same_page(f"{K}/company/bedrock-systems/", f"{K}/perspectives/category/perspectives/")
+    # the same page reached by a slightly different spelling is still the same page
+    assert pf.same_page("http://fund.example/companies/acme", "https://www.fund.example/companies/acme/")
+    assert pf.same_page("https://fund.example/companies/acme/", "https://fund.example/companies/acme")
