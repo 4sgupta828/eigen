@@ -7714,7 +7714,21 @@ function founderHtml(f, company){
 function factsOf(co){ const by={}; for(const f of (co.facts||[])){ (by[f.key]=by[f.key]||[]).push(f); } return by; }
 function pick(by, key){ const a=by[key]||[]; const pref=["formd","derived","press","yc","site","ats"]; a.sort((x,y)=>pref.indexOf(x.provenance)-pref.indexOf(y.provenance)); return a[0]; }
 function provGlyph(f){ if(!f) return ""; const p=f.basis==="self_reported"?"site":(f.basis==="inferred_from_filing"||f.basis==="filing"||f.basis==="filings"||f.basis==="filing_range")?"formd":(f.basis==="stated_round"?"press":f.provenance); return `<span class="glyph" title="${esc(PROV_TITLE[p]||p)}">${GL[p]||"·"}</span>`; }
+// A result list is mapped through this, so anything that throws in here costs the WHOLE list. It is
+// the one place in the startup surface where a single odd payload can blank the page, so it never
+// throws: a row we cannot render becomes a row that says so, and the other fifty-nine still render.
 function cardHtml(row){
+  try { return cardHtmlInner(row); }
+  catch(e){
+    try{ console.error("card render failed", (row||{}).id, e); }catch(_){}
+    const id = String((row || {}).id || "");
+    return `<div class="card" data-id="${esc(id)}"><div class="c-head"><div class="c-headmain">`
+      + `<div class="c-name">${esc(id || "this company")}</div>`
+      + `<div class="c-dom">could not be rendered — the rest of the results are unaffected</div>`
+      + `</div></div></div>`;
+  }
+}
+function cardHtmlInner(row){
   const co=row.company||{}, by=factsOf(co), id=row.id;
   const stage=pick(by,"stage"), scale=pick(by,"financing_scale"), total=pick(by,"total_disclosed_funding"), last=pick(by,"last_round_amount"), lastM=pick(by,"last_round_months");
   // Two sources agreeing is one fact, not two tags. YC's directory and the company's own site both
@@ -8010,8 +8024,12 @@ function boardRootOf(url){
 function rolesLinkOf(crawl, hiringFact){
   const b = boardUrlOf(crawl);
   if(b) return b;
-  const pages = ((crawl || {}).pages) || [];
-  const careers = pages.find(p => p.kind === "careers");
+  // `crawl.pages` is a LIST of pages on one payload and a COUNT of them on another — the company
+  // detail returns `pages: 1`. `|| []` keeps a truthy 1, and `(1).find` threw, which took down
+  // cardHtml, which took down the whole result list: every startup search and every saved map
+  // rendered blank. A shape we are not sure of is not a list.
+  const pages = Array.isArray((crawl || {}).pages) ? crawl.pages : [];
+  const careers = pages.find(p => p && p.kind === "careers");
   if(careers) return careers.url;                       // their own list of everything
   return boardRootOf((hiringFact || {}).source_url);    // climbed up from a single posting
 }
