@@ -124,14 +124,35 @@ def html_title(h: str) -> str:
     return _html.unescape(re.sub(r"\s+", " ", m.group(1))).strip()[:200] if m else ""
 
 
+_A_TAG = re.compile(r'(?is)<a\b([^>]*)>(.*?)</a>')
+_HREF = re.compile(r'(?is)\bhref\s*=\s*["\']([^"\']+)["\']')
+_IMG_ALT = re.compile(r'(?is)<img\b[^>]*\balt\s*=\s*["\']([^"\']+)["\']')
+_LABEL = re.compile(r'(?is)\b(?:aria-label|title)\s*=\s*["\']([^"\']+)["\']')
+
+
 def links(h: str, base: str) -> list[tuple[str, str]]:
-    """(absolute href, anchor text) for every <a> — structural."""
+    """(absolute href, the anchor's ACCESSIBLE NAME) for every <a> — structural.
+
+    A portfolio grid links each company through its logo: `<a href="https://acme.com"><img alt="Acme"></a>`.
+    Stripping the tags leaves an empty string, and a candidate with no name is dropped — which is how
+    first_round offered 191 links and named none of them. The name a reader sees is the text when there
+    is text, and otherwise the image's alt or the link's own label, in that order.
+    """
     out = []
-    for m in re.finditer(r'(?is)<a\b[^>]*href\s*=\s*["\']([^"\']+)["\'][^>]*>(.*?)</a>', h or ""):
-        href = _html.unescape(m.group(1)).strip()
+    for m in _A_TAG.finditer(h or ""):
+        attrs, body = m.group(1), m.group(2)
+        href_m = _HREF.search(attrs)
+        if not href_m:
+            continue
+        href = _html.unescape(href_m.group(1)).strip()
         if href.startswith(("javascript:", "mailto:", "tel:", "#")):
             continue
-        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(2))).strip()
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()
+        if not text:
+            alt = _IMG_ALT.search(body)
+            label = _LABEL.search(attrs)
+            text = (alt.group(1) if alt else "") or (label.group(1) if label else "")
+            text = re.sub(r"\s+", " ", text).strip()
         out.append((urllib.parse.urljoin(base, href), _html.unescape(text)))
     return out
 

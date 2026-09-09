@@ -1,42 +1,202 @@
 [
-  {"fund": "techstars", "kind": "program", "url": "https://www.techstars.com/portfolio"},
-  {"fund": "a16z", "kind": "investor", "url": "https://a16z.com/portfolio/"},
-  {"fund": "sequoia", "kind": "investor", "url": "https://www.sequoiacap.com/our-companies/"},
-  {"fund": "ai_fund", "kind": "program", "url": "https://aifund.ai/portfolio/"},
-  {"fund": "greylock", "kind": "investor", "url": "https://www.greylock.com/portfolio/"},
-  {"fund": "pear", "kind": "program", "url": "https://www.pear.vc/portfolio"},
-  {"fund": "antler", "kind": "program", "url": "https://www.antler.co/portfolio"},
-  {"fund": "index", "kind": "investor", "url": "https://www.indexventures.com/companies"},
-  {"fund": "accel", "kind": "investor", "url": "https://www.accel.com/companies"},
-  {"fund": "founders_fund", "kind": "investor", "url": "https://foundersfund.com/portfolio/"},
-  {"fund": "khosla", "kind": "investor", "url": "https://www.khoslaventures.com/portfolio/"},
-  {"fund": "first_round", "kind": "investor", "url": "https://firstround.com/companies"},
-  {"fund": "bessemer", "kind": "investor", "url": "https://www.bvp.com/companies"},
-  {"fund": "nea", "kind": "investor", "url": "https://www.nea.com/portfolio"},
-  {"fund": "insight", "kind": "investor", "url": "https://www.insightpartners.com/portfolio/"},
-  {"fund": "500", "kind": "program", "url": "https://www.500.co/companies"},
-  {"fund": "alchemist", "kind": "program", "url": "https://www.alchemistaccelerator.com/portfolio"},
-  {"fund": "ef", "kind": "program", "url": "https://www.joinef.com/portfolio/"},
-  {"fund": "a16z_speedrun", "kind": "program", "url": "https://speedrun.a16z.com/companies"},
-  {"fund": "benchmark", "kind": "investor", "url": "https://www.benchmark.com/"},
-  {"fund": "kleiner_perkins", "kind": "investor", "url": "https://www.kleinerperkins.com/companies/"},
-  {"fund": "coatue", "kind": "investor", "url": "https://www.coatue.com/portfolio"},
-  {"fund": "thrive", "kind": "investor", "url": "https://thrivecap.com/portfolio"},
-  {"fund": "menlo", "kind": "investor", "url": "https://menlovc.com/portfolio/"},
-  {"fund": "redpoint", "kind": "investor", "url": "https://www.redpoint.com/companies/"},
-  {"fund": "initialized", "kind": "investor", "url": "https://initialized.com/companies"},
-  {"fund": "felicis", "kind": "investor", "url": "https://www.felicis.com/portfolio"},
-  {"fund": "craft", "kind": "investor", "url": "https://www.craftventures.com/portfolio"},
-  {"fund": "8vc", "kind": "investor", "url": "https://8vc.com/portfolio"},
-  {"fund": "lux", "kind": "investor", "url": "https://www.luxcapital.com/companies"},
-  {"fund": "dcvc", "kind": "investor", "url": "https://www.dcvc.com/companies/"},
-  {"fund": "gradient", "kind": "investor", "url": "https://www.gradient.com/portfolio"},
-  {"fund": "conviction", "kind": "investor", "url": "https://www.conviction.com/companies"},
-  {"fund": "amplify", "kind": "investor", "url": "https://www.amplifypartners.com/portfolio"},
-  {"fund": "sv_angel", "kind": "investor", "url": "https://svangel.com/portfolio"},
-  {"fund": "neo", "kind": "program", "url": "https://neo.com/companies"},
-  {"fund": "hf0", "kind": "program", "url": "https://hf0.com/"},
-  {"fund": "spc", "kind": "program", "url": "https://www.southparkcommons.com/community"},
-  {"fund": "general_catalyst", "kind": "investor", "url": "https://www.generalcatalyst.com/portfolio"},
-  {"fund": "lightspeed", "kind": "investor", "url": "https://lsvp.com/portfolio/"}
+  {
+    "fund": "techstars",
+    "kind": "program",
+    "url": "https://www.techstars.com/portfolio"
+  },
+  {
+    "fund": "a16z",
+    "kind": "investor",
+    "url": "https://a16z.com/portfolio/"
+  },
+  {
+    "fund": "sequoia",
+    "kind": "investor",
+    "url": "https://www.sequoiacap.com/our-companies/"
+  },
+  {
+    "fund": "ai_fund",
+    "kind": "program",
+    "url": "https://aifund.ai/portfolio/"
+  },
+  {
+    "fund": "greylock",
+    "kind": "investor",
+    "url": "https://www.greylock.com/portfolio/"
+  },
+  {
+    "fund": "pear",
+    "kind": "program",
+    "url": "https://www.pear.vc/portfolio"
+  },
+  {
+    "fund": "antler",
+    "kind": "program",
+    "url": "https://www.antler.co/portfolio"
+  },
+  {
+    "fund": "index",
+    "kind": "investor",
+    "url": "https://www.indexventures.com/companies"
+  },
+  {
+    "fund": "accel",
+    "kind": "investor",
+    "url": "https://www.accel.com/companies"
+  },
+  {
+    "fund": "founders_fund",
+    "kind": "investor",
+    "url": "https://foundersfund.com/portfolio/"
+  },
+  {
+    "fund": "khosla",
+    "kind": "investor",
+    "url": "https://www.khoslaventures.com/portfolio/"
+  },
+  {
+    "fund": "first_round",
+    "kind": "investor",
+    "url": "https://firstround.com/companies"
+  },
+  {
+    "fund": "bessemer",
+    "kind": "investor",
+    "url": "https://www.bvp.com/companies"
+  },
+  {
+    "fund": "nea",
+    "kind": "investor",
+    "url": "https://www.nea.com/portfolio"
+  },
+  {
+    "fund": "insight",
+    "kind": "investor",
+    "url": "https://www.insightpartners.com/portfolio/"
+  },
+  {
+    "fund": "500",
+    "kind": "program",
+    "url": "https://www.500.co/companies"
+  },
+  {
+    "fund": "alchemist",
+    "kind": "program",
+    "url": "https://www.alchemistaccelerator.com/portfolio"
+  },
+  {
+    "fund": "ef",
+    "kind": "program",
+    "url": "https://www.joinef.com/portfolio/"
+  },
+  {
+    "fund": "a16z_speedrun",
+    "kind": "program",
+    "url": "https://speedrun.a16z.com/companies"
+  },
+  {
+    "fund": "benchmark",
+    "kind": "investor",
+    "url": "https://www.benchmark.com/"
+  },
+  {
+    "fund": "kleiner_perkins",
+    "kind": "investor",
+    "url": "https://www.kleinerperkins.com/companies/"
+  },
+  {
+    "fund": "coatue",
+    "kind": "investor",
+    "url": "https://www.coatue.com/portfolio"
+  },
+  {
+    "fund": "thrive",
+    "kind": "investor",
+    "url": "https://thrivecap.com/portfolio"
+  },
+  {
+    "fund": "menlo",
+    "kind": "investor",
+    "url": "https://menlovc.com/portfolio/"
+  },
+  {
+    "fund": "redpoint",
+    "kind": "investor",
+    "url": "https://www.redpoint.com/companies/"
+  },
+  {
+    "fund": "initialized",
+    "kind": "investor",
+    "url": "https://initialized.com/companies"
+  },
+  {
+    "fund": "felicis",
+    "kind": "investor",
+    "url": "https://www.felicis.com/portfolio"
+  },
+  {
+    "fund": "craft",
+    "kind": "investor",
+    "url": "https://www.craftventures.com/portfolio"
+  },
+  {
+    "fund": "8vc",
+    "kind": "investor",
+    "url": "https://8vc.com/companies"
+  },
+  {
+    "fund": "lux",
+    "kind": "investor",
+    "url": "https://www.luxcapital.com/companies"
+  },
+  {
+    "fund": "dcvc",
+    "kind": "investor",
+    "url": "https://www.dcvc.com/companies/"
+  },
+  {
+    "fund": "gradient",
+    "kind": "investor",
+    "url": "https://www.gradient.com/portfolio"
+  },
+  {
+    "fund": "conviction",
+    "kind": "investor",
+    "url": "https://www.conviction.com/"
+  },
+  {
+    "fund": "amplify",
+    "kind": "investor",
+    "url": "https://www.amplifypartners.com/portfolio/company"
+  },
+  {
+    "fund": "sv_angel",
+    "kind": "investor",
+    "url": "https://svangel.com/portfolio"
+  },
+  {
+    "fund": "neo",
+    "kind": "program",
+    "url": "https://neo.com/companies"
+  },
+  {
+    "fund": "hf0",
+    "kind": "program",
+    "url": "https://hf0.com/"
+  },
+  {
+    "fund": "spc",
+    "kind": "program",
+    "url": "https://www.southparkcommons.com/community"
+  },
+  {
+    "fund": "general_catalyst",
+    "kind": "investor",
+    "url": "https://www.generalcatalyst.com/portfolio"
+  },
+  {
+    "fund": "lightspeed",
+    "kind": "investor",
+    "url": "https://lsvp.com/portfolio/"
+  }
 ]

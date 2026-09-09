@@ -532,8 +532,9 @@ async def run_portfolio(store: StartupStore, *, funds: list[str] | None = None, 
     """Every fund in data/portfolios.json: the portfolio page's own links and JSON, then the sitemap's profile pages
     (each read for the company's site). A company becomes a node keyed by its domain with an investor /
     program fact from the fund's own page. Funds run concurrently (pacing is per host)."""
-    import os as _os, re as _re
+    import os as _os, re as _re, time as _time
     from concurrent.futures import ThreadPoolExecutor
+    from .sources import lookup
     from .sources import portfolio as pf
     await store.ensure_schema()
     entries = pf.load_list(_os.path.join(_os.path.dirname(__file__), "data", "portfolios.json"))
@@ -547,10 +548,15 @@ async def run_portfolio(store: StartupStore, *, funds: list[str] | None = None, 
         page = site.http.get(e["url"], min_gap=1.0)
         if page.ok:
             for c in pf.parse_page(page.text, page.final_url):
-                if c.get("name"):
-                    out[c["domain"]] = {"name": c["name"], "website": c["website"], "via": "page"}
+                # A name is NOT what makes this a company. The evidence is "this domain is linked from
+                # the fund's own portfolio page", and that holds whether or not the link was labelled —
+                # a logo grid labels nothing. Requiring one threw away SpaceX, Supabase, Anduril,
+                # Algolia and Miro across three funds. The domain is the identity; the crawl of the
+                # company's own site supplies the name.
+                out[c["domain"]] = {"name": c.get("name") or "", "website": c["website"], "via": "page"}
         try:
-            prof = pf.profile_urls(site.http.registrable_domain(e["url"]))[:max_profiles]
+            # the ORIGIN, not the registrable domain: a www-only host has no sitemap at the bare name
+            prof = pf.profile_urls(_re.sub(r"^(https?://[^/]+).*$", r"\1", page.final_url or e["url"]))[:max_profiles]
         except Exception:   # noqa: BLE001
             prof = []
         seen_domains: dict[str, int] = {}
@@ -560,6 +566,17 @@ async def run_portfolio(store: StartupStore, *, funds: list[str] | None = None, 
             if not f.ok:
                 continue
             r = pf.parse_profile(f.text, f.final_url)
+            if not r:
+                # The page names the company and links nothing — Kleiner Perkins and Redpoint render
+                # the outbound link in the browser, so 590 profiles between them read as empty. The
+                # name is enough to ask the same keyless directory `discover_sites` uses, and that
+                # directory answers only when the suggested name IS the name: "Owner" and "Revel" come
+                # back empty rather than wrong, which is the behaviour we want.
+                nm = pf.profile_name(f.text, f.final_url)
+                hit = lookup.website_for(nm) if nm and len(nm) > 2 else None
+                _time.sleep(0.4)                    # a different host from the fund: its own pacing
+                if hit:
+                    r = {"name": nm, "website": f"https://{hit['domain']}", "domain": hit["domain"]}
             if r:
                 seen_domains[r["domain"]] = seen_domains.get(r["domain"], 0) + 1
                 found.append({**r, "profile": u})
