@@ -752,3 +752,29 @@ def test_a_domain_is_not_a_biography():
                       "bio": "usepylon.com"}]
     person = build(c, pages=[])["sections"][1]["claims"][0]
     assert person["name"] == "Advith Chelikani" and person["bio"] == ""
+
+
+# ── a dossier we already hold is free, at every depth ─────────────────────────────────────────────
+
+def test_a_stored_dossier_covers_a_shallower_request():
+    """A dive that read their site and the web answers a later `read` or `held` ask for nothing."""
+    from api.deepdive.routes import basis_covers
+    assert basis_covers("held+read+web", "full")
+    assert basis_covers("held+read+web", "read")
+    assert basis_covers("held+read+web", "held")
+
+
+def test_a_shallow_dossier_does_not_cover_a_deeper_request():
+    """The reverse is not true — asking for the web when we only read their site must still pay."""
+    from api.deepdive.routes import basis_covers
+    assert basis_covers("held+read", "read")
+    assert not basis_covers("held+read", "full")
+    assert not basis_covers("held", "read")
+    assert not basis_covers("held", "full")
+
+
+def test_a_missing_basis_covers_only_the_free_depth():
+    """An old row with no basis recorded must never be treated as though it had read the web."""
+    from api.deepdive.routes import basis_covers
+    assert basis_covers("", "held") and basis_covers(None, "held")
+    assert not basis_covers("", "read") and not basis_covers(None, "full")

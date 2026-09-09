@@ -4481,6 +4481,10 @@ function setMode(mode, opts){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
     $("#heading").textContent = "Which company should we read end to end?";
     q.setAttribute("placeholder", "a company name or its domain \u2014 e.g. Anthropic, or anthropic.com");
+    // Another mode's question is not this mode's question. Arriving here with "AI infrastructure"
+    // still in the box invites the reader to press Go on a query that means nothing here; the dive
+    // itself then writes the company's own name into it.
+    if(APP_MODE !== "deepdive") q.value = "";
     if(location.hash.indexOf("#deepdive") !== 0) history.pushState(null, "", "#deepdive");
     if(window.DD) DD.enter(!!opts.fresh);
     q.focus();
@@ -6849,6 +6853,8 @@ async function loadSharedView(token){
   }catch(e){ toast(e && e.message ? e.message : "could not open that link"); }
 }
 
+// Returns TRUE when it routed the hash. Both callers — the initial load and `hashchange` — use the
+// same table, so a route can never again exist on one path and not the other.
 function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel · #share/<token> → a frozen page
   const mp = location.hash.match(/^#p\/(.+)$/);
   const m = location.hash.match(/^#s\/(.+)$/);
@@ -6867,27 +6873,45 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel �
     setMode("deepdive"); if(window.DD) DD.renderShared(decodeURIComponent(location.hash.slice(4)));
   }
   else if(location.hash.indexOf("#deepdive/") === 0 && DEEPDIVE_ENABLED){
-    setMode("deepdive"); if(window.DD) DD.dive({company_id: decodeURIComponent(location.hash.slice(10))});
+    // "#deepdive/<company_id>" or "#deepdive/<company_id>?depth=full" — the card asks for the deepest
+    // read, and the depth travels in the URL so the link says what it will do and can be shared.
+    const raw = location.hash.slice(10), qi = raw.indexOf("?");
+    const cid = decodeURIComponent(qi < 0 ? raw : raw.slice(0, qi));
+    const depth = qi < 0 ? "" : (new URLSearchParams(raw.slice(qi + 1)).get("depth") || "");
+    setMode("deepdive");
+    if(window.DD) DD.dive(Object.assign({company_id: cid}, depth ? {depth: depth} : {}));
   }
   else if(location.hash === "#deepdive" && DEEPDIVE_ENABLED){ setMode("deepdive"); }
   else if(location.hash === "#settings"){ openSettings(); }
   else if(location.hash === "#graph"){ openGraphConsole(); }
   else if(location.hash === "#ingest"){ openIngest(); }
   else if(location.hash === "#terms"){ openTermsPage(); }
+  else return false;
+  return true;
 }
+// A link to the hash you are ALREADY on fires no `hashchange` at all, so pressing ⌖ DeepDive twice —
+// or pressing it after backing out of that dossier — would do nothing, which is the same bug in a
+// different disguise. Route the click directly and let the hash follow.
+document.addEventListener("click", (e) => {
+  const a = e.target.closest && e.target.closest("a.su-dd");
+  if(!a) return;
+  e.preventDefault();
+  if(!window.DD) return;
+  // One question, asked BEFORE anything changes: what will be read, what it costs, and that this
+  // leaves the startup results. Declining leaves the reader exactly where they were.
+  DD.fromCard({company_id: a.dataset.cid || decodeURIComponent((a.getAttribute("href")||"").slice(10).split("?")[0]),
+               name: a.dataset.name || "", depth: "full"});
+});
 // route only AFTER config loads, so CONV_ENABLED is known (shared threads render as conversations)
 loadConfig().then(routeHash);
 // pasted link / back-forward within the tab (our own writes use replaceState → no event)
+// ONE route table, not two. This handler used to carry its own shorter copy, so every hash the
+// initial route knew and it did not — #deepdive/<id>, #dd/<token>, #startups, #guided — fell through
+// to its last line and NAVIGATED THE READER BACK TO Q&A. That is why the ⌖ DeepDive link on a startup
+// card did nothing: the click set the hash, this fired, no branch matched, and the mode was reset.
 window.addEventListener("hashchange", ()=>{
-  const sh = location.hash.match(/^#share\/(.+)$/);
-  if(sh){ loadSharedView(decodeURIComponent(sh[1])); return; }
-  const mp = location.hash.match(/^#p\/(.+)$/);
-  if(mp){ loadPanelSession(decodeURIComponent(mp[1])); return; }
-  const m = location.hash.match(/^#s\/(.+)$/);
-  if(m){ loadSharedSession(decodeURIComponent(m[1])); return; }
-  if(location.hash === "#panel"){ if(APP_MODE !== "panel") openPanel(""); return; }
-  if(location.hash === "#triage"){ if(APP_MODE !== "triage" && TRIAGE_ENABLED) setMode("triage"); return; }
-  // navigated away from a mode hash (e.g. browser Back) → return to Quick Q&A
+  if(routeHash()) return;
+  // a hash we do not route (or none at all) → back to Quick Q&A, which is the shell's resting state
   if(APP_MODE !== "qa") setMode("qa");
 });
 
@@ -7823,7 +7847,7 @@ function cardHtml(row){
     ${unknown.length?`<div class="su-gaps"><span class="su-gapk">Not known</span> ${esc(unknown.join(" · "))}</div>`:""}
     ${cantRead.length?`<div class="su-gaps">${esc(cantRead.join(" · "))}</div>`:""}
     ${why?`<div class="c-why">${esc(why)}</div>`:""}
-    <div class="c-acts"><button type="button" data-open="${esc(id)}">${STATE.open===id?"▴ less":"▾ more"}</button>${DEEPDIVE_ENABLED?`<a class="su-dd" href="#deepdive/${encodeURIComponent(id)}" title="Read this one company end to end">⌖ DeepDive</a>`:""}</div>
+    <div class="c-acts"><button type="button" data-open="${esc(id)}">${STATE.open===id?"▴ less":"▾ more"}</button>${DEEPDIVE_ENABLED?`<a class="su-dd" href="#deepdive/${encodeURIComponent(id)}?depth=full" data-cid="${esc(id)}" data-name="${esc(co.name||id)}" title="Read this one company end to end — their own pages and the open web. You are asked before anything is spent.">⌖ DeepDive</a>`:""}</div>
     <div class="drawer" id="drawer-${esc(id)}" ${STATE.open===id?"":"hidden"}></div>
   </div>`;
 }
@@ -9227,13 +9251,16 @@ async function openShare(token){
       + Number(p.projected_usd).toFixed(3) + "\n\nGo ahead?");
   }
 
-  async function dive(body){
+  async function dive(body, opts){
     if(STATE.busy) return;
     STATE.busy = true;
+    if(body && body.depth) setDepth(body.depth);      // an explicit depth moves the control with it
     body = Object.assign({depth: STATE.depth}, body);
     if(body.q) STATE.lastQ = body.q;
     try{
-      if(!(await confirmSpend(body))){ STATE.busy = false; note().textContent = "Nothing was spent."; return; }
+      // `skipConfirm` is for a caller that ALREADY asked — asking twice for one action reads as a bug
+      if(!(opts && opts.skipConfirm) && !(await confirmSpend(body))){
+        STATE.busy = false; note().textContent = "Nothing was spent."; return; }
     }catch(e){ STATE.busy = false; note().textContent = "Could not price that read."; return; }
     note().textContent = "";
     out().innerHTML = "";
@@ -9255,16 +9282,22 @@ async function openShare(token){
       const thin = unread && claims < 12
         ? ' \u00b7 <b>nobody has read their site yet</b> \u2014 <a href="#" id="dd-read">read their site</a>'
         : "";
-      note().innerHTML = (d.cached ? "A dossier we already built" : "Built from the public record we hold")
+      // SAY WHAT WAS ACTUALLY READ. The line was hardcoded to "the public record we hold", so a dive
+      // that had just read six of their pages and the open web still claimed it had read neither.
+      // The dossier reports its own basis (`held` / `held+read` / `held+read+web`); use it.
+      const BASIS = {"held": "the public record we hold",
+                     "held+read": "the public record we hold and their own pages",
+                     "held+read+web": "the public record we hold, their own pages and the open web"};
+      const builtFrom = "Built from " + (BASIS[String(d.dossier.basis || "")] || "the public record we hold");
+      note().innerHTML = (d.cached ? "A dossier we already built" : builtFrom)
         + " \u00b7 " + n + (n === 1 ? " section" : " sections") + thin
         + (d.cached ? ' \u00b7 <a href="#" id="dd-again">read it again</a>' : "");
       const rd = document.getElementById("dd-read");
       if(rd) rd.addEventListener("click", e => { e.preventDefault();
-        STATE.depth = "read";
-        const bar = document.getElementById("dd-depth");
-        if(bar) bar.querySelectorAll(".dd-dbtn").forEach(x =>
-          x.setAttribute("aria-pressed", x.dataset.depth === "read" ? "true" : "false"));
         dive({company_id: STATE.cid, depth: "read", refresh: true}); });
+      // The box the reader types into must say what is on screen. It used to keep the startup-search
+      // text that led here, so a dossier for Metis sat under the words "AI infrastructure".
+      setQ((d.dossier.company || {}).name || STATE.cid || "");
       render(d.dossier);
       if(d.dossier.id) history.replaceState(null, "", location.pathname + "#deepdive/" + encodeURIComponent(d.dossier.company_id || STATE.cid));
       const again = document.getElementById("dd-again");
@@ -9326,14 +9359,26 @@ async function openShare(token){
 
   const cost = () => document.getElementById("dd-cost");
 
+  // The depth control is a STATEMENT about what the next read will do. When a dive is asked for at a
+  // depth the reader did not click — the ⌖ DeepDive link on a card asks for the deepest one — the
+  // buttons have to move with it, or the page says "what we hold" while it reads the open web.
+  function setDepth(d){
+    if(!d || d === STATE.depth) { syncDepth(); return; }
+    STATE.depth = d; syncDepth();
+  }
+  function syncDepth(){
+    const bar = document.getElementById("dd-depth"); if(!bar) return;
+    bar.querySelectorAll(".dd-dbtn").forEach(x =>
+      x.setAttribute("aria-pressed", x.dataset.depth === STATE.depth ? "true" : "false"));
+  }
+
   let wired = false;
   function wire(){
     if(wired) return; wired = true;
     const depth = document.getElementById("dd-depth");
     if(depth) depth.addEventListener("click", e => {
       const b = e.target.closest(".dd-dbtn"); if(!b) return;
-      STATE.depth = b.dataset.depth;
-      depth.querySelectorAll(".dd-dbtn").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+      setDepth(b.dataset.depth);
       if(STATE.cid) dive({company_id: STATE.cid, refresh: true});
     });
     const r = document.getElementById("dd-recent"), sh = document.getElementById("dd-share"),
@@ -9357,7 +9402,37 @@ async function openShare(token){
   }
 
   onIdleSweep(function(){ if(!STATE.busy) return false; STATE.busy = false; return true; });
-  window.DD = { search, enter, dive, renderShared };
+  function setQ(text){
+    const q = document.getElementById("q"); if(!q) return;
+    q.value = String(text || "");
+    try{ q.dispatchEvent(new Event("input", {bubbles: true})); }catch(e){}   // let the box resize
+  }
+
+  // FROM A STARTUP CARD. Everything the reader needs to decide is in one question, asked before
+  // anything changes: which company, what will be read, what it costs, and that this leaves the
+  // results they are looking at. Declining changes nothing at all.
+  async function fromCard(o){
+    o = o || {};
+    if(!o.company_id) return;
+    const name = o.name || o.company_id;
+    let p = {};
+    try{
+      const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
+                                          body: JSON.stringify({company_id: o.company_id, depth: o.depth || "full", project_only: true})});
+      p = (await r.json()).projection || {};
+    }catch(e){ p = {}; }
+    const reads = [p.pages ? p.pages + " of their own pages" : "", p.web_usd ? "the open web" : ""].filter(Boolean).join(" and ");
+    const price = p.projected_usd
+      ? "Reads " + (reads || "their public record") + " \u00b7 projected $" + Number(p.projected_usd).toFixed(3)
+      : "Everything for this read is already on file \u2014 nothing will be spent.";
+    if(!window.confirm("Read " + name + " end to end?\n\n" + price
+        + "\n\nThis leaves your startup results and opens DeepDive.")) return;
+    setMode("deepdive");
+    setQ(name);
+    await dive({company_id: o.company_id, depth: o.depth || "full"}, {skipConfirm: true});
+  }
+
+  window.DD = { search, enter, dive, renderShared, fromCard };
 })();
 </script>
 </body>

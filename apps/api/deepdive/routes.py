@@ -48,6 +48,23 @@ class DiveIn(BaseModel):
     project_only: bool = False      # return the projection and spend nothing
 
 
+# What each depth ADDS to the dossier's basis, which is how a stored dossier says what it was built
+# from ("held" / "held+read" / "held+read+web").
+_DEPTH_NEEDS = {"held": (), "read": ("read",), "full": ("read", "web")}
+
+
+def basis_covers(basis: str, depth: str) -> bool:
+    """Does a dossier we already hold answer a request at this depth?
+
+    A dossier read at `full` covers a later `read` or `held` request; the reverse is not true. Without
+    this the cache only ever hit at `held`, so a reader opening the SAME company at the same depth was
+    quoted the full price again for a dossier already on disk — and the ⌖ DeepDive link on a card,
+    which asks for the deepest read, would have charged on every single click.
+    """
+    b = str(basis or "")
+    return all(part in b for part in _DEPTH_NEEDS.get(depth, ()))
+
+
 def project(depth: str, n_pages: int, templates) -> dict:
     """What a dive at this depth will cost, before it is run."""
     pages = min(n_pages, MAX_READ_PAGES) if depth in ("read", "full") else 0
@@ -108,9 +125,16 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
                         "can_discover": res["status"] == "unknown",
                         "projection": discovery.project_discover_cost()}
 
-        if depth == "held" and not body.refresh:
+        # A dossier we already hold that covers what was asked for is FREE — at every depth, not just
+        # `held`. `refresh` is how a reader deliberately buys a newer one.
+        if not body.refresh:
             held = await dstore.get(pool, company_id=cid)
-            if held:
+            if held and basis_covers(held.get("basis"), depth):
+                if body.project_only:
+                    return {"status": "projection", "cached": True,
+                            "projection": {"depth": depth, "pages": 0, "extract_usd": 0.0,
+                                           "web_usd": 0.0, "projected_usd": 0.0, "cached": True},
+                            "company": {"id": cid, "name": held.get("name") or ""}}
                 return {"status": "ok", "cached": True, "dossier": held}
 
         c = await su_store.company(cid)
