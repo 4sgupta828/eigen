@@ -621,7 +621,10 @@ async def run_careers_roles(store: StartupStore, prov: Providers, *, limit: int 
     await store.ensure_schema()
     pool = await store.pool()
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""SELECT c.id, c.name, p.url, p.text FROM su_company c
+        # left(): the extractor reads MAX_PAGE_CHARS and no more, so neither does this fetch.
+        rows = await conn.fetch(f"""SELECT c.id, c.name, p.url,
+                                          left(p.text, {careers.MAX_PAGE_CHARS}) AS text
+                                     FROM su_company c
                                    JOIN su_page p ON p.company_id = c.id AND p.kind = 'careers'
                                    WHERE c.status = 'active'
                                      AND jsonb_array_length(coalesce(c.crawl->'ats'->'roles','[]'::jsonb)) = 0
@@ -684,9 +687,13 @@ async def run_business_model(store: StartupStore, prov: Providers, *, limit: int
         # and a validation run over 25 companies decided only 2 from one-liners alone, correctly:
         # the rest simply do not state a price anywhere we were looking.
         rows = await conn.fetch("""SELECT c.id, c.name, c.one_liner, c.description,
-                                          (SELECT p.text FROM su_page p
+                                          -- LEFT(), not a Python slice: a stored page runs to 20k chars
+                                          -- and this fetch is 30k rows wide, so pulling the whole column
+                                          -- is a gigabyte in one buffer. The reader only ever reads the
+                                          -- first 1800/1500 chars, so the database sends only those.
+                                          (SELECT left(p.text, 1800) FROM su_page p
                                             WHERE p.company_id = c.id AND p.kind = 'pricing' LIMIT 1) AS pricing,
-                                          (SELECT p.text FROM su_page p
+                                          (SELECT left(p.text, 1500) FROM su_page p
                                             WHERE p.company_id = c.id AND p.kind = 'home' LIMIT 1) AS home
                                    FROM su_company c
                                    WHERE c.status = 'active'
@@ -704,7 +711,7 @@ async def run_business_model(store: StartupStore, prov: Providers, *, limit: int
 
     out = {"of": len(rows), "read": 0, "decided": 0, "unknown": 0, "projection": proj}
     for i, r in enumerate(rows):
-        page = ((r["pricing"] or "")[:1800] or (r["home"] or "")[:1500])
+        page = ((r["pricing"] or "") or (r["home"] or ""))      # already bounded by the query
         src = "\n".join(x for x in (r["one_liner"] or "", r["description"] or "", page) if x)
         try:
             data = await providers.llm_json(bm.SYSTEM,
