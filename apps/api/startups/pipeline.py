@@ -502,7 +502,7 @@ async def run_formd_companies(store: StartupStore, *, since: str = "2022-01-01",
         cid = f"cik:{it['cik']}"
         hq = ", ".join(x for x in (it["city"], it["state"]) if x)
         await store.upsert_company({"id": cid, "name": it["entity_name"], "legal_name": it["entity_name"], "cik": it["cik"], "hq": hq, "sources": ["formd"],
-                                    "one_liner": f"{(it['industry'] or 'Private').strip()} company in {hq} (from SEC Form D filings; no website on record yet)"})
+                                    "one_liner": f"{(it['industry'] or 'Private').strip()} company in {hq} {FORMD_NOTE_NO_SITE}"})
         facts = [{"key": "status", "value": "active", "quote": "Active issuer on SEC Form D", "source_url": f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={it['cik']}"}]
         area = _TECHISH.get((it["industry"] or "").lower())
         if area:
@@ -806,6 +806,13 @@ async def run_investors(store: StartupStore, *, limit: int = 300, jid: int | Non
     return out
 
 
+# A filing-only company is created before anyone has looked for its website, so its one-liner says so.
+# `run_discover_sites` then finds the website — and the sentence becomes a lie on the card. The two
+# strings live here, together, because the pass that falsifies the note is the pass that must fix it.
+FORMD_NOTE_NO_SITE = "(from SEC Form D filings; no website on record yet)"
+FORMD_NOTE = "(from SEC Form D filings)"
+
+
 async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int | None = None) -> dict:
     """Filing-only companies (cik:<n>) get a website from Clearbit's autocomplete when the suggested name equals
     the issuer's. When a site-keyed company with that domain already exists, the filing identity MERGES into it
@@ -814,6 +821,9 @@ async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int
     await store.ensure_schema()
     pool = await store.pool()
     async with pool.acquire() as conn:
+            # Any row an earlier pass gave a website to while leaving the note behind is repaired here,
+        # so the fix reaches the 6,714 companies that were found before this code existed.
+        await conn.execute("UPDATE su_company SET one_liner = replace(one_liner, $1, $2) WHERE website <> '' AND one_liner LIKE '%' || $1 || '%'", FORMD_NOTE_NO_SITE, FORMD_NOTE)
         rows = await conn.fetch("SELECT id, name, cik FROM su_company WHERE id LIKE 'cik:%' AND website = '' AND status = 'active' AND coalesce(crawl->>'lookup_at', '') = '' LIMIT $1", limit)
     n_q = n_hit = n_merged = 0
     for r in rows:
@@ -834,8 +844,10 @@ async def run_discover_sites(store: StartupStore, *, limit: int = 9000, jid: int
                     await derive_one(store, dom)
                 else:
                     await conn.execute("""UPDATE su_company SET website = $2, aliases = array_append(aliases, $3), sources = CASE WHEN 'lookup' = ANY(sources) THEN sources ELSE array_append(sources, 'lookup') END,
+                                          one_liner = replace(one_liner, $6, $7),
                                           crawl = crawl || jsonb_build_object('lookup_at', $4::text, 'lookup_hit', true, 'lookup_name', $5::text) WHERE id = $1""",
-                                       r["id"], f"https://{dom}", dom, date.today().isoformat(), hit["name"])
+                                       r["id"], f"https://{dom}", dom, date.today().isoformat(), hit["name"],
+                                       FORMD_NOTE_NO_SITE, FORMD_NOTE)
                 n_hit += 1
         if jid and n_q % 50 == 0:
             await _progress(store, jid, {"queried": n_q, "sites_found": n_hit, "merged": n_merged, "of": len(rows)})

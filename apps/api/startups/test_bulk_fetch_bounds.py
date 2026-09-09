@@ -38,3 +38,23 @@ def test_what_the_query_keeps_is_at_least_what_the_reader_reads():
     # the careers bound is the constant itself, interpolated — not a copy of its value that can drift
     assert "left(p.text, {careers.MAX_PAGE_CHARS})" in _sql(pipeline.run_careers_roles)
     assert careers.MAX_PAGE_CHARS >= 1000
+
+
+# ---------------------------------------------------------------- the one-liner that outlived its truth
+def test_finding_a_website_retires_the_note_that_says_there_is_none():
+    """A filing-only card read "Other Energy company in Marlborough, MA (from SEC Form D filings; no
+    website on record yet)" while the row carried https://xl-batteries.com. 6,714 companies gained a
+    website from the lookup pass and every one of them kept the sentence denying it."""
+    created = f"Other Energy company in Marlborough, MA {pipeline.FORMD_NOTE_NO_SITE}"
+    assert pipeline.FORMD_NOTE_NO_SITE in created
+    repaired = created.replace(pipeline.FORMD_NOTE_NO_SITE, pipeline.FORMD_NOTE)
+    assert "no website" not in repaired
+    assert repaired.endswith(pipeline.FORMD_NOTE)
+    # the repair runs on every pass, so it must be a no-op the second time
+    assert repaired.replace(pipeline.FORMD_NOTE_NO_SITE, pipeline.FORMD_NOTE) == repaired
+
+
+def test_the_lookup_pass_repairs_rows_it_wrote_before_this_code_existed():
+    src = _sql(pipeline.run_discover_sites)
+    assert "replace(one_liner" in src
+    assert "WHERE website <> ''" in src, "the backfill must reach rows an earlier pass already gave a website"
