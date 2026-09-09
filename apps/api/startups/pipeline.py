@@ -636,6 +636,8 @@ async def run_careers_roles(store: StartupStore, prov: Providers, *, limit: int 
 
     out = {"of": len(rows), "read": 0, "hiring": 0, "roles": 0, "projection": proj}
     for i, r in enumerate(rows):
+        if jid and i % 20 == 0:      # first, for the reason spelled out in run_business_model
+            await _progress(store, jid, dict(out, done=i + 1))
         try:
             data = await providers.llm_json(careers.SYSTEM,
                                             careers.user_payload(r["name"] or r["id"], r["url"], r["text"]))
@@ -654,8 +656,8 @@ async def run_careers_roles(store: StartupStore, prov: Providers, *, limit: int 
                                r["id"], _json.dumps(crawl))
         out["hiring"] += 1
         out["roles"] += len(roles)
-        if jid and i % 20 == 0:
-            await _progress(store, jid, dict(out, done=i + 1))
+    if jid:
+        await _progress(store, jid, dict(out, done=len(rows)))
     return out
 
 
@@ -711,6 +713,13 @@ async def run_business_model(store: StartupStore, prov: Providers, *, limit: int
 
     out = {"of": len(rows), "read": 0, "decided": 0, "unknown": 0, "projection": proj}
     for i, r in enumerate(rows):
+        # The heartbeat goes FIRST. It used to sit at the foot of the loop, past two `continue`s —
+        # a model error and the common "this text does not say how they charge" — so a pass with a
+        # low decide rate never refreshed `updated_at`, and the 30-minute watchdog in routes.py
+        # killed it as a zombie while it was healthy and spending. A heartbeat that only beats on
+        # success is not a heartbeat.
+        if jid and i % 20 == 0:
+            await _progress(store, jid, dict(out, done=i + 1))
         page = ((r["pricing"] or "") or (r["home"] or ""))      # already bounded by the query
         src = "\n".join(x for x in (r["one_liner"] or "", r["description"] or "", page) if x)
         try:
@@ -728,8 +737,8 @@ async def run_business_model(store: StartupStore, prov: Providers, *, limit: int
             "key": "business_model", "value": got["value"], "quote": got["quote"],
             "source_url": "", "basis": "self_described", "confidence": 0.7}])
         out["decided"] += 1
-        if jid and i % 20 == 0:
-            await _progress(store, jid, dict(out, done=i + 1))
+    if jid:
+        await _progress(store, jid, dict(out, done=len(rows)))
     return out
 
 
