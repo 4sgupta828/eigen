@@ -1958,6 +1958,24 @@
     border-top:1px dashed var(--hair);font-size:.72rem;color:var(--muted);}
   #investorsbody .iv-foot a{color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--hair);}
   #investorsbody .iv-foot a:hover{color:var(--gold);}
+  #investorsbody .iv-sec{margin-top:.5rem;padding-top:.45rem;border-top:1px dashed var(--hair);}
+  #investorsbody .iv-sech{font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:.3rem;}
+  #investorsbody .iv-people{display:flex;flex-direction:column;gap:.28rem;}
+  #investorsbody .iv-p{display:flex;gap:.4rem;align-items:baseline;flex-wrap:wrap;font-size:.8rem;line-height:1.5;}
+  #investorsbody .iv-pn{font-weight:600;color:var(--ink);}
+  #investorsbody .iv-pt{font-size:.73rem;color:var(--muted);}
+  #investorsbody .iv-pl{display:inline-flex;gap:.25rem;margin-left:auto;}
+  #investorsbody .iv-pl a{font-size:.62rem;font-weight:700;line-height:1.5;padding:0 .3rem;border-radius:3px;
+    text-decoration:none;border:1px solid var(--hair);color:var(--muted);white-space:nowrap;}
+  #investorsbody .iv-pl a.li{background:#0A66C2;border-color:#0A66C2;color:#fff;}
+  #investorsbody .iv-pl a.x{background:#111;border-color:#111;color:#fff;}
+  #investorsbody .iv-pl a:hover{opacity:.82;}
+  #investorsbody .iv-cos{display:flex;flex-wrap:wrap;gap:.28rem;}
+  #investorsbody .iv-co{font-size:.73rem;padding:.15rem .5rem;border:1px solid var(--hair);border-radius:999px;
+    color:var(--ink);text-decoration:none;background:var(--panel2,transparent);white-space:nowrap;}
+  #investorsbody .iv-co:hover{border-color:var(--gold);color:var(--gold-strong);}
+  #investorsbody .iv-more{font-size:.72rem;color:var(--muted);align-self:center;}
   #investorsbody .iv-gap{font-size:.73rem;color:var(--muted);opacity:.8;margin-top:.3rem;}
   #investorsbody .iv-why{font-size:.73rem;color:var(--muted);margin-top:.3rem;}
   #investorsbody .iv-empty{font-size:.86rem;color:var(--muted);line-height:1.7;margin:1rem 0;}
@@ -9835,9 +9853,38 @@ async function openShare(token){
     // itself an answer ("we have their filings but not their site"). Said once, quietly.
     const missing = [];
     if(!filed.length) missing.push("fund filings");
-    if(!stated.length) missing.push("their own site");
-    if(!pf) missing.push("portfolio");
+    if(!stated.length) missing.push("stated terms");
+    if(!(f.people || []).length) missing.push("their team page");
+    if(!(f.portfolio_sample || []).length) missing.push("portfolio");
     const gaps = missing.length ? ["not yet read: " + missing.join(", ")] : [];
+
+    // WHO is there. The links are the ones that firm's own page printed — never looked up, never guessed,
+    // and never a photo, an email or an address (see store.put_people).
+    const people = (f.people || []).map(p => {
+      const l = p.links || {};
+      const chips = [
+        l.linkedin ? `<a class="li" href="${esc(l.linkedin)}" target="_blank" rel="noopener" title="LinkedIn — as printed on ${esc(f.name || "their site")}">in</a>` : "",
+        l.x ? `<a class="x" href="${esc(l.x)}" target="_blank" rel="noopener" title="X">𝕏</a>` : "",
+        l.profile ? `<a href="${esc(l.profile)}" target="_blank" rel="noopener" title="their page on the firm's site">◐</a>` : ""
+      ].filter(Boolean).join("");
+      return `<div class="iv-p"><span class="iv-pn">${esc(p.name)}</span>`
+        + (p.title || p.role ? `<span class="iv-pt">${esc(p.title || vlabel("team_role", p.role))}</span>` : "")
+        + (chips ? `<span class="iv-pl">${chips}</span>` : "") + `</div>`;
+    }).join("");
+    const npeople = nums.people_count;
+    const peopleSec = people ? `<div class="iv-sec"><div class="iv-sech">Key people`
+      + (npeople && npeople > (f.people || []).length ? ` · ${(f.people || []).length} of ${npeople}` : "")
+      + `</div><div class="iv-people">${people}</div></div>` : "";
+
+    // WHAT they have backed. Each company links to its own site, and to its card in Startups where we hold it.
+    const cos = (f.portfolio_sample || []).map(c =>
+      `<a class="iv-co" href="${esc(c.site || ("https://" + c.id))}" target="_blank" rel="noopener"
+          title="${esc(c.name)} — ${esc(c.basis === "press_round" ? "named in a funding round" : "listed on their own portfolio page")}">${esc(c.name)}</a>`
+    ).join("");
+    const portSec = cos ? `<div class="iv-sec"><div class="iv-sech">Portfolio`
+      + (pf ? ` · ${pf} we hold` : "") + `</div><div class="iv-cos">${cos}`
+      + (pf > (f.portfolio_sample || []).length ? `<span class="iv-more">+${pf - (f.portfolio_sample || []).length} more</span>` : "")
+      + `</div></div>` : "";
 
     const ev = one("evidence_strength");
     const foot = [];
@@ -9856,6 +9903,7 @@ async function openShare(token){
       ${line("filed", esc(filed.join(" · ")))}
       ${stated.length ? line("stated", "“" + esc(stated.join(" · ")) + "” — the firm says") : ""}
       ${line("observed", esc(observed.join(" · ")))}
+      ${peopleSec}${portSec}
       ${gaps.length ? `<div class="iv-gap">${esc(gaps.join(" · "))}</div>` : ""}
       ${(row.reasons || []).length ? `<div class="iv-why">${esc((row.reasons || []).slice(0, 2).join(" · "))}</div>` : ""}
       ${foot.length ? `<div class="iv-foot">${foot.join(" · ")}</div>` : ""}

@@ -190,12 +190,47 @@ async def _hydrate(store: InvestorStore, ids: list[str]) -> dict:
                    (SELECT count(*) FROM iv_fund f WHERE f.firm_id = v.id AND NOT f.is_spv) AS funds,
                    (SELECT count(DISTINCT e.company_id) FROM iv_edge e WHERE e.firm_id = v.id) AS portfolio
             FROM iv_firm v WHERE v.id = ANY($1)""", ids)
+        # The two things the card is actually about, and neither survives a facet projection: WHO is there,
+        # with the links their own page printed, and WHAT they have backed. Capped per firm so a search of
+        # sixty firms does not ship a thousand portfolio rows.
+        people = await conn.fetch("""
+            SELECT firm_id, name, title, role, links FROM (
+              SELECT p.*, row_number() OVER (PARTITION BY firm_id
+                     ORDER BY CASE role WHEN 'founding_partner' THEN 0 WHEN 'managing_partner' THEN 1
+                                        WHEN 'general_partner' THEN 2 WHEN 'founder' THEN 3
+                                        WHEN 'partner' THEN 4 WHEN 'chief' THEN 5 WHEN 'principal' THEN 6
+                                        WHEN 'venture_partner' THEN 7 ELSE 9 END, name) rn
+              FROM iv_person p WHERE p.firm_id = ANY($1)) t WHERE rn <= 6""", ids)
+        edges = await conn.fetch("""
+            SELECT firm_id, company_id, company_name, company_site, basis, role FROM (
+              SELECT e.*, row_number() OVER (PARTITION BY firm_id
+                     ORDER BY (e.basis = 'press_round') DESC, e.event_date DESC NULLS LAST, e.company_name) rn
+              FROM iv_edge e WHERE e.firm_id = ANY($1)) t WHERE rn <= 8""", ids)
     out = {}
     for x in rows:
         d = dict(x)
         d["iapd"] = f"https://adviserinfo.sec.gov/firm/summary/{d['crd']}" if d["crd"] else ""
+        d["people"], d["portfolio_sample"] = [], []
         out[d["id"]] = d
+    for p in people:
+        row = out.get(p["firm_id"])
+        if row is not None:
+            links = p["links"] if isinstance(p["links"], dict) else _loads(p["links"])
+            row["people"].append({"name": p["name"], "title": p["title"], "role": p["role"], "links": links})
+    for e in edges:
+        row = out.get(e["firm_id"])
+        if row is not None:
+            row["portfolio_sample"].append({"id": e["company_id"], "name": e["company_name"] or e["company_id"],
+                                            "site": e["company_site"], "basis": e["basis"]})
     return out
+
+
+def _loads(v):
+    import json
+    try:
+        return json.loads(v or "{}")
+    except Exception:      # noqa: BLE001
+        return {}
 
 
 def _matched_register(row: dict) -> dict:

@@ -9,8 +9,10 @@ Five jobs, in dependency order:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import re
 from collections import defaultdict
 
 from api.jobs import Jobs
@@ -18,7 +20,7 @@ from api.investors import cluster as cl
 from api.investors.schema import SCHEMA
 from api.investors.sources import adv as adv_src
 from api.investors.sources import funds as funds_src
-from api.investors.store import InvestorStore, display_name, domain_of, slug
+from api.investors.store import InvestorStore, display_name, domain_of, now_iso, slug
 
 _log = logging.getLogger(__name__)
 JOBS = Jobs("iv_job", thread_prefix="investors")
@@ -329,8 +331,8 @@ async def run_link(store: InvestorStore, *, jid: int | None = None) -> dict:
     from pathlib import Path
     await store.ensure_schema()
     by_crd, by_dom, taken = await _existing_index(store)
-    out = {"curated": 0, "affiliates": 0, "slugs": 0, "bound": 0, "unbound": 0, "edges": 0,
-           "unbound_examples": []}
+    out = {"curated": 0, "merged_into_registrant": 0, "affiliates": 0, "slugs": 0, "bound": 0, "unbound": 0,
+           "edges": 0, "unbound_examples": []}
 
     pf = Path(__file__).resolve().parents[1] / "startups" / "data" / "portfolios.json"
     curated = {}
@@ -340,8 +342,26 @@ async def run_link(store: InvestorStore, *, jid: int | None = None) -> dict:
                 curated[str(r["fund"])] = str(r.get("url") or "")
     except Exception:      # noqa: BLE001 — a missing curated list costs links, never the job
         curated = {}
+    # Which registered firms sit on each curated brand's domain, and what brand each of them reduces to.
+    async with (await store.pool()).acquire() as conn:
+        same_domain: dict = defaultdict(list)
+        for r in await conn.fetch("SELECT id, name, legal_name, domain FROM iv_firm WHERE domain <> ''"):
+            same_domain[r["domain"]].append(dict(r))
+
     for fund_slug, url in curated.items():
         dom = domain_of(url)
+        # If a registered firm on this domain reduces to exactly this brand, they are the same firm and the
+        # curated slug is one of its names — "felicis" and "Felicis Ventures Management Company" are not two
+        # investors. Aliasing rather than minting is what stops the same fund appearing twice in a result.
+        # The reduction has to be exact: "a16z" does not reduce "A16Z Perennial Management" (which strips to
+        # "a16z perennial", a different business), so that pair stays two cards, as it should.
+        twin = next((f for f in same_domain.get(dom, [])
+                     if any(slug(cand) == fund_slug for cand, _ in cl.brand_variants(f))), None)
+        if twin:
+            await store.add_alias(fund_slug, twin["id"], basis="curated_brand", source_url=url)
+            out["curated"] += 1
+            out["merged_into_registrant"] = out.get("merged_into_registrant", 0) + 1
+            continue
         # The brand is its own node, keyed by the curated slug. A registered adviser that happens to share the
         # domain is an AFFILIATE of the brand, not the brand itself — "AH Capital Management, L.L.C." and
         # "a16z Perennial Management" are both real, and neither of them is what a founder means by "a16z".
@@ -368,14 +388,19 @@ async def run_link(store: InvestorStore, *, jid: int | None = None) -> dict:
         out["unbound_examples"] = [s for s in slugs if s not in alias][:20]
         if bound:
             rows = await conn.fetch("""
-                SELECT value, company_id, provenance, source_url, key
-                FROM su_fact WHERE key IN ('investor','lead_investor') AND value = ANY($1)""", list(bound))
+                SELECT f.value, f.company_id, f.provenance, f.source_url, f.key,
+                       c.name AS company_name, c.website
+                FROM su_fact f LEFT JOIN su_company c ON c.id = f.company_id
+                WHERE f.key IN ('investor','lead_investor') AND f.value = ANY($1)""", list(bound))
             edges = []
             for r in rows:
                 basis = {"portfolio": "portfolio_page", "press": "press_round", "site": "company_site",
                          "news": "press_round"}.get(r["provenance"], "company_site")
                 edges.append({"firm_id": bound[r["value"]], "company_id": r["company_id"], "basis": basis,
                               "role": "lead" if r["key"] == "lead_investor" else "investor",
+                              # the company's name travels onto the edge so a portfolio renders without a join
+                              "company_name": company_label(r["company_name"] or "", r["company_id"]),
+                              "company_site": r["website"] or f"https://{r['company_id']}",
                               "source_url": r["source_url"] or ""})
             for i in range(0, len(edges), 2000):
                 out["edges"] += await store.put_edges(edges[i:i + 2000])
@@ -449,6 +474,18 @@ async def run_derive(store: InvestorStore, *, ids: list[str] | None = None, jid:
                 mine = {r["slug"] for r in await conn.fetch("SELECT slug FROM iv_alias WHERE firm_id = $1", fid)}
                 facts += [{"key": "co_investor", "value": v["value"], "display": str(v["n"]), **obs}
                           for v in co if v["value"] not in mine][:20]
+            # People and portfolio counts belong on the card, so they are facts like any other. `people_count`
+            # is observed over what the team page listed — a firm's own page is exhaustive for its own staff
+            # in a way nothing else here is, so this denominator is the page rather than our index.
+            npeople = await conn.fetchval("SELECT count(*) FROM iv_person WHERE firm_id = $1", fid) or 0
+            if npeople:
+                facts += num_fact("people_count", float(npeople), provenance="site", basis="team_page",
+                                  denominator=int(npeople))
+                roles = await conn.fetch("""SELECT role, count(*) n FROM iv_person WHERE firm_id = $1
+                                            AND role <> '' GROUP BY 1 ORDER BY 2 DESC LIMIT 8""", fid)
+                facts += [{"key": "team_role", "value": r["role"], "display": str(r["n"]),
+                           "provenance": "site", "basis": "team_page"} for r in roles]
+
             kinds = {"adv" if s.startswith("sec_") else s for s in (f["sources"] or [])}
             if funds:
                 kinds.add("form_d")
@@ -460,7 +497,7 @@ async def run_derive(store: InvestorStore, *, ids: list[str] | None = None, jid:
             await store.put_facts(fid, facts, keys=[
                 "funds_count", "latest_fund_size", "latest_fund_year", "first_fund_year", "still_deploying",
                 "investor_type", "portfolio_count", "observed_sector", "observed_stage", "observed_geo",
-                "co_investor", "evidence_strength"])
+                "co_investor", "evidence_strength", "people_count", "team_role"])
             out["firms"] += 1
             if jid and out["firms"] % 500 == 0:
                 await JOBS.progress(store, jid, dict(out))
@@ -509,7 +546,236 @@ def _loads(v):
         return {}
 
 
-RUNNERS = {"adv": run_adv, "funds": run_funds, "attach": run_attach, "link": run_link, "derive": run_derive}
+
+# --------------------------------------------------------------------------- job: sites
+# What a firm's own site is asked for. `team` and `portfolio` are the two that matter and neither exists in
+# the startup crawler's vocabulary (`site.py:_WANT` knows about/team/customers/pricing/careers/press) — a
+# fund has no pricing page and its portfolio page is the whole point.
+FIRM_WANT = (
+    ("team", ("team", "people", "our-team", "our-people", "partners", "who-we-are", "about-us", "staff",
+              "leadership", "members")),
+    ("portfolio", ("portfolio", "companies", "investments", "our-companies", "our-portfolio", "our-investments",
+                   "founders", "family")),
+    ("about", ("about", "about-us", "company", "our-story", "mission", "approach", "thesis", "philosophy")),
+    ("contact", ("contact", "contact-us", "pitch", "submit", "apply", "get-in-touch", "connect")),
+)
+
+
+async def run_sites(store: InvestorStore, *, limit: int = 400, recrawl_days: int = 90,
+                    ids: list[str] | None = None, jid: int | None = None) -> dict:
+    """Crawl each firm's own site — politely, and only the four pages a fund card needs.
+
+    Reuses the startup module's fetcher (robots first, one request per host per two seconds, byte cap, a
+    real User-Agent with a contact address) so there is one crawling policy in this codebase, not two.
+    """
+    from api.startups.sources import site as site_src
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        if ids:
+            rows = await conn.fetch("SELECT id, site, domain FROM iv_firm WHERE id = ANY($1)", ids)
+        else:
+            rows = await conn.fetch("""SELECT id, site, domain FROM iv_firm
+                                       WHERE status = 'active' AND domain <> ''
+                                         AND (crawl->>'at' IS NULL OR (crawl->>'at')::timestamptz < now() - ($1 || ' days')::interval)
+                                       ORDER BY (SELECT count(*) FROM iv_edge e WHERE e.firm_id = iv_firm.id) DESC,
+                                                id LIMIT $2""", str(recrawl_days), limit)
+    out = {"of": len(rows), "crawled": 0, "pages": 0, "failed": 0, "with_team": 0, "with_portfolio": 0}
+    for i, r in enumerate(rows):
+        try:
+            got = await asyncio.to_thread(site_src.crawl, r["site"] or f"https://{r['domain']}",
+                                          max_pages=6, want=FIRM_WANT)
+        except Exception as e:      # noqa: BLE001 — one bad site never stops the sweep
+            out["failed"] += 1
+            await store.note_crawl(r["id"], {"at": now_iso(), "error": str(e)[:200]})
+            continue
+        pages = got.get("pages") or []
+        if pages:
+            out["crawled"] += 1
+            out["pages"] += await store.put_pages(r["id"], pages)
+        kinds = [p.get("kind") for p in pages]
+        out["with_team"] += 1 if "team" in kinds else 0
+        out["with_portfolio"] += 1 if "portfolio" in kinds else 0
+        if not pages:
+            out["failed"] += 1
+        await store.note_crawl(r["id"], {"at": now_iso(), "pages": kinds,
+                                         "failed": [f.get("kind") for f in (got.get("failed") or [])]})
+        if jid and i % 25 == 0:
+            await JOBS.progress(store, jid, dict(out))
+    return out
+
+
+# --------------------------------------------------------------------------- job: people
+async def run_people(store: InvestorStore, *, ids: list[str] | None = None, jid: int | None = None) -> dict:
+    """Read the crawled team pages into named people with the profile links the page printed (no model call)."""
+    from api.investors.sources import people as people_src
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""SELECT p.firm_id, p.url, p.html, v.domain
+                                   FROM iv_page p JOIN iv_firm v ON v.id = p.firm_id
+                                   WHERE p.kind IN ('team', 'about') AND p.html <> ''
+                                     AND ($1::text[] IS NULL OR p.firm_id = ANY($1))""",
+                                ids)
+    by_firm: dict = defaultdict(list)
+    for r in rows:
+        by_firm[r["firm_id"]].append(r)
+    out = {"firms": 0, "with_people": 0, "people": 0, "with_links": 0}
+    for i, (fid, pages) in enumerate(by_firm.items()):
+        found: dict = {}
+        for pg in pages:
+            for person in people_src.parse_team(pg["html"], base_domain=pg["domain"]):
+                slot = found.setdefault(person["name"], person)
+                slot.setdefault("source_url", pg["url"])
+                slot["links"] = {**person.get("links", {}), **slot.get("links", {})}
+                if not slot.get("role"):
+                    slot["role"], slot["title"] = person.get("role", ""), person.get("title", "")
+        out["firms"] += 1
+        if found:
+            out["with_people"] += 1
+            out["people"] += await store.put_people(fid, list(found.values()))
+            out["with_links"] += sum(1 for p in found.values()
+                                     if p["links"].get("linkedin") or p["links"].get("x"))
+        if jid and i % 100 == 0:
+            await JOBS.progress(store, jid, dict(out))
+    return out
+
+
+# --------------------------------------------------------------------------- job: portfolio
+# Anchor text on a portfolio page is often not the company's name: a logo grid links "Visit Website", an
+# arrow, or the bare domain. A card that reads "Visit Website · Visit Website · Visit Website" is useless, so
+# a name that carries no identity is replaced by one derived from the domain, which always does.
+_GENERIC_LABEL = re.compile(r"(?i)^[\s.\-—→›»]*(visit(\s+(web)?site)?|website|learn\s+more|read\s+more|view|more"
+                            r"|link|open|see\s+more|company|profile|details|→|›|»|\W*)[\s.\-—→›»]*$")
+
+
+def company_label(name: str, domain: str) -> str:
+    """The company's name as a person would write it — from the anchor text when it says anything, else the
+    domain's own label ("about.sourcegraph.com" -> "Sourcegraph")."""
+    n = (name or "").strip()
+    # Screen-reader suffixes ride along in the anchor text: "aaru.com/ (opens in new tab)".
+    n = re.sub(r"(?i)\s*[\(\[]?\s*(opens?\s+in\s+(a\s+)?new\s+(tab|window)|new\s+window|external\s+link)"
+               r"\s*[\)\]]?\s*$", "", n).strip()
+    n = re.sub(r"[\s\-—→›»/]+$", "", n.lstrip(".\u2022-— ")).strip()
+    looks_like_domain = bool(re.fullmatch(r"[a-z0-9.\-]+\.[a-z]{2,}", n.lower()))
+    if n and not looks_like_domain and not _GENERIC_LABEL.match(n):
+        return n[:120]
+    label = (domain or "").split(".")[0]
+    return (label[:1].upper() + label[1:]) if label else (n[:120] or domain)
+
+
+async def run_portfolio(store: InvestorStore, *, ids: list[str] | None = None, jid: int | None = None) -> dict:
+    """Read each crawled portfolio page structurally into firm -> company edges (no model call).
+
+    Reuses the startup module's portfolio reader, which takes links and embedded JSON only and denies social,
+    press and hosting domains. The edge means AFFILIATION — the firm asserting its own portfolio — which is
+    not the same as participating in a round, and the card labels it that way.
+    """
+    from api.startups.sources import portfolio as pf
+    from api.startups.sources.http import registrable_domain
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""SELECT p.firm_id, p.url, p.html, v.domain
+                                   FROM iv_page p JOIN iv_firm v ON v.id = p.firm_id
+                                   WHERE p.kind = 'portfolio' AND p.html <> ''
+                                     AND ($1::text[] IS NULL OR p.firm_id = ANY($1))""", ids)
+    out = {"pages": len(rows), "firms": 0, "edges": 0, "skipped_own_domain": 0}
+    seen_firms = set()
+    for i, r in enumerate(rows):
+        try:
+            cands = pf.parse_page(r["html"], r["url"])
+        except Exception:      # noqa: BLE001
+            continue
+        edges = []
+        for c in cands:
+            dom = registrable_domain(str(c.get("website") or ""))
+            if not dom or dom == r["domain"]:
+                out["skipped_own_domain"] += 1
+                continue
+            edges.append({"firm_id": r["firm_id"], "company_id": dom, "basis": "portfolio_page",
+                          "role": "portfolio_affiliation",
+                          "company_name": company_label(str(c.get("name") or ""), dom),
+                          "company_site": f"https://{dom}", "source_url": r["url"]})
+        if edges:
+            seen_firms.add(r["firm_id"])
+            out["edges"] += await store.put_edges(edges)
+        if jid and i % 25 == 0:
+            await JOBS.progress(store, jid, dict(out))
+    out["firms"] = len(seen_firms)
+    return out
+
+
+
+# --------------------------------------------------------------------------- job: profiles
+# How many of a firm's own people-pages one run will fetch. A fund's senior bench is small; this is a cap on
+# politeness, not on ambition, and at one request per host every two seconds it bounds the time per firm.
+MAX_PROFILE_FETCHES = 12
+
+
+async def run_profiles(store: InvestorStore, *, limit: int = 200, ids: list[str] | None = None,
+                       jid: int | None = None) -> dict:
+    """Follow each person's own page on the firm's site to get their LinkedIn and X (no model call).
+
+    The team page names people; their individual pages carry the links. Only people who have a profile link
+    and no social links yet are fetched, so a re-run costs nothing for anyone already resolved.
+    """
+    from api.investors.sources import people as people_src
+    from api.startups.sources import http as http_src
+    await store.ensure_schema()
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT p.id, p.firm_id, p.name, p.links, v.domain
+            FROM iv_person p JOIN iv_firm v ON v.id = p.firm_id
+            WHERE p.links ? 'profile' AND (NOT (p.links ? 'linkedin') OR p.role = '')
+              AND ($1::text[] IS NULL OR p.firm_id = ANY($1))
+            ORDER BY p.firm_id, CASE p.role WHEN 'founding_partner' THEN 0 WHEN 'managing_partner' THEN 1
+                     WHEN 'general_partner' THEN 2 WHEN 'founder' THEN 3 WHEN 'partner' THEN 4 ELSE 8 END
+            LIMIT $2""", ids, limit * MAX_PROFILE_FETCHES)
+    per_firm: dict = defaultdict(int)
+    out = {"of": len(rows), "fetched": 0, "resolved": 0, "linkedin": 0, "x": 0, "roles": 0}
+    for i, r in enumerate(rows):
+        if per_firm[r["firm_id"]] >= MAX_PROFILE_FETCHES:
+            continue
+        links = r["links"] if isinstance(r["links"], dict) else _loads(r["links"])
+        url = links.get("profile")
+        if not url:
+            continue
+        per_firm[r["firm_id"]] += 1
+        out["fetched"] += 1
+        try:
+            f = await asyncio.to_thread(http_src.get, url)
+        except Exception:      # noqa: BLE001 — one dead profile page never stops the sweep
+            continue
+        if not f.ok:
+            continue
+        got = people_src.parse_profile_links(f.text, r["name"], firm_domain=r["domain"] or "")
+        if not got:
+            continue
+        out["resolved"] += 1
+        out["linkedin"] += 1 if got.get("linkedin") else 0
+        out["x"] += 1 if got.get("x") else 0
+        role, title = got.pop("role", ""), got.pop("title", "")
+        out["roles"] = out.get("roles", 0) + (1 if role else 0)
+        async with pool.acquire() as conn:
+            await conn.execute("""UPDATE iv_person SET links = links || $2::jsonb,
+                                    role = CASE WHEN role = '' THEN $3 ELSE role END,
+                                    title = CASE WHEN title = '' THEN $4 ELSE title END
+                                  WHERE id = $1""", r["id"], _jsonl(got), role, title[:80])
+        if jid and i % 25 == 0:
+            await JOBS.progress(store, jid, dict(out))
+    return out
+
+
+def _jsonl(v) -> str:
+    import json
+    return json.dumps(v)
+
+
+RUNNERS = {"adv": run_adv, "funds": run_funds, "attach": run_attach, "link": run_link, "derive": run_derive,
+           "sites": run_sites, "people": run_people, "portfolio": run_portfolio,
+           "profiles": run_profiles}
 NEEDS_PROV: set = set()          # Step 0 spends nothing; the model-backed jobs arrive in Step 4
 
 

@@ -111,6 +111,11 @@ SCHEMA = FacetSchema(keys=(
              guidance="(derived: firms appearing on the same companies)"),
     FacetKey(key="led_round_size", type=FacetType.numeric, kinds=I, label="Rounds they led", unit="usd", bands=FUND_BANDS,
              guidance="(derived: sizes of rounds this firm is STATED to have led — a round size, never a cheque size)"),
+    FacetKey(key="people_count", type=FacetType.numeric, kinds=I, label="People listed", unit="people",
+             bands=(("1_3", 1.0, 4.0), ("4_10", 4.0, 11.0), ("11_30", 11.0, 31.0), ("31_plus", 31.0, None)),
+             guidance="(derived: how many people the firm's own team page lists)"),
+    FacetKey(key="team_role", type=FacetType.set, kinds=I, label="Team includes", top_n=10,
+             guidance="(derived: the roles the firm's own team page prints)"),
     FacetKey(key="lp_disclosed", type=FacetType.categorical, kinds=I, label="A public LP reports returns", values=LP_DISCLOSED,
              guidance="(derived: a public pension discloses performance for at least one of their funds)"),
     FacetKey(key="net_irr_best", type=FacetType.numeric, kinds=I, label="Best disclosed net IRR", unit="%", bands=IRR_BANDS,
@@ -125,7 +130,7 @@ REGISTER = {
     **{k: "stated" for k in ("stated_stage", "stated_check_min", "stated_check_max", "stated_ownership",
                              "leads_rounds", "geo_focus", "sector_focus", "open_to_inbound")},
     **{k: "observed" for k in ("portfolio_count", "observed_stage", "observed_sector", "observed_geo",
-                               "co_investor", "led_round_size")},
+                               "co_investor", "led_round_size", "people_count", "team_role")},
 }
 
 # One control, two registers underneath (§4): a rail control on the left key ALSO matches the right key, so a

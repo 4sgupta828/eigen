@@ -288,3 +288,48 @@ class TestDeriveWritesWhatItDeclares:
     def test_investor_type_specifically(self):
         src = self._derive_source()
         assert '"key": "investor_type"' in src, "the type is the primary facet; it must be written"
+
+
+class TestCompanyLabel:
+    """A portfolio card that reads "Visit Website · Visit Website · Visit Website" is useless."""
+
+    def _l(self, n, d):
+        from api.investors.pipeline import company_label
+        return company_label(n, d)
+
+    def test_a_real_name_survives(self):
+        assert self._l("Notion", "notion.so") == "Notion"
+        assert self._l("Scale AI", "scale.com") == "Scale AI"
+
+    def test_generic_anchor_text_falls_back_to_the_domain(self):
+        assert self._l("Visit Website", "sourcegraph.com") == "Sourcegraph"
+        assert self._l("Read more", "stripe.com") == "Stripe"
+        assert self._l("→", "glue.ai") == "Glue"
+        assert self._l("", "withgrid.com") == "Withgrid"
+
+    def test_a_bare_domain_becomes_a_name(self):
+        assert self._l(".databricks.com →", "databricks.com") == "Databricks"
+        assert self._l("harmonic.ai", "harmonic.ai") == "Harmonic"
+
+
+class TestCuratedBrandMerging:
+    """A curated brand slug and the registered firm behind it are one investor, or two — and the difference
+    is whether the registrant reduces to exactly that brand."""
+
+    def _brands(self, name):
+        from api.investors.cluster import brand_variants
+        from api.investors.store import slug
+        return [slug(c) for c, _ in brand_variants({"name": name, "legal_name": ""})]
+
+    def test_the_same_firm_reduces_to_the_brand(self):
+        assert "felicis" in self._brands("Felicis Ventures Management Company")
+
+    def test_a_different_business_line_does_not(self):
+        """a16z Perennial is a wealth business; merging it with the venture brand mistypes the venture firm."""
+        assert "a16z" not in self._brands("A16Z Perennial Management")
+        assert "a16z" not in self._brands("AH Capital Management")
+
+    def test_company_label_strips_screen_reader_suffixes(self):
+        from api.investors.pipeline import company_label
+        assert company_label("aaru.com/ (opens in new tab)", "aaru.com") == "Aaru"
+        assert company_label("Assort Health (opens in a new window)", "assorthealth.com") == "Assort Health"

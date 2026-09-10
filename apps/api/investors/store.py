@@ -132,6 +132,21 @@ CREATE TABLE IF NOT EXISTS iv_edge (
     PRIMARY KEY (firm_id, company_id, basis)
 );
 CREATE INDEX IF NOT EXISTS ix_iv_edge_company ON iv_edge (company_id);
+-- The company's name as the portfolio page printed it. A portfolio is mostly companies we do not hold, so
+-- the edge must be renderable on its own rather than only through a join to su_company.
+ALTER TABLE iv_edge ADD COLUMN IF NOT EXISTS company_name text NOT NULL DEFAULT '';
+ALTER TABLE iv_edge ADD COLUMN IF NOT EXISTS company_site text NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS iv_page (
+    firm_id      text NOT NULL REFERENCES iv_firm(id) ON DELETE CASCADE,
+    url          text NOT NULL,
+    kind         text NOT NULL DEFAULT '',
+    sha          text NOT NULL,
+    text         text NOT NULL DEFAULT '',
+    html         text NOT NULL DEFAULT '',
+    fetched_at   timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (firm_id, url)
+);
 
 CREATE TABLE IF NOT EXISTS iv_fact (
     id           bigserial PRIMARY KEY,
@@ -439,16 +454,70 @@ class InvestorStore:
         pool = await self.pool()
         rows = [(e["firm_id"], e["company_id"], e.get("basis", "portfolio_page"), e.get("role", ""),
                  e.get("round_name", ""), _date(e.get("event_date")), e.get("source_url", ""),
-                 (e.get("quote") or "")[:600]) for e in edges]
+                 (e.get("quote") or "")[:600], (e.get("company_name") or "")[:120],
+                 e.get("company_site", "")) for e in edges]
         async with pool.acquire() as conn:
             await conn.executemany("""
-                INSERT INTO iv_edge (firm_id, company_id, basis, role, round_name, event_date, source_url, quote)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                INSERT INTO iv_edge (firm_id, company_id, basis, role, round_name, event_date, source_url, quote,
+                                     company_name, company_site)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
                 ON CONFLICT (firm_id, company_id, basis) DO UPDATE SET
                     role = CASE WHEN EXCLUDED.role = 'lead' THEN 'lead' ELSE iv_edge.role END,
                     round_name = CASE WHEN EXCLUDED.round_name <> '' THEN EXCLUDED.round_name ELSE iv_edge.round_name END,
-                    event_date = COALESCE(EXCLUDED.event_date, iv_edge.event_date)""", rows)
+                    event_date = COALESCE(EXCLUDED.event_date, iv_edge.event_date),
+                    company_name = CASE WHEN EXCLUDED.company_name <> '' THEN EXCLUDED.company_name ELSE iv_edge.company_name END,
+                    company_site = CASE WHEN EXCLUDED.company_site <> '' THEN EXCLUDED.company_site ELSE iv_edge.company_site END""", rows)
         return len(rows)
+
+    async def put_people(self, firm_id: str, people: list[dict]) -> int:
+        """Replace this firm's people. A team page is a snapshot, so a partner who left should leave the card.
+
+        Stored: name, stated title and role, and the profile links the page printed. NEVER a photo, an email,
+        a phone number or an address — an investor card is about a professional role, and the spec's PII rule
+        for individuals is enforced by what this method is able to write.
+        """
+        await self.ensure_schema()
+        pool = await self.pool()
+        rows = []
+        for p in people:
+            name = (p.get("name") or "").strip()
+            if not name:
+                continue
+            links = {k: v for k, v in (p.get("links") or {}).items() if k in ("linkedin", "x", "profile", "site")}
+            rows.append((f"{firm_id}:{slug(name)}", firm_id, name, (p.get("title") or "")[:80],
+                         p.get("role", ""), _json(links), p.get("basis", ""), p.get("source_url", "")))
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("DELETE FROM iv_person WHERE firm_id = $1", firm_id)
+                if rows:
+                    await conn.executemany("""
+                        INSERT INTO iv_person (id, firm_id, name, title, role, links, basis, source_url)
+                        VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8)
+                        ON CONFLICT (id) DO UPDATE SET
+                            title = EXCLUDED.title, role = EXCLUDED.role, links = EXCLUDED.links,
+                            basis = EXCLUDED.basis, source_url = EXCLUDED.source_url""", rows)
+        return len(rows)
+
+    async def put_pages(self, firm_id: str, pages: list[dict]) -> int:
+        await self.ensure_schema()
+        pool = await self.pool()
+        rows = [(firm_id, p.get("final_url") or p.get("url"), p.get("kind", ""), p.get("sha", ""),
+                 (p.get("text") or "")[:200_000], (p.get("html") or "")[:400_000]) for p in pages
+                if (p.get("final_url") or p.get("url"))]
+        async with pool.acquire() as conn:
+            await conn.executemany("""
+                INSERT INTO iv_page (firm_id, url, kind, sha, text, html) VALUES ($1,$2,$3,$4,$5,$6)
+                ON CONFLICT (firm_id, url) DO UPDATE SET
+                    kind = EXCLUDED.kind, sha = EXCLUDED.sha, text = EXCLUDED.text, html = EXCLUDED.html,
+                    fetched_at = now()""", rows)
+        return len(rows)
+
+    async def note_crawl(self, firm_id: str, info: dict) -> None:
+        await self.ensure_schema()
+        pool = await self.pool()
+        async with pool.acquire() as conn:
+            await conn.execute("UPDATE iv_firm SET crawl = $2::jsonb, updated_at = now() WHERE id = $1",
+                               firm_id, _json(info))
 
     # ------------------------------------------------------------------ facet protocol
     def _must_sql(self, must: dict, args: list, *, exclude: dict | None = None) -> list[str]:
@@ -666,8 +735,8 @@ class InvestorStore:
             out["people"] = [dict(x) for x in await conn.fetch(
                 "SELECT name, title, role, links, source_url FROM iv_person WHERE firm_id = $1 LIMIT 60", firm_id)]
             out["edges"] = [dict(x) for x in await conn.fetch(
-                "SELECT company_id, basis, role, round_name, event_date, source_url FROM iv_edge "
-                "WHERE firm_id = $1 ORDER BY event_date DESC NULLS LAST LIMIT 400", firm_id)]
+                "SELECT company_id, company_name, company_site, basis, role, round_name, event_date, source_url "
+                "FROM iv_edge WHERE firm_id = $1 ORDER BY event_date DESC NULLS LAST LIMIT 400", firm_id)]
         return out
 
     async def coverage(self) -> dict:
