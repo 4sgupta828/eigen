@@ -1897,6 +1897,15 @@
   .themebtn:hover{color:var(--ink);border-color:var(--gold);}
   @media (max-width:640px){ .themebtn{left:.7rem;bottom:.7rem;font-size:.6rem;padding:.36rem .6rem;} }
 
+  /* A tab open across a deploy runs old code and nothing says so — until this. */
+  #stalebuild{position:fixed;left:50%;transform:translateX(-50%);bottom:1rem;z-index:9999;display:flex;
+    gap:.7rem;align-items:center;flex-wrap:wrap;justify-content:center;max-width:min(92vw,560px);
+    padding:.6rem .9rem;border-radius:999px;border:1px solid var(--gold);background:var(--panel);
+    box-shadow:0 6px 24px rgba(0,0,0,.18);font-size:.82rem;line-height:1.45;color:var(--ink);}
+  #stalebuild button{font-family:var(--mono);font-size:.72rem;padding:.35rem .9rem;min-height:36px;
+    border:1px solid var(--gold);border-radius:999px;background:var(--gold);color:var(--on-accent);cursor:pointer;}
+  @media (max-width:560px){ #stalebuild{bottom:.6rem;text-align:center;} #stalebuild button{width:100%;} }
+
   /* ===== The intent debugger — did we understand the question? (both modes) =====
      Not a filter and not the rail. The rail changes WHAT CAME BACK, key by key. This says what the search
      believes it was asked, what it noticed in the results, and offers two or three READINGS — different
@@ -2640,6 +2649,7 @@ async function loadConfig(){
       const ibtn = $("#investorsTab"); if(ibtn){ ibtn.hidden = !INVESTORS_ENABLED; ibtn.dataset.mode = "investors"; }
       wireModeSwitch($("#modeswitch"));
     }
+    announceStaleBuild(c.build);
     VISION_ENABLED = !!c.vision_enabled;
     if(EFFORT_ENABLED){
       $("#effort").hidden = false;
@@ -7553,6 +7563,24 @@ function readingPool(pool){
 // ---------------------------------------------------------------------------------------------
 const BUILD = "__BUILD__";      // stamped at deploy; type EIGEN_BUILD in the console to see this tab's
 window.EIGEN_BUILD = BUILD;
+
+// A TAB THAT HAS BEEN OPEN ACROSS A DEPLOY IS RUNNING OLD CODE, AND NOTHING ON SCREEN SAYS SO.
+// The server sends no-store, so a reload always fetches the new page — but a single-page app never
+// reloads on its own, so the JavaScript in memory is whatever the tab started with. That cost a real
+// round of "the feature is deployed" / "I don't see it", with both sides correct: the build was live and
+// the tab was not running it. The page knows its own build and /config reports the server's; comparing
+// them is all it takes to say so out loud.
+function announceStaleBuild(serverBuild){
+  if(!serverBuild || !BUILD || BUILD === "__BUILD__" || serverBuild === BUILD) return;
+  if(document.getElementById("stalebuild")) return;
+  const bar = document.createElement("div");
+  bar.id = "stalebuild";
+  bar.setAttribute("role", "status");
+  bar.innerHTML = `<span>A newer version of Eigen is available — this tab is still running the one it
+    opened with.</span><button type="button">Reload</button>`;
+  bar.querySelector("button").addEventListener("click", () => location.reload());
+  document.body.appendChild(bar);
+}
 
 const WORK_OPS = [
   [/\/startups\/compile\b/,               {family: "startups", msg: "Reading your brief\u2026"}],
