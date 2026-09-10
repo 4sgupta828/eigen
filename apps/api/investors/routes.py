@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from eigen_kernel.facets import Contract, evaluate, validate_contract
 
+from . import advise as advise_mod
 from . import compile as compile_mod
 from . import pipeline
 from .schema import KIND, REGISTER, SCHEMA, WEIGHTS, labels
@@ -25,6 +26,15 @@ def investor_search_enabled() -> bool:
 class CompileIn(BaseModel):
     text: str
     limit: int = 60
+
+
+class AdviseIn(BaseModel):
+    name: str = ""            # the startup's name or domain
+    stage: str = ""           # pre_seed | seed | series_a | ...
+    geo: list[str] = []       # country tokens: us, uk, in, ae
+    sectors: list[str] = []   # the startup schema's tech-area vocabulary
+    deck_text: str = ""       # text pulled from an uploaded deck
+    limit: int = 40
 
 
 class EvaluateIn(BaseModel):
@@ -139,6 +149,97 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
         out["labels"] = labels()
         return out
 
+    @r.post("/investors/advise")
+    async def advise(body: AdviseIn) -> dict:
+        """Which investors have already funded companies like this one, at this stage, in this geography.
+
+        Not a prediction. Every row carries the signals it matched and the register each came from, so a
+        founder can tell "eleven seed rounds we can date" from "their site says they do seed" — and the
+        conflicts are shown alongside, because a firm that already backs a competitor is the one row on the
+        list where a strong match is a reason NOT to send the email.
+        """
+        stage = (body.stage or "").strip()
+        sectors = [s.strip() for s in body.sectors if s.strip()]
+        geo = [g.strip().lower() for g in body.geo if g.strip()]
+        notes: list[str] = []
+        subject: dict = {}
+
+        # A deck says what it is raising; read only an explicit round name from it, never an amount.
+        if body.deck_text and not stage:
+            stage = advise_mod.stage_from_text(body.deck_text)
+            if stage:
+                notes.append(f"Read '{stage.replace('_', ' ')}' from the deck — change it if that is wrong.")
+
+        # A named startup we already hold tells us its sector, geography and who is on its cap table, which
+        # is better than anything the founder would have to type.
+        co_investors: list[str] = []
+        if body.name:
+            subject, found_sectors, found_geo, co_investors = await _subject_of(store, body.name)
+            sectors = sectors or found_sectors
+            geo = geo or found_geo
+            if subject:
+                notes.append(f"Matched {subject['name']} in the index — using its sector, geography and "
+                             f"existing investors.")
+            else:
+                notes.append(f"No company called '{body.name}' in the index yet, so the advice rests on what "
+                             f"you typed rather than on their record.")
+
+        if not (stage or sectors or geo):
+            raise HTTPException(status_code=400, detail="give at least a stage, a sector or a geography")
+
+        # Candidates come from the SIGNALS, one targeted query per signal, fused by reciprocal rank.
+        #
+        # The first version ranked instead of retrieving: it passed the signals as `prefer` with no `must`,
+        # which enumerates a capped slice of the index by prominence and re-orders THAT. The firm that
+        # actually matched the sector was never a candidate, so a search with a real answer returned nothing.
+        # A preference cannot find a row; only a filter can, so each signal gets its own filter and the
+        # results are fused.
+        from eigen_kernel.facets.contract_search import rrf_fuse
+        legs: dict = {}
+        for key, vals in (("observed_sector", sectors), ("sector_focus", sectors),
+                          ("observed_stage", [stage] if stage else []), ("stated_stage", [stage] if stage else []),
+                          ("observed_geo", geo), ("co_investor", co_investors)):
+            if not vals:
+                continue
+            got = await store.enumerate(KIND, {key: list(vals)}, cap=150)
+            if got:
+                legs[key] = got
+        if not legs:
+            legs["deploying"] = await store.enumerate(KIND, {"still_deploying": ["yes_recent"]}, cap=150)
+        rows = rrf_fuse(legs)
+        out = {"coverage": {"candidates": {k: len(v) for k, v in legs.items()}}}
+        hydrated = await _hydrate(store, [x["id"] for x in rows])
+        sector_of = await _sectors_of_companies(
+            store, [c2["id"] for r in rows for c2 in (hydrated.get(r["id"], {}).get("portfolio_sample") or [])])
+
+        ranked = []
+        for x in rows:
+            firm = hydrated.get(x["id"], {})
+            why, score = advise_mod.reasons_for(x, stage=stage, sectors=sectors, geo=geo,
+                                                co_investors=co_investors)
+            if not advise_mod.is_advice(why):
+                # "has money and raised recently" is true of thousands of firms; ranking on it produces an
+                # alphabetical list wearing the costume of a recommendation.
+                continue
+            ranked.append({**x, "firm": firm, "why": why, "fit": round(score, 2),
+                           "conflicts": advise_mod.conflicts_for(firm.get("portfolio_sample"), sectors, sector_of)})
+        ranked.sort(key=lambda r: (-r["fit"], -len(r["why"]), r["id"]))
+        for i, r in enumerate(ranked):
+            r["rank"] = i + 1
+
+        if not ranked:
+            cov = await store.coverage()
+            with_pf = (cov.get("known") or {}).get("portfolio_count", 0)
+            notes.append(
+                f"No investor in the index has a recorded match for this stage, sector and geography yet. "
+                f"That is a gap in what we have READ, not a finding about the market: we hold complete "
+                f"registration and fund records for {cov.get('firms', 0):,} firms, but a portfolio for only "
+                f"{with_pf:,} of them so far. Matching on what a firm has actually backed needs that number "
+                f"to grow, which the site crawl is doing now.")
+        return {"rows": ranked[:body.limit], "subject": subject, "notes": notes, "labels": labels(),
+                "asked": {"stage": stage, "sectors": sectors, "geo": geo},
+                "coverage": out.get("coverage") or {}}
+
     @r.get("/investors/coverage")
     async def coverage() -> dict:
         cov = await store.coverage()
@@ -177,6 +278,43 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
         return {"id": job_id, "cancelling": ok}
 
     return r
+
+
+async def _subject_of(store: InvestorStore, name: str) -> tuple[dict, list[str], list[str], list[str]]:
+    """Resolve the founder's own company in the startup index -> (subject, sectors, geo, its investors)."""
+    from api.investors.store import domain_of
+    q = (name or "").strip()
+    dom = domain_of(q)
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT id, name, one_liner FROM su_company
+               WHERE id = $1 OR lower(name) = lower($2) ORDER BY (id = $1) DESC LIMIT 1""", dom or q, q)
+        if not row:
+            return {}, [], [], []
+        facts = await conn.fetch(
+            "SELECT key, value FROM su_fact WHERE company_id = $1 AND key IN ('tech_area','country','investor')",
+            row["id"])
+    by: dict = {}
+    for f in facts:
+        by.setdefault(f["key"], []).append(f["value"])
+    return ({"id": row["id"], "name": row["name"], "one_liner": row["one_liner"]},
+            by.get("tech_area", []), by.get("country", []), by.get("investor", []))
+
+
+async def _sectors_of_companies(store: InvestorStore, ids: list[str]) -> dict:
+    """{company id -> [tech areas]} for conflict checking, in one query rather than one per firm."""
+    if not ids:
+        return {}
+    pool = await store.pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT company_id, value FROM su_fact WHERE key = 'tech_area' AND company_id = ANY($1)",
+            list(set(ids)))
+    out: dict = {}
+    for r in rows:
+        out.setdefault(r["company_id"], []).append(r["value"])
+    return out
 
 
 async def _hydrate(store: InvestorStore, ids: list[str]) -> dict:

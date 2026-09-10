@@ -1976,6 +1976,26 @@
     color:var(--ink);text-decoration:none;background:var(--panel2,transparent);white-space:nowrap;}
   #investorsbody .iv-co:hover{border-color:var(--gold);color:var(--gold-strong);}
   #investorsbody .iv-more{font-size:.72rem;color:var(--muted);align-self:center;}
+  /* Advisor — the founder's side of the mode: describe your startup, get investors who have done it before */
+  #investorsbody .iv-tabs{display:flex;gap:.4rem;margin:0 0 .6rem;}
+  #investorsbody .iv-tab{font-family:var(--mono);font-size:.7rem;letter-spacing:.03em;padding:.35rem .8rem;
+    min-height:36px;border:1px solid var(--hair);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer;}
+  #investorsbody .iv-tab.on{background:var(--gold);color:var(--on-accent);border-color:var(--gold);font-weight:600;}
+  #investorsbody .iv-form{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin:.2rem 0 .7rem;}
+  #investorsbody .iv-f{display:flex;flex-direction:column;gap:.2rem;flex:1 1 150px;min-width:0;}
+  #investorsbody .iv-f label{font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+  #investorsbody .iv-f select,#investorsbody .iv-f input{font:inherit;font-size:.82rem;padding:.4rem .5rem;min-height:38px;
+    border:1px solid var(--hair);border-radius:8px;background:var(--panel);color:var(--ink);width:100%;box-sizing:border-box;}
+  #investorsbody .iv-go{flex:0 0 auto;font-family:var(--mono);font-size:.75rem;padding:.45rem 1.1rem;min-height:38px;
+    border:1px solid var(--gold);border-radius:999px;background:var(--gold);color:var(--on-accent);font-weight:600;cursor:pointer;}
+  #investorsbody .iv-why{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.4rem;}
+  #investorsbody .iv-w{font-size:.73rem;padding:.15rem .5rem;border-radius:999px;border:1px solid;white-space:nowrap;}
+  #investorsbody .iv-w.filed{border-color:var(--filed);color:var(--filed);}
+  #investorsbody .iv-w.observed{border-color:var(--observed);color:var(--observed);}
+  #investorsbody .iv-w.stated{border-color:var(--stated);color:var(--stated);font-style:italic;}
+  #investorsbody .iv-conf{margin-top:.4rem;font-size:.75rem;color:var(--warn,#B8483A);line-height:1.5;}
+  #investorsbody .iv-fit{margin-left:auto;font-family:var(--mono);font-size:.62rem;color:var(--muted);white-space:nowrap;}
+  @media (max-width:560px){ #investorsbody .iv-f{flex:1 1 100%;} #investorsbody .iv-go{width:100%;} }
   #investorsbody .iv-gap{font-size:.73rem;color:var(--muted);opacity:.8;margin-top:.3rem;}
   #investorsbody .iv-why{font-size:.73rem;color:var(--muted);margin-top:.3rem;}
   #investorsbody .iv-empty{font-size:.86rem;color:var(--muted);line-height:1.7;margin:1rem 0;}
@@ -2241,6 +2261,11 @@
 </section>
 
 <section id="investorsbody" aria-label="Investor search">
+  <div class="iv-tabs" id="iv-tabs">
+    <button type="button" class="iv-tab on" data-tab="search">Search investors</button>
+    <button type="button" class="iv-tab" data-tab="advise">Find investors for my startup</button>
+  </div>
+  <div id="iv-advform" hidden></div>
   <div class="iv-examples" id="iv-examples"></div>
   <div id="iv-notes"></div>
   <div id="iv-cov" class="iv-cov"></div>
@@ -4366,7 +4391,12 @@ $("#ask").addEventListener("submit", e=>{
   if(APP_MODE === "triage"){ submitTriage(question); return; }        // guided intake → next clarifying turn
   if(APP_MODE === "panel"){ submitPanelIntake(question); return; }   // panel mode → convene / follow-up
   if(APP_MODE === "startups"){ if(question && window.SU) SU.search(question); return; }   // startup search → compile + evaluate
-  if(APP_MODE === "investors"){ if(question && window.IV) IV.search(question); return; }  // investor search → compile + evaluate
+  if(APP_MODE === "investors"){                                                          // investor search → compile + evaluate
+    if(!question || !window.IV) return;
+    // In advisor mode the box holds the founder's own deck or description, not a query about investors.
+    if(IV.isAdvising && IV.isAdvising()) IV.adviseFromText(question); else IV.search(question);
+    return;
+  }
   if(APP_MODE === "voices"){ if(window.VO) VO.search(question); return; }                 // voices → keyword search over first-person content
   if(APP_MODE === "deepdive"){ if(window.DD) DD.search(question); return; }             // deepdive → resolve one company, then read it
   if(APP_MODE === "guided"){ if(window.SG) SG.send(question); return; }                      // guided → one intake turn
@@ -9642,7 +9672,11 @@ async function openShare(token){
   ];
 
   function enter(params){
-    if(!STATE.entered){ STATE.entered = true; }
+    if(!STATE.entered){
+      STATE.entered = true;
+      const tabs = $("#iv-tabs");
+      if(tabs) tabs.querySelectorAll(".iv-tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+    }
     $("#iv-examples").innerHTML = EXAMPLES.map(t =>
       `<button type="button" class="iv-ex" data-ex="${esc(t)}">${esc(t)}</button>`).join("");
     $("#iv-examples").querySelectorAll("[data-ex]").forEach(b =>
@@ -9809,7 +9843,7 @@ async function openShare(token){
   }
 
   // ---------- cards
-  function cardHtml(row){
+  function cardHtml(row, adv){
     const f = row.firm || {}, facets = row.facets || {}, nums = row.numeric || {};
     const one = k => (facets[k] || [])[0];
     const site = f.site && f.domain ? f.site : "";
@@ -9897,13 +9931,26 @@ async function openShare(token){
     const line = (reg, txt) => txt ? `<div class="iv-line${reg === "stated" ? " stated" : ""}">
       <span class="iv-g ${reg}" title="${esc(REG_BLURB[reg])}">${GLYPH[reg]}</span><span>${txt}</span></div>` : "";
 
+    // In advisor mode the REASONS are the point of the card, so they sit directly under the name — and the
+    // conflict sits at the bottom, where a warning belongs rather than competing with the reasons to reach out.
+    const why = adv && (row.why || []).length
+      ? `<div class="iv-why">` + row.why.map(w =>
+          `<span class="iv-w ${esc(w.register)}" title="${esc(REG_BLURB[w.register] || "")}">${GLYPH[w.register] || ""} ${esc(w.detail)}</span>`
+        ).join("") + `</div>` : "";
+    const conflict = adv && (row.conflicts || []).length
+      ? `<div class="iv-conf">⚠ already funds ` + row.conflicts.map(c => esc(c.name) + " (" + esc(c.sector) + ")").join(", ")
+        + ` — worth checking before you reach out</div>` : "";
+
     return `<div class="iv-card">
-      <div class="iv-hd">${name}${type ? `<span class="iv-type" title="${esc(REG_BLURB.filed)}">${GLYPH.filed} ${esc(vlabel("investor_type", type))}</span>` : ""}</div>
+      <div class="iv-hd">${name}${type ? `<span class="iv-type" title="${esc(REG_BLURB.filed)}">${GLYPH.filed} ${esc(vlabel("investor_type", type))}</span>` : ""}
+        ${adv && row.fit ? `<span class="iv-fit" title="how many signals matched">${(row.why || []).length} signal${(row.why || []).length === 1 ? "" : "s"}</span>` : ""}</div>
+      ${why}
       ${where ? `<div class="iv-where">${esc(where)}</div>` : ""}
       ${line("filed", esc(filed.join(" · ")))}
       ${stated.length ? line("stated", "“" + esc(stated.join(" · ")) + "” — the firm says") : ""}
       ${line("observed", esc(observed.join(" · ")))}
       ${peopleSec}${portSec}
+      ${conflict}
       ${gaps.length ? `<div class="iv-gap">${esc(gaps.join(" · "))}</div>` : ""}
       ${(row.reasons || []).length ? `<div class="iv-why">${esc((row.reasons || []).slice(0, 2).join(" · "))}</div>` : ""}
       ${foot.length ? `<div class="iv-foot">${foot.join(" · ")}</div>` : ""}
@@ -9949,7 +9996,101 @@ async function openShare(token){
     if(rs) rs.addEventListener("click", () => { STATE.draft = null; $("#iv-rail").innerHTML = railHtml(); wireRail(); });
   }
 
-  window.IV = {search, enter, reset, runContract};
+  // ---------- Advisor: the founder's side of the mode
+  // The question asked is "who will fund me" and the question answered is "who has already funded companies
+  // like yours, at your stage, in your geography, and is still deploying". Every row shows which signals
+  // matched and which register each came from, because "their site says they do seed" and "we can see eleven
+  // seed rounds" are different claims and the founder deciding who to email should see the difference.
+  const STAGES = ["pre_seed", "seed", "series_a", "series_b", "series_c", "growth"];
+  const GEOS = [["us","United States"],["uk","United Kingdom"],["in","India"],["ae","UAE"],["sg","Singapore"],
+                ["au","Australia"],["ca","Canada"],["de","Germany"],["fr","France"],["il","Israel"]];
+  const SECTORS = ["ai_infra","llm_apps","agents","devtools","data","security","robotics","hardware_semis",
+                   "bio_health","climate_energy","fintech","consumer","enterprise_saas","space_defense",
+                   "ecommerce","martech_sales","hr_people","legal_compliance","proptech","logistics_supply",
+                   "edtech","gaming_media","agtech_food","crypto_web3","insurance","mobility","manufacturing","govtech"];
+  const ADV = {stage: "seed", geo: "us", sector: "", name: "", deck: "", busy: false};
+
+  function advFormHtml(){
+    const opt = (v, l, sel) => `<option value="${esc(v)}"${sel === v ? " selected" : ""}>${esc(l)}</option>`;
+    return `<div class="iv-form">
+      <div class="iv-f"><label for="adv-name">Your startup</label>
+        <input id="adv-name" type="text" placeholder="name or domain — optional" value="${esc(ADV.name)}"></div>
+      <div class="iv-f"><label for="adv-stage">Raising</label><select id="adv-stage">
+        ${STAGES.map(v => opt(v, vlabel("stated_stage", v), ADV.stage)).join("")}</select></div>
+      <div class="iv-f"><label for="adv-sector">Sector</label><select id="adv-sector">
+        ${opt("", "any", ADV.sector)}${SECTORS.map(v => opt(v, vlabel("observed_sector", v), ADV.sector)).join("")}</select></div>
+      <div class="iv-f"><label for="adv-geo">Based in</label><select id="adv-geo">
+        ${opt("", "anywhere", ADV.geo)}${GEOS.map(([v, l]) => opt(v, l, ADV.geo)).join("")}</select></div>
+      <button type="button" class="iv-go" id="adv-go">Find investors</button>
+    </div>
+    <div class="iv-note">Naming your startup is worth more than the dropdowns: if it is in the index we use its
+      real sector, geography and existing investors instead of what you guess. Or paste your deck in the box
+      above and press Go — the round you name in it is read, never the amount you are asking for.</div>`;
+  }
+
+  async function advise(){
+    if(ADV.busy) return;
+    // Read the form at submit rather than trusting change events to have fired — a value set any other way
+    // (a restored draft, a deep link, a test) would otherwise be silently ignored.
+    const val = id => { const el = $(id); return el ? el.value : ""; };
+    if($("#adv-stage")){ ADV.stage = val("#adv-stage"); ADV.sector = val("#adv-sector");
+                         ADV.geo = val("#adv-geo"); ADV.name = (val("#adv-name") || "").trim(); }
+    ADV.busy = true;
+    box().innerHTML = `<div class="iv-empty">Looking for investors who have done this before…</div>`;
+    let d;
+    try{
+      const r = await fetch("/investors/advise", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({name: ADV.name, stage: ADV.stage, sectors: ADV.sector ? [ADV.sector] : [],
+                              geo: ADV.geo ? [ADV.geo] : [], deck_text: ADV.deck, limit: 40})});
+      if(!r.ok) throw new Error("advise " + r.status);
+      d = await r.json();
+    }catch(e){
+      ADV.busy = false;
+      box().innerHTML = `<div class="iv-empty">Could not do that (${esc(String(e.message || e))}).</div>`;
+      return;
+    }
+    ADV.busy = false;
+    STATE.labels = d.labels || STATE.labels;
+    $("#iv-notes").innerHTML = (d.notes || []).map(n => `<div class="iv-note">${esc(n)}</div>`).join("");
+    $("#iv-rail").innerHTML = "";
+    const rows = d.rows || [];
+    if(!rows.length){ box().innerHTML = `<div class="iv-empty">No investor has a recorded match for this yet.</div>`; return; }
+    const subj = d.subject && d.subject.name
+      ? `<div class="iv-cov">For <b>${esc(d.subject.name)}</b>${d.subject.one_liner ? " — " + esc(d.subject.one_liner) : ""}</div>` : "";
+    box().innerHTML = subj + `<div class="iv-grid">` + rows.map(r => cardHtml(r, true)).join("") + `</div>`;
+  }
+
+  function showTab(which){
+    const adv = which === "advise";
+    $("#iv-tabs").querySelectorAll(".iv-tab").forEach(b => b.classList.toggle("on", b.dataset.tab === which));
+    $("#iv-advform").hidden = !adv;
+    $("#iv-examples").hidden = adv;
+    if(adv && !$("#iv-advform").innerHTML){
+      $("#iv-advform").innerHTML = advFormHtml();
+      wireAdvForm();
+    }
+    if(adv){ box().innerHTML = `<div class="iv-empty">Tell us your stage, sector and geography — then we look
+      for investors who have already funded companies like yours and have filed a fund recently.</div>`;
+      $("#iv-rail").innerHTML = ""; $("#iv-notes").innerHTML = ""; }
+    else { showLanding(); }
+  }
+
+  function wireAdvForm(){
+    const bind = (id, key) => { const el = $(id); if(el) el.addEventListener("change", () => { ADV[key] = el.value; }); };
+    bind("#adv-stage", "stage"); bind("#adv-sector", "sector"); bind("#adv-geo", "geo");
+    const nm = $("#adv-name"); if(nm) nm.addEventListener("input", () => { ADV.name = nm.value.trim(); });
+    const go = $("#adv-go"); if(go) go.addEventListener("click", advise);
+  }
+
+  function adviseFromText(text){
+    ADV.deck = text || "";
+    if(!ADV.name && text && text.length < 60 && !/\s{2,}/.test(text)) ADV.name = text.trim();
+    advise();
+  }
+
+  window.IV = {search, enter, reset, runContract, advise, adviseFromText, showTab,
+               // the composer's Go in advisor mode is a deck paste, not a query
+               isAdvising: () => !$("#iv-advform").hidden};
 })();
 </script>
 </body>
