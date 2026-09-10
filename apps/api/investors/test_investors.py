@@ -333,3 +333,20 @@ class TestCuratedBrandMerging:
         from api.investors.pipeline import company_label
         assert company_label("aaru.com/ (opens in new tab)", "aaru.com") == "Aaru"
         assert company_label("Assort Health (opens in a new window)", "assorthealth.com") == "Assort Health"
+
+
+class TestPostgresSafeText:
+    """The open web serves NUL bytes; a `text` column cannot hold one, and one site ended a whole crawl."""
+
+    def test_a_nul_byte_is_stripped(self):
+        from api.investors.store import pg_text
+        assert pg_text("before\x00after") == "beforeafter"
+        assert "\x00" not in pg_text("\x00\x00page\x00")
+
+    def test_none_and_caps_are_handled(self):
+        from api.investors.store import pg_text
+        assert pg_text(None) == "" and pg_text("abcdef", 3) == "abc"
+
+    def test_ordinary_unicode_survives(self):
+        from api.investors.store import pg_text
+        assert pg_text("Ségolène — 東京") == "Ségolène — 東京"

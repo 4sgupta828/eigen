@@ -282,6 +282,18 @@ def display_name(raw: str) -> str:
     return " ".join(out)
 
 
+def pg_text(v, cap: int | None = None) -> str:
+    """Text Postgres will actually accept.
+
+    A `text` column cannot hold a NUL byte, and the open web serves them: a firm's site returned HTML with an
+    embedded 0x00 and the whole crawl job died with `invalid byte sequence for encoding "UTF8"`. Every string
+    that comes from a fetched page goes through here — one bad byte on one site must not end a sweep over
+    thousands.
+    """
+    s = (v or "").replace("\x00", "")
+    return s[:cap] if cap else s
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -431,9 +443,10 @@ class InvestorStore:
             reg = REGISTER.get(key)
             if reg is None:
                 continue
-            rows.append((firm_id, key, str(f.get("value", "")), f.get("number"), f.get("display", ""), reg,
-                         f.get("basis", ""), f.get("provenance", ""), f.get("source_url", ""),
-                         (f.get("quote") or "")[:600], _date(f.get("as_of")), f.get("denominator"),
+            rows.append((firm_id, key, pg_text(str(f.get("value", "")), 200), f.get("number"),
+                         pg_text(f.get("display"), 120), reg, pg_text(f.get("basis"), 60),
+                         pg_text(f.get("provenance"), 40), pg_text(f.get("source_url"), 2000),
+                         pg_text(f.get("quote"), 600), _date(f.get("as_of")), f.get("denominator"),
                          float(f.get("confidence", 1.0)), SCHEMA.version()))
         async with pool.acquire() as conn:
             async with conn.transaction():
@@ -452,10 +465,10 @@ class InvestorStore:
             return 0
         await self.ensure_schema()
         pool = await self.pool()
-        rows = [(e["firm_id"], e["company_id"], e.get("basis", "portfolio_page"), e.get("role", ""),
-                 e.get("round_name", ""), _date(e.get("event_date")), e.get("source_url", ""),
-                 (e.get("quote") or "")[:600], (e.get("company_name") or "")[:120],
-                 e.get("company_site", "")) for e in edges]
+        rows = [(e["firm_id"], pg_text(e["company_id"], 253), pg_text(e.get("basis") or "portfolio_page", 40),
+                 pg_text(e.get("role"), 40), pg_text(e.get("round_name"), 40), _date(e.get("event_date")),
+                 pg_text(e.get("source_url"), 2000), pg_text(e.get("quote"), 600),
+                 pg_text(e.get("company_name"), 120), pg_text(e.get("company_site"), 400)) for e in edges]
         async with pool.acquire() as conn:
             await conn.executemany("""
                 INSERT INTO iv_edge (firm_id, company_id, basis, role, round_name, event_date, source_url, quote,
@@ -484,8 +497,10 @@ class InvestorStore:
             if not name:
                 continue
             links = {k: v for k, v in (p.get("links") or {}).items() if k in ("linkedin", "x", "profile", "site")}
-            rows.append((f"{firm_id}:{slug(name)}", firm_id, name, (p.get("title") or "")[:80],
-                         p.get("role", ""), _json(links), p.get("basis", ""), p.get("source_url", "")))
+            links = {k: pg_text(v, 400) for k, v in links.items()}
+            rows.append((f"{firm_id}:{slug(name)}", firm_id, pg_text(name, 120), pg_text(p.get("title"), 80),
+                         pg_text(p.get("role"), 40), _json(links), pg_text(p.get("basis"), 40),
+                         pg_text(p.get("source_url"), 2000)))
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute("DELETE FROM iv_person WHERE firm_id = $1", firm_id)
@@ -501,9 +516,9 @@ class InvestorStore:
     async def put_pages(self, firm_id: str, pages: list[dict]) -> int:
         await self.ensure_schema()
         pool = await self.pool()
-        rows = [(firm_id, p.get("final_url") or p.get("url"), p.get("kind", ""), p.get("sha", ""),
-                 (p.get("text") or "")[:200_000], (p.get("html") or "")[:400_000]) for p in pages
-                if (p.get("final_url") or p.get("url"))]
+        rows = [(firm_id, pg_text(p.get("final_url") or p.get("url"), 2000), pg_text(p.get("kind"), 40),
+                 pg_text(p.get("sha"), 64), pg_text(p.get("text"), 200_000), pg_text(p.get("html"), 400_000))
+                for p in pages if (p.get("final_url") or p.get("url"))]
         async with pool.acquire() as conn:
             await conn.executemany("""
                 INSERT INTO iv_page (firm_id, url, kind, sha, text, html) VALUES ($1,$2,$3,$4,$5,$6)
