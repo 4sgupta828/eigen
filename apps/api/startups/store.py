@@ -41,6 +41,15 @@ CREATE TABLE IF NOT EXISTS su_company (
 CREATE INDEX IF NOT EXISTS ix_su_company_name ON su_company (lower(name));
 CREATE INDEX IF NOT EXISTS ix_su_company_cik  ON su_company (cik) WHERE cik <> '';
 CREATE INDEX IF NOT EXISTS ix_su_company_vec  ON su_company USING hnsw (embedding vector_cosine_ops);
+-- THE KEYWORD LEG. Until this existed the pool for a startup search was built from one embedding and
+-- nothing else, so a query already lexically aligned with the corpus had no way to anchor: "Amplify"
+-- reached companies whose text merely resembled the word. `simple` rather than `english` because company
+-- names are proper nouns and stemming "Ventures" to "ventur" costs exact matching and buys nothing.
+ALTER TABLE su_company ADD COLUMN IF NOT EXISTS tsv tsvector
+    GENERATED ALWAYS AS (to_tsvector('simple'::regconfig,
+        coalesce(name,'') || ' ' || coalesce(one_liner,'') || ' ' ||
+        coalesce(left(description, 4000),'') || ' ' || coalesce(replace(id,'.',' '),''))) STORED;
+CREATE INDEX IF NOT EXISTS ix_su_company_tsv ON su_company USING gin (tsv);
 
 CREATE TABLE IF NOT EXISTS su_fact (
     id           bigserial PRIMARY KEY,
@@ -583,6 +592,67 @@ class StartupStore:
             rows = await conn.fetch(f"SELECT c.id, 1 - (c.embedding <=> $1::vector) AS sim FROM su_company c WHERE {where} ORDER BY c.embedding <=> $1::vector LIMIT ${len(args)}", *args)
             sims = {r["id"]: float(r["sim"] or 0.0) for r in rows}
             return await self._rows(conn, list(sims), sims)
+
+    async def keyword(self, kind: str, text: str, must: dict, *, cap: int = 400,
+                      exclude: dict | None = None) -> list[dict]:
+        """The lexical leg: Postgres full text over the company's name, one-liner and description.
+
+        A dense index expands and a sparse one anchors. With only the dense leg, a query that is already
+        the words in the corpus — a company name, a product category, a place — is answered by whatever
+        the embedding considers nearby, which is how a search for one firm's portfolio returns companies
+        that merely share its name.
+        """
+        await self.ensure_schema()
+        q = (text or "").strip()
+        if not q:
+            return []
+        pool = await self.pool()
+        args: list = [q]
+        cl = self._must_sql(must, args, exclude=exclude)
+        where = " AND ".join(["c.status = 'active'", "c.tsv @@ websearch_to_tsquery('simple', $1)"] + cl)
+        args.append(cap)
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""SELECT c.id, ts_rank(c.tsv, websearch_to_tsquery('simple', $1)) AS sim
+                    FROM su_company c WHERE {where} ORDER BY sim DESC, c.updated_at DESC LIMIT ${len(args)}""",
+                *args)
+            sims = {r["id"]: float(r["sim"] or 0.0) for r in rows}
+            return await self._rows(conn, list(sims), sims)
+
+    async def hybrid(self, kind: str, text: str, must: dict, *, cap: int = 400, exclude: dict | None = None,
+                     embed=None, k: int = 60) -> tuple[list[dict], dict]:
+        """Both legs, reciprocal-rank-fused — the same shape the investor store uses.
+
+        RRF rather than a score blend because cosine similarity and `ts_rank` are not on comparable
+        scales; rank is the only thing the two legs agree on. The fused score is mapped back onto `sim`
+        so the kernel evaluator, which knows nothing about fusion, ranks exactly as it did with one leg.
+        """
+        from eigen_kernel.facets.contract_search import rrf_fuse
+        legs: dict = {}
+        diag: dict = {}
+        if embed is not None:
+            try:
+                legs["semantic"] = await self.semantic(kind, text, must, cap=cap, exclude=exclude, embed=embed)
+            except Exception as e:      # noqa: BLE001 — an embedding outage degrades to keyword, never a 500
+                diag["degraded"] = f"embeddings unavailable ({type(e).__name__}): keyword only"
+        try:
+            legs["keyword"] = await self.keyword(kind, text, must, cap=cap, exclude=exclude)
+        except Exception:               # noqa: BLE001 — a malformed tsquery must not fail a search
+            pass
+        legs = {n: r for n, r in legs.items() if r}
+        if not legs:
+            return [], diag
+        if len(legs) == 1:
+            only = next(iter(legs))
+            diag["legs"] = {only: len(legs[only])}
+            return legs[only][:cap], diag
+        fused = rrf_fuse(legs, k=k)[:cap]
+        top = fused[0]["_fused"] if fused else 1.0
+        for r in fused:
+            r["sim"] = round(min(1.0, r["_fused"] / top), 6) if top else 0.0
+        diag["legs"] = {n: len(v) for n, v in legs.items()}
+        diag["both"] = sum(1 for r in fused if len(r.get("_found_by") or {}) > 1)
+        return fused, diag
 
     async def counts(self, kind: str, must: dict, schema: FacetSchema, *, depth: dict | None = None, exclude: dict | None = None) -> dict:
         await self.ensure_schema()

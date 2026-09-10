@@ -15,10 +15,15 @@ import json
 import re
 
 from eigen_kernel.facets import Contract, FacetType, validate_contract
+from eigen_kernel.facets.lexicon import (claimed_by_filters, find_spans, may_blank_text, plan_from_spans)
 
+from .query_lexicon import config as lexicon_config
 from .schema import KIND, REGISTER, SCHEMA, UNIFIED
 
 COVERAGE_FLOOR = 0.5
+# `country` is on most briefs and narrows little; it does not count as "something that filters" when
+# deciding whether the words may be dropped.
+SCOPE_KEYS = ("country",)
 MIN_MUST_SUPPORT = 15       # a categorical must stays a must when at least this many firms carry the values
 
 # Phrases that ask for a track record. There is no public source for one, so they become a note, never a filter.
@@ -54,6 +59,10 @@ Rules:
 - CHEQUE SIZE: "writes $1-3M cheques" → stated_check_min min 1000000, stated_check_max max 3000000.
 - NEVER compile a track record, returns, success rate, IRR or "top tier" into any key. There is no such key.
 - Do not invent values the brief does not imply.
+
+The user message may carry `words_that_name_a_filter`: spans of the brief that are legal values of the
+vocabulary below, found by looking the words up. They are CANDIDATES, not decisions — confirm one by
+putting it under the right key, reject it by leaving it out. You see the sentence; the lookup saw words.
 
 Examples:
 brief: "seed funds that lead in AI infra, US or Europe, $50-250M latest fund, still deploying, not corporate VC"
@@ -173,14 +182,91 @@ def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dic
     return c, notes
 
 
+def lexicon_read(brief: str):
+    """The deterministic first read — the facet values in the words themselves, before any model call."""
+    if not (brief or "").strip():
+        return None
+    try:
+        cfg = lexicon_config()
+        spans = find_spans(brief, SCHEMA, KIND, aliases=cfg["aliases"])
+        if not spans:
+            return None
+        return plan_from_spans(brief, spans, filler=cfg["filler"], must_keys=cfg["must_keys"],
+                               risky_values=cfg["risky_values"])
+    except Exception:      # noqa: BLE001 — a lexicon that cannot read must never fail a search
+        return None
+
+
+def apply_lexicon(c: Contract, plan) -> list[str]:
+    """Fold the lexicon's read in. The model still wins any key it spoke about."""
+    if plan is None:
+        return []
+    notes = list(plan.notes)
+    for key, vals in (plan.must or {}).items():
+        if key in c.must or key in c.avoid or key in (c.scope or {}).get("exclude", {}):
+            continue
+        if key in c.prefer:
+            model_vals = c.prefer.get(key)
+            if not (isinstance(model_vals, list) and set(vals) & set(model_vals)):
+                continue
+            c.prefer.pop(key, None)
+            c.must[key] = sorted(set(vals) & set(model_vals))
+            notes.append(f"you named the {(SCHEMA.key(key).label or key).lower()}, so it filters rather than ranks")
+            continue
+        c.must[key] = list(vals)
+        notes.append(f"read \u201c{(SCHEMA.key(key).label or key).lower()}\u201d straight from your words")
+    for key, vals in (plan.prefer or {}).items():
+        if key in c.must or key in c.prefer or key in c.avoid:
+            continue
+        c.prefer[key] = list(vals)
+    return notes
+
+
+def settle_text(c: Contract, brief: str, plan=None) -> list[str]:
+    """Drop the semantic text when every word of the brief already became a filter."""
+    if not (brief or "").strip() or not c.text:
+        return []
+    try:
+        residual = claimed_by_filters(brief, c, filler=lexicon_config()["filler"],
+                                      spans=(plan.spans if plan is not None else None))
+        if not may_blank_text(c, residual, scope_keys=SCOPE_KEYS):
+            return []
+        c.text = ""
+        return ["every word of your brief became a filter, so the filters are the search"]
+    except Exception:      # noqa: BLE001
+        return []
+
+
+def candidates_for_model(plan) -> list[dict]:
+    if plan is None:
+        return []
+    out = []
+    for sp in plan.spans:
+        item = {"words": sp.text, "could_be": {sp.key: sp.value}}
+        if sp.ambiguous:
+            item["or"] = list(sp.ambiguous)
+        out.append(item)
+    return out[:12]
+
+
 async def compile_brief(llm_json, text: str, *, coverage: dict | None = None, value_counts: dict | None = None,
                         limit: int = 60) -> tuple[Contract, list[str]]:
+    plan = lexicon_read(text)
+    payload = {"brief": text[:1500]}
+    cands = candidates_for_model(plan)
+    if cands:
+        payload["words_that_name_a_filter"] = cands
     try:
-        out = await llm_json(system_prompt(), json.dumps({"brief": text[:1500]}))
+        out = await llm_json(system_prompt(), json.dumps(payload))
     except Exception:      # noqa: BLE001 — a provider outage falls back to the words, never a 500
         out = {}
     if not isinstance(out, dict):
         out = {}
     if not out.get("text"):
         out["text"] = re.sub(r"\s+", " ", text)[:200]
-    return build_contract(out, coverage=coverage, value_counts=value_counts, limit=limit, brief=text)
+    c, notes = build_contract(out, coverage=coverage, value_counts=value_counts, limit=limit, brief=text)
+    lex = apply_lexicon(c, plan)
+    if lex:
+        notes = (notes + lex)[:8]
+    notes += settle_text(c, text, plan)
+    return c, notes

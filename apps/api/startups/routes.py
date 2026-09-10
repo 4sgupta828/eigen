@@ -84,14 +84,23 @@ class _Bound:
 
     degraded: str = ""
 
+    legs: dict = {}
+
     async def semantic(self, kind, text, must, *, cap=400):
-        rows = []
-        if self._e:
-            try:
-                rows = await self._s.semantic(kind, text, must, cap=cap, exclude=self._x, embed=self._e)
-            except Exception as e:   # noqa: BLE001 — an embedding provider outage (no credits, rate limit) must never 500 a search
-                self.degraded = f"embeddings unavailable ({type(e).__name__}): the words cannot rank — filters only"
-        # no embedder, nothing embedded yet, or the provider is down → the words cannot rank, but the musts still filter
+        """The kernel asks for "the words leg"; here that leg is HYBRID — dense fused with lexical.
+
+        Until the keyword leg existed the pool came from one embedding, so a query that is already the
+        corpus's own words had nothing to anchor it: a search for the companies one firm backed reached
+        companies that merely resembled the firm's name. Dense expands, sparse anchors.
+        """
+        try:
+            rows, diag = await self._s.hybrid(kind, text, must, cap=cap, exclude=self._x, embed=self._e)
+        except Exception as e:   # noqa: BLE001 — retrieval trouble must never 500 a search
+            rows, diag = [], {"degraded": f"search degraded ({type(e).__name__}): filters only"}
+        self.legs = diag
+        if diag.get("degraded"):
+            self.degraded = diag["degraded"]
+        # nothing embedded yet, or both legs empty → the words cannot rank, but the musts still filter
         return rows or await self._s.enumerate(kind, must, cap=cap, exclude=self._x)
 
     async def counts(self, kind, must, schema, *, depth=None):
@@ -186,6 +195,8 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         out = await evaluate(c, bound, SCHEMA, WEIGHTS, depth=({"counts": False} if not counts else None))
         if bound.degraded:
             out["coverage"]["degraded"] = bound.degraded
+        if bound.legs:
+            out["coverage"]["retrieval"] = bound.legs
         rows = [x for x in out["rows"] if not _excluded(x, exclude)]
         hydrated = await store.companies_by_ids([x["id"] for x in rows])
         for i, x in enumerate(rows):

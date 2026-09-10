@@ -10,10 +10,15 @@ import json
 import re
 
 from eigen_kernel.facets import Contract, validate_contract
+from eigen_kernel.facets.lexicon import (claimed_by_filters, find_spans, may_blank_text, plan_from_spans)
 
+from .query_lexicon import config as lexicon_config
 from .schema import KIND, LOW_COVERAGE_DEFAULT_PREFER, SCHEMA, STAGES
 
 COVERAGE_FLOOR = 0.5
+# `country` is on nearly every brief and narrows almost nothing, so it does not count as "something that
+# filters" when deciding whether the words may be dropped.
+SCOPE_KEYS = ("country",)
 MIN_MUST_SUPPORT = 25       # a categorical must stays a must when at least this many startups carry the requested values
 MIN_RANGE_SUPPORT = 200     # a numeric must stays a must when at least this many startups have any value for the key
 
@@ -37,6 +42,11 @@ must stage [seed, series_a] and center seed span 1. Stage words: pre_seed seed s
 A stage (or a center) ONLY when the brief names one (seed, series A, …) — "startups" alone is not a stage. EVERY area, place, program,
 investor, founder count, funding figure or hiring condition the brief names MUST appear under a key (never only in `text`).
 Money is "raised" / "funding" → total_disclosed_funding unless the brief says "last round". Do not invent values the brief does not imply.
+The user message may carry `words_that_name_a_filter`: spans of the brief that are legal values of the
+vocabulary below, found by looking the words up. They are CANDIDATES, not decisions. Confirm one by
+putting it under the right key; reject it by leaving it out — "a data moat" names no tech area, "staff
+the office" names no seniority. You see the sentence; the lookup saw only words.
+
 Examples:
   brief: "robotics startups in Boston that raised over $5M"
   → {{"text": "robotics startups", "must": {{"tech_area": ["robotics"], "metro": ["boston"], "total_disclosed_funding": {{"min": 5000000}}}}, "must_not": {{}}, "prefer": {{}}, "avoid": {{}}, "center": null, "rank_by": "match", "notes": []}}
@@ -276,16 +286,120 @@ def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dic
         if errs:
             c = Contract(kind=KIND, text=c.text, limit=limit)
             notes.append("the brief could not be compiled into filters; ranking by the words alone")
+    notes += settle_text(c, brief)
     return c, notes
 
 
-async def compile_brief(llm_json, text: str, *, coverage: dict | None = None, value_counts: dict | None = None, limit: int = 60) -> tuple[Contract, list[str]]:
+def lexicon_read(brief: str):
+    """The deterministic first read of a brief — the facet values in the words themselves.
+
+    The compiler is a model told to extract what a brief states as a requirement, and one bare word states
+    nothing: "acquired" is a legal `status`, "bay area" a legal `metro`, and both compiled to nothing. This
+    looks them up before the model is asked, which is not a better prompt but a different kind of answer.
+    """
+    if not (brief or "").strip():
+        return None
     try:
-        out = await llm_json(system_prompt(), json.dumps({"brief": text[:1500]}))
+        cfg = lexicon_config()
+        spans = find_spans(brief, SCHEMA, KIND, aliases=cfg["aliases"])
+        if not spans:
+            return None
+        return plan_from_spans(brief, spans, filler=cfg["filler"], must_keys=cfg["must_keys"],
+                               risky_values=cfg["risky_values"])
+    except Exception:      # noqa: BLE001 — a lexicon that cannot read must never fail a search
+        return None
+
+
+def apply_lexicon(c: Contract, plan) -> list[str]:
+    """Fold the lexicon's read into a compiled contract. THE MODEL STILL WINS.
+
+    A key the compiler already spoke about is left alone: it read the whole sentence and this read only
+    words. The one exception is a key the model recognised but merely RANKED on, where the lexicon accounts
+    for the whole brief and names the same value — that is the reader stating it, and it hardens.
+    """
+    if plan is None:
+        return []
+    notes = list(plan.notes)
+    for key, vals in (plan.must or {}).items():
+        if key in c.must or key in c.avoid or key in (c.scope or {}).get("exclude", {}):
+            continue
+        if key in c.prefer:
+            model_vals = c.prefer.get(key)
+            if not (isinstance(model_vals, list) and set(vals) & set(model_vals)):
+                continue
+            c.prefer.pop(key, None)
+            c.must[key] = sorted(set(vals) & set(model_vals))
+            notes.append(f"you named the {SCHEMA.key(key).label.lower()}, so it filters rather than ranks")
+            continue
+        c.must[key] = list(vals)
+        notes.append(f"read \u201c{SCHEMA.key(key).label.lower()}\u201d straight from your words")
+    for key, vals in (plan.prefer or {}).items():
+        if key in c.must or key in c.prefer or key in c.avoid:
+            continue
+        c.prefer[key] = list(vals)
+    return notes
+
+
+def settle_text(c: Contract, brief: str, plan=None) -> list[str]:
+    """Drop the semantic text when every word of the brief already became a filter.
+
+    Measured on prod: "companies backed by Amplify" compiles correctly to `investor=[amplify]` and then
+    ALSO runs a semantic leg on the same words, so companies merely named "Amplify" fuse in beside the
+    ones Amplify funded. The filters are the search; the words were how the reader spelled them.
+    """
+    if not (brief or "").strip() or not c.text:
+        return []
+    try:
+        residual = claimed_by_filters(brief, c, filler=lexicon_config()["filler"],
+                                      spans=(plan.spans if plan is not None else None))
+        if not may_blank_text(c, residual, scope_keys=SCOPE_KEYS):
+            return []
+        c.text = ""
+        return ["every word of your brief became a filter, so the filters are the search"]
+    except Exception:      # noqa: BLE001 — never fail a search over a note
+        return []
+
+
+def candidates_for_model(plan) -> list[dict]:
+    """The lexicon's spans, in the shape the model is asked to adjudicate.
+
+    The model is given candidates to CONFIRM or REJECT rather than a blank page, because the judgment
+    that is left is exactly the one a model is good at and a word list is not: is "data" here the tech
+    area or the noun in "a data moat"? The lexicon can see that both readings are legal; only something
+    that read the sentence can choose.
+    """
+    if plan is None:
+        return []
+    out = []
+    for sp in plan.spans:
+        item = {"words": sp.text, "could_be": {sp.key: sp.value}}
+        if sp.ambiguous:
+            item["or"] = list(sp.ambiguous)
+        out.append(item)
+    return out[:12]
+
+
+async def compile_brief(llm_json, text: str, *, coverage: dict | None = None, value_counts: dict | None = None, limit: int = 60) -> tuple[Contract, list[str]]:
+    # LAYER 0 runs FIRST so its findings can be put in front of the model (docs/specs/query-intent.md).
+    plan = lexicon_read(text)
+    payload = {"brief": text[:1500]}
+    cands = candidates_for_model(plan)
+    if cands:
+        payload["words_that_name_a_filter"] = cands
+    try:
+        out = await llm_json(system_prompt(), json.dumps(payload))
     except Exception:   # noqa: BLE001
         out = {}
     if not isinstance(out, dict):
         out = {}
     if not out.get("text"):
         out["text"] = re.sub(r"\s+", " ", text)[:200]
-    return build_contract(out, coverage=coverage, value_counts=value_counts, limit=limit, brief=text)
+    c, notes = build_contract(out, coverage=coverage, value_counts=value_counts, limit=limit, brief=text)
+    # Then the lexicon fills only what the model left empty — it read the words, the model read the
+    # sentence — and the text is settled again, because hardening a key can be what finally accounts for
+    # the whole brief.
+    lex = apply_lexicon(c, plan)
+    if lex:
+        notes = (notes + lex)[:8]
+    notes += settle_text(c, text, plan)
+    return c, notes

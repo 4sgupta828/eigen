@@ -8523,7 +8523,13 @@ async function runEvaluate(contract, opts){
     const m=STATE.map;
     const url = m ? `/startups/maps/${m.id}/navigate${m.share?"?share="+encodeURIComponent(m.share):""}` : "/startups/evaluate";
     if(contract && contract.merge) STATE.merge = contract.merge;                       // merge options ride every re-run (rail edits included)
-    const payload = {...contract, merge: {...(STATE.merge||{mode:"merged"}), off: (STATE.mergeOff||[]), relax: !opts.diff && !opts.noRelax}};
+    // Relaxing is for a brief that matched too little, not for a filter someone clicked. A contract may
+    // opt out (`merge.relax === false`) and that must survive to the request — it was being overwritten
+    // here, so a deep link to a two-company portfolio had its one filter relaxed away and returned the
+    // whole index.
+    const askedNoRelax = contract && contract.merge && contract.merge.relax === false;
+    const payload = {...contract, merge: {...(STATE.merge||{mode:"merged"}), off: (STATE.mergeOff||[]),
+                                          relax: !opts.diff && !opts.noRelax && !askedNoRelax}};
     const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json",...authHeaders()},body:JSON.stringify({contract: payload, sort: STATE.sort || "relevance"})});
     if(!r.ok){ toast("evaluate failed: "+(await r.text()).slice(0,120)); STATE.lastDiff=null; return; }
     const d=await r.json(); STATE.data=d; STATE.auto=null; STATE.openGroups={}; STATE.contract=d.contract; STATE.draft=null; STATE.labels=d.labels; STATE.open=null;
@@ -8552,6 +8558,21 @@ async function enter(params){
   if(!entered){ entered=true; try{ const r=await fetch("/startups/coverage"); const c=await r.json(); STATE.indexCov=c; STATE.labels=c.labels; renderCoverage(); }catch(e){} }
   const h=params||new URLSearchParams();
   if(h.get("map")){ await openMap(h.get("map"), h.get("share")||""); }
+  else if(h.get("investor")){
+    // A deep link that carries the CONTRACT rather than a brief. An investor card already knows the
+    // firm's slug, so writing "companies backed by Amplify" and asking a model to read it back into
+    // `investor=amplify` is a round trip that can only lose — and did: the words also drove a semantic
+    // leg, so companies merely NAMED Amplify ranked beside the ones Amplify funded.
+    const slug=h.get("investor"), nm=h.get("name")||slug;
+    q.value="backed by "+nm;
+    // `user_keys` marks the investor filter as one the READER set, and merge.mode "single" turns off
+    // smart relaxing. Both matter: relaxing exists to widen a typed brief that matched too little, and
+    // it fired here on a portfolio of two companies — dropping the one filter the link was entirely
+    // about and returning the whole index. A filter someone clicked is not a guess to be second-guessed.
+    runContract({kind:"company", text:"", must:{investor:[slug]}, rank_by:"total_disclosed_funding",
+                 limit:60, merge:{mode:"single", relax:false, user_keys:["investor"]}},
+                "backed by "+nm);
+  }
   else if(h.get("b")){ q.value=h.get("b"); runCompile(h.get("b")); }
 }
 function rememberStartupSearch(contract, brief, hits){
@@ -8561,7 +8582,7 @@ function rememberStartupSearch(contract, brief, hits){
   }catch(e){ /* a history entry is never worth breaking a search over */ }
 }
 
-function runContract(contract, brief){ STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.brief=brief||""; if(brief) q.value=brief; STATE.merge=contract.merge||{mode:"merged"}; STATE.mergeOff=[]; renderNotes([]); renderMapBar(); return runEvaluate(contract); }
+function runContract(contract, brief, opts){ STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.brief=brief||""; if(brief) q.value=brief; STATE.merge=contract.merge||{mode:"merged"}; STATE.mergeOff=[]; renderNotes([]); renderMapBar(); return runEvaluate(contract, opts); }
 function reset(){
   STATE.groupBy=""; STATE.openGroups={}; STATE.auto=null; STATE.autoBusy=false;
   STATE.data=null; STATE.contract=null; STATE.draft=null; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.mergeOff=[]; STATE.brief=""; STATE.open=null; STATE.busy=false;
@@ -9924,7 +9945,9 @@ async function openShare(token){
     const foot = [];
     if(ev) foot.push(esc(vlabel("evidence_strength", ev)));
     if(f.iapd) foot.push(`<a href="${esc(f.iapd)}" target="_blank" rel="noopener">SEC record ↗</a>`);
-    if(pf) foot.push(`<a href="#startups?b=${encodeURIComponent("companies backed by " + (f.name || row.id))}">their portfolio ↗</a>`);
+    // An exact filter, not a sentence. We already know this firm's slug, so asking a model to read
+    // "companies backed by Amplify" back into `investor=amplify` is a round trip that can only lose.
+    if(pf) foot.push(`<a href="#startups?investor=${encodeURIComponent(row.id)}&name=${encodeURIComponent(f.name || row.id)}">their portfolio ↗</a>`);
     const found = Object.keys(row.found_by || {});
     if(found.length) foot.push("found by " + esc(found.join(" + ")));
 
