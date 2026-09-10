@@ -145,8 +145,10 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
             x["matched_register"] = _matched_register(x)
             if x.get("_found_by"):
                 x["found_by"] = x.pop("_found_by")         # which retrieval leg surfaced this firm
-        out["coverage"]["matched"] = (out.get("counts") or {}).pop("_total", None)
+        matched = (out.get("counts") or {}).pop("_total", None)
+        out["coverage"]["matched"] = matched
         out["labels"] = labels()
+        out["directions"] = _directions(out, c, matched)
         return out
 
     @r.post("/investors/advise")
@@ -278,6 +280,23 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
         return {"id": job_id, "cancelling": ok}
 
     return r
+
+
+def _directions(out: dict, c: Contract, matched: int | None) -> list[dict]:
+    """The few ways this investor search could usefully go next. Model-free; see the startups twin."""
+    from eigen_kernel.facets import facet_directions, rank_directions, worth_steering
+    try:
+        ok, why = worth_steering({"pool": matched or 0})
+        if not ok:
+            return []
+        settled = set(c.must or {}) | set(c.avoid or {}) | set((c.scope or {}).get("exclude") or {})
+        cands = facet_directions(out.get("counts") or {}, SCHEMA, KIND, exclude=settled, labels=labels())
+        return [{"key": d.key, "label": d.label, "values": d.values, "section": d.section,
+                 "hits": d.hits, "why": d.why, "source": d.source, "reason": why,
+                 "register": REGISTER.get(d.key, "")}
+                for d in rank_directions(cands, top=3)]
+    except Exception:      # noqa: BLE001
+        return []
 
 
 async def _subject_of(store: InvestorStore, name: str) -> tuple[dict, list[str], list[str], list[str]]:

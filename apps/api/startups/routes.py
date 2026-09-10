@@ -205,6 +205,7 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         total = (out.get("counts") or {}).pop("_total", None)
         out["rows"] = rows
         out["coverage"]["matched"] = total
+        out["directions"] = _directions(out, c, total)
         return out
 
     async def _slice(must: dict, exclude: dict) -> int:
@@ -526,6 +527,35 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         return {"jobs": [_job_row(j) for j in rows]}
 
     return r
+
+
+def _directions(out: dict, c: Contract, matched: int | None) -> list[dict]:
+    """The few ways this search could usefully go next — computed, not asked, and free.
+
+    Nothing here calls a model or runs another query: the counts are already in the response, and a
+    direction is a contract edit the caller applies and re-runs. The rail already lets a reader change
+    any key they can think of; this is the other thing, which is naming the two or three changes that
+    would actually move THIS result set — a distinction the rail cannot make because it shows every key
+    at once, in a fixed order, whether or not it splits anything.
+
+    Silence is a real answer. A pool too thin to split, or one the reader has already narrowed to a
+    handful, gets nothing.
+    """
+    from eigen_kernel.facets import facet_directions, rank_directions, worth_steering
+    try:
+        ok, why = worth_steering({"pool": matched or 0,
+                                  "weak": bool(((out.get("coverage") or {}).get("merge") or {}).get("weak"))})
+        if not ok:
+            return []
+        # Keys the reader has already decided about are not open questions.
+        settled = set(c.must or {}) | set(c.avoid or {}) | set((c.scope or {}).get("exclude") or {})
+        cands = facet_directions(out.get("counts") or {}, SCHEMA, KIND, exclude=settled,
+                                 labels=out.get("labels") or {})
+        return [{"key": d.key, "label": d.label, "values": d.values, "section": d.section,
+                 "hits": d.hits, "why": d.why, "source": d.source, "reason": why}
+                for d in rank_directions(cands, top=3)]
+    except Exception:      # noqa: BLE001 — a steering hint is never worth failing a search over
+        return []
 
 
 def _excluded(row: dict, exclude: dict) -> bool:

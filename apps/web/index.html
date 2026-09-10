@@ -1897,6 +1897,22 @@
   .themebtn:hover{color:var(--ink);border-color:var(--gold);}
   @media (max-width:640px){ .themebtn{left:.7rem;bottom:.7rem;font-size:.6rem;padding:.36rem .6rem;} }
 
+  /* ===== Directions — the few ways a search could usefully go next (both modes) =====
+     The rail lets you change any key you can think of. This names the two or three changes that would
+     actually move THIS result set — which the rail cannot do, because it shows every key at once in a
+     fixed order whether or not it splits anything. Computed from the counts already in the response:
+     no model call, no extra query. */
+  .dirs{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin:.1rem 0 .7rem;}
+  .dirs-k{font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);margin-right:.15rem;}
+  .dir{font:inherit;font-size:.74rem;padding:.3rem .65rem;min-height:34px;border:1px dashed var(--gold);
+    border-radius:999px;background:rgba(var(--gold-rgb),.07);color:var(--gold-strong);cursor:pointer;
+    white-space:nowrap;}
+  .dir:hover{border-style:solid;background:rgba(var(--gold-rgb),.14);}
+  .dir b{margin-left:.35rem;font-weight:600;opacity:.7;font-size:.68rem;}
+  .dir.avoid{border-color:var(--gap);color:var(--gap);background:transparent;}
+  @media (max-width:560px){ .dirs-k{width:100%;margin-bottom:.1rem;} }
+
   /* ===== Investor Search — an inline MODE of the shell (body[data-mode="investors"]) =====
      The mode's whole visual argument is the REGISTER: ▣ a regulator filed it · ▢ the firm says it ·
      ◈ we measured it over our own index. Those three never share a typographic treatment, because the
@@ -2656,6 +2672,16 @@ function applyDisclaimers(){
 }
 
 function esc(s){const d=document.createElement("div");d.textContent=s??"";return d.innerHTML;}
+
+// Shared by BOTH search modes, so it lives at true top level. index.html is a stack of per-mode IIFEs:
+// a helper defined inside one of them is invisible to the others, and the failure is silent — the
+// buttons render, nothing binds, and clicking does nothing at all. (The same trap took DeepDive's
+// number formatter and the shared progress banner.)
+function wireDirs(box, apply){
+  if(!box) return;
+  box.querySelectorAll("[data-dir]").forEach(b =>
+    b.addEventListener("click", () => apply(Number(b.dataset.dir))));
+}
 
 // [n] AND grouped [n, m, k] citation refs → clickable sups, in ONE pass (a chained second replace
 // would re-match the [n] text inside the sups the first pass emitted and nest tags).
@@ -8057,7 +8083,33 @@ function renderResults(){
     }
     box.innerHTML=`<div class="su-empty">No startup in the index satisfies every must.${lines.length?`<ul style="text-align:left;margin:.6rem auto 0;max-width:640px;padding-left:1.2rem;font-size:.82rem">${lines.join("")}</ul>`:""}<div style="margin-top:.5rem">Tap a ● must chip in the rail to turn it into a ▲ preference, then Apply.</div></div>`; return; }
   d.rows.forEach((r,i)=>{ r.rank=i+1; });
-  box.innerHTML = groupBarHtml(d) + groupedResultsHtml(d);
+  box.innerHTML = dirsHtml(d) + groupBarHtml(d) + groupedResultsHtml(d);
+  wireDirs(box, applyDirection);
+}
+
+// ---- directions: the few changes that would actually move THIS result set ----
+// Computed server-side from the counts already in the response, so a chip costs nothing to offer and
+// nothing to ignore. Tapping one edits the contract and re-runs — unlike the group bar, which only
+// re-arranges what is already on screen.
+function dirsHtml(d){
+  const ds = (d && d.directions) || [];
+  if(!ds.length) return "";
+  return `<div class="dirs"><span class="dirs-k" title="${esc((ds[0]||{}).reason||"")}">Narrow by</span>`
+    + ds.map((x,i)=>`<button type="button" class="dir${x.section==="avoid"?" avoid":""}" data-dir="${i}"
+        title="${esc(x.why)} — applies the filter and re-runs">${esc(x.label)}<b>${x.hits}</b></button>`).join("")
+    + `</div>`;
+}
+function applyDirection(i){
+  const d = STATE.data, x = ((d && d.directions) || [])[i];
+  if(!x || !x.key) return;
+  const base = JSON.parse(JSON.stringify(STATE.contract || {}));
+  const bag = x.section === "avoid" ? (base.avoid = base.avoid || {}) : (base.must = base.must || {});
+  bag[x.key] = Array.from(new Set([...(bag[x.key] || []), ...x.values]));
+  // A direction the reader tapped is a decision, not a guess — it must not be relaxed away, which is
+  // the same rule the investor-portfolio deep link needed.
+  base.merge = {...(base.merge || {}), relax: false,
+                user_keys: Array.from(new Set([...((base.merge || {}).user_keys || []), x.key]))};
+  runContract(base, STATE.brief || "");
 }
 
 // ---- grouping the results ------------------------------------------------------------------------
@@ -9998,7 +10050,29 @@ async function openShare(token){
       return;
     }
     box().innerHTML = (deg ? `<div class="iv-note">${esc(deg)}</div>` : "")
-      + `<div class="iv-grid">${rows.map(cardHtml).join("")}</div>`;
+      + ivDirsHtml(d) + `<div class="iv-grid">${rows.map(cardHtml).join("")}</div>`;
+    wireDirs(box(), applyIvDirection);
+  }
+
+  // The register travels onto the chip: "narrow to firms who SAY they do seed" is a different offer
+  // from "narrow to firms we have SEEN do seed", and a founder choosing between them should be told.
+  function ivDirsHtml(d){
+    const ds = (d && d.directions) || [];
+    if(!ds.length) return "";
+    return `<div class="dirs"><span class="dirs-k">Narrow by</span>`
+      + ds.map((x, i) => `<button type="button" class="dir${x.section === "avoid" ? " avoid" : ""}" data-dir="${i}"
+          title="${esc(x.why)}${x.register ? " — " + esc(REG_BLURB[x.register] || "") : ""}">${GLYPH[x.register] || ""} ${esc(x.label)}<b>${x.hits}</b></button>`).join("")
+      + `</div>`;
+  }
+
+  function applyIvDirection(i){
+    const x = ((STATE.data && STATE.data.directions) || [])[i];
+    if(!x || !x.key) return;
+    const base = JSON.parse(JSON.stringify(STATE.contract || {}));
+    const bag = x.section === "avoid" ? (base.avoid = base.avoid || {}) : (base.must = base.must || {});
+    bag[x.key] = Array.from(new Set([...(bag[x.key] || []), ...x.values]));
+    STATE.draft = null;
+    runContract(base);
   }
 
   function wireRail(){
