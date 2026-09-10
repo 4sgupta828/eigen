@@ -1896,6 +1896,75 @@
     transition:color .15s,border-color .15s;}
   .themebtn:hover{color:var(--ink);border-color:var(--gold);}
   @media (max-width:640px){ .themebtn{left:.7rem;bottom:.7rem;font-size:.6rem;padding:.36rem .6rem;} }
+
+  /* ===== Investor Search — an inline MODE of the shell (body[data-mode="investors"]) =====
+     The mode's whole visual argument is the REGISTER: ▣ a regulator filed it · ▢ the firm says it ·
+     ◈ we measured it over our own index. Those three never share a typographic treatment, because the
+     moment they look alike a marketing claim reads as a filing. docs/specs/investors.md §0. */
+  #investorsbody{display:none;}
+  body[data-mode="investors"] #investorsbody{display:block;}
+  body[data-mode="investors"] #out, body[data-mode="investors"] #effort{display:none !important;}
+  #investorsbody{--filed:#2E7D6B;--stated:#8a6d3b;--observed:#4a6fa5;}
+  #investorsbody .iv-examples{display:flex;flex-wrap:wrap;gap:.35rem;margin:.2rem 0 .6rem;}
+  #investorsbody .iv-ex{font-size:.74rem;padding:.3rem .6rem;min-height:34px;border:1px dashed var(--hair);
+    border-radius:999px;background:transparent;color:var(--muted);cursor:pointer;text-align:left;}
+  #investorsbody .iv-ex:hover{color:var(--ink);border-color:var(--gold);border-style:solid;}
+  #investorsbody .iv-note{font-size:.78rem;line-height:1.55;color:var(--muted);margin:.35rem 0;padding-left:1rem;
+    border-left:2px solid var(--hair);}
+  #investorsbody .iv-note.refuse{border-left-color:var(--gold);color:var(--ink);}
+  #investorsbody .iv-cov{font-size:.8rem;color:var(--muted);margin:.4rem 0 .6rem;line-height:1.6;}
+  #investorsbody .iv-cov b{color:var(--ink);}
+  #investorsbody .iv-cov .iv-caveat{display:block;font-size:.74rem;font-style:italic;margin-top:.2rem;}
+  /* the rail, grouped by register */
+  #investorsbody .iv-rail{margin:.5rem 0 .8rem;border:1px solid var(--hair);border-radius:12px;padding:.5rem .7rem;background:var(--panel);}
+  #investorsbody .iv-rail.busy{opacity:.6;pointer-events:none;}
+  #investorsbody .iv-grp{margin:.45rem 0 .1rem;padding-top:.4rem;border-top:1px dashed var(--hair);}
+  #investorsbody .iv-grp:first-child{border-top:0;padding-top:0;}
+  #investorsbody .iv-grph{font-family:var(--mono);font-size:.63rem;letter-spacing:.06em;text-transform:uppercase;margin-bottom:.25rem;}
+  #investorsbody .iv-grph i{font-style:normal;text-transform:none;letter-spacing:0;font-size:.7rem;color:var(--muted);margin-left:.4rem;}
+  #investorsbody .iv-grph.filed{color:var(--filed);} #investorsbody .iv-grph.stated{color:var(--stated);}
+  #investorsbody .iv-grph.observed{color:var(--observed);}
+  #investorsbody .iv-row{display:flex;gap:.3rem;align-items:center;overflow-x:auto;padding:.15rem 0;scrollbar-width:thin;}
+  #investorsbody .iv-k{flex:none;font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);min-width:120px;}
+  #investorsbody .iv-chip{flex:none;font:inherit;font-size:.74rem;padding:.25rem .55rem;min-height:32px;border:1px solid var(--hair);
+    border-radius:999px;background:var(--panel2,transparent);color:var(--muted);cursor:pointer;white-space:nowrap;}
+  #investorsbody .iv-chip:hover{color:var(--ink);border-color:var(--gold);}
+  #investorsbody .iv-chip b{margin-left:.3rem;font-weight:600;opacity:.65;font-size:.68rem;}
+  #investorsbody .iv-chip.must{border-color:var(--gold);color:var(--gold-strong);font-weight:600;}
+  #investorsbody .iv-chip.prefer{border-color:var(--verified);color:var(--verified);}
+  #investorsbody .iv-chip.avoid{border-color:var(--gap);color:var(--gap);text-decoration:line-through;}
+  #investorsbody .iv-chip.unknown{opacity:.45;cursor:default;}
+  #investorsbody .iv-apply{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.5rem;padding-top:.45rem;
+    border-top:1px dashed var(--hair);font-size:.78rem;color:var(--muted);}
+  /* cards */
+  #investorsbody .iv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:.7rem;margin-top:.6rem;}
+  #investorsbody .iv-card{border:1px solid var(--hair);border-radius:12px;padding:.7rem .8rem;background:var(--panel);}
+  #investorsbody .iv-hd{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap;}
+  #investorsbody .iv-name{font-weight:650;font-size:.98rem;color:var(--ink);text-decoration:none;}
+  #investorsbody .iv-name:hover{color:var(--gold);text-decoration:underline;}
+  #investorsbody .iv-type{font-family:var(--mono);font-size:.63rem;letter-spacing:.04em;padding:.1rem .45rem;border-radius:999px;
+    border:1px solid var(--filed);color:var(--filed);white-space:nowrap;}
+  #investorsbody .iv-where{font-size:.76rem;color:var(--muted);margin-top:.15rem;}
+  #investorsbody .iv-line{font-size:.8rem;line-height:1.6;margin-top:.35rem;display:flex;gap:.4rem;}
+  #investorsbody .iv-g{flex:none;font-size:.72rem;line-height:1.9;}
+  #investorsbody .iv-g.filed{color:var(--filed);} #investorsbody .iv-g.stated{color:var(--stated);}
+  #investorsbody .iv-g.observed{color:var(--observed);}
+  #investorsbody .iv-line.stated{font-style:italic;color:var(--stated);}
+  #investorsbody .iv-foot{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.5rem;padding-top:.4rem;
+    border-top:1px dashed var(--hair);font-size:.72rem;color:var(--muted);}
+  #investorsbody .iv-foot a{color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--hair);}
+  #investorsbody .iv-foot a:hover{color:var(--gold);}
+  #investorsbody .iv-gap{font-size:.73rem;color:var(--muted);opacity:.8;margin-top:.3rem;}
+  #investorsbody .iv-why{font-size:.73rem;color:var(--muted);margin-top:.3rem;}
+  #investorsbody .iv-empty{font-size:.86rem;color:var(--muted);line-height:1.7;margin:1rem 0;}
+  #investorsbody .iv-legend{font-size:.72rem;color:var(--muted);margin:.1rem 0 .5rem;}
+  #investorsbody .iv-legend span{margin-right:.9rem;}
+  @media (max-width:560px){
+    #investorsbody .iv-grid{grid-template-columns:1fr;}
+    #investorsbody .iv-k{min-width:84px;font-size:.58rem;}
+    #investorsbody .iv-chip{font-size:.7rem;}
+    #investorsbody .iv-legend span{display:block;margin:.2rem 0;}
+  }
 </style>
 <script>
   /* Apply the saved theme BEFORE first paint (no flash), then wire the toggle once the DOM is ready. */
@@ -1972,6 +2041,7 @@
       <button type="button" class="mbtn" id="startupsTab" role="tab" aria-selected="false" hidden title="Startup Search — cards over a grounded startup index">◆ Startups</button>
       <button type="button" class="mbtn" id="voicesTab" role="tab" aria-selected="false" hidden title="Voices — what founders and investors actually said">◇ Voices</button>
       <button type="button" class="mbtn" id="deepdiveTab" role="tab" aria-selected="false" hidden title="DeepDive — one company, read end to end">⌖ DeepDive</button>
+      <button type="button" class="mbtn" id="investorsTab" role="tab" aria-selected="false" hidden title="Investors — who funds what, from the public record">◈ Investors</button>
     </div>
   </div>
   <form id="ask">
@@ -2146,6 +2216,14 @@
   <div id="su-rail"></div>
   <div id="su-results"></div>
   <div class="toast" id="su-toast"></div>
+</section>
+
+<section id="investorsbody" aria-label="Investor search">
+  <div class="iv-examples" id="iv-examples"></div>
+  <div id="iv-notes"></div>
+  <div id="iv-cov" class="iv-cov"></div>
+  <div id="iv-rail"></div>
+  <div id="iv-results"></div>
 </section>
 
   <footer class="pagefoot" id="pagefoot" hidden></footer>
@@ -2354,6 +2432,7 @@ let REASONING_ENABLED = false;  // reasoning-read interpretation + confidence la
 let ASK_PANEL_ENABLED = false;  // AI expert panel (Alpha)
 let TRIAGE_ENABLED = false;     // guided-intake / triage mode (clarify → route)
 let STARTUPS_ENABLED = false;   // Startup Search — a separate page (/startups), shown as a tab when enabled
+let INVESTORS_ENABLED = false;  // Investor Search — an inline mode (body[data-mode="investors"])
 let VOICES_ENABLED = false;     // Voices — first-person founder/investor content, an inline mode
 let DEEPDIVE_ENABLED = false;   // DeepDive — one company read end to end, an inline mode
 let ACCOUNTS_ENABLED = false;   // accounts + per-answer feedback (W-taxonomy)
@@ -2431,6 +2510,7 @@ async function loadConfig(){
     ASK_PANEL_ENABLED = !!c.ask_panel_enabled;
     TRIAGE_ENABLED = !!c.triage_enabled;
     STARTUPS_ENABLED = !!c.startup_search_enabled;
+    INVESTORS_ENABLED = !!c.investor_search_enabled;
     VOICES_ENABLED = !!c.voices_enabled;
     DEEPDIVE_ENABLED = !!c.deepdive_enabled;
     ACCOUNTS_ENABLED = !!c.accounts_enabled;
@@ -2453,7 +2533,7 @@ async function loadConfig(){
     }
     PANEL_SPECIALISTS = c.panel_specialists || [];
     PANEL_EXAMPLES = c.panel_examples || [];
-    if(ASK_PANEL_ENABLED || TRIAGE_ENABLED || STARTUPS_ENABLED || VOICES_ENABLED || DEEPDIVE_ENABLED){
+    if(ASK_PANEL_ENABLED || TRIAGE_ENABLED || STARTUPS_ENABLED || VOICES_ENABLED || DEEPDIVE_ENABLED || INVESTORS_ENABLED){
       // One shell, up to three modes (Guided intake ⇄ Quick Q&A ⇄ Expert Panel), switched in the same
       // place under the heading. Only the enabled modes' buttons show; the shared box carries across them.
       $("#modeswitch").classList.add("on");
@@ -2464,6 +2544,7 @@ async function loadConfig(){
       const gbtn = $("#guidedTab"); if(gbtn){ gbtn.hidden = !STARTUPS_ENABLED; gbtn.dataset.mode = "guided"; }
       const vbtn = $("#voicesTab"); if(vbtn){ vbtn.hidden = !VOICES_ENABLED; vbtn.dataset.mode = "voices"; }
       const dbtn = $("#deepdiveTab"); if(dbtn){ dbtn.hidden = !DEEPDIVE_ENABLED; dbtn.dataset.mode = "deepdive"; }
+      const ibtn = $("#investorsTab"); if(ibtn){ ibtn.hidden = !INVESTORS_ENABLED; ibtn.dataset.mode = "investors"; }
       wireModeSwitch($("#modeswitch"));
     }
     VISION_ENABLED = !!c.vision_enabled;
@@ -4263,6 +4344,7 @@ $("#ask").addEventListener("submit", e=>{
   if(APP_MODE === "triage"){ submitTriage(question); return; }        // guided intake → next clarifying turn
   if(APP_MODE === "panel"){ submitPanelIntake(question); return; }   // panel mode → convene / follow-up
   if(APP_MODE === "startups"){ if(question && window.SU) SU.search(question); return; }   // startup search → compile + evaluate
+  if(APP_MODE === "investors"){ if(question && window.IV) IV.search(question); return; }  // investor search → compile + evaluate
   if(APP_MODE === "voices"){ if(window.VO) VO.search(question); return; }                 // voices → keyword search over first-person content
   if(APP_MODE === "deepdive"){ if(window.DD) DD.search(question); return; }             // deepdive → resolve one company, then read it
   if(APP_MODE === "guided"){ if(window.SG) SG.send(question); return; }                      // guided → one intake turn
@@ -4449,6 +4531,7 @@ function setMode(mode, opts){
   opts = opts || {};
   mode = (mode === "panel" || mode === "triage" || (mode === "voices" && VOICES_ENABLED)
           || (mode === "deepdive" && DEEPDIVE_ENABLED)
+          || (mode === "investors" && INVESTORS_ENABLED)
           || ((mode === "startups" || mode === "guided") && STARTUPS_ENABLED)) ? mode : "qa";
   APP_MODE = mode;
   GUIDED_REFINED = false;   // any mode change clears the stale "skip refine" flag (routeTriage re-sets it)
@@ -4457,8 +4540,12 @@ function setMode(mode, opts){
     if(typeof voiceOff === "function") voiceOff(); }                      // leaving guided mode ends the voice loop
   $("#modeswitch").querySelectorAll(".mbtn").forEach(b =>
     b.setAttribute("aria-selected", b.dataset.mode === mode ? "true" : "false"));
+  // The switch scrolls horizontally on a phone, so the mode you just chose can sit off-screen — and a
+  // selected tab you cannot see reads as no selection at all.
+  const _sel = $("#modeswitch").querySelector('.mbtn[aria-selected="true"]:not([hidden])');
+  if(_sel && _sel.scrollIntoView) try{ _sel.scrollIntoView({block: "nearest", inline: "nearest"}); }catch(e){}
   ATTN_BOX = "#attns"; renderAttachments();   // one intake box → one attachment surface
-  const clearModeHash = () => { if(/^#(panel|triage|startups|guided|voices|deepdive)/.test(location.hash) || location.hash.indexOf("#p/") === 0)
+  const clearModeHash = () => { if(/^#(panel|triage|startups|guided|voices|deepdive|investors)/.test(location.hash) || location.hash.indexOf("#p/") === 0)
     history.replaceState(null, "", location.pathname + location.search); };
   if(mode === "panel"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -4482,6 +4569,13 @@ function setMode(mode, opts){
     q.setAttribute("placeholder", "e.g. seed to series A AI-infra startups selling to banks, ≥ $5M raised, founders ex-Stripe, not YC, hiring sales");
     if(location.hash.indexOf("#startups") !== 0) history.pushState(null, "", "#startups");
     if(window.SU) SU.enter(opts.params);
+    q.focus();
+  } else if(mode === "investors"){
+    document.body.classList.remove("chatting"); out.style.paddingBottom = "";
+    $("#heading").textContent = "Who funds this, and what does the public record say about them?";
+    q.setAttribute("placeholder", "e.g. seed funds that lead in AI infra, US or Europe, $50–250M latest fund, still deploying");
+    if(location.hash.indexOf("#investors") !== 0) history.pushState(null, "", "#investors");
+    if(window.IV) IV.enter(opts.params);
     q.focus();
   } else if(mode === "deepdive"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -6026,6 +6120,11 @@ function newConversation(){
     try{ history.replaceState(null, "", "#startups"); }catch(e){}
     window.scrollTo({top:0}); q.focus(); return;
   }
+  if(APP_MODE === "investors"){                         // a fresh Investor search: results, rail and notes cleared
+    if(window.IV && IV.reset) IV.reset();
+    try{ history.replaceState(null, "", "#investors"); }catch(e){}
+    window.scrollTo({top:0}); q.focus(); return;
+  }
   if(APP_MODE === "guided"){                            // a fresh Guided intake from its opening question
     if(window.SG) SG.enter(true);
     try{ history.replaceState(null, "", "#guided"); }catch(e){}
@@ -6888,6 +6987,10 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel �
     if(window.DD) DD.dive(Object.assign({company_id: cid}, depth ? {depth: depth} : {}));
   }
   else if(location.hash === "#deepdive" && DEEPDIVE_ENABLED){ setMode("deepdive"); }
+  else if(location.hash.indexOf("#investors") === 0 && INVESTORS_ENABLED){
+    const m = location.hash.match(/[?&]b=([^&]*)/);
+    setMode("investors", {params: m ? {brief: decodeURIComponent(m[1])} : null});
+  }
   else if(location.hash === "#settings"){ openSettings(); }
   else if(location.hash === "#graph"){ openGraphConsole(); }
   else if(location.hash === "#ingest"){ openIngest(); }
@@ -7115,6 +7218,43 @@ window.addEventListener("hashchange", ()=>{
     card.querySelector(".fx-x").addEventListener("click", () => card.remove());
   }
 })();
+// SHARED by Startup Search and Guided, so they live outside both. They used to sit inside the Startup
+// Search IIFE, where `readingName` was invisible to Guided: its ready card threw ReferenceError, the
+// innerHTML assignment never ran, and the thread sat on a stale "thinking…" forever with no error
+// anywhere. Each caller passes its OWN key-labeller — reaching for one across a module seam is what
+// broke this in the first place.
+function _rawKey(k){ return String(k).replace(/_/g, " "); }
+// The search runs your filters, then runs some variants of them and merges the results, so a good
+// company is not lost to one filter you did not really mean. This names each variant by the ONE
+// thing it changes — "ignoring stage" — rather than by what it is called inside the engine. Earlier
+// attempts ("compiled reading ranks", then "only your filters") named the machinery twice over.
+function readingName(name, klabelFn){
+  const kl = klabelFn || _rawKey;
+  if(name === "strict") return "everything you asked for";
+  if(name === "default") return "ignoring what we guessed";
+  if(name === "loose") return "ignoring every optional filter";
+  if(name.indexOf("relaxed:") === 0) return "ignoring " + kl(name.slice(8)).toLowerCase();
+  if(name.indexOf("reading:") === 0){
+    const rest = name.slice(8), eq = rest.indexOf("=");
+    return eq > 0 ? "reading " + kl(rest.slice(0, eq)).toLowerCase() + " as \u201c" + rest.slice(eq + 1).replace(/_/g, " ") + "\u201d"
+                  : "another way of reading it";
+  }
+  return name.replace(/_/g, " ");
+}
+function readingWhy(name, klabelFn){
+  const kl = klabelFn || _rawKey;
+  if(name === "strict") return "every filter applied, so these match your brief exactly";
+  if(name === "default") return "the filters we inferred from your words stop excluding companies — the chips you set yourself still do";
+  if(name === "loose") return "every filter we added ourselves stops excluding companies";
+  if(name.indexOf("relaxed:") === 0) return kl(name.slice(8)) + " stops excluding companies; everything else still applies";
+  if(name.indexOf("reading:") === 0) return "the same words taken to mean something else";
+  return "";
+}
+function readingPool(pool){
+  if(pool == null) return "not measured";
+  return (pool >= 2001 ? "2000+" : pool) + " startups matched this way";
+}
+
 // ===== Guided startup search — roster's intake, adapted: opening words → compile → a few questions gated on the
 // index's counts → a ready card the user ratifies → hand-off to the Startups mode with the contract =====
 (function(){
@@ -7160,7 +7300,7 @@ window.addEventListener("hashchange", ()=>{
     return `<div class="sg-ready"><div class="sg-ready-h">Here's what I'll search — adjust it in the rail after, or start over</div>
       <div class="sg-understood">${esc(r.understood)}</div><div class="sg-chips">${chipsHtml(r.contract||{})}</div>
       <div class="sg-pool"><b>${r.pool||0}</b> startups match every filter right now.</div>
-      ${(r.recipes||[]).length?`<div class="sg-readings"><div class="sg-ready-h">The search also runs these variations of your brief and mixes the results in, so a good company is not lost to one filter you did not really mean.</div>${r.recipes.map(x=>`<div class="sg-reading"><b>${esc(readingName(x.name))}</b> · ${esc(readingPool(x.pool))} <span class="c-dom">${esc(readingWhy(x.name))}</span></div>`).join("")}</div>`:""}
+      ${(r.recipes||[]).length?`<div class="sg-readings"><div class="sg-ready-h">The search also runs these variations of your brief and mixes the results in, so a good company is not lost to one filter you did not really mean.</div>${r.recipes.map(x=>`<div class="sg-reading"><b>${esc(readingName(x.name, klab))}</b> · ${esc(readingPool(x.pool))} <span class="c-dom">${esc(readingWhy(x.name, klab))}</span></div>`).join("")}</div>`:""}
       ${(r.diagnostics||[]).length?`<div class="sg-notes">${r.diagnostics.map(d=>`filtering on <b>${esc(d.label)}: ${esc(d.values)}</b> leaves ${d.pool_with} startups — without it, ${d.pool_without>=2001?"2000+":d.pool_without}`).join("<br>")}</div>`:""}
       ${(r.ruled_out||[]).length?`<div class="sg-out">not looking for: ${esc((r.ruled_out||[]).join(", "))}</div>`:""}
       ${(r.notes||[]).length?`<div class="sg-notes">${r.notes.map(n=>esc(n)).join("<br>")}</div>`:""}
@@ -7241,51 +7381,6 @@ window.addEventListener("hashchange", ()=>{
     }
     finally{ if(deadline) clearTimeout(deadline); G.abort = null; G.busy = false; safeRender(); }
   }
-  // Recent searches, newest first. Clicking one runs it again against the index AS IT IS NOW — the
-  // point of a history entry is that the answer may have changed since.
-  async function showRecent(){
-    STATE.view = "recent";
-    note().textContent = "Loading your recent searches\u2026";
-    cards().innerHTML = "";
-    const {searches, where} = await recentSearches("voices");
-    if(!searches.length){
-      note().textContent = "No searches yet. What you run will appear here (" + where + ").";
-      return;
-    }
-    note().textContent = searches.length + " recent " + (searches.length === 1 ? "search" : "searches")
-      + " \u00b7 kept in " + where + " \u00b7 click one to run it again";
-    cards().innerHTML = '<div class="vo-hist">' + searches.map((h, i) => {
-      const q = (h.query || {});
-      const bits = [q.kinds && q.kinds.length ? q.kinds[0] + "s" : "", q.days ? "last " + q.days + " days" : "",
-                    q.order && q.order !== "recent" ? q.order : "",
-                    h.hits ? h.hits + " results" : "", h.runs > 1 ? "run " + h.runs + "×" : ""].filter(Boolean);
-      return '<button type="button" class="vo-hrow" data-recent="' + i + '">'
-        + '<span class="vo-hq">' + esc(h.title || q.q || "browse") + "</span>"
-        + '<span class="vo-hmeta">' + esc(bits.join(" \u00b7 ")) + (h.at ? " \u00b7 " + esc(shortDate(h.at)) : "") + "</span>"
-        + "</button>";
-    }).join("") + "</div>";
-    STATE.recent = searches;
-  }
-
-  async function showSaved(){
-    STATE.view = "saved";
-    note().textContent = "Loading what you kept\u2026";
-    cards().innerHTML = "";
-    try{
-      const r = await fetch("/voices/favorites", {headers: authHeaders()});
-      const d = await r.json();
-      if(!d.signed_in){
-        note().textContent = "Sign in to keep moments. They follow your account, so what you keep here is there on your phone too.";
-        return;
-      }
-      const ms = (d.moments || []).map(m => Object.assign({saved: true}, m));
-      STATE.moments = ms;
-      if(!ms.length){ note().textContent = "Nothing kept yet. The ☆ on any card puts it here."; return; }
-      note().textContent = ms.length + (ms.length === 1 ? " kept moment" : " kept moments");
-      cards().innerHTML = ms.map(cardHtml).join("");
-    }catch(e){ note().textContent = "Could not load your kept list: " + (e && e.message ? e.message : e); }
-  }
-
   function enter(fresh){
     if(fresh){ forget(); G.state=null; G.last=null; G.ready=null; G.err=null; G.busy=false; send(""); return; }
     if(G.last){ safeRender(); return; }
@@ -7320,6 +7415,9 @@ const WORK_OPS = [
   [/\/startups\/maps\/[^/]+\/navigate/,   {family: "startups", msg: "Searching the index\u2026"}],
   [/\/startups\/group\b/,                 {family: "startups", msg: "Grouping these companies\u2026", slowAfter: 10,
                                            slowMsg: "Still grouping \u2014 reading the whole result set\u2026"}],
+  [/\/investors\/compile\b/,              {family: "investors", msg: "Reading your brief\u2026"}],
+  [/\/investors\/evaluate\b/,             {family: "investors", msg: "Searching the investor index\u2026", slowAfter: 8,
+                                           slowMsg: "Still searching \u2014 fusing the keyword and semantic legs\u2026"}],
   [/\/voices\/search\b/,                  {msg: "Searching what founders and investors said\u2026"}],
   [/\/voices\/summarize\b/,               {msg: "Reading this moment\u2026"}],
   [/\/deepdive\b/,                         {msg: "Reading the company\u2026", slowAfter: 8,
@@ -7513,36 +7611,6 @@ function label(key, v){ const L=STATE.labels||{}; if(v==="unknown") return "unkn
 function klabel(key){ const L=STATE.labels||{}; return (L.keys||{})[key] || key; }
 
 // ---- What is in this list -----------------------------------------------------------------------
-// The search runs your filters, then runs some variants of them and merges the results, so a good
-// company is not lost to one filter you did not really mean. This names each variant by the ONE
-// thing it changes — "ignoring stage" — rather than by what it is called inside the engine. Earlier
-// attempts ("compiled reading ranks", then "only your filters") named the machinery twice over.
-function readingName(name, klabelFn){
-  const kl = klabelFn || klabel;
-  if(name === "strict") return "everything you asked for";
-  if(name === "default") return "ignoring what we guessed";
-  if(name === "loose") return "ignoring every optional filter";
-  if(name.indexOf("relaxed:") === 0) return "ignoring " + kl(name.slice(8)).toLowerCase();
-  if(name.indexOf("reading:") === 0){
-    const rest = name.slice(8), eq = rest.indexOf("=");
-    return eq > 0 ? "reading " + kl(rest.slice(0, eq)).toLowerCase() + " as \u201c" + rest.slice(eq + 1).replace(/_/g, " ") + "\u201d"
-                  : "another way of reading it";
-  }
-  return name.replace(/_/g, " ");
-}
-function readingWhy(name, klabelFn){
-  const kl = klabelFn || klabel;
-  if(name === "strict") return "every filter applied, so these match your brief exactly";
-  if(name === "default") return "the filters we inferred from your words stop excluding companies — the chips you set yourself still do";
-  if(name === "loose") return "every filter we added ourselves stops excluding companies";
-  if(name.indexOf("relaxed:") === 0) return kl(name.slice(8)) + " stops excluding companies; everything else still applies";
-  if(name.indexOf("reading:") === 0) return "the same words taken to mean something else";
-  return "";
-}
-function readingPool(pool){
-  if(pool == null) return "not measured";
-  return (pool >= 2001 ? "2000+" : pool) + " startups matched this way";
-}
 function usd(x){ x=Number(x||0); if(x>=1e9) return "$"+(x/1e9).toFixed(1)+"B"; if(x>=1e6) return "$"+(x/1e6).toFixed(1).replace(/\.0$/,"")+"M"; if(x>=1e3) return "$"+Math.round(x/1e3)+"k"; return "$"+Math.round(x); }
 
 // ---------- contract editing (mirror of the kernel's edit cycle)
@@ -7667,8 +7735,8 @@ function railHtml(){
     const rec = extras.map(x => {
       const off = (STATE.mergeOff||[]).includes(x.name);
       const n = x.pool != null ? (x.pool >= 2001 ? "2000+" : x.pool) : "";
-      const tip = `${readingWhy(x.name)}${n ? " · " + n + " startups matched this way" : ""} · tap to ${off ? "put these back" : "leave these out"}`;
-      return `<button type="button" class="su-recipe${off?" off":""}" data-recipe="${esc(x.name)}" title="${esc(tip)}">${off?"◌ ":"● "}${esc(readingName(x.name))}${n?`<b>${n}</b>`:""}</button>`;
+      const tip = `${readingWhy(x.name, klabel)}${n ? " · " + n + " startups matched this way" : ""} · tap to ${off ? "put these back" : "leave these out"}`;
+      return `<button type="button" class="su-recipe${off?" off":""}" data-recipe="${esc(x.name)}" title="${esc(tip)}">${off?"◌ ":"● "}${esc(readingName(x.name, klabel))}${n?`<b>${n}</b>`:""}</button>`;
     }).join("");
     const offNote = dropped ? ` <button type="button" class="su-recipe" id="su-recipes-all">put them all back</button>` : "";
     const controls = extras.length
@@ -9512,6 +9580,300 @@ async function openShare(token){
   }
 
   window.DD = { search, enter, dive, renderShared, fromCard };
+})();
+
+// ===== Investor Search — the mode's own IIFE (docs/specs/investors.md §1) ============================
+// One idea drives every rendering choice here: a number's REGISTER is part of the number. A regulator's
+// filing (▣), the firm's own marketing (▢) and a measurement over our own partial index (◈) are three
+// different kinds of thing, and the card never lets them share a treatment. Two facets the API deliberately
+// does not expose — outcome mix and follow-on rate — are absent for the same reason: our view of any
+// portfolio is a biased subset, so a "success rate" would flatter every firm on the page.
+(function(){
+  const STATE = {contract: null, draft: null, data: null, labels: null, notes: [], entered: false};
+  const box = () => $("#iv-results");
+
+  // `usd` lives inside the Startups IIFE, so this mode needs its own — the same closure trap that stranded
+  // DeepDive's formatter. Anything two modes call has to be defined at true top level.
+  function ivUsd(x){
+    x = Number(x || 0);
+    if(x >= 1e9) return "$" + (x/1e9).toFixed(1).replace(/\.0$/,"") + "B";
+    if(x >= 1e6) return "$" + (x/1e6).toFixed(1).replace(/\.0$/,"") + "M";
+    if(x >= 1e3) return "$" + Math.round(x/1e3) + "k";
+    return "$" + Math.round(x);
+  }
+  const L = () => STATE.labels || {};
+  const klabel = k => ((L().keys || {})[k]) || String(k).replace(/_/g, " ");
+  const vlabel = (k, v) => ((L().values || {})[v]) || String(v).replace(/_/g, " ");
+  const registerOf = k => ((L().register || {})[k]) || "";
+  const GLYPH = {filed: "▣", stated: "▢", observed: "◈"};
+  const REG_BLURB = {
+    filed: "a regulator or a filing says so",
+    stated: "the firm says so, on its own site",
+    observed: "measured over the companies we hold — not the whole portfolio"
+  };
+
+  const EXAMPLES = [
+    "seed funds that lead in AI infra, US or Europe, $50–250M latest fund, still deploying",
+    "who funds pre-seed fintech in India",
+    "private equity firms in Texas with over $1B under management",
+    "venture funds in London that raised a fund since 2024"
+  ];
+
+  function enter(params){
+    if(!STATE.entered){ STATE.entered = true; }
+    $("#iv-examples").innerHTML = EXAMPLES.map(t =>
+      `<button type="button" class="iv-ex" data-ex="${esc(t)}">${esc(t)}</button>`).join("");
+    $("#iv-examples").querySelectorAll("[data-ex]").forEach(b =>
+      b.addEventListener("click", () => { q.value = b.dataset.ex; search(b.dataset.ex); }));
+    if(params && params.brief){ q.value = params.brief; search(params.brief); return; }
+    if(!STATE.data) showLanding();
+  }
+
+  function reset(){
+    STATE.contract = STATE.draft = STATE.data = null; STATE.notes = [];
+    $("#iv-notes").innerHTML = ""; $("#iv-cov").innerHTML = ""; $("#iv-rail").innerHTML = "";
+    showLanding();
+  }
+
+  function showLanding(){
+    box().innerHTML = `<div class="iv-empty">Search the investor index by what the public record actually says:
+      the SEC adviser registers for who a firm is and what it manages, its Form D fund filings for how much it
+      raised and when, and our own company index for what it has backed.
+      <br><br>Three kinds of fact, never mixed:
+      <span class="iv-legend" style="display:block;margin-top:.5rem">
+        <span><b style="color:var(--filed)">▣ filed</b> — ${esc(REG_BLURB.filed)}</span>
+        <span><b style="color:var(--stated)">▢ stated</b> — ${esc(REG_BLURB.stated)}</span>
+        <span><b style="color:var(--observed)">◈ observed</b> — ${esc(REG_BLURB.observed)}</span>
+      </span></div>`;
+    loadCoverage();
+  }
+
+  async function loadCoverage(){
+    try{
+      const r = await fetch("/investors/coverage");
+      if(!r.ok) return;
+      const d = await r.json();
+      const k = d.known || {}, n = d.firms || 0, f = d.funds || {};
+      const bits = [`<b>${n.toLocaleString()}</b> investors`];
+      if(f.real) bits.push(`<b>${Number(f.real).toLocaleString()}</b> fund vehicles (${Number(f.attached||0).toLocaleString()} tied to a firm)`);
+      if(k.aum) bits.push(`AUM filed for <b>${Math.round(100*k.aum/Math.max(1,n))}%</b>`);
+      if(d.edges) bits.push(`<b>${Number(d.edges).toLocaleString()}</b> portfolio edges`);
+      $("#iv-cov").innerHTML = bits.join(" · ")
+        + (d.caveats||[]).map(c => `<span class="iv-caveat">${esc(c)}</span>`).join("");
+    }catch(e){ /* coverage is context, never a blocker */ }
+  }
+
+  async function search(text){
+    text = (text || "").trim();
+    if(!text) return;
+    try{ history.replaceState(null, "", "#investors?b=" + encodeURIComponent(text)); }catch(e){}
+    box().innerHTML = `<div class="iv-empty">Reading your brief…</div>`;
+    let compiled;
+    try{
+      const r = await fetch("/investors/compile", {method: "POST", headers: {"Content-Type": "application/json"},
+                                                   body: JSON.stringify({text: text, limit: 60})});
+      if(!r.ok) throw new Error("compile " + r.status);
+      compiled = await r.json();
+    }catch(e){
+      box().innerHTML = `<div class="iv-empty">Could not read that brief (${esc(String(e.message||e))}).
+        <button type="button" class="btn" id="iv-retry">Try again</button></div>`;
+      const b = $("#iv-retry"); if(b) b.addEventListener("click", () => search(text));
+      return;
+    }
+    STATE.labels = compiled.labels || STATE.labels;
+    STATE.notes = compiled.notes || [];
+    await runContract(compiled.contract);
+  }
+
+  async function runContract(contract){
+    STATE.contract = contract; STATE.draft = null;
+    render();
+    try{
+      const r = await fetch("/investors/evaluate", {method: "POST", headers: {"Content-Type": "application/json"},
+                                                    body: JSON.stringify({contract: contract, counts: true})});
+      if(!r.ok) throw new Error("evaluate " + r.status);
+      STATE.data = await r.json();
+      STATE.labels = STATE.data.labels || STATE.labels;
+    }catch(e){
+      STATE.data = null;
+      box().innerHTML = `<div class="iv-empty">The search failed (${esc(String(e.message||e))}).</div>`;
+      return;
+    }
+    render();
+  }
+
+  // ---------- contract editing: the same must → prefer → avoid → off cycle the startup rail uses
+  const CYCLE = {off: "must", must: "prefer", prefer: "avoid", avoid: "off"};
+  function stateOf(c, key, v){
+    for(const m of ["must", "prefer", "avoid"]){
+      const a = (c[m] || {})[key];
+      if(Array.isArray(a) && a.map(String).includes(String(v))) return m;
+    }
+    return "off";
+  }
+  function editContract(c, key, v){
+    const n = JSON.parse(JSON.stringify(c));
+    n.must = n.must || {}; n.prefer = n.prefer || {}; n.avoid = n.avoid || {};
+    const mode = CYCLE[stateOf(n, key, v)];
+    for(const m of ["must", "prefer", "avoid"]){
+      const a = n[m][key];
+      if(Array.isArray(a)){ n[m][key] = a.filter(x => String(x) !== String(v)); if(!n[m][key].length) delete n[m][key]; }
+    }
+    if(mode !== "off") n[mode][key] = (n[mode][key] || []).concat([String(v)]);
+    return n;
+  }
+  function pendingCount(){
+    if(!STATE.draft) return 0;
+    return JSON.stringify(STATE.draft) !== JSON.stringify(STATE.contract) ? 1 : 0;
+  }
+
+  // ---------- the rail, grouped BY REGISTER
+  function railHtml(){
+    const d = STATE.data; if(!d) return "";
+    const c = STATE.draft || STATE.contract || {}, counts = d.counts || {};
+    const order = (L().order || Object.keys(counts))
+      .filter(k => counts[k] && Object.keys(counts[k]).some(v => v !== "unknown"));
+    const groups = {filed: [], stated: [], observed: []};
+    for(const key of order){
+      const reg = registerOf(key); if(!groups[reg]) continue;
+      const isSet = (L().types || {})[key] === "set";
+      const entries = Object.entries(counts[key]);
+      if(isSet) entries.sort((a, b) => b[1] - a[1]);
+      else entries.sort((a, b) => (a[0] === "unknown") - (b[0] === "unknown"));
+      const chips = entries.slice(0, 14).map(([v, n]) => {
+        const st = stateOf(c, key, v);
+        const g = st === "must" ? "● " : st === "prefer" ? "▲ " : st === "avoid" ? "▼ " : "";
+        const cls = "iv-chip" + (st !== "off" ? " " + st : "") + (v === "unknown" ? " unknown" : "");
+        return `<button type="button" class="${cls}" data-key="${esc(key)}" data-value="${esc(v)}"
+          ${v === "unknown" ? "disabled" : ""}
+          title="${esc(klabel(key) + ": " + vlabel(key, v))} — tap: must → prefer → avoid → off"
+          >${g}${esc(vlabel(key, v))}<b>${n}</b></button>`;
+      }).join("");
+      groups[reg].push(`<div class="iv-row"><span class="iv-k">${esc(klabel(key))}</span>${chips}</div>`);
+    }
+    const blocks = ["filed", "stated", "observed"].filter(r => groups[r].length).map(r =>
+      `<div class="iv-grp"><div class="iv-grph ${r}">${GLYPH[r]} ${r}<i>${esc(REG_BLURB[r])}</i></div>${groups[r].join("")}</div>`
+    ).join("");
+    if(!blocks) return "";
+    const n = pendingCount();
+    const apply = workingOn("investors")
+      ? `<div class="iv-apply"><span class="su-spin"></span><b>Applying…</b></div>`
+      : n ? `<div class="iv-apply"><b>${n} change pending</b> — nothing runs until you apply.
+             <button type="button" class="btn primary" id="iv-apply">Apply</button>
+             <button type="button" class="btn" id="iv-resetdraft">Reset</button></div>`
+          : `<div class="iv-apply">Tap chips to stage changes, then apply once.</div>`;
+    return `<div class="iv-rail${workingOn("investors") ? " busy" : ""}">
+      <div class="iv-grph" style="color:var(--muted)">Refine · ${(d.coverage || {}).matched ?? 0} match every filter
+        <i>● must have · ▲ nice to have · ▼ avoid</i></div>${blocks}${apply}</div>`;
+  }
+
+  // ---------- cards
+  function cardHtml(row){
+    const f = row.firm || {}, facets = row.facets || {}, nums = row.numeric || {};
+    const one = k => (facets[k] || [])[0];
+    const site = f.site && f.domain ? f.site : "";
+    const name = site ? `<a class="iv-name" href="${esc(site)}" target="_blank" rel="noopener">${esc(f.name || row.id)}</a>`
+                      : `<span class="iv-name">${esc(f.name || row.id)}</span>`;
+    const type = one("investor_type");
+    const where = [f.hq_city, f.hq_state, (facets.country || []).map(c => vlabel("country", c))[0]]
+      .filter(Boolean).join(", ");
+
+    // filed line — the register that carries a number's authority
+    const filed = [];
+    if(nums.aum != null) filed.push(`${ivUsd(nums.aum)} under management`);
+    if(nums.funds_count != null) filed.push(`${nums.funds_count} fund${nums.funds_count === 1 ? "" : "s"}`);
+    if(nums.latest_fund_size != null){
+      const yr = nums.latest_fund_year != null ? ` (${nums.latest_fund_year})` : "";
+      filed.push(`latest ${ivUsd(nums.latest_fund_size)}${yr}`);
+    }
+    const deploying = one("still_deploying");
+    if(deploying) filed.push(deploying === "yes_recent" ? "raising or deploying" : "no new fund filed");
+
+    // stated line — rendered in the firm's own voice, never as fact
+    const stated = [];
+    const sst = (facets.stated_stage || []).map(v => vlabel("stated_stage", v));
+    if(sst.length) stated.push(sst.join(", "));
+    if(nums.stated_check_min != null || nums.stated_check_max != null){
+      stated.push([nums.stated_check_min, nums.stated_check_max].filter(x => x != null).map(ivUsd).join("–") + " cheques");
+    }
+    const leads = one("leads_rounds"); if(leads) stated.push(vlabel("leads_rounds", leads));
+    const geo = (facets.geo_focus || []).map(v => vlabel("geo_focus", v)); if(geo.length) stated.push(geo.join(", "));
+
+    // observed — always with the population it was measured over
+    const observed = [];
+    const pf = f.portfolio || 0;
+    if(pf) observed.push(`${pf} compan${pf === 1 ? "y" : "ies"} we hold`);
+    const sect = (facets.observed_sector || []).slice(0, 3).map(v => vlabel("observed_sector", v));
+    if(sect.length) observed.push(sect.join(", "));
+    const co = (facets.co_investor || []).slice(0, 3).map(v => vlabel("co_investor", v));
+    if(co.length) observed.push("co-invests with " + co.join(", "));
+
+    // A gap is not a failure — it names the register we have not gathered for this firm yet, which is
+    // itself an answer ("we have their filings but not their site"). Said once, quietly.
+    const missing = [];
+    if(!filed.length) missing.push("fund filings");
+    if(!stated.length) missing.push("their own site");
+    if(!pf) missing.push("portfolio");
+    const gaps = missing.length ? ["not yet read: " + missing.join(", ")] : [];
+
+    const ev = one("evidence_strength");
+    const foot = [];
+    if(ev) foot.push(esc(vlabel("evidence_strength", ev)));
+    if(f.iapd) foot.push(`<a href="${esc(f.iapd)}" target="_blank" rel="noopener">SEC record ↗</a>`);
+    if(pf) foot.push(`<a href="#startups?b=${encodeURIComponent("companies backed by " + (f.name || row.id))}">their portfolio ↗</a>`);
+    const found = Object.keys(row.found_by || {});
+    if(found.length) foot.push("found by " + esc(found.join(" + ")));
+
+    const line = (reg, txt) => txt ? `<div class="iv-line${reg === "stated" ? " stated" : ""}">
+      <span class="iv-g ${reg}" title="${esc(REG_BLURB[reg])}">${GLYPH[reg]}</span><span>${txt}</span></div>` : "";
+
+    return `<div class="iv-card">
+      <div class="iv-hd">${name}${type ? `<span class="iv-type" title="${esc(REG_BLURB.filed)}">${GLYPH.filed} ${esc(vlabel("investor_type", type))}</span>` : ""}</div>
+      ${where ? `<div class="iv-where">${esc(where)}</div>` : ""}
+      ${line("filed", esc(filed.join(" · ")))}
+      ${stated.length ? line("stated", "“" + esc(stated.join(" · ")) + "” — the firm says") : ""}
+      ${line("observed", esc(observed.join(" · ")))}
+      ${gaps.length ? `<div class="iv-gap">${esc(gaps.join(" · "))}</div>` : ""}
+      ${(row.reasons || []).length ? `<div class="iv-why">${esc((row.reasons || []).slice(0, 2).join(" · "))}</div>` : ""}
+      ${foot.length ? `<div class="iv-foot">${foot.join(" · ")}</div>` : ""}
+    </div>`;
+  }
+
+  function render(){
+    const notes = (STATE.notes || []).map(n =>
+      `<div class="iv-note${/not searchable here/.test(n) ? " refuse" : ""}">${esc(n)}</div>`).join("");
+    $("#iv-notes").innerHTML = notes;
+    $("#iv-rail").innerHTML = railHtml();
+    wireRail();
+    const d = STATE.data;
+    if(!d){ return; }
+    const rows = d.rows || [];
+    const deg = (d.coverage || {}).degraded;
+    if(!rows.length){
+      box().innerHTML = `<div class="iv-empty">No investor matches every filter.
+        ${(STATE.contract && Object.keys(STATE.contract.must || {}).length)
+          ? "Tap a ● chip in the rail to soften it — the rail counts are over the whole index."
+          : "Try different words."}</div>`;
+      return;
+    }
+    box().innerHTML = (deg ? `<div class="iv-note">${esc(deg)}</div>` : "")
+      + `<div class="iv-grid">${rows.map(cardHtml).join("")}</div>`;
+  }
+
+  function wireRail(){
+    const rail = $("#iv-rail"); if(!rail) return;
+    rail.querySelectorAll(".iv-chip[data-key]").forEach(b => b.addEventListener("click", () => {
+      const base = STATE.draft || STATE.contract; if(!base) return;
+      STATE.draft = editContract(base, b.dataset.key, b.dataset.value);
+      $("#iv-rail").innerHTML = railHtml(); wireRail();
+    }));
+    const ap = $("#iv-apply");
+    if(ap) ap.addEventListener("click", () => { const d = STATE.draft; STATE.draft = null; if(d) runContract(d); });
+    const rs = $("#iv-resetdraft");
+    if(rs) rs.addEventListener("click", () => { STATE.draft = null; $("#iv-rail").innerHTML = railHtml(); wireRail(); });
+  }
+
+  window.IV = {search, enter, reset, runContract};
 })();
 </script>
 </body>

@@ -8,7 +8,7 @@ import asyncio
 
 from eigen_kernel.facets import Contract
 
-from api.startups.intake import ANALYST_BUDGET, StartupIntake, understood_words
+from api.startups.intake import ANALYST_BUDGET, MAX_QUESTIONS, StartupIntake, understood_words
 from api.startups.schema import KIND
 
 # stage is known for 8 of 900 here — as in production, where it is known for none.
@@ -120,8 +120,11 @@ def test_the_analyst_may_choose_and_phrase_but_never_invent():
 
 
 def test_the_analyst_may_not_offer_a_value_the_index_does_not_hold():
-    llm, _ = _analyst([{"question": {"kind": "key", "key": "country", "words": "Where?", "options": ["us", "atlantis"]}, "ready": False}])
-    r = run(_svc(llm).step(state=None, message="ai infra"))
+    llm, _ = _analyst([{"question": {"kind": "open", "key": "layer", "words": "Which layer?", "options": ["a", "b"]}, "ready": False},
+                       {"question": {"kind": "key", "key": "country", "words": "Where?", "options": ["us", "atlantis"]}, "ready": False}])
+    svc = _svc(llm)
+    r = run(svc.step(state=None, message="ai infra"))
+    r = run(svc.step(state=r["state"], answer={"name": "layer", "value": "a"}))
     assert r["question"]["name"] == "country"
     assert [o[0] for o in r["question"]["options"]] == ["us", "uk"]     # our counts, never the model's list
 
@@ -130,13 +133,16 @@ def test_memory_rides_every_turn():
     """What the analyst understood, what the investor ruled out, and everything already asked come back to it."""
     llm, calls = _analyst([
         {"understanding": "Infrastructure, not applications.", "ruled_out": ["consumer apps"], "text": "ML infrastructure",
+         "question": {"kind": "open", "key": "layer", "words": "Which layer?", "options": ["training", "serving"]}, "ready": False},
+        {"understanding": "Infrastructure, not applications.", "ruled_out": ["consumer apps"], "text": "ML infrastructure",
          "question": {"kind": "key", "key": "country", "words": "Where should they be based?"}, "ready": False},
         {"understanding": "US infrastructure companies.", "text": "US ML infrastructure", "question": None, "ready": True},
     ])
     svc = _svc(llm)
     r = run(svc.step(state=None, message="ML infra, no consumer stuff"))
+    r = run(svc.step(state=r["state"], answer={"name": "layer", "value": "training"}))
     r = run(svc.step(state=r["state"], answer={"name": "country", "value": "us"}))
-    second = calls[1]["payload"]
+    second = calls[2]["payload"]
     assert second["understanding_so_far"] == "Infrastructure, not applications."
     assert second["ruled_out"] == ["consumer apps"]
     assert "country" in second["already_asked"]
@@ -145,10 +151,26 @@ def test_memory_rides_every_turn():
     assert r["ready"]["ruled_out"] == ["consumer apps"]
 
 
+def test_the_first_question_is_about_what_they_build_not_how_they_sell():
+    """The opening question's SHAPE is the vertical's call, not the model's. Told merely to prefer an open
+    question, the first production run asked for a business model and labelled it "open"; so on turn one the
+    facets are withheld outright and a facet proposal is structurally inadmissible."""
+    llm, calls = _analyst([{"question": {"kind": "key", "key": "country", "words": "Where are they based?"}, "ready": False},
+                           {"question": None, "ready": True}])
+    svc = _svc(llm)
+    r = run(svc.step(state=None, message="ai infra"))
+    assert calls[0]["payload"]["can_filter_on"] == []                       # nothing to filter on, only the thesis
+    assert "MUST BE kind" in calls[0]["system"]
+    assert (r.get("question") or {}).get("name") != "country"               # the facet grab is refused
+
+
 def test_the_analyst_only_sees_keys_the_index_can_answer():
-    llm, calls = _analyst([{"question": None, "ready": True}])
-    run(_svc(llm).step(state=None, message="ai infra"))
-    offered = {c["key"] for c in calls[0]["payload"]["can_filter_on"]}
+    llm, calls = _analyst([{"question": {"kind": "open", "key": "layer", "words": "Which layer?", "options": ["a", "b"]}, "ready": False},
+                           {"question": None, "ready": True}])
+    svc = _svc(llm)
+    r = run(svc.step(state=None, message="ai infra"))
+    run(svc.step(state=r["state"], answer={"name": "layer", "value": "a"}))
+    offered = {c["key"] for c in calls[1]["payload"]["can_filter_on"]}      # the SECOND turn sees the facets
     assert "stage" not in offered and "business_model" not in offered      # 0.9% and 0% known here
     assert "country" in offered and "total_disclosed_funding" in offered
 
@@ -234,3 +256,19 @@ def test_an_open_question_answered_in_words_still_reaches_the_query():
     r = run(svc.step(state=r["state"], message="the serving layer, GPU scheduling"))
     assert "layer" in r["state"]["kernel"]["asked"]
     assert r["stage"] == "ready"
+
+
+def test_a_spent_analyst_budget_ends_the_intake_rather_than_handing_back_to_the_gate():
+    """The first production run asked its three model questions and then the deterministic gate quietly
+    added a fourth — a metro, right after a country. A budget that caps only the model's questions caps
+    nothing; an analyst that has decided it has enough stops."""
+    llm, calls = _analyst([{"question": {"kind": "open", "key": "k1", "words": "w?", "options": ["a", "b"]}, "ready": False}])
+    svc = _svc(llm)
+    r = run(svc.step(state=None, message="ai infra"))
+    asked = 0
+    while r["stage"] != "ready" and asked < 10:
+        r = run(svc.step(state=r["state"], answer={"name": r["question"]["name"], "value": "__skip__"}))
+        asked += 1
+    assert r["stage"] == "ready"
+    assert r["state"]["kernel"]["counts_asked"]["analyst"] <= ANALYST_BUDGET
+    assert len(r["state"]["kernel"]["asked"]) <= MAX_QUESTIONS      # whoever chose them

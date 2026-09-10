@@ -44,7 +44,12 @@ OPTIONAL_KEYS = ["tech_area", "customer", "business_model", "country", "metro", 
                  "last_round_months", "program", "hiring", "founder_count", "stage"]
 # Questions a model may choose; the deterministic fallback uses the same list minus the thesis key.
 ASKABLE_KEYS = list(OPTIONAL_KEYS)
-ANALYST_BUDGET = 3          # a hard ceiling; the prompt aims for two — one small call each
+ANALYST_BUDGET = 3          # a hard ceiling on MODEL-chosen questions; the prompt aims for two
+# …and a ceiling on the intake as a whole, whoever picked the question. The analyst budget alone caps
+# nothing: when the model proposes a question that cannot be accepted, the deterministic gate takes the
+# turn on its own budget, and the two can stack into an interrogation. An investor who wanted to fill in
+# a form would not have described a thesis.
+MAX_QUESTIONS = 3
 # how an answer lands: a must (a promise the index keeps), a prefer, or the centre; numeric bands become a range
 LANDING = {"tech_area": "must", "stage": "center", "country": "must", "metro": "must", "program": "must", "customer": "prefer",
            "business_model": "prefer", "total_disclosed_funding": "must", "last_round_months": "must", "founder_count": "must", "hiring": "must"}
@@ -88,7 +93,7 @@ def option_hint(key: str, value: str) -> str:
     return ""
 
 
-def analyst_prompt(budget_left: int) -> str:
+def analyst_prompt(budget_left: int, first: bool = False) -> str:
     """The analyst's brief. It is told what it may ask about and, just as importantly, what it may not promise."""
     return (
         "You are a startup analyst sitting with an investor who has described a thesis in their own words. Your job is to "
@@ -105,6 +110,12 @@ def analyst_prompt(budget_left: int) -> str:
         "  \"open\" — a distinction the facets cannot express, which only the wording can carry: which LAYER of a stack, "
         "which workload, which buyer, which way an ambiguous term was meant. Offer 2-5 short answer chips in the investor's "
         "language, not schema tokens.\n"
+        + ("THIS IS YOUR FIRST QUESTION AND IT MUST BE kind=\"open\". CAN_FILTER_ON is deliberately empty: on this turn "
+           "there is nothing to filter on, only the thesis to sharpen. Ask the ONE thing about WHAT THESE COMPANIES BUILD "
+           "OR DO that you would have to know to tell two of them apart — which layer of the stack, which workload, which "
+           "of two readings of an ambiguous word. Do NOT ask about business model, revenue, geography, funding, stage, "
+           "team or hiring: those are filters the investor can add in one tap afterwards, and they are not what you are "
+           "for.\n" if first else "") +
         "START WITH THE OPEN QUESTION whenever the thesis names a technical area broad enough that one index category "
         "covers several different businesses — that is where the misunderstanding lives, and it is the only ambiguity the "
         "investor cannot fix later. A filter is one tap in the rail after the search; the WORDING is not, because it decides "
@@ -336,19 +347,29 @@ class StartupIntake:
         q = Question(kind=kind, name=name, klass=(pending or {}).get("klass") or "analyst")
         return self._apply(st, q, (reply or None) if kind == "open" else None)
 
-    async def _analyst(self, st: IntakeState, counts: dict, *, transcript: list, thesis: str, pending: dict | None, reply: str) -> tuple[IntakeState, Question | None, bool]:
+    async def _analyst(self, st: IntakeState, counts: dict, *, transcript: list, thesis: str, pending: dict | None, reply: str) -> tuple[IntakeState, Question | None, bool]:  # noqa: C901
         """ONE analyst turn: read everything said so far plus what the index can still be filtered on, then
         return the updated state, the next question (validated — never invented), and whether it is ready.
 
         Every failure mode lands on the deterministic gate: no model, a raised call, a non-dict answer, a
         question naming a key that is not on the measured shortlist, or a spent budget."""
-        if self.llm_json is None or st.counts_asked.get("analyst", 0) >= st.budgets.get("analyst", ANALYST_BUDGET):
-            return st, None, False
+        if self.llm_json is None:
+            return st, None, False                      # unavailable → the deterministic gate takes over
+        if st.counts_asked.get("analyst", 0) >= st.budgets.get("analyst", ANALYST_BUDGET):
+            return st, None, True                       # spent → READY. A budget that only caps the MODEL's
+            #   questions caps nothing: the first prod run asked its three, then the gate quietly added a
+            #   fourth (a metro, right after a country). An analyst that has decided it has enough stops.
         shortlist = self._shortlist(st, counts)
         left = max(0, st.budgets.get("analyst", ANALYST_BUDGET) - st.counts_asked.get("analyst", 0))
-        payload = analyst_payload(thesis=thesis, transcript=transcript, st=st, pending=pending, reply=reply, shortlist=shortlist, counts=counts)
+        # WHICH SHAPE the opening question takes is a judgment, so the vertical makes it rather than asking
+        # the model nicely: told merely to "prefer" an open question, the first prod run asked for a business
+        # model and labelled it "open". On the first turn the facets are withheld entirely — there is nothing
+        # to filter on and only the thesis to sharpen — so the question can only be about what they build.
+        first = st.counts_asked.get("analyst", 0) == 0 and not st.asked
+        payload = analyst_payload(thesis=thesis, transcript=transcript, st=st, pending=pending, reply=reply,
+                                  shortlist=([] if first else shortlist), counts=counts)
         try:
-            read = await self.llm_json(analyst_prompt(left), json.dumps(payload))
+            read = await self.llm_json(analyst_prompt(left, first=first), json.dumps(payload))
         except Exception:   # noqa: BLE001 — the analyst is an aid; the intake proceeds on the deterministic gate
             return st, None, False
         if not isinstance(read, dict):
@@ -368,7 +389,11 @@ class StartupIntake:
             return search_now(st), None, True
         if read.get("ready"):
             return st, None, True
-        q = accept_question(st, read.get("question"), allowed=shortlist, klass="analyst")
+        # On the first turn only an open question is admissible; `allowed=[]` makes a facet proposal
+        # unacceptable structurally, so mislabelling one cannot smuggle it through.
+        q = accept_question(st, read.get("question"), allowed=([] if first else shortlist), klass="analyst")
+        if q is not None and first and q.kind != "open":
+            q = None
         return st, q, False
 
     def _apply(self, st: IntakeState, q: Question, value) -> IntakeState:
@@ -507,8 +532,10 @@ class StartupIntake:
             counts = await self._counts(st)
             st, q, ready = await self._analyst(st, counts, transcript=transcript, thesis=opening, pending=pending, reply=reply)
             st = self._retire(st, pending, reply)
-            if not ready and q is None:
+            if not ready and q is None and len(st.asked) < MAX_QUESTIONS:
                 q = self._next(st, counts)
+            if q is not None and len(st.asked) >= MAX_QUESTIONS:
+                q = None
             if q is not None:
                 return pack("questions", question=self._question_payload(q, counts))
             st.stage = "ready"
