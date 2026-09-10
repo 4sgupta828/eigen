@@ -21,9 +21,9 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 
-# A signatory on more than this many distinct fund filings in one quarter is a service provider, not a GP.
-# Chosen from the measured degree distribution: the real GPs sit at 1-8, the fund administrators at 68-733,
-# with nothing in between. It is a wide moat, not a tuned threshold.
+# A signatory on more than this many fund filings IN ONE YEAR is a service provider, not a GP. Measured on a
+# single quarter the real GPs sat at 1-8 and the administrators at 68-733 — nothing in between. Per year rather
+# than in total, because over thirty quarters a working GP legitimately signs dozens.
 MAX_SIGNATORY_DEGREE = 8
 
 # Words that may legally follow a firm's name inside its own fund's name. Anything else is a different firm.
@@ -100,15 +100,58 @@ def signatory_degree(funds: list[dict]) -> Counter:
     return deg
 
 
-def cluster_funds(funds: list[dict], *, max_degree: int = MAX_SIGNATORY_DEGREE) -> dict[str, str]:
-    """{fund id → cluster id}. SPVs are excluded; hub signatories are ignored; the state qualifies the person.
+def _eligible_signers(funds: list[dict], max_per_year: int) -> set:
+    """Signers who look like GPs rather than fund administrators.
 
-    Union-find over (person, state) pairs. The state qualification matters: two different people who share a
-    common name in two different states must not join their managers together.
+    Degree is measured PER YEAR, not in total. The first version of this capped total degree at 8, which was
+    calibrated on a single quarter — over thirty quarters a real GP signs far more than 8 filings and was
+    being discarded, while administrators still slipped through. A general partner signs a handful of vehicles
+    a year for years; a Luxembourg or Cayman fund administrator signs hundreds a year.
+    """
+    per_year: dict = {}
+    for f in funds:
+        yr = str(f.get("first_sale") or "")[:4] or "?"
+        for p in {(p.get("name") or "").strip().lower() for p in (f.get("persons") or [])}:
+            if p:
+                per_year.setdefault(p, Counter())[yr] += 1
+    out = set()
+    for name, years in per_year.items():
+        if max(years.values()) <= max_per_year:
+            out.add(name)
+    return out
+
+
+def cluster_funds(funds: list[dict], *, max_degree: int = MAX_SIGNATORY_DEGREE) -> dict[str, str]:
+    """{fund id → cluster id}. SPVs excluded; administrators excluded; and a single shared name is not enough.
+
+    **Why one shared signer cannot join two funds.** The first version unioned any two filings that shared one
+    low-degree signer. Run over one quarter that looked fine. Run over thirty quarters of real data it produced
+    a 142-vehicle cluster containing Access Capital, ARDIAN and Arrow — three unrelated European managers —
+    because union-find is TRANSITIVE: A signs with B, B signs with C, and a chain of individually-plausible
+    links merges managers that share nobody. Requiring **two** shared signers (or one plus a shared brand word
+    in the fund names) breaks the chains, because two unrelated managers sharing two people is rare in a way
+    that sharing one administrator is not.
     """
     real = [f for f in funds if not f.get("is_spv")]
-    deg = signatory_degree(real)
-    parent: dict[str, str] = {}
+    eligible = _eligible_signers(real, max_degree)
+    by_signer: dict = {}
+    for f in real:
+        st = (f.get("state") or "").upper()
+        for p in {(p.get("name") or "").strip().lower() for p in (f.get("persons") or [])}:
+            if p in eligible:
+                by_signer.setdefault((p, st), []).append(f["id"])
+
+    first_word = {f["id"]: (words(f.get("name") or "") or [""])[0] for f in real}
+    shared: Counter = Counter()
+    for ids in by_signer.values():
+        if len(ids) < 2 or len(ids) > 60:      # a list this long is an administrator the year filter missed
+            continue
+        for i in range(len(ids)):
+            for j in range(i + 1, len(ids)):
+                a, b = sorted((ids[i], ids[j]))
+                shared[(a, b)] += 1
+
+    parent: dict = {}
 
     def find(x: str) -> str:
         parent.setdefault(x, x)
@@ -122,19 +165,16 @@ def cluster_funds(funds: list[dict], *, max_degree: int = MAX_SIGNATORY_DEGREE) 
         if ra != rb:
             parent[ra] = rb
 
-    by_key: dict[tuple, list[str]] = defaultdict(list)
     for f in real:
-        fid = f["id"]
-        find(fid)
-        st = (f.get("state") or "").upper()
-        for p in {(p.get("name") or "").strip().lower() for p in (f.get("persons") or [])}:
-            if p and deg[p] <= max_degree:
-                by_key[(p, st)].append(fid)
-    for ids in by_key.values():
-        for other in ids[1:]:
-            union(ids[0], other)
-    # A cluster is named by its earliest-filed member, so the id is stable across re-runs of the same data.
-    members: dict[str, list[dict]] = defaultdict(list)
+        find(f["id"])
+    for (a, b), n in shared.items():
+        # two signers in common, or one plus the same leading word in both fund names (a shared brand)
+        fw = first_word.get(a)
+        brandish = bool(fw) and fw == first_word.get(b) and fw not in FUND_FORM_WORDS and not _ROMAN_OR_NUM.match(fw)
+        if n >= 2 or (n == 1 and brandish):
+            union(a, b)
+
+    members: dict = defaultdict(list)
     for f in real:
         members[find(f["id"])].append(f)
     out: dict[str, str] = {}
@@ -149,8 +189,9 @@ def cluster_funds(funds: list[dict], *, max_degree: int = MAX_SIGNATORY_DEGREE) 
 def build_firm_index(firms: list[dict]) -> dict:
     """A first-word index over every firm's name variants, so attaching is linear in the funds, not quadratic.
 
-    Attaching 2,113 clusters against 7,112 firms by scanning every pair is ~90M string comparisons and takes
-    minutes. A fund name can only ever match a variant that shares its FIRST word, so that word is the index.
+    Attaching thousands of clusters against thousands of firms by scanning every pair is tens of millions of
+    string comparisons. A fund name can only ever match a variant that shares its FIRST word, so that word is
+    the index.
     """
     by_word: dict = {}
     by_cik: dict = {}

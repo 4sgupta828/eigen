@@ -150,3 +150,52 @@ class TestBrandAmbiguity:
         with_mate = attach_cluster([_f("f", "Lowercarbon Tesseract, LP", state="WY"),
                                     _f("g", "Lowercarbon Fund IV, LP", state="WY")], self.FIRMS)
         assert with_mate[0] == "lowercarbon"
+
+
+class TestChainingIsNotClustering:
+    """The failure found by running the real thirty quarters, not the one-quarter sample.
+
+    Union-find is transitive: A signs with B, B with C, and a chain of individually-plausible links merged
+    Access Capital, ARDIAN and Arrow — three unrelated European managers — into one 142-vehicle cluster,
+    because a Luxembourg fund administrator sat on all of them.
+    """
+
+    def _admin_chain(self):
+        # one administrator, three unrelated managers, each with its own partner
+        return [
+            _f("a1", "Access Capital Emerging Managers Fund SCSp", ["lux admin", "alice access"], state="N4"),
+            _f("a2", "Access Capital Growth Fund II SCSp", ["lux admin", "alice access"], state="N4"),
+            _f("b1", "ARDIAN Americas Infrastructure Fund V SCSp", ["lux admin", "bruno ardian"], state="N4"),
+            _f("c1", "Arrow Bridging SCSp, SICAV-RAIF", ["lux admin", "carla arrow"], state="N4"),
+            _f("c2", "Arrow Credit Opportunities III SCSp", ["lux admin", "carla arrow"], state="N4"),
+        ]
+
+    def test_one_shared_administrator_does_not_merge_three_managers(self):
+        cl = cluster_funds(self._admin_chain())
+        assert cl["a1"] != cl["b1"], "Access Capital and ARDIAN share only an administrator"
+        assert cl["b1"] != cl["c1"], "ARDIAN and Arrow share only an administrator"
+
+    def test_but_a_managers_own_vehicles_still_join(self):
+        cl = cluster_funds(self._admin_chain())
+        assert cl["a1"] == cl["a2"], "two shared signers is a manager"
+        assert cl["c1"] == cl["c2"]
+
+    def test_a_generic_leading_word_is_not_a_brand(self):
+        """"Fund", "Capital", "II" are not identities — one shared signer plus one of those is not a manager."""
+        funds = [_f("g1", "Capital Partners Fund I, LP", ["shared person", "one"], state="NY"),
+                 _f("g2", "Capital Growth Fund II, LP", ["shared person", "two"], state="NY")]
+        cl = cluster_funds(funds)
+        assert cl["g1"] != cl["g2"]
+
+    def test_a_real_brand_word_plus_a_shared_signer_does_join(self):
+        funds = [_f("t1", "Tamarack Global Opportunities II, LP", ["shared person", "one"], state="CA"),
+                 _f("t2", "Tamarack Blue Energy I, LP", ["shared person", "two"], state="CA")]
+        cl = cluster_funds(funds)
+        assert cl["t1"] == cl["t2"]
+
+    def test_a_prolific_gp_is_not_mistaken_for_an_administrator(self):
+        """The first cap was a total of 8 across all time, which discarded working GPs over thirty quarters."""
+        funds = [_f(f"p{i}", f"Meridian Fund {i}, LP", ["prolific gp", f"partner {i}"], state="CA",
+                    first_sale=f"20{15 + i}-01-01") for i in range(10)]
+        cl = cluster_funds(funds)
+        assert len(set(cl.values())) == 1, "one fund a year for ten years is a GP, not a fund administrator"
