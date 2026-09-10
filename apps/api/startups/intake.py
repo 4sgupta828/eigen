@@ -44,7 +44,7 @@ OPTIONAL_KEYS = ["tech_area", "customer", "business_model", "country", "metro", 
                  "last_round_months", "program", "hiring", "founder_count", "stage"]
 # Questions a model may choose; the deterministic fallback uses the same list minus the thesis key.
 ASKABLE_KEYS = list(OPTIONAL_KEYS)
-ANALYST_BUDGET = 4          # at most four model-chosen questions per intake — one small call each
+ANALYST_BUDGET = 3          # a hard ceiling; the prompt aims for two — one small call each
 # how an answer lands: a must (a promise the index keeps), a prefer, or the centre; numeric bands become a range
 LANDING = {"tech_area": "must", "stage": "center", "country": "must", "metro": "must", "program": "must", "customer": "prefer",
            "business_model": "prefer", "total_disclosed_funding": "must", "last_round_months": "must", "founder_count": "must", "hiring": "must"}
@@ -103,9 +103,15 @@ def analyst_prompt(budget_left: int) -> str:
         "which companies come back, and the facet genuinely divides this pool. Never ask a question whose answer you can "
         "already infer from their words.\n"
         "  \"open\" — a distinction the facets cannot express, which only the wording can carry: which LAYER of a stack, "
-        "which workload, which buyer, which way an ambiguous term was meant. Prefer this when the thesis names a technical "
-        "area broad enough that the index's own category covers several different businesses. Offer 2-5 short answer chips "
-        "in the investor's language, not schema tokens.\n"
+        "which workload, which buyer, which way an ambiguous term was meant. Offer 2-5 short answer chips in the investor's "
+        "language, not schema tokens.\n"
+        "START WITH THE OPEN QUESTION whenever the thesis names a technical area broad enough that one index category "
+        "covers several different businesses — that is where the misunderstanding lives, and it is the only ambiguity the "
+        "investor cannot fix later. A filter is one tap in the rail after the search; the WORDING is not, because it decides "
+        "what is retrieved at all. Spending your first question narrowing geography when you have not established WHAT they "
+        "build is the mistake to avoid.\n"
+        "Never ask two questions that narrow the same dimension (a country and then a city). Never ask a question whose "
+        "honest answer is 'no preference' for most investors with this thesis.\n"
         "Also maintain TEXT: the thesis rewritten as the sharpest description of the companies they want, in the words those "
         "companies would use about themselves — this is what the semantic leg of the search matches on, so it matters more "
         "than any filter. Fold every answer into it. Keep it under 200 characters, concrete, no filler.\n"
@@ -118,9 +124,10 @@ def analyst_prompt(budget_left: int) -> str:
         "`answers` maps anything the LATEST reply clearly states onto facet keys — vocabulary tokens only, never invented "
         "values, null when they declined or said it does not matter. For an \"open\" question, `options` are plain phrases; "
         "for a \"key\" question they must be values from CAN_FILTER_ON for that facet.\n"
-        f"You have at most {budget_left} more question(s). Set ready=true — with question=null — as soon as another question "
-        "would not change which companies come back, or when the investor sounds finished. Ending early is better than "
-        "asking one question too many. search_now=true only if they say to just run it.")
+        f"You have at most {budget_left} more question(s), and TWO is usually the right total for a whole intake. Set "
+        "ready=true — with question=null — as soon as another question would not change which companies come back, or when "
+        "the investor sounds finished. An investor who wanted to fill in a form would not have described a thesis; ending "
+        "early is better than asking one question too many. search_now=true only if they say to just run it.")
 
 
 def analyst_payload(*, thesis: str, transcript: list, st: IntakeState, pending: dict | None, reply: str, shortlist: list, counts: dict) -> dict:
