@@ -225,7 +225,12 @@
   .sg-chip.must{border-color:var(--gold);color:var(--gold-strong);font-weight:600;} .sg-chip.prefer{border-color:var(--verified);color:var(--verified);} .sg-chip.center{box-shadow:0 0 0 2px rgba(var(--gold-rgb),.35);} .sg-chip.not{border-color:var(--gap);color:var(--gap);}
   .sg-pool{font-size:.86rem;color:var(--muted);margin:.3rem 0 .5rem;} .sg-pool b{color:var(--ink);}
   .sg-advice{font-size:.78rem;color:var(--muted);line-height:1.5;margin:.4rem 0 0;padding-left:1.1rem;} .sg-notes{font-size:.76rem;color:var(--gap);margin:.2rem 0;}
-  .sg-busy{font-size:.8rem;color:var(--muted);margin:.4rem 0;}
+  .sg-busy{font-size:.8rem;color:var(--muted);margin:.4rem 0;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;}
+  .sg-btn.quiet{font-size:.75rem;min-height:32px;padding:.2rem .6rem;color:var(--muted);}
+  .sg-und{font-size:.84rem;line-height:1.5;color:var(--ink);background:var(--panel2);border-left:2px solid var(--gold);border-radius:0 10px 10px 0;padding:.5rem .75rem;margin:.5rem 0 .2rem;}
+  .sg-und span{display:block;font-family:var(--mono);font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:.15rem;}
+  .sg-out{font-size:.76rem;color:var(--muted);margin:.2rem 0 .4rem;}
+  .sg-err{font-size:.84rem;line-height:1.5;color:var(--gap);background:var(--panel2);border:1px solid var(--gap);border-radius:12px;padding:.6rem .8rem;margin:.4rem 0;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;}
   #startupsbody .su-mixdet{margin-top:.3rem;}
   #startupsbody .su-mixdet summary{font-family:var(--mono);font-size:.68rem;color:var(--dim);cursor:pointer;
     list-style:none;padding:.2rem 0;min-height:28px;}
@@ -235,7 +240,8 @@
   #startupsbody .su-mixdet summary:hover{color:var(--ink);}
   #startupsbody .su-mixrow{display:flex;flex-wrap:wrap;gap:.3rem;padding:.2rem 0 .1rem;}
   .sg-readings{margin:.5rem 0 .2rem;} .sg-reading{font-size:.8rem;line-height:1.5;color:var(--ink);padding:.15rem 0;border-top:1px dashed var(--hair);} .sg-reading .c-dom{font-family:var(--mono);font-size:.66rem;color:var(--muted);}
-  @media (max-width:560px){ .sg-opt{flex:1 1 auto;text-align:center;} .sg-msg{max-width:100%;} }
+  @media (max-width:560px){ .sg-opt{flex:1 1 auto;text-align:center;} .sg-msg{max-width:100%;} .sg-btn.quiet{min-height:40px;}
+    .sg-err,.sg-busy{align-items:flex-start;} .sg-err .sg-btn,.sg-busy .sg-btn{flex:1 1 auto;} }
   /* ===== Voices — first-person startup content, an inline MODE (body[data-mode="voices"]) ===== */
   #voicesbody{display:none;}
   body[data-mode="voices"] #voicesbody{display:block;}
@@ -7113,7 +7119,19 @@ window.addEventListener("hashchange", ()=>{
 // index's counts → a ready card the user ratifies → hand-off to the Startups mode with the contract =====
 (function(){
   const box = () => $("#guidedbody");
-  const G = { state: null, last: null, ready: null, busy: false, sel: new Set() };
+  // Memory. The analyst's own memory rides the request (understanding, ruled_out, every answer); this keeps
+  // the thread itself across a reload, so closing a tab mid-thesis does not cost the conversation.
+  const MEM = "eigen_guided", MEM_TTL = 7 * 864e5;
+  function save(){ try{ localStorage.setItem(MEM, JSON.stringify({state: G.state, last: G.last, at: Date.now()})); }catch(_){} }
+  function forget(){ try{ localStorage.removeItem(MEM); }catch(_){} }
+  function recall(){
+    try{
+      const d = JSON.parse(localStorage.getItem(MEM) || "null");
+      if(d && d.state && d.last && (Date.now() - (d.at || 0)) < MEM_TTL){ G.state = d.state; G.last = d.last; G.ready = d.last.ready || null; return true; }
+    }catch(_){}
+    return false;
+  }
+  const G = { state: null, last: null, ready: null, busy: false, sel: new Set(), err: null, abort: null, cancelled: false, lastSend: null };
   const L = () => (G.last && G.last.labels) || {};
   const lab = (key, v) => ((L().values||{})[v]) || String(v).replace(/_/g, " ");
   const klab = (key) => ((L().keys||{})[key]) || key;
@@ -7144,6 +7162,7 @@ window.addEventListener("hashchange", ()=>{
       <div class="sg-pool"><b>${r.pool||0}</b> startups match every filter right now.</div>
       ${(r.recipes||[]).length?`<div class="sg-readings"><div class="sg-ready-h">The search also runs these variations of your brief and mixes the results in, so a good company is not lost to one filter you did not really mean.</div>${r.recipes.map(x=>`<div class="sg-reading"><b>${esc(readingName(x.name))}</b> · ${esc(readingPool(x.pool))} <span class="c-dom">${esc(readingWhy(x.name))}</span></div>`).join("")}</div>`:""}
       ${(r.diagnostics||[]).length?`<div class="sg-notes">${r.diagnostics.map(d=>`filtering on <b>${esc(d.label)}: ${esc(d.values)}</b> leaves ${d.pool_with} startups — without it, ${d.pool_without>=2001?"2000+":d.pool_without}`).join("<br>")}</div>`:""}
+      ${(r.ruled_out||[]).length?`<div class="sg-out">not looking for: ${esc((r.ruled_out||[]).join(", "))}</div>`:""}
       ${(r.notes||[]).length?`<div class="sg-notes">${r.notes.map(n=>esc(n)).join("<br>")}</div>`:""}
       <div class="sg-actions"><button type="button" class="sg-btn primary" id="sg-go">◆ Search these startups</button><button type="button" class="sg-btn" id="sg-restart">Start over</button></div>
       ${(r.advice||[]).length?`<ul class="sg-advice">${r.advice.map(a=>`<li>${esc(a)}</li>`).join("")}</ul>`:""}</div>`;
@@ -7154,7 +7173,12 @@ window.addEventListener("hashchange", ()=>{
     const pending = G.last && G.last.question;
     const lead = transcript.length ? "" : `<div class="sg-lead">Guided search. Tell me the thesis in your own words; I'll ask only what changes the results, show you the pool as it narrows, then hand you a search you can adjust chip by chip.</div>`;
     const shown = (pending && transcript.length && transcript[transcript.length-1].role === "assistant" && transcript[transcript.length-1].text === pending.words) ? transcript.slice(0, -1) : transcript;
-    b.innerHTML = lead + `<div class="sg-thread">${shown.map(msgHtml).join("")}</div>` + (G.busy ? `<div class="sg-busy"><span class="su-spin"></span>thinking…</div>` : "")
+    const kern = (G.state && G.state.kernel) || {};
+    const und = !G.ready && kern.understanding ? `<div class="sg-und"><span>so far</span>${esc(kern.understanding)}</div>` : "";
+    const out = !G.ready && (kern.ruled_out||[]).length ? `<div class="sg-out">not looking for: ${esc((kern.ruled_out||[]).join(", "))}</div>` : "";
+    const busy = G.busy ? `<div class="sg-busy"><span class="su-spin"></span>thinking…<button type="button" class="sg-btn quiet sg-stop">Stop</button></div>` : "";
+    const err = G.err ? `<div class="sg-err">${esc(G.err)}<button type="button" class="sg-btn sg-retry">Try that again</button></div>` : "";
+    b.innerHTML = lead + `<div class="sg-thread">${shown.map(msgHtml).join("")}</div>` + und + out + busy + err
       + (G.ready ? readyHtml(G.ready) : (pending ? questionHtml(pending) : ""));
     G.sel = new Set();
     const ans = b.querySelector(".sg-answer");
@@ -7168,22 +7192,54 @@ window.addEventListener("hashchange", ()=>{
     }));
     if(ans) ans.addEventListener("click", () => { const vals=[...G.sel]; if(!vals.length) return; send("", {answer: {name: pending.name, value: vals.length>1?vals:vals[0]}}); });
     const now = b.querySelector(".sg-now"); if(now) now.addEventListener("click", () => send("", {search_now: true}));
-    const go = $("#sg-go"); if(go) go.addEventListener("click", () => { const r=G.ready; setMode("startups"); if(window.SU) SU.runContract(r.contract, (G.state&&G.state.opening)||""); });
-    const rs = $("#sg-restart"); if(rs) rs.addEventListener("click", () => { G.state=null; G.last=null; G.ready=null; render(); q.value=""; q.focus(); });
+    // The brief that travels is the SHARPENED one the analyst built, not the investor's first vague words:
+    // it is what lands in the composer, so editing and re-running from Startups continues the conversation's
+    // work instead of throwing it away and recompiling the original thesis from scratch.
+    const go = $("#sg-go"); if(go) go.addEventListener("click", () => {
+      const r = G.ready; setMode("startups");
+      if(window.SU) SU.runContract(r.contract, r.brief || (G.state && G.state.opening) || "");
+    });
+    const rs = $("#sg-restart"); if(rs) rs.addEventListener("click", () => { forget(); G.state=null; G.last=null; G.ready=null; G.err=null; send(""); q.value=""; q.focus(); });
+    const stop = b.querySelector(".sg-stop"); if(stop) stop.addEventListener("click", () => { G.cancelled = true; try{ if(G.abort) G.abort.abort(); }catch(_){} });
+    const retry = b.querySelector(".sg-retry"); if(retry) retry.addEventListener("click", () => { const s = G.lastSend; G.err = null; if(s) send(s.message, s.extra); else safeRender(); });
     b.scrollIntoView({block:"nearest"});
+  }
+  // A turn that never comes back must never be able to strand the thread on "thinking…" with no way out.
+  // The old version could: `busy` was raised OUTSIDE the try, the fetch had no deadline, and a failure
+  // said so in an alert() the thread never recorded — so one request that simply never settled left the
+  // spinner running with every chip inert behind `if(G.busy) return`. Now every exit — a bad status, a
+  // network error, a deadline, a render that throws, the user pressing Stop — lowers `busy`, says what
+  // happened IN the thread, and leaves the last question tappable and a Try-again next to it.
+  const TURN_DEADLINE_MS = 45000;
+  function safeRender(){
+    try{ render(); }
+    catch(e){
+      console.error("[guided] render failed", e);
+      const b = box();
+      if(b) b.innerHTML = `<div class="sg-err">The guided thread could not be drawn (${esc((e && e.message) || e)}). <button type="button" class="sg-btn" onclick="window.SG&&SG.enter(true)">Start over</button></div>`;
+    }
   }
   async function send(message, extra){
     extra = extra || {};
     if(G.busy) return;
-    G.busy = true; G.ready = null; render();
+    G.lastSend = {message: message, extra: extra};
+    G.busy = true; G.ready = null; G.err = null; safeRender();
+    const ctl = (typeof AbortController === "function") ? new AbortController() : null;
+    G.abort = ctl; G.cancelled = false;
+    const deadline = ctl ? setTimeout(() => { try{ ctl.abort(); }catch(_){} }, TURN_DEADLINE_MS) : null;
     try{
-      const r = await fetch("/startups/intake/step", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({state: G.state, message: message||"", answer: extra.answer||null, search_now: !!extra.search_now})});
-      if(!r.ok){ G.busy=false; render(); alert("Couldn't take that turn — try again."); return; }
+      const r = await fetch("/startups/intake/step", {method:"POST", headers:{"content-type":"application/json"}, signal: ctl ? ctl.signal : undefined,
+                                                      body: JSON.stringify({state: G.state, message: message||"", answer: extra.answer||null, search_now: !!extra.search_now})});
+      if(!r.ok){ G.err = `The server refused that turn (${r.status}). Nothing was lost — your answers so far still stand.`; return; }
       const d = await r.json();
-      G.state = d.state; G.last = d; G.ready = d.ready || null;
-      if(message) { q.value = ""; if(typeof autoGrow==="function") autoGrow(); }
-    }catch(e){ alert("Couldn't take that turn — try again."); }
-    finally{ G.busy = false; render(); }
+      G.state = d.state; G.last = d; G.ready = d.ready || null; G.lastSend = null; save();
+      if(message) { try{ q.value = ""; if(typeof autoGrow==="function") autoGrow(); }catch(_){} }
+    }catch(e){
+      G.err = G.cancelled ? "Stopped. Your answers so far still stand — answer again, or Search now with what I have."
+            : (e && e.name === "AbortError") ? "That turn took too long to come back. Your answers so far still stand — try again, or Search now with what I have."
+            : "Couldn't reach the search index. Check your connection and try again — your answers so far still stand.";
+    }
+    finally{ if(deadline) clearTimeout(deadline); G.abort = null; G.busy = false; safeRender(); }
   }
   // Recent searches, newest first. Clicking one runs it again against the index AS IT IS NOW — the
   // point of a history entry is that the answer may have changed since.
@@ -7230,7 +7286,12 @@ window.addEventListener("hashchange", ()=>{
     }catch(e){ note().textContent = "Could not load your kept list: " + (e && e.message ? e.message : e); }
   }
 
-  function enter(fresh){ if(fresh || !G.last){ G.state=null; G.last=null; G.ready=null; send(""); } else render(); }
+  function enter(fresh){
+    if(fresh){ forget(); G.state=null; G.last=null; G.ready=null; G.err=null; G.busy=false; send(""); return; }
+    if(G.last){ safeRender(); return; }
+    if(recall()){ safeRender(); return; }          // a thesis left half-answered picks up where it stopped
+    G.err=null; G.busy=false; send("");
+  }
   window.SG = { send: (t) => send(t), enter };
 })();
 

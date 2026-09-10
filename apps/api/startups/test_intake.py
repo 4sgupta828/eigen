@@ -1,14 +1,17 @@
-"""The startup guided intake, offline: a fake compiler, fake counts, no model. Order of questions, how answers
-land (stage → centre, funding band → range, area → must), search-now, and the ready card."""
+"""The startup guided intake, offline: a fake compiler, fake counts, a scripted model. What is asserted here is
+the ANALYST contract — it asks only what the index can answer, it may never invent a filter, an open question
+sharpens the words the search matches on, memory rides every turn, and with no model at all the deterministic
+gate still lands a usable search."""
 from __future__ import annotations
 
 import asyncio
 
 from eigen_kernel.facets import Contract
 
-from api.startups.intake import StartupIntake, understood_words
+from api.startups.intake import ANALYST_BUDGET, StartupIntake, understood_words
 from api.startups.schema import KIND
 
+# stage is known for 8 of 900 here — as in production, where it is known for none.
 COUNTS = {"_total": 900, "tech_area": {"ai_infra": 300, "fintech": 300, "robotics": 300}, "stage": {"seed": 5, "series_a": 3, "unknown": 892},
           "total_disclosed_funding": {"1m_5m": 200, "5m_20m": 250, "20m_50m": 150, "unknown": 300}, "country": {"us": 850, "uk": 50},
           "founder_count": {"1": 300, "2": 400, "3": 200}, "program": {"yc": 900}, "customer": {"enterprise": 100, "unknown": 800},
@@ -31,31 +34,41 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def test_opening_then_required_questions_then_ready():
+def _walk(svc, opening, replies):
+    """Drive a whole intake: the opening, then one chip/skip per turn. Returns every turn."""
+    turns = [run(svc.step(state=None, message=opening))]
+    for r in replies:
+        last = turns[-1]
+        if last["stage"] == "ready":
+            break
+        turns.append(run(svc.step(state=last["state"], answer={"name": last["question"]["name"], "value": r})))
+    return turns
+
+
+# ---------------------------------------------------------------- the deterministic floor (no model)
+def test_without_a_model_the_gate_still_lands_a_search():
     svc = _svc()
     r = run(svc.step(state=None, message=""))
     assert r["stage"] == "opening"
     r = run(svc.step(state=r["state"], message="AI infra startups selling to banks"))
     assert r["stage"] == "questions" and r["question"]["name"] == "tech_area" and r["question"]["multi"]
     assert {o[0] for o in r["question"]["options"][:3]} == {"ai_infra", "fintech", "robotics"}
-    # a question is a choice, not a catalogue: options the index has nothing under are not offered
-    assert 3 <= len(r["question"]["options"]) <= 20
+    assert 3 <= len(r["question"]["options"]) <= 20     # a question is a choice, not a catalogue
     r = run(svc.step(state=r["state"], answer={"name": "tech_area", "value": ["ai_infra", "fintech"]}))
-    assert r["question"]["name"] == "stage" and [o[0] for o in r["question"]["options"]][:2] == ["pre_seed", "seed"]   # vocabulary order, counts shown
-    r = run(svc.step(state=r["state"], answer={"name": "stage", "value": "seed"}))
-    c = r["state"]["kernel"]["contract"]
-    assert c["must"] == {"tech_area": ["ai_infra", "fintech"]} and c["center"] == {"key": "stage", "value": "seed", "span": 1} and c["prefer"] == {"stage": ["seed"]}
-    # optional: funding is spread → asked; program (single value) and business model (all unknown) never
-    assert r["question"]["name"] == "total_disclosed_funding"
-    r = run(svc.step(state=r["state"], answer={"name": "total_disclosed_funding", "value": "5m_20m"}))
-    assert r["state"]["kernel"]["contract"]["must"]["total_disclosed_funding"] == {"min": 5000000.0}
-    # second optional (founder count is spread), then ready — budget of 2 optional
-    assert r["question"]["name"] in ("founder_count", "country", "last_round_months")
-    r = run(svc.step(state=r["state"], answer={"name": r["question"]["name"], "value": "__skip__"}))
-    assert r["stage"] == "ready"
-    ready = r["ready"]
-    assert ready["pool"] == 900 and "AI infra, fintech" in ready["understood"] and "centred on seed" in ready["understood"]
-    assert ready["contract"]["kind"] == "company" and len(ready["transcript_audit"]) >= 6
+    assert r["state"]["kernel"]["contract"]["must"] == {"tech_area": ["ai_infra", "fintech"]}
+    while r["stage"] != "ready":
+        r = run(svc.step(state=r["state"], answer={"name": r["question"]["name"], "value": "__skip__"}))
+    assert r["ready"]["pool"] == 900 and r["ready"]["contract"]["kind"] == "company"
+
+
+def test_stage_is_never_asked_when_the_index_cannot_answer_it():
+    """The question that could not change a single result. It is retired by MEASUREMENT — stage is known for
+    8 of 900 here — not by a hardcoded ban, so it returns by itself if coverage ever lands."""
+    svc = _svc()
+    turns = _walk(svc, "deep tech platforms for ML and data", ["__skip__"] * 8)
+    asked = [t["question"]["name"] for t in turns if t.get("question")]
+    assert "stage" not in asked
+    assert "founder_count" not in asked[:1]     # never the FIRST thing an analyst asks
 
 
 def test_search_now_ends_immediately():
@@ -64,33 +77,160 @@ def test_search_now_ends_immediately():
     assert r["stage"] == "ready" and r["ready"]["contract"]["text"] == "robotics"
 
 
-def test_typed_answer_uses_the_model_and_lands_extra_keys():
+# ---------------------------------------------------------------- the analyst
+def _analyst(script):
+    """A scripted analyst. `script` is a list of replies; the calls it received are recorded for assertions."""
+    calls = []
+
     async def llm(system, user):
-        assert "tech_area" in system
-        return {"answers": {"tech_area": ["robotics"], "country": "us"}, "free_text": "", "search_now": False}
+        import json as _j
+        calls.append({"system": system, "payload": _j.loads(user)})
+        return script[min(len(calls) - 1, len(script) - 1)]
+    return llm, calls
+
+
+def test_analyst_asks_an_open_question_and_the_answer_sharpens_the_words():
+    """The distinction the schema cannot hold: one tech_area covers training, inference and eval alike, so the
+    only thing that separates them is the text the semantic leg matches on."""
+    llm, calls = _analyst([
+        {"understanding": "You want the infrastructure layer, not the apps on top.", "text": "platforms for ML training and data systems",
+         "question": {"kind": "open", "key": "layer", "words": "Training-time infrastructure, or inference and serving?",
+                      "why": "they are different companies", "options": ["training", "inference and serving", "both"]}, "ready": False},
+        {"understanding": "Training-time infrastructure at scale.", "text": "distributed training infrastructure and model serving at scale",
+         "question": None, "ready": True},
+    ])
     svc = _svc(llm)
-    r = run(svc.step(state=None, message="hardware companies"))
-    r = run(svc.step(state=r["state"], message="robotics, in the US please"))
-    c = r["state"]["kernel"]["contract"]
-    assert c["must"]["tech_area"] == ["robotics"] and c["must"]["country"] == ["us"]
+    r = run(svc.step(state=None, message="deep tech platforms that power ML and data systems"))
+    assert r["question"]["kind"] == "open" and r["question"]["words"].startswith("Training-time")
+    assert [o[0] for o in r["question"]["options"]] == ["training", "inference and serving", "both"]
+    r = run(svc.step(state=r["state"], answer={"name": "layer", "value": "training"}))
+    assert r["stage"] == "ready"
+    # the answer reached the words the search matches on — which is the leg that actually separates these companies
+    assert r["ready"]["contract"]["text"] == "distributed training infrastructure and model serving at scale"
+    assert "Training-time infrastructure at scale." in r["ready"]["understood"]
 
 
-def test_understood_words_reads_ranges_and_exclusions():
-    s = understood_words({"text": "ai infra", "must": {"tech_area": ["ai_infra"], "total_disclosed_funding": {"min": 5e6}}, "scope": {"exclude": {"program": ["yc"]}}, "center": {"key": "stage", "value": "seed"}})
-    assert "AI infra" in s and "≥ $5M" in s and "excluding Y Combinator" in s and "centred on seed" in s
+def test_the_analyst_may_choose_and_phrase_but_never_invent():
+    """A key that is not on the measured shortlist is refused, and the deterministic gate takes the turn."""
+    llm, calls = _analyst([{"understanding": "", "text": "", "question": {"kind": "key", "key": "secret_sauce", "words": "What sauce?"}, "ready": False}])
+    svc = _svc(llm)
+    r = run(svc.step(state=None, message="ai infra"))
+    assert r["question"]["name"] != "secret_sauce"
+    assert r["question"]["name"] in ("tech_area", "country", "total_disclosed_funding", "customer", "metro", "last_round_months", "founder_count", "program", "hiring")
+
+
+def test_the_analyst_may_not_offer_a_value_the_index_does_not_hold():
+    llm, _ = _analyst([{"question": {"kind": "key", "key": "country", "words": "Where?", "options": ["us", "atlantis"]}, "ready": False}])
+    r = run(_svc(llm).step(state=None, message="ai infra"))
+    assert r["question"]["name"] == "country"
+    assert [o[0] for o in r["question"]["options"]] == ["us", "uk"]     # our counts, never the model's list
+
+
+def test_memory_rides_every_turn():
+    """What the analyst understood, what the investor ruled out, and everything already asked come back to it."""
+    llm, calls = _analyst([
+        {"understanding": "Infrastructure, not applications.", "ruled_out": ["consumer apps"], "text": "ML infrastructure",
+         "question": {"kind": "key", "key": "country", "words": "Where should they be based?"}, "ready": False},
+        {"understanding": "US infrastructure companies.", "text": "US ML infrastructure", "question": None, "ready": True},
+    ])
+    svc = _svc(llm)
+    r = run(svc.step(state=None, message="ML infra, no consumer stuff"))
+    r = run(svc.step(state=r["state"], answer={"name": "country", "value": "us"}))
+    second = calls[1]["payload"]
+    assert second["understanding_so_far"] == "Infrastructure, not applications."
+    assert second["ruled_out"] == ["consumer apps"]
+    assert "country" in second["already_asked"]
+    assert second["search_so_far"]["must"]["country"] == ["us"]
+    assert any(m["said"] for m in second["conversation"])
+    assert r["ready"]["ruled_out"] == ["consumer apps"]
+
+
+def test_the_analyst_only_sees_keys_the_index_can_answer():
+    llm, calls = _analyst([{"question": None, "ready": True}])
+    run(_svc(llm).step(state=None, message="ai infra"))
+    offered = {c["key"] for c in calls[0]["payload"]["can_filter_on"]}
+    assert "stage" not in offered and "business_model" not in offered      # 0.9% and 0% known here
+    assert "country" in offered and "total_disclosed_funding" in offered
+
+
+def test_the_model_is_called_at_most_once_per_turn_and_is_budgeted():
+    """API credit discipline: one small call per turn, and the analyst stops asking after its budget."""
+    llm, calls = _analyst([{"understanding": "u", "text": "t", "question": {"kind": "open", "key": "k", "words": "w?", "options": ["a", "b"]}, "ready": False}])
+    svc = _svc(llm)
+    r = run(svc.step(state=None, message="ai infra"))
+    turns = 1
+    while r["stage"] != "ready" and turns < 12:
+        r = run(svc.step(state=r["state"], answer={"name": r["question"]["name"], "value": "__skip__"}))
+        turns += 1
+    assert r["stage"] == "ready"
+    assert len(calls) == turns                       # exactly one model call per turn, never two
+    assert r["state"]["kernel"]["counts_asked"]["analyst"] <= ANALYST_BUDGET
+
+
+def test_a_broken_model_never_breaks_the_intake():
+    async def llm(system, user):
+        raise RuntimeError("provider down")
+    r = run(_svc(llm).step(state=None, message="robotics companies"))
+    assert r["stage"] in ("questions", "ready")
+    if r["stage"] == "questions":
+        assert r["question"]["name"] in ("tech_area", "country", "total_disclosed_funding", "customer", "metro", "last_round_months", "founder_count", "program", "hiring")
+
+
+# ---------------------------------------------------------------- the read-back
+def test_understood_words_reads_like_a_person():
+    s = understood_words({"text": "ai infra", "must": {"tech_area": ["ai_infra"], "total_disclosed_funding": {"min": 5e6}},
+                          "scope": {"exclude": {"program": ["yc"]}}, "center": {"key": "stage", "value": "seed"}})
+    assert "building in AI infra" in s and "at least $5M" in s and "not Y Combinator" in s and "centred on seed" in s
+    assert "≥" not in s and "min" not in s
+
+
+def test_understood_words_says_the_bounds_the_way_a_person_would():
+    s = understood_words({"must": {"founder_count": {"min": 2.0, "max": 2.0}}})
+    assert "2 founders" in s and "≤" not in s
+
+
+def test_the_analysts_own_read_back_leads_and_the_filters_still_show():
+    s = understood_words({"text": "training infra", "must": {"country": ["us"]}}, understanding="You want training infrastructure sold to labs.")
+    assert s.startswith("You want training infrastructure sold to labs.")
+    assert "based in US" in s and "training infra" in s
 
 
 def test_stage_in_the_opening_becomes_the_centre_and_refinements_merge():
-    from eigen_kernel.facets import Contract
-    async def compile_(text):
+    svc = _svc()
+
+    async def compile_with_stage(text):
+        c = Contract(kind=KIND, text=text)
         if "seed" in text:
-            return Contract(kind=KIND, text=text, prefer={"stage": ["seed"]}, must={"tech_area": ["ai_infra"]}), []
-        return Contract(kind=KIND, text=text, must={"country": ["us"]}), []
-    svc = StartupIntake(llm_json=None, counts_fn=fake_counts, compile_fn=compile_)
-    r = run(svc.step(state=None, message="seed ai infra"))
-    c = r["state"]["kernel"]["contract"]
-    assert c["center"] == {"key": "stage", "value": "seed", "span": 1}
-    r = run(svc.step(state=r["state"], search_now_flag=True))
-    r = run(svc.step(state=r["state"], message="in the US"))
-    c = r["state"]["kernel"]["contract"] if r["stage"] != "ready" else r["ready"]["contract"]
-    assert c["must"] == {"tech_area": ["ai_infra"], "country": ["us"]} and c["center"]["value"] == "seed"
+            c.prefer["stage"] = ["seed"]
+        if "robot" in text:
+            c.must["tech_area"] = ["robotics"]
+        return c, []
+
+    svc.compile_fn = compile_with_stage
+    r = run(svc.step(state=None, message="seed robotics"))
+    assert r["state"]["kernel"]["contract"]["center"] == {"key": "stage", "value": "seed", "span": 1}
+    while r["stage"] != "ready":
+        r = run(svc.step(state=r["state"], answer={"name": r["question"]["name"], "value": "__skip__"}))
+    assert r["ready"]["contract"]["center"]["value"] == "seed"
+
+
+def test_a_typed_reply_never_leaves_a_question_to_be_asked_again():
+    """Even with no analyst to read it — no model, or its budget spent — a question the investor has already
+    been asked is spent. Asking the same thing twice is the fastest way to stop sounding like an analyst."""
+    svc = _svc()                                   # no model at all
+    r = run(svc.step(state=None, message="ai infra startups"))
+    first = r["question"]["name"]
+    r = run(svc.step(state=r["state"], message="not sure, whatever you think"))
+    assert first in r["state"]["kernel"]["asked"]
+    assert (r["question"] or {}).get("name") != first
+
+
+def test_an_open_question_answered_in_words_still_reaches_the_query():
+    llm, _ = _analyst([{"question": {"kind": "open", "key": "layer", "words": "Which layer?", "options": ["a"]}, "ready": False},
+                       {"question": None, "ready": True}])
+    svc = _svc(llm)
+    r = run(svc.step(state=None, message="ML platforms"))
+    assert r["question"]["kind"] == "open"
+    r = run(svc.step(state=r["state"], message="the serving layer, GPU scheduling"))
+    assert "layer" in r["state"]["kernel"]["asked"]
+    assert r["stage"] == "ready"

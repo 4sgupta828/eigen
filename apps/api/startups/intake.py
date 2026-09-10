@@ -1,30 +1,50 @@
-"""GUIDED search for startups — roster's guided intake adapted: the shortest path from a vague thesis to a contract
-the rail can run. No artifact here (no résumé, no JD); the "artifact" is the thesis in the investor's words.
+"""GUIDED search for startups — an ANALYST, not a form: it extracts the investor's intent through a few
+clarifying questions and lands them on a search whose results are actually about what they meant.
 
 Flow (one turn at a time, stateless — the state rides the request):
-  opening words → compile (the existing brief compiler) → questions, in order:
-    REQUIRED  what they build (tech_area) · stage (centre, never a must — the record states rounds for few)
-    OPTIONAL  asked only when the answer would change the results: the counts over the current slice are spread on
-              the key, the key is not already constrained, and the ask budget remains
-  → READY: "what I understood" in plain words, the contract as chips, the pool size, advice — nothing runs until
-    the user taps Search. "Search now" ends it from any turn.
-Code decides WHETHER to ask (`eigen_kernel.facets.intake`); the words, keys and how an answer lands are here; a
-model maps a TYPED reply onto the pending question (one small JSON call; a chip tap costs nothing)."""
+  opening words → compile (the existing brief compiler) → an analyst turn per reply → READY → Startups mode.
+
+Each analyst turn (ONE small JSON call, and only while the analyst budget holds) reads the whole conversation
+so far — the thesis, every question and answer, what the investor has ruled out, the contract as it stands —
+together with a MEASURED shortlist of what this index can still be filtered on (`intake.askable`), and returns
+three things: a running read-back in plain words, a sharpened retrieval query, and the ONE next question.
+
+Two kinds of question, because a thesis has two kinds of ambiguity:
+  key   — a facet the index holds and the search can filter on. Only ever chosen from the measured shortlist,
+          so a question is asked only when the answer is MISSING, CRITICAL and ANSWERABLE. A key the index
+          knows for almost nobody never reaches the shortlist, so it is never asked (this is why stage — 0%
+          coverage — stopped being a required question: measurement retired it, not a hardcoded ban).
+  open  — a distinction the schema cannot express and only the words can carry ("training-time infrastructure
+          or inference and serving?"). Its answer sharpens `contract.text`, which is the leg that actually
+          separates such companies, since one tech_area covers models, training, inference and eval alike.
+
+The model may CHOOSE and PHRASE; it may never invent. Every key it names must be on the shortlist and every
+value it offers comes from the counts (`intake.accept_question`), so no question can promise a filter the
+index cannot honour. With no model, a bad answer, or the budget spent, the deterministic gate takes over and
+nothing is lost. "Search now" ends it from any turn."""
 from __future__ import annotations
 
 import json
 from typing import Awaitable, Callable
 
 from eigen_kernel.facets import Contract, edit, validate_contract
-from eigen_kernel.facets.intake import IntakeState, Question, apply_answer, next_question, search_now, spread
+from eigen_kernel.facets.intake import (IntakeState, Question, accept_question, apply_answer, askable, next_question, remember,
+                                         search_now, spread)
 
 from .schema import KIND, SCHEMA, VALUE_LABELS
 
 TRANSCRIPT_CAP, MSG_CAP = 40, 1500
 
-# the keys the intake must know before a search runs, and the keys it may ask about when the pool splits on them
-REQUIRED_KEYS = ["tech_area", "stage"]
-OPTIONAL_KEYS = ["total_disclosed_funding", "country", "last_round_months", "founder_count", "program", "customer", "business_model", "hiring", "metro"]
+# The one key the search is shapeless without, and the keys the analyst may ask about — in INVESTOR importance
+# order, which is only the tie-break: `askable` measures each against the live slice first, so a key the index
+# cannot answer never appears however high it sits here. `stage` sits last and, at today's coverage, never
+# surfaces; it will return by itself if stage extraction ever lands.
+REQUIRED_KEYS = ["tech_area"]
+OPTIONAL_KEYS = ["tech_area", "customer", "business_model", "country", "metro", "total_disclosed_funding",
+                 "last_round_months", "program", "hiring", "founder_count", "stage"]
+# Questions a model may choose; the deterministic fallback uses the same list minus the thesis key.
+ASKABLE_KEYS = list(OPTIONAL_KEYS)
+ANALYST_BUDGET = 4          # at most four model-chosen questions per intake — one small call each
 # how an answer lands: a must (a promise the index keeps), a prefer, or the centre; numeric bands become a range
 LANDING = {"tech_area": "must", "stage": "center", "country": "must", "metro": "must", "program": "must", "customer": "prefer",
            "business_model": "prefer", "total_disclosed_funding": "must", "last_round_months": "must", "founder_count": "must", "hiring": "must"}
@@ -50,7 +70,14 @@ BAND_MIN = {"total_disclosed_funding": {"under_1m": None, "1m_5m": 1e6, "5m_20m"
 
 
 def option_label(key: str, value: str) -> str:
-    return VALUE_LABELS.get(value) or str(value).replace("_", " ")
+    lab = VALUE_LABELS.get(value)
+    if lab:
+        return lab
+    v = str(value)
+    # ISO country codes have no label of their own; "fr" reads as a typo next to "US" and "UK".
+    if key in ("country",) and len(v) == 2 and v.isalpha():
+        return v.upper()
+    return v.replace("_", " ")
 
 
 def option_hint(key: str, value: str) -> str:
@@ -61,42 +88,138 @@ def option_hint(key: str, value: str) -> str:
     return ""
 
 
-def turn_prompt(pending: dict | None) -> str:
-    keys = REQUIRED_KEYS + OPTIONAL_KEYS
-    vocab = "; ".join(f"{k.key}: {', '.join(k.values) if k.values else 'bands ' + ', '.join(b[0] for b in k.bands) if k.bands else 'free lowercase token'}"
-                      for k in SCHEMA.for_kind(KIND) if k.key in keys)
-    asked = f'The user was asked: "{pending["words"]}" (key {pending["key"]}).' if pending else "No question is pending."
-    return (f"You are the intake for a STARTUP search (an investor describing a thesis). {asked} The user replied. Map the reply onto that "
-            "question and onto any other key it CLEARLY states. Return ONLY JSON: {\"answers\": {key: value | [values] | null}, \"free_text\": "
-            "\"the reply's own words for anything that fits no key\", \"search_now\": true|false}. A value must be one of the key's vocabulary "
-            f"tokens or bands ({vocab}); null means the user declined or skipped ('any', 'doesn't matter', 'skip'). search_now is true when the "
-            "user says to just run it. Never guess; never add an answer the reply does not state.")
+def analyst_prompt(budget_left: int) -> str:
+    """The analyst's brief. It is told what it may ask about and, just as importantly, what it may not promise."""
+    return (
+        "You are a startup analyst sitting with an investor who has described a thesis in their own words. Your job is to "
+        "understand what they actually mean and turn it into a search over an index of companies — NOT to interview them. "
+        "Ask the FEWEST questions that change which companies come back.\n"
+        "You get the whole conversation so far, the search as it currently stands, and CAN_FILTER_ON: the facets this index "
+        "can still filter on right now, each with the values it actually holds and how many companies carry each. That list is "
+        "the truth about this index. A facet not on it either is already set, or the index does not know it for enough "
+        "companies to act on — never ask about one, and never promise a filter that is not there.\n"
+        "ONE question per turn, of one of two kinds:\n"
+        "  \"key\"  — a facet from CAN_FILTER_ON. Ask only when the answer is MISSING from what they have said, CRITICAL to "
+        "which companies come back, and the facet genuinely divides this pool. Never ask a question whose answer you can "
+        "already infer from their words.\n"
+        "  \"open\" — a distinction the facets cannot express, which only the wording can carry: which LAYER of a stack, "
+        "which workload, which buyer, which way an ambiguous term was meant. Prefer this when the thesis names a technical "
+        "area broad enough that the index's own category covers several different businesses. Offer 2-5 short answer chips "
+        "in the investor's language, not schema tokens.\n"
+        "Also maintain TEXT: the thesis rewritten as the sharpest description of the companies they want, in the words those "
+        "companies would use about themselves — this is what the semantic leg of the search matches on, so it matters more "
+        "than any filter. Fold every answer into it. Keep it under 200 characters, concrete, no filler.\n"
+        "Return ONLY JSON: {\"understanding\": \"one or two plain sentences: what you now believe they are looking for, "
+        "in their language, no schema tokens\", \"text\": \"the sharpened description\", \"answers\": {facet_key: value | "
+        "[values] | null}, \"ruled_out\": [\"short phrases for what they have said they do NOT want\"], "
+        "\"question\": {\"kind\": \"key\"|\"open\", \"key\": \"facet key, or a short slug for an open question\", "
+        "\"words\": \"the question, one sentence, plain and specific\", \"why\": \"under 10 words: what this changes\", "
+        "\"options\": [\"...\"]} | null, \"ready\": true|false, \"search_now\": true|false}.\n"
+        "`answers` maps anything the LATEST reply clearly states onto facet keys — vocabulary tokens only, never invented "
+        "values, null when they declined or said it does not matter. For an \"open\" question, `options` are plain phrases; "
+        "for a \"key\" question they must be values from CAN_FILTER_ON for that facet.\n"
+        f"You have at most {budget_left} more question(s). Set ready=true — with question=null — as soon as another question "
+        "would not change which companies come back, or when the investor sounds finished. Ending early is better than "
+        "asking one question too many. search_now=true only if they say to just run it.")
 
 
-def understood_words(contract: dict, answers: dict | None = None) -> str:
+def analyst_payload(*, thesis: str, transcript: list, st: IntakeState, pending: dict | None, reply: str, shortlist: list, counts: dict) -> dict:
+    """Everything the analyst remembers, plus what this index can still be filtered on — measured, not assumed."""
+    c = st.contract or {}
+    can = []
+    # The kernel ranks by what it MEASURED (how much a key divides this pool); the vertical presents them in
+    # the order an investor would care about, and lets the measurement speak for itself in the numbers. Founder
+    # count divides this pool cleanly and is still almost never the question worth spending a turn on.
+    rank = {k: i for i, k in enumerate(OPTIONAL_KEYS)}
+    for a in sorted(shortlist, key=lambda a: (rank.get(a.key, 99), -a.reach)):
+        k = SCHEMA.key(a.key)
+        can.append({"key": a.key, "label": (k.label if k else a.key), "means": (k.guidance[:200] if k and k.guidance else ""),
+                    "known_share": round(a.known, 2), "divides_pool": round(a.decisive, 2),
+                    "values": [[v, option_label(a.key, v), int(n)] for v, n in a.options[:12]]})
+    return {"thesis": thesis[:600],
+            "conversation": [{"who": m.get("role"), "said": m.get("text")} for m in transcript[-12:]],
+            "understanding_so_far": st.understanding,
+            "ruled_out": list(st.ruled_out),
+            "search_so_far": {"words": c.get("text") or "", "must": c.get("must") or {}, "prefer": c.get("prefer") or {},
+                              "exclude": (c.get("scope") or {}).get("exclude") or {}},
+            "already_asked": list(st.asked),
+            "pool_now": int(counts.get("_total") or 0),
+            "pending_question": (pending or {}).get("words") or "",
+            "latest_reply": reply[:600],
+            "can_filter_on": can}
+
+
+def _phrase_range(key: str, rng: dict) -> str:
+    """A numeric must in the words a person would use, not the bounds a machine stores."""
+    k = SCHEMA.key(key)
+    lab = (k.label.lower() if k else key.replace("_", " "))
+    lo, hi = rng.get("min"), rng.get("max")
+    money = bool(k and k.unit == "usd")
+    fmt = (lambda x: _usd(x)) if money else (lambda x: f"{float(x):g}")
+    if lo is not None and hi is not None and float(lo) == float(hi):
+        return (f"{fmt(lo)} {lab}" if not money else f"{fmt(lo)} in {lab}") if key != "founder_count" else f"{float(lo):g} founders"
+    if key == "last_round_months":
+        return f"a round in the last {fmt(hi)} months" if hi is not None else f"nothing newer than {fmt(lo)} months"
+    if lo is not None and hi is not None:
+        return f"{lab} between {fmt(lo)} and {fmt(hi)}"
+    if lo is not None:
+        return f"at least {fmt(lo)}" + (f" in {lab}" if money else f" {lab}")
+    return f"at most {fmt(hi)}" + (f" in {lab}" if money else f" {lab}")
+
+
+def _phrase_values(key: str, vals) -> str:
+    k = SCHEMA.key(key)
+    lab = (k.label.lower() if k else key.replace("_", " "))
+    named = [option_label(key, v) for v in (vals if isinstance(vals, (list, tuple)) else [vals])]
+    joined = named[0] if len(named) == 1 else " or ".join((", ".join(named[:-1]), named[-1]))
+    if key in ("country", "metro"):
+        return f"based in {joined}"
+    if key == "tech_area":
+        return f"building in {joined}"
+    if key == "customer":
+        return f"selling to {joined}"
+    if key == "program":
+        return f"out of {joined}"
+    if key == "business_model":
+        return f"on a {joined} model"
+    return f"{lab}: {joined}"
+
+
+def understood_words(contract: dict, answers: dict | None = None, understanding: str = "") -> str:
+    """What will be searched, in a sentence a person would say — never the contract read aloud.
+
+    The analyst's own read-back leads when there is one: it is the only part that knows WHY, and it is in the
+    investor's language. The derived clauses follow it, because a filter that is not said is a filter the
+    investor cannot catch us getting wrong."""
     c = contract or {}
-    parts = []
-    musts = []
-    for k, vs in (c.get("must") or {}).items():
-        if isinstance(vs, dict):
-            lab = SCHEMA.key(k).label.lower() if SCHEMA.key(k) else k
-            rng = " to ".join(x for x in ((f"≥ {_usd(vs['min'])}" if vs.get("min") is not None and SCHEMA.key(k).unit == "usd" else f"≥ {vs['min']:g}" if vs.get("min") is not None else ""),
-                                          (f"≤ {_usd(vs['max'])}" if vs.get("max") is not None and SCHEMA.key(k).unit == "usd" else f"≤ {vs['max']:g}" if vs.get("max") is not None else "")) if x)
-            musts.append(f"{lab} {rng}")
-        else:
-            musts.append(", ".join(option_label(k, v) for v in vs))
-    base = "Startups" + (f" matching “{c.get('text')}”" if c.get("text") else "")
-    parts.append(base + (" that must be " + "; ".join(musts) if musts else ""))
+    clauses = [(_phrase_range(k, vs) if isinstance(vs, dict) else _phrase_values(k, vs)) for k, vs in (c.get("must") or {}).items()]
     ex = (c.get("scope") or {}).get("exclude") or {}
     if ex:
-        parts.append("excluding " + ", ".join(option_label(k, v) for k, vs in ex.items() for v in vs))
-    prefers = [option_label(k, v) for k, vs in (c.get("prefer") or {}).items() if isinstance(vs, list) for v in vs]
-    if prefers:
-        parts.append("preferring " + ", ".join(prefers))
+        clauses.append("not " + ", ".join(option_label(k, v) for k, vs in ex.items() for v in vs))
+    prefers = [_phrase_values(k, vs) for k, vs in (c.get("prefer") or {}).items() if isinstance(vs, list) and vs]
     ctr = c.get("center") or {}
+    words = (c.get("text") or "").strip()
+    lead = (understanding or "").strip()
+
+    if not lead:
+        head = ("Startups matching “" + words + "”") if words else "Startups"
+        parts = list(clauses)
+        if prefers:
+            parts.append("ranking up " + ", ".join(prefers))
+        if ctr.get("key"):
+            parts.append("centred on " + option_label(str(ctr.get("key")), str(ctr.get("value"))))
+        return head + (" — " + "; ".join(parts) if parts else "") + "."
+
+    out = [lead if lead.endswith((".", "!", "?")) else lead + "."]
+    if clauses:
+        out.append("Filtering to companies " + "; ".join(clauses) + ".")
+    if prefers:
+        out.append("Ranking up " + ", ".join(prefers) + ".")
     if ctr.get("key"):
-        parts.append(f"centred on {option_label('stage', str(ctr.get('value')))}")
-    return "; ".join(parts) + "."
+        out.append("Centred on " + option_label(str(ctr.get("key")), str(ctr.get("value"))) + ".")
+    if words:
+        out.append("The words the search matches on: “" + words + "”.")
+    return " ".join(out)
 
 
 def _centre_from_stage(c: Contract) -> Contract:
@@ -161,7 +284,12 @@ class StartupIntake:
             return {}
 
     def _question_payload(self, q: Question, counts: dict) -> dict:
+        if q.kind == "open":
+            # A distinction the schema cannot hold: plain-language chips, and the answer sharpens the words.
+            return {"kind": "open", "name": q.name, "key": "", "words": q.words, "hint": q.why or "in your own words — this sharpens what the search matches on",
+                    "klass": q.klass, "options": [[v, v, 0, ""] for v, _ in q.options], "skip": "Doesn't matter", "free_text": True, "multi": True}
         words, hint = QUESTION_WORDS.get(q.name, (f"{q.name.replace('_', ' ')}?", ""))
+        words, hint = (q.words or words), (q.why or hint)
         k = SCHEMA.key(q.name)
         opts = q.options
         if k is not None and k.type.value in ("ordinal", "numeric"):
@@ -185,13 +313,70 @@ class StartupIntake:
                 "multi": bool(k is not None and k.type.value == "categorical" and q.name not in ("program",)) or q.name in ("country", "metro")}
 
     def _next(self, st: IntakeState, counts: dict) -> Question | None:
+        """The deterministic floor — used when there is no model, when it answers badly, or when its budget is spent."""
         return next_question(st, required_items=[], required_keys=REQUIRED_KEYS, optional_keys=OPTIONAL_KEYS, counts=counts)
 
+    def _shortlist(self, st: IntakeState, counts: dict) -> list:
+        return askable(st, keys=ASKABLE_KEYS, counts=counts)
+
+    def _retire(self, st: IntakeState, pending: dict | None, reply: str) -> IntakeState:
+        """A question that has been answered — or answered around — is spent, so it is never asked twice. This
+        runs whatever happened to the analyst: a spent budget and a missing model must not resurrect a question
+        the investor has already seen. An open question's own words still reach the query."""
+        name, kind = str((pending or {}).get("name") or ""), str((pending or {}).get("kind") or "")
+        if not name or name in st.asked or kind not in ("key", "open"):
+            return st
+        q = Question(kind=kind, name=name, klass=(pending or {}).get("klass") or "analyst")
+        return self._apply(st, q, (reply or None) if kind == "open" else None)
+
+    async def _analyst(self, st: IntakeState, counts: dict, *, transcript: list, thesis: str, pending: dict | None, reply: str) -> tuple[IntakeState, Question | None, bool]:
+        """ONE analyst turn: read everything said so far plus what the index can still be filtered on, then
+        return the updated state, the next question (validated — never invented), and whether it is ready.
+
+        Every failure mode lands on the deterministic gate: no model, a raised call, a non-dict answer, a
+        question naming a key that is not on the measured shortlist, or a spent budget."""
+        if self.llm_json is None or st.counts_asked.get("analyst", 0) >= st.budgets.get("analyst", ANALYST_BUDGET):
+            return st, None, False
+        shortlist = self._shortlist(st, counts)
+        left = max(0, st.budgets.get("analyst", ANALYST_BUDGET) - st.counts_asked.get("analyst", 0))
+        payload = analyst_payload(thesis=thesis, transcript=transcript, st=st, pending=pending, reply=reply, shortlist=shortlist, counts=counts)
+        try:
+            read = await self.llm_json(analyst_prompt(left), json.dumps(payload))
+        except Exception:   # noqa: BLE001 — the analyst is an aid; the intake proceeds on the deterministic gate
+            return st, None, False
+        if not isinstance(read, dict):
+            return st, None, False
+        # 1) anything the reply plainly stated lands on its key, before the next question is chosen
+        answers = read.get("answers") if isinstance(read.get("answers"), dict) else {}
+        for key, v in list(answers.items()):
+            if key in ASKABLE_KEYS and key not in st.asked and v not in (None, "", []):
+                st = self._apply(st, Question(kind="key", name=key, klass="analyst"), v)
+        # 2) the memory: the running read-back, what they have ruled out, and the sharpened words
+        st = remember(st, understanding=str(read.get("understanding") or "") or None,
+                      ruled_out=[str(x) for x in (read.get("ruled_out") or []) if str(x).strip()])
+        text = str(read.get("text") or "").strip()
+        if len(text) > 8:
+            c = Contract.from_dict(st.contract); c.text = text[:200]; st.contract = c.to_dict()
+        if read.get("search_now"):
+            return search_now(st), None, True
+        if read.get("ready"):
+            return st, None, True
+        q = accept_question(st, read.get("question"), allowed=shortlist, klass="analyst")
+        return st, q, False
+
     def _apply(self, st: IntakeState, q: Question, value) -> IntakeState:
-        """An answer lands per LANDING: stage → centre (+ prefer); numeric bands → a must range; the rest → must / prefer."""
+        """An answer lands per LANDING: stage → centre (+ prefer); numeric bands → a must range; the rest → must /
+        prefer. An OPEN answer names no key — it joins the words the semantic leg matches on, which is the whole
+        point of asking it."""
         if value is None or value == [] or value == "":
             return apply_answer(st, q, None)
         vals = [str(v) for v in (value if isinstance(value, (list, tuple)) else [value])]
+        if q.kind == "open":
+            n = apply_answer(st, q, ", ".join(vals))
+            c = Contract.from_dict(n.contract)
+            c.text = (c.text + " " + " ".join(vals)).strip()[:200]
+            n.contract = c.to_dict()
+            return n
         landing = LANDING.get(q.name, "prefer")
         k = SCHEMA.key(q.name)
         if q.name == "stage":
@@ -275,9 +460,11 @@ class StartupIntake:
             diagnostics = await cs.u_diagnostics(c, user_keys=uk, slice_fn=self.slice_fn)
         handoff = {**st.contract, "merge": {"mode": "merged", "user_keys": sorted(uk)}}
         note_lines = [f"{n.get('key', '').replace('_', ' ')}: {n.get('why')} — it ranks instead of filtering" for n in aware_notes]
-        return {"understood": understood_words(st.contract, st.answers), "contract": handoff, "pool": self._pool(counts), "counts": counts,
+        return {"understood": understood_words(st.contract, st.answers, understanding=st.understanding), "contract": handoff,
+                "pool": self._pool(counts), "counts": counts, "brief": (st.contract or {}).get("text") or "",
                 "advice": self._advice(counts), "notes": list(notes) + note_lines, "answers": dict(st.answers), "user_keys": sorted(uk),
-                "recipes": recipes_out, "diagnostics": diagnostics, "transcript_audit": transcript[-TRANSCRIPT_CAP:]}
+                "ruled_out": list(st.ruled_out), "recipes": recipes_out, "diagnostics": diagnostics,
+                "transcript_audit": transcript[-TRANSCRIPT_CAP:]}
 
     # ---------------- the turn ----------------
     async def step(self, *, state: dict | None = None, message: str = "", answer: dict | None = None, search_now_flag: bool = False) -> dict:
@@ -305,6 +492,21 @@ class StartupIntake:
             return {"stage": stage, "question": question, "ready": ready,
                     "state": {"kernel": st.to_dict(), "transcript": transcript[-TRANSCRIPT_CAP:], "pending": question, "opening": opening[:400], "notes": notes[:8]}}
 
+        async def advance(reply: str = "") -> dict:
+            """Whatever just happened, this decides the next turn: one analyst read, and the deterministic
+            gate underneath it, so a missing or misbehaving model degrades to the old behaviour rather than
+            to a dead end."""
+            nonlocal st
+            counts = await self._counts(st)
+            st, q, ready = await self._analyst(st, counts, transcript=transcript, thesis=opening, pending=pending, reply=reply)
+            st = self._retire(st, pending, reply)
+            if not ready and q is None:
+                q = self._next(st, counts)
+            if q is not None:
+                return pack("questions", question=self._question_payload(q, counts))
+            st.stage = "ready"
+            return pack("ready", ready=await self._ready(st, counts, transcript, notes))
+
         # 0) OPENING: the thesis in the user's words → the compiled contract (musts the words state, the semantic text)
         if not st.contract and not (answer is not None):
             if not message:
@@ -316,12 +518,10 @@ class StartupIntake:
             notes = list(n)
             st.contract = _centre_from_stage(c).to_dict()
             st.stage = "questions"
-            counts = await self._counts(st)
             if search_now_flag:
                 st = search_now(st)
-                return pack("ready", ready=await self._ready(st, counts, transcript, notes))
-            q = self._next(st, counts)
-            return pack("questions", question=self._question_payload(q, counts)) if q else pack("ready", ready=await self._ready(st, counts, transcript, notes))
+                return pack("ready", ready=await self._ready(st, await self._counts(st), transcript, notes))
+            return await advance(reply=message)
 
         # SEARCH NOW: ready with what is known, from any stage
         if search_now_flag:
@@ -329,42 +529,20 @@ class StartupIntake:
             counts = await self._counts(st)
             return pack("ready", ready=await self._ready(st, counts, transcript, notes))
 
-        # 1) an ANSWER to the pending question: a chip (no model) or typed words (one small model read)
-        if pending and pending.get("kind") == "key":
-            q = Question(kind="key", name=pending["name"], options=[(o[0], o[2]) for o in (pending.get("options") or [])], klass=pending.get("klass") or "optional")
+        # 1) an ANSWER to the pending question. A chip lands deterministically and costs nothing; typed words are
+        #    read by the analyst turn itself, so a turn is ONE model call, never two.
+        if pending and pending.get("kind") in ("key", "open"):
             if answer is not None:
                 av = answer.get("value")
+                q = Question(kind=str(pending.get("kind")), name=pending["name"], options=[(o[0], o[2]) for o in (pending.get("options") or [])],
+                             klass=pending.get("klass") or "optional")
                 st = self._apply(st, q, None if av in (None, "", "__skip__") else av)
-            elif message and self.llm_json:
-                try:
-                    read = await self.llm_json(turn_prompt(pending), json.dumps({"reply": message[:600]}))
-                except Exception:   # noqa: BLE001
-                    read = {}
-                if not isinstance(read, dict):
-                    read = {}
-                answers = read.get("answers") or {}
-                got = answers.pop(pending["name"], None) if isinstance(answers, dict) else None
-                st = self._apply(st, q, got)
-                for k, v in (answers.items() if isinstance(answers, dict) else []):
-                    if k in REQUIRED_KEYS + OPTIONAL_KEYS and v not in (None, "", []) and k not in st.asked:
-                        st = self._apply(st, Question(kind="key", name=k, klass="optional"), v)
-                if read.get("search_now"):
-                    st = search_now(st)
-                ft = str(read.get("free_text") or "").strip()
-                if ft and len(ft) > 3:
-                    c = Contract.from_dict(st.contract); c.text = (c.text + " " + ft).strip()[:200]; st.contract = c.to_dict()
-            counts = await self._counts(st)
-            q2 = self._next(st, counts)
-            return pack("questions", question=self._question_payload(q2, counts)) if q2 else pack("ready", ready=await self._ready(st, counts, transcript, notes))
+            return await advance(reply=message)
 
         # a message with no pending question and a contract already: a refinement — compiled on its own and MERGED
         # into what the conversation already established (never a replacement: earlier answers stay)
         if message and st.contract:
             c, n = await self.compile_fn(message)
-            st.contract = _merge(Contract.from_dict(st.contract), _centre_from_stage(c)).to_dict(); notes = list(n); opening = (opening + " " + message).strip()
-            counts = await self._counts(st)
-            q = self._next(st, counts)
-            return pack("questions", question=self._question_payload(q, counts)) if q else pack("ready", ready=await self._ready(st, counts, transcript, notes))
-        counts = await self._counts(st)
-        q = self._next(st, counts)
-        return pack("questions", question=self._question_payload(q, counts)) if q else pack("ready", ready=await self._ready(st, counts, transcript, notes))
+            st.contract = _merge(Contract.from_dict(st.contract), _centre_from_stage(c)).to_dict()
+            notes = list(n); opening = (opening + " " + message).strip()
+        return await advance(reply=message)
