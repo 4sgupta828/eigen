@@ -69,23 +69,29 @@ def test_facet_and_cluster_candidates_are_comparable_on_one_scale():
 
 # ---------------------------------------------------------------- the gate
 
-def test_a_set_the_reader_has_already_narrowed_is_left_alone():
-    """The risk the panel named — turning a search into a nagging form — now lives where it belongs: a
-    reader who has narrowed to a handful has converged, and a pool too thin to split is never split.
+def test_a_small_result_set_is_still_steered():
+    """DELIBERATE REVERSAL of the ported behaviour, on the owner's instruction: "directions should show
+    always — it helps refine query with explicit user feedback loop".
 
-    What does NOT silence the offer any more is a high match score. Tuned that way, a clean query like
-    "backend engineer" with 691 results got nothing, even though seniority, place and work mode all
-    split it usefully — which is precisely the narrowing the reader wanted. The quality bar moved to
-    the candidates: a direction that barely moves the set is never shown."""
+    The old rule stayed silent below twenty-five results, on the theory that a reader who had narrowed
+    that far had converged. That theory is backwards. Someone looking at six results they did not want has
+    converged on nothing, and removing the steering at that exact moment takes away the one control that
+    could rescue the query. Steering is most valuable when the results are wrong, and results are often
+    wrong when they are few.
+
+    A high match score does not silence it either, and never did: "backend engineer" with 691 results got
+    nothing under an even earlier rule, though seniority, place and work mode all split it usefully."""
     ok, why = worth_steering({"pool": 18, "best_match": 88})
-    assert ok is False and "narrowed" in why
-    ok, why = worth_steering({"pool": 400, "best_match": 88})
-    assert ok is True, "a big, cleanly-matched pool is exactly what a reader narrows down"
+    assert ok is True and why
 
 
-def test_a_thin_pool_is_never_split_further():
-    ok, why = worth_steering({"pool": 5, "best_match": 20})
-    assert ok is False and "few" in why
+def test_only_an_undividable_set_is_left_alone():
+    """The single remaining silence: fewer than two rows cannot be divided into two groups. Everything
+    above that offers, and the quality bar lives in the candidates rather than in this gate."""
+    assert worth_steering({"pool": 5, "best_match": 20})[0] is True
+    assert worth_steering({"pool": 2})[0] is True
+    ok, why = worth_steering({"pool": 1})
+    assert ok is False and "nothing to split" in why
 
 
 def test_an_ambiguous_query_is_steered_even_when_the_matches_look_good():

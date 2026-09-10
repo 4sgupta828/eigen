@@ -50,8 +50,9 @@ def _balance_score(share: float) -> float:
 
 
 def facet_directions(counts: dict, schema, kind: str, *, exclude: set = frozenset(),
-                     labels: dict | None = None, min_share: float = 0.08,
-                     max_share: float = 0.92, pool: int = 0, min_known: float = 0.5) -> list[Direction]:
+                     labels: dict | None = None, min_share: float = 0.03,
+                     max_share: float = 0.95, pool: int = 0, min_known: float = 0.34,
+                     min_rows: int = 3) -> list[Direction]:
     """Candidate directions from the COUNTS over the current slice.
 
     Counts are slice-wide, not page-wide, which is why they — and not the ten rows on screen — are the
@@ -67,21 +68,28 @@ def facet_directions(counts: dict, schema, kind: str, *, exclude: set = frozense
         total = sum(known.values())
         if total <= 0 or len(known) < 2:
             continue
-        # A KEY MOST OF THE POOL HAS NO VALUE FOR CANNOT STEER IT. Shares are computed over the values that
-        # are KNOWN, so a key known for two rows of two hundred offers a "perfectly balanced" split at one
-        # row each — and taking it filters by absence, dropping everything the key says nothing about.
-        # Measured: a 232-company pool was offered "last round: 0-6 months", which kept one company.
-        # This is the same rule the rail's must-warning states, applied before the offer is made.
-        if pool and total / float(pool) < min_known:
+        # A KEY MOST OF THE POOL HAS NO VALUE FOR CANNOT STEER IT, because taking one of its values filters
+        # by absence and drops everything the key is silent about. Measured: a 232-company pool was offered
+        # "last round: 0-6 months", which kept one company because the key was known for two.
+        #
+        # But this cannot be a flat quota, or it silences small result sets entirely — which is where
+        # steering matters most. So the requirement is proportional AND absolute: the key must cover a
+        # reasonable share of the pool, or enough rows that the split is not a rounding artefact.
+        if pool and total < max(min_rows, pool * min_known):
             continue
+        denom = float(pool or total)
         for value, n in sorted(known.items(), key=lambda kv: -kv[1])[:4]:
-            share = n / total
+            # Share is measured against the POOL, not against the key's known values: what the reader cares
+            # about is how much of what they are looking at would remain.
+            share = n / denom
+            if n >= (pool or total) or n <= 0:
+                continue          # keeps everything, or nothing — not a choice
             if share < min_share or share > max_share:
-                continue          # would change almost nothing, or would remove almost nothing
+                continue
             out.append(Direction(key=key, label=f"{lab.get(key, key).replace('_', ' ')}: {str(value).replace('_', ' ')}",
                                  values=[value], section="must", hits=n,
                                  score=round(_balance_score(share), 4), source="facet",
-                                 why=f"{n} of {total} here"))
+                                 why=f"{n} of {pool or total} here"))
     return out
 
 
@@ -110,39 +118,33 @@ def cluster_directions(groups: list, n_rows: int, *, min_share: float = 0.10,
     return out
 
 
-def worth_steering(coverage: dict | None, *, ambiguous: bool = False, min_pool: int = 12,
-                   converged_pool: int = 25) -> tuple[bool, str]:
-    """Should anything be offered at all?
+def worth_steering(coverage: dict | None, *, ambiguous: bool = False, min_pool: int = 2) -> tuple[bool, str]:
+    """Should anything be offered at all? Almost always yes.
 
-    THE QUESTION IS WHETHER A USEFUL SPLIT EXISTS, NOT WHETHER THE QUERY WAS UNCLEAR. The first version
-    keyed on match quality — silence whenever `best_match` was high — which reads the clarifying-question
-    research too literally. That research is about interrupting someone with a QUESTION; these are
-    passive chips beside the results that cost a glance to ignore. Tuned the strict way, a clean query
-    like "backend engineer" with 691 in the pool got nothing, even though seniority, place and work mode
-    all split it usefully — which is exactly the narrowing the reader wanted help with.
+    THIS IS A FEEDBACK LOOP, NOT A GARNISH. Its job is to let a reader say "not that, this" and have the
+    search change — which is most valuable exactly when the results are wrong, and results are often wrong
+    when they are few. An earlier version stayed silent below twenty-five results on the theory that the
+    reader had "converged", and that theory is backwards: someone staring at six results they did not want
+    has converged on nothing, and taking the steering away at that moment removes the one control that
+    could have rescued the query.
 
-    So the gate now asks about the SET, and the quality bar moves to the candidates themselves (a
-    direction is only offered if it meaningfully splits the pool — see `rank_directions`):
-
-    - a pool too thin to split is never split further;
-    - a pool the reader has already narrowed to a handful is left alone — they have converged;
-    - an ambiguous query is always steered, however good the scores look;
-    - otherwise, offer, and let the candidates decide whether anything is worth showing."""
+    So the only silence left is the case where a split is arithmetically impossible: fewer than two rows
+    cannot be divided into two groups. Everything else offers, and the quality bar lives entirely in the
+    candidates — a direction has to actually move the set to be shown (see `facet_directions`).
+    """
     cov = coverage or {}
     pool = int(cov.get("pool") or 0)
     if ambiguous:
         return True, "the query could be read more than one way"
     if pool < min_pool:
-        return False, "too few results to split"
-    if pool < converged_pool:
-        return False, "already narrowed to a handful"
+        return False, "only one result — nothing to split"
     if cov.get("weak") or cov.get("diagnosis"):
         return True, "nothing matched strongly"
     return True, "these split the results"
 
 
 def rank_directions(candidates: list, *, top: int = 3, per_key: int = 1,
-                    min_score: float = 0.30) -> list[Direction]:
+                    min_score: float = 0.10) -> list[Direction]:
     """The handful actually offered: highest scoring, at most one per key so three chips are three
     different questions rather than three values of the same one, and never two halves of one cluster.
 
