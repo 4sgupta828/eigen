@@ -581,27 +581,38 @@ async def run_sites(store: InvestorStore, *, limit: int = 400, recrawl_days: int
                                        ORDER BY (SELECT count(*) FROM iv_edge e WHERE e.firm_id = iv_firm.id) DESC,
                                                 id LIMIT $2""", str(recrawl_days), limit)
     out = {"of": len(rows), "crawled": 0, "pages": 0, "failed": 0, "with_team": 0, "with_portfolio": 0}
-    for i, r in enumerate(rows):
-        try:
-            got = await asyncio.to_thread(site_src.crawl, r["site"] or f"https://{r['domain']}",
-                                          max_pages=6, want=FIRM_WANT)
-        except Exception as e:      # noqa: BLE001 — one bad site never stops the sweep
-            out["failed"] += 1
-            await store.note_crawl(r["id"], {"at": now_iso(), "error": str(e)[:200]})
-            continue
-        pages = got.get("pages") or []
-        if pages:
-            out["crawled"] += 1
-            out["pages"] += await store.put_pages(r["id"], pages)
-        kinds = [p.get("kind") for p in pages]
-        out["with_team"] += 1 if "team" in kinds else 0
-        out["with_portfolio"] += 1 if "portfolio" in kinds else 0
-        if not pages:
-            out["failed"] += 1
-        await store.note_crawl(r["id"], {"at": now_iso(), "pages": kinds,
-                                         "failed": [f.get("kind") for f in (got.get("failed") or [])]})
-        if jid and i % 25 == 0:
-            await JOBS.progress(store, jid, dict(out))
+    # Firms are crawled CONCURRENTLY because each is a different host: the politeness rule is one request per
+    # host every two seconds, and nothing about it says two different funds must be read one after the other.
+    # Sequentially, six pages at two seconds each is a minute per firm and a day for the index.
+    sem = asyncio.Semaphore(CRAWL_CONCURRENCY)
+    done = 0
+
+    async def one(r) -> None:
+        nonlocal done
+        async with sem:
+            try:
+                got = await asyncio.to_thread(site_src.crawl, r["site"] or f"https://{r['domain']}",
+                                              max_pages=6, want=FIRM_WANT)
+            except Exception as e:      # noqa: BLE001 — one bad site never stops the sweep
+                out["failed"] += 1
+                await store.note_crawl(r["id"], {"at": now_iso(), "error": str(e)[:200]})
+                return
+            pages = got.get("pages") or []
+            if pages:
+                out["crawled"] += 1
+                out["pages"] += await store.put_pages(r["id"], pages)
+            else:
+                out["failed"] += 1
+            kinds = [p.get("kind") for p in pages]
+            out["with_team"] += 1 if "team" in kinds else 0
+            out["with_portfolio"] += 1 if "portfolio" in kinds else 0
+            await store.note_crawl(r["id"], {"at": now_iso(), "pages": kinds,
+                                             "failed": [f.get("kind") for f in (got.get("failed") or [])]})
+            done += 1
+            if jid and done % 25 == 0:
+                await JOBS.progress(store, jid, dict(out))
+
+    await asyncio.gather(*(one(r) for r in rows))
     return out
 
 
@@ -711,6 +722,9 @@ async def run_portfolio(store: InvestorStore, *, ids: list[str] | None = None, j
 # How many of a firm's own people-pages one run will fetch. A fund's senior bench is small; this is a cap on
 # politeness, not on ambition, and at one request per host every two seconds it bounds the time per firm.
 MAX_PROFILE_FETCHES = 12
+# How many DIFFERENT firms are read at once. Each is its own host, so this multiplies throughput without
+# touching any one site more often; the per-host gap in `http._pace` is what enforces politeness.
+CRAWL_CONCURRENCY = 8
 
 
 async def run_profiles(store: InvestorStore, *, limit: int = 200, ids: list[str] | None = None,
@@ -735,36 +749,42 @@ async def run_profiles(store: InvestorStore, *, limit: int = 200, ids: list[str]
             LIMIT $2""", ids, limit * MAX_PROFILE_FETCHES)
     per_firm: dict = defaultdict(int)
     out = {"of": len(rows), "fetched": 0, "resolved": 0, "linkedin": 0, "x": 0, "roles": 0}
-    for i, r in enumerate(rows):
+    todo = []
+    for r in rows:
         if per_firm[r["firm_id"]] >= MAX_PROFILE_FETCHES:
             continue
         links = r["links"] if isinstance(r["links"], dict) else _loads(r["links"])
-        url = links.get("profile")
-        if not url:
-            continue
-        per_firm[r["firm_id"]] += 1
-        out["fetched"] += 1
-        try:
-            f = await asyncio.to_thread(http_src.get, url)
-        except Exception:      # noqa: BLE001 — one dead profile page never stops the sweep
-            continue
-        if not f.ok:
-            continue
-        got = people_src.parse_profile_links(f.text, r["name"], firm_domain=r["domain"] or "")
-        if not got:
-            continue
-        out["resolved"] += 1
-        out["linkedin"] += 1 if got.get("linkedin") else 0
-        out["x"] += 1 if got.get("x") else 0
-        role, title = got.pop("role", ""), got.pop("title", "")
-        out["roles"] = out.get("roles", 0) + (1 if role else 0)
-        async with pool.acquire() as conn:
-            await conn.execute("""UPDATE iv_person SET links = links || $2::jsonb,
-                                    role = CASE WHEN role = '' THEN $3 ELSE role END,
-                                    title = CASE WHEN title = '' THEN $4 ELSE title END
-                                  WHERE id = $1""", r["id"], _jsonl(got), role, title[:80])
-        if jid and i % 25 == 0:
-            await JOBS.progress(store, jid, dict(out))
+        if links.get("profile"):
+            per_firm[r["firm_id"]] += 1
+            todo.append((r, links["profile"]))
+    sem = asyncio.Semaphore(CRAWL_CONCURRENCY)
+
+    async def one(r, url, i) -> None:
+        async with sem:
+            out["fetched"] += 1
+            try:
+                f = await asyncio.to_thread(http_src.get, url)
+            except Exception:      # noqa: BLE001 — one dead profile page never stops the sweep
+                return
+            if not f.ok:
+                return
+            got = people_src.parse_profile_links(f.text, r["name"], firm_domain=r["domain"] or "")
+            if not got:
+                return
+            out["resolved"] += 1
+            out["linkedin"] += 1 if got.get("linkedin") else 0
+            out["x"] += 1 if got.get("x") else 0
+            role, title = got.pop("role", ""), got.pop("title", "")
+            out["roles"] = out.get("roles", 0) + (1 if role else 0)
+            async with pool.acquire() as conn:
+                await conn.execute("""UPDATE iv_person SET links = links || $2::jsonb,
+                                        role = CASE WHEN role = '' THEN $3 ELSE role END,
+                                        title = CASE WHEN title = '' THEN $4 ELSE title END
+                                      WHERE id = $1""", r["id"], _jsonl(got), role, (title or "")[:80])
+            if jid and i % 25 == 0:
+                await JOBS.progress(store, jid, dict(out))
+
+    await asyncio.gather(*(one(r, u, i) for i, (r, u) in enumerate(todo)))
     return out
 
 

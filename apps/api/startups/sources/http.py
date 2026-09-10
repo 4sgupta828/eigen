@@ -43,12 +43,21 @@ def host_of(url: str) -> str:
 
 
 def _pace(host: str, min_gap: float) -> None:
-    with _lock:
-        last = _last_hit.get(host, 0.0)
-        wait = last + min_gap - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        _last_hit[host] = time.monotonic()
+    """Never hit one host more often than `min_gap` — without making every host wait for the slowest.
+
+    The wait deliberately happens OUTSIDE the lock. Sleeping while holding it means a two-second gap owed to
+    one host blocks every other thread as well, so a crawl over thousands of distinct hosts runs exactly as
+    slowly as a crawl over one. Releasing first and re-checking after preserves the per-host guarantee — the
+    timestamp is only claimed under the lock — while letting unrelated hosts proceed.
+    """
+    while True:
+        with _lock:
+            now = time.monotonic()
+            wait = _last_hit.get(host, 0.0) + min_gap - now
+            if wait <= 0:
+                _last_hit[host] = now
+                return
+        time.sleep(min(wait, min_gap))
 
 
 def robots_allows(url: str, *, timeout: int = 10) -> bool:
