@@ -1920,11 +1920,13 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         # one provider config, not two. Absent an API key it is None and the search filters without ranking.
         try:
             from api.startups.pipeline import Providers as _IvProviders
-            _iv_embed = _IvProviders.from_env().embed
-        except Exception:      # noqa: BLE001 — no embedder is a degraded search, never a failed boot
-            _iv_embed = None
+            _iv_prov = _IvProviders.from_env()
+            _iv_embed, _iv_llm = _iv_prov.embed, _iv_prov.llm_json
+        except Exception:      # noqa: BLE001 — no provider is a degraded search, never a failed boot
+            _iv_embed = _iv_llm = None
         app.include_router(_iv_router(_iv_store, dsn=_iv_dsn,
-                                      admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""), embed=_iv_embed))
+                                      admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""),
+                                      embed=_iv_embed, llm_json=_iv_llm))
 
         @app.on_event("startup")
         async def _iv_orphan_jobs():

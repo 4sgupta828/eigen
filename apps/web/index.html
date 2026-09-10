@@ -1934,6 +1934,10 @@
   #investorsbody .iv-chip.prefer{border-color:var(--verified);color:var(--verified);}
   #investorsbody .iv-chip.avoid{border-color:var(--gap);color:var(--gap);text-decoration:line-through;}
   #investorsbody .iv-chip.unknown{opacity:.45;cursor:default;}
+  #investorsbody .iv-order{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;font-size:.72rem;color:var(--muted);
+    margin:.1rem 0 .35rem;}
+  #investorsbody .iv-order select{font:inherit;font-size:.72rem;padding:.2rem .35rem;border:1px solid var(--hair);
+    border-radius:6px;background:var(--panel);color:var(--ink);min-height:32px;}
   #investorsbody .iv-apply{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.5rem;padding-top:.45rem;
     border-top:1px dashed var(--hair);font-size:.78rem;color:var(--muted);}
   /* cards */
@@ -9685,7 +9689,20 @@ async function openShare(token){
     await runContract(compiled.contract);
   }
 
+  // With no words there is nothing to rank by, and the kernel breaks a score tie on the id string — which
+  // ordered "US venture funds" alphabetically and put 010118 Management above 5AM Ventures. So an explicit
+  // order is chosen, and NAMED in the rail: most recent fund first, because for a founder a firm that closed
+  // a fund last year is a live one and a firm that has not filed since 2019 is not raising your round.
+  const DEFAULT_ORDER = "latest_fund_year";
+  const ORDERABLE = ["latest_fund_year", "aum", "latest_fund_size", "funds_count", "portfolio_count"];
+  function withOrder(contract){
+    const c = JSON.parse(JSON.stringify(contract || {}));
+    if(!c.text && (!c.rank_by || c.rank_by === "match")) c.rank_by = DEFAULT_ORDER;
+    return c;
+  }
+
   async function runContract(contract){
+    contract = withOrder(contract);
     STATE.contract = contract; STATE.draft = null;
     render();
     try{
@@ -9755,6 +9772,12 @@ async function openShare(token){
       `<div class="iv-grp"><div class="iv-grph ${r}">${GLYPH[r]} ${r}<i>${esc(REG_BLURB[r])}</i></div>${groups[r].join("")}</div>`
     ).join("");
     if(!blocks) return "";
+    const rb = c.rank_by || "match";
+    const orderRow = `<div class="iv-order"><span>Order by</span><select id="iv-rank">
+      ${c.text ? `<option value="match"${rb === "match" ? " selected" : ""}>best match for your words</option>` : ""}
+      ${ORDERABLE.filter(k => (L().keys || {})[k]).map(k =>
+        `<option value="${esc(k)}"${rb === k ? " selected" : ""}>${esc(klabel(k))}</option>`).join("")}
+    </select><span>${rb === "latest_fund_year" ? "— most recently raised first; firms with no filed fund follow" : ""}</span></div>`;
     const n = pendingCount();
     const apply = workingOn("investors")
       ? `<div class="iv-apply"><span class="su-spin"></span><b>Applying…</b></div>`
@@ -9764,7 +9787,7 @@ async function openShare(token){
           : `<div class="iv-apply">Tap chips to stage changes, then apply once.</div>`;
     return `<div class="iv-rail${workingOn("investors") ? " busy" : ""}">
       <div class="iv-grph" style="color:var(--muted)">Refine · ${(d.coverage || {}).matched ?? 0} match every filter
-        <i>● must have · ▲ nice to have · ▼ avoid</i></div>${blocks}${apply}</div>`;
+        <i>● must have · ▲ nice to have · ▼ avoid</i></div>${orderRow}${blocks}${apply}</div>`;
   }
 
   // ---------- cards
@@ -9867,6 +9890,11 @@ async function openShare(token){
       STATE.draft = editContract(base, b.dataset.key, b.dataset.value);
       $("#iv-rail").innerHTML = railHtml(); wireRail();
     }));
+    const rk = $("#iv-rank");
+    if(rk) rk.addEventListener("change", () => {
+      const base = JSON.parse(JSON.stringify(STATE.draft || STATE.contract || {}));
+      base.rank_by = rk.value; STATE.draft = null; runContract(base);
+    });
     const ap = $("#iv-apply");
     if(ap) ap.addEventListener("click", () => { const d = STATE.draft; STATE.draft = null; if(d) runContract(d); });
     const rs = $("#iv-resetdraft");

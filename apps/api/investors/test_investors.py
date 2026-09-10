@@ -199,3 +199,60 @@ class TestSubjectCongruence:
         wrong. A brand with no filing of its own stays untyped."""
         brand = {"kind": "firm", "sources": ["portfolio_page"], "fund_flags": {}}
         assert _investor_type(brand, set(), None) == ""
+
+
+class TestCompile:
+    """The compiler's two investor-specific rules."""
+
+    def _build(self, out, **kw):
+        from api.investors.compile import build_contract
+        return build_contract(out, **kw)
+
+    def test_a_track_record_brief_is_refused_with_an_alternative(self):
+        c, notes = self._build({"text": "x", "must": {}}, brief="funds with the best track record")
+        assert any("not searchable here" in n and "still deploying" in n for n in notes)
+        assert not c.must
+
+    def test_irr_and_top_tier_also_trip_it(self):
+        for brief in ("top quartile funds", "highest IRR seed funds", "who has the best returns"):
+            _, notes = self._build({"text": "x"}, brief=brief)
+            assert any("not searchable" in n for n in notes), brief
+
+    def test_a_stated_key_with_no_coverage_becomes_a_preference(self):
+        """Before the firm-site pass runs, a must on a stated key returns nothing at all."""
+        c, notes = self._build({"text": "x", "must": {"stated_stage": ["seed"]}},
+                               coverage={"stated_stage": 0.0}, brief="seed funds")
+        assert "stated_stage" not in c.must and c.prefer["stated_stage"] == ["seed"]
+        assert any("no investor in the index states this yet" in n for n in notes)
+
+    def test_a_partly_covered_stated_key_keeps_its_must_and_says_what_it_sees(self):
+        c, notes = self._build({"text": "x", "must": {"leads_rounds": ["leads"]}},
+                               coverage={"leads_rounds": 0.2}, brief="funds that lead")
+        assert c.must["leads_rounds"] == ["leads"]
+        assert any("only 20% of investors state this" in n for n in notes)
+
+    def test_no_coverage_table_means_unknown_not_uncovered(self):
+        """A failed coverage read must not silently turn every must into a preference."""
+        c, notes = self._build({"text": "x", "must": {"country": ["us"]}}, coverage=None, brief="us funds")
+        assert c.must == {"country": ["us"]} and not notes
+
+    def test_a_well_covered_filed_key_is_left_alone(self):
+        c, notes = self._build({"text": "x", "must": {"latest_fund_size": {"min": 5e7}}},
+                               coverage={"latest_fund_size": 0.62}, brief="funds over $50m")
+        assert c.must["latest_fund_size"] == {"min": 5e7} and not notes
+
+    def test_an_observed_key_is_moved_onto_its_stated_twin(self):
+        """One control, two registers: the filter matches either, so the contract carries the stated key."""
+        c, _ = self._build({"text": "x", "must": {"observed_sector": ["fintech"]}},
+                           coverage={"sector_focus": 0.9}, brief="fintech investors")
+        assert c.must.get("sector_focus") == ["fintech"] and "observed_sector" not in c.must
+
+    def test_an_invented_key_is_dropped_not_crashed(self):
+        c, _ = self._build({"text": "x", "must": {"vibes": ["good"], "country": ["us"]}},
+                           coverage={"country": 0.86}, brief="us funds")
+        assert c.must == {"country": ["us"]}
+
+    def test_a_thin_key_survives_when_the_requested_values_are_well_covered(self):
+        c, _ = self._build({"text": "x", "must": {"metro": ["bay_area"]}},
+                           coverage={"metro": 0.4}, value_counts={"metro": {"bay_area": 900}}, brief="bay area")
+        assert c.must["metro"] == ["bay_area"]

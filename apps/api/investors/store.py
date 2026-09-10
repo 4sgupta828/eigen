@@ -275,6 +275,15 @@ def _vec(v) -> str | None:
     return None if v is None else "[" + ",".join(f"{float(x):.6f}" for x in v) + "]"
 
 
+# With no search words there is nothing to rank by, and `updated_at` put "1789 Capital Management" at the top
+# of "US venture funds" — alphabetical by accident of ingest order, which is no order at all. Recency of the
+# last fund filing first, then size: for a founder, a firm that closed a fund last year is a live one, and a
+# firm that has not filed since 2019 is not raising your round however large it once was. Both are filed facts.
+_PROMINENCE = ("(SELECT f.number FROM iv_fact f WHERE f.firm_id = v.id AND f.key = 'latest_fund_year') DESC NULLS LAST, "
+               "(SELECT f.number FROM iv_fact f WHERE f.firm_id = v.id AND f.key = 'aum') DESC NULLS LAST, "
+               "v.id")
+
+
 class InvestorStore:
     """asyncpg-backed, satisfying the kernel's FacetStore protocol for entity kind `investor`."""
 
@@ -503,7 +512,7 @@ class InvestorStore:
         args.append(cap)
         async with pool.acquire() as conn:
             ids = [r["id"] for r in await conn.fetch(
-                f"SELECT v.id FROM iv_firm v WHERE {where} ORDER BY v.updated_at DESC LIMIT ${len(args)}", *args)]
+                f"SELECT v.id FROM iv_firm v WHERE {where} ORDER BY {_PROMINENCE} LIMIT ${len(args)}", *args)]
             return await self._rows(conn, ids, {})
 
     async def semantic(self, kind: str, text: str, must: dict, *, cap: int = 400,

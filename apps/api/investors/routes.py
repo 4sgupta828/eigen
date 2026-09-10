@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from eigen_kernel.facets import Contract, evaluate, validate_contract
 
+from . import compile as compile_mod
 from . import pipeline
 from .schema import KIND, REGISTER, SCHEMA, WEIGHTS, labels
 from .store import InvestorStore
@@ -19,6 +20,11 @@ from .store import InvestorStore
 
 def investor_search_enabled() -> bool:
     return os.environ.get("EIGEN_INVESTOR_SEARCH", "").strip() not in ("", "0", "false", "no")
+
+
+class CompileIn(BaseModel):
+    text: str
+    limit: int = 60
 
 
 class EvaluateIn(BaseModel):
@@ -67,8 +73,11 @@ class _Bound:
         return None
 
 
-def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed=None) -> APIRouter:
+def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed=None, llm_json=None) -> APIRouter:
     r = APIRouter()
+    # Compiling the same brief twice must not cost twice. Keyed by the brief text; bounded so a long session
+    # cannot grow it without limit.
+    _compiled: dict = {}
 
     def _admin(tok: str) -> None:
         if not admin_token or tok != admin_token:
@@ -77,6 +86,32 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
     @r.get("/investors/labels")
     async def investor_labels() -> dict:
         return labels()
+
+    @r.post("/investors/compile")
+    async def compile_brief(body: CompileIn) -> dict:
+        """A thesis brief → a contract the user can then edit chip by chip. One small model call, cached.
+
+        The coverage table goes INTO the compiler, so a must on something the index barely knows is downgraded
+        with a note rather than silently returning nothing — which, before the firm-site pass has run, is what
+        every stated key would do.
+        """
+        text = (body.text or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="a brief is required")
+        key = f"{text}|{body.limit}"
+        if key in _compiled:
+            return {**_compiled[key], "cached": True}
+        cov = await store.coverage()
+        counts = await store.counts(KIND, {}, SCHEMA)
+        c, notes = await compile_mod.compile_brief(
+            llm_json, text, coverage=cov.get("known_rate") or {},
+            value_counts={k: v for k, v in counts.items() if k != "_total"}, limit=body.limit)
+        out = {"contract": c.to_dict(), "notes": notes, "labels": labels(),
+               "compiled_by": "model" if llm_json else "words_only"}
+        if len(_compiled) > 200:
+            _compiled.clear()
+        _compiled[key] = out
+        return out
 
     @r.post("/investors/evaluate")
     async def evaluate_contract(body: EvaluateIn) -> dict:
