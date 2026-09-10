@@ -272,3 +272,12 @@ def test_a_spent_analyst_budget_ends_the_intake_rather_than_handing_back_to_the_
     assert r["stage"] == "ready"
     assert r["state"]["kernel"]["counts_asked"]["analyst"] <= ANALYST_BUDGET
     assert len(r["state"]["kernel"]["asked"]) <= MAX_QUESTIONS      # whoever chose them
+
+
+def test_the_read_back_is_addressed_to_the_investor_not_about_them():
+    """The leading line of the ready card is read BY the person it describes."""
+    s = understood_words({"text": "ml infra", "prefer": {"business_model": ["saas"]}},
+                         understanding="You want the training layer, not the applications.")
+    assert s.startswith("You want ")
+    assert "Ranking up companies on a SaaS model." in s
+    assert "They want" not in s

@@ -126,8 +126,9 @@ def analyst_prompt(budget_left: int, first: bool = False) -> str:
         "Also maintain TEXT: the thesis rewritten as the sharpest description of the companies they want, in the words those "
         "companies would use about themselves — this is what the semantic leg of the search matches on, so it matters more "
         "than any filter. Fold every answer into it. Keep it under 200 characters, concrete, no filler.\n"
-        "Return ONLY JSON: {\"understanding\": \"one or two plain sentences: what you now believe they are looking for, "
-        "in their language, no schema tokens\", \"text\": \"the sharpened description\", \"answers\": {facet_key: value | "
+        "Return ONLY JSON: {\"understanding\": \"one or two plain sentences addressed TO the investor and starting "
+        "'You want…' — what you now believe they are looking for, in their own language, no schema tokens. Never write "
+        "about them in the third person: they are the one reading it\", \"text\": \"the sharpened description\", \"answers\": {facet_key: value | "
         "[values] | null}, \"ruled_out\": [\"short phrases for what they have said they do NOT want\"], "
         "\"question\": {\"kind\": \"key\"|\"open\", \"key\": \"facet key, or a short slug for an open question\", "
         "\"words\": \"the question, one sentence, plain and specific\", \"why\": \"under 10 words: what this changes\", "
@@ -232,7 +233,7 @@ def understood_words(contract: dict, answers: dict | None = None, understanding:
     if clauses:
         out.append("Filtering to companies " + "; ".join(clauses) + ".")
     if prefers:
-        out.append("Ranking up " + ", ".join(prefers) + ".")
+        out.append("Ranking up companies " + ", ".join(prefers) + ".")
     if ctr.get("key"):
         out.append("Centred on " + option_label(str(ctr.get("key")), str(ctr.get("value"))) + ".")
     if words:
