@@ -7570,8 +7570,16 @@ window.EIGEN_BUILD = BUILD;
 // round of "the feature is deployed" / "I don't see it", with both sides correct: the build was live and
 // the tab was not running it. The page knows its own build and /config reports the server's; comparing
 // them is all it takes to say so out loud.
+// Assembled in PIECES on purpose. The server stamps the build by replacing every occurrence of the
+// placeholder token in this file — so a second literal copy of it, written here as the local-dev guard,
+// was rewritten into the build string itself. The comparison shipped as `BUILD === "<the build>"`, which
+// is always true, and the banner could never appear once. A file that is textually substituted at serve
+// time cannot also spell the thing being substituted — not in code, and not in a comment either, which
+// is why this one describes the token instead of naming it.
+const UNSTAMPED = "__" + "BUILD" + "__";
+
 function announceStaleBuild(serverBuild){
-  if(!serverBuild || !BUILD || BUILD === "__BUILD__" || serverBuild === BUILD) return;
+  if(!serverBuild || !BUILD || BUILD === UNSTAMPED || serverBuild === BUILD) return;
   if(document.getElementById("stalebuild")) return;
   const bar = document.createElement("div");
   bar.id = "stalebuild";

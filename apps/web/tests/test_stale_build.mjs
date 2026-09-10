@@ -27,6 +27,17 @@ test("the check runs on the config the app already fetches", () => {
 
 test("an unstamped page (local dev) says nothing", () => {
   const i = SRC.indexOf("function announceStaleBuild");
-  assert.match(SRC.slice(i, i + 400), /BUILD === "__BUILD__"/,
-    "local dev serves the literal placeholder and must not nag");
+  assert.match(SRC.slice(i, i + 400), /BUILD === UNSTAMPED/,
+    "local dev serves the placeholder and must not nag");
+});
+
+test("the placeholder is never written as a literal outside its one declaration", () => {
+  // The server replaces EVERY occurrence when it stamps the build. A second literal is silently rewritten
+  // into whatever the build is — which is how `BUILD === "__BUILD__"` shipped as an always-true test and
+  // the banner never appeared once.
+  const hits = SRC.match(/__BUILD__/g) || [];
+  assert.equal(hits.length, 1, `the placeholder appears ${hits.length} times; only the declaration may use it`);
+  assert.match(SRC, /const BUILD = "__BUILD__"/);
+  assert.match(SRC, /const UNSTAMPED = "__" \+ "BUILD" \+ "__"/,
+    "the comparison must build the placeholder at runtime so substitution cannot reach it");
 });
