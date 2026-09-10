@@ -273,16 +273,23 @@ async def run_attach(store: InvestorStore, *, jid: int | None = None) -> dict:
         if cid:
             groups[cid].append(f)
     out = {"funds": len(funds), "spv": sum(1 for f in funds if f["is_spv"]), "clusters": len(groups),
-           "attached_clusters": 0, "attached_funds": 0, "by_method": {}}
+           "attached_clusters": 0, "attached_funds": 0, "split_clusters": 0, "by_method": {}}
     index = cl.build_firm_index(firms)
     updates: list[tuple] = []
     for i, (cid, members) in enumerate(groups.items()):
-        fid, method, note = cl.attach_cluster(members, index=index)
-        updates += [(f["id"], fid, cid, method, note) for f in members]
-        if fid:
+        per = cl.assign_cluster(members, index)
+        got = set()
+        for f in members:
+            fid, method, note = per[f["id"]]
+            updates.append((f["id"], fid, cid, method, note))
+            if fid:
+                out["attached_funds"] += 1
+                out["by_method"][method] = out["by_method"].get(method, 0) + 1
+                got.add(fid)
+        if got:
             out["attached_clusters"] += 1
-            out["attached_funds"] += len(members)
-            out["by_method"][method] = out["by_method"].get(method, 0) + 1
+        if len(got) > 1:
+            out["split_clusters"] = out.get("split_clusters", 0) + 1
         if jid and i % 500 == 0:
             await JOBS.progress(store, jid, dict(out))
     async with pool.acquire() as conn:

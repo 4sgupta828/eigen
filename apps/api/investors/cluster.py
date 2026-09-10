@@ -213,6 +213,35 @@ def build_firm_index(firms: list[dict]) -> dict:
     return {"by_word": by_word, "by_cik": by_cik, "ambiguous_one_token": ambiguous}
 
 
+def assign_cluster(cluster: list[dict], index: dict) -> dict:
+    """{fund id → (firm_id|None, method, note)} — attach PER FUND when a cluster spans more than one firm.
+
+    Attaching a whole cluster to one firm is right when the cluster is one manager's vehicles: the shared GPs
+    are evidence that the unmatched vehicles belong there too. It is wrong when the cluster is a platform.
+    Measured in prod: all 122 Blackstone vehicles attached to "Blackstone Tactical Opportunities Advisors",
+    because one fund in the cluster opened with that arm's name — so a single Blackstone arm claimed the
+    firm's entire fund history, which is the same wrong-subject error as reading a16z off a16z Perennial.
+
+    So: if every name match in the cluster points at ONE firm, the cluster attaches to it. If the matches
+    disagree, each matched fund goes to its own firm and the unmatched ones stay unattached — because a
+    cluster that spans several firms is no longer evidence about any of them.
+    """
+    per: dict = {}
+    for f in cluster:
+        fid, method, note = attach_cluster([f], index=index)
+        per[f["id"]] = (fid, method, note)
+    firms = {v[0] for v in per.values() if v[0]}
+    if not firms:
+        return {f["id"]: (None, "", "no evidenced path from this cluster to a named firm") for f in cluster}
+    if len(firms) == 1:
+        only = next(iter(firms))
+        note = next(v[2] for v in per.values() if v[0] == only)
+        return {f["id"]: (only, per[f["id"]][1] or "cluster", note) for f in cluster}
+    return {f["id"]: (per[f["id"]][0], per[f["id"]][1], per[f["id"]][2] if per[f["id"]][0]
+                      else f"this cluster spans {len(firms)} firms, so it evidences none of them")
+            for f in cluster}
+
+
 def attach_cluster(cluster: list[dict], firms: list[dict] | None = None, index: dict | None = None) -> tuple[str | None, str, str]:
     """(firm_id, method, note) for a cluster of fund filings against candidate firms.
 

@@ -199,3 +199,38 @@ class TestChainingIsNotClustering:
                     first_sale=f"20{15 + i}-01-01") for i in range(10)]
         cl = cluster_funds(funds)
         assert len(set(cl.values())) == 1, "one fund a year for ten years is a GP, not a fund administrator"
+
+
+class TestClusterSpanningSeveralFirms:
+    """Measured in prod: 122 Blackstone vehicles all attached to one Blackstone arm."""
+
+    IDX_FIRMS = [{"id": "bx_tac", "name": "Blackstone Tactical Opportunities Advisors", "legal_name": "", "cik": "", "hq_state": "NY"},
+                 {"id": "bx_credit", "name": "Blackstone Alternative Credit Advisors", "legal_name": "", "cik": "", "hq_state": "NY"},
+                 {"id": "tamarack", "name": "Tamarack Global Management", "legal_name": "", "cik": "", "hq_state": "CA"}]
+
+    def _index(self):
+        from api.investors.cluster import build_firm_index
+        return build_firm_index(self.IDX_FIRMS)
+
+    def test_a_cluster_that_matches_two_firms_is_split_not_handed_to_one(self):
+        from api.investors.cluster import assign_cluster
+        cluster = [_f("f1", "Blackstone Tactical Opportunities Fund IV, L.P.", state="NY"),
+                   _f("f2", "Blackstone Alternative Credit Fund II, L.P.", state="NY"),
+                   _f("f3", "Blackstone Bodyguard Partners L.P.", state="NY")]
+        per = assign_cluster(cluster, self._index())
+        assert per["f1"][0] == "bx_tac" and per["f2"][0] == "bx_credit"
+        assert per["f3"][0] is None, "an unmatched vehicle in a split cluster evidences no firm"
+        assert "spans 2 firms" in per["f3"][2]
+
+    def test_a_single_firm_cluster_still_carries_its_unmatched_vehicles(self):
+        from api.investors.cluster import assign_cluster
+        cluster = [_f("g1", "Tamarack Global Opportunities III, LP", state="CA"),
+                   _f("g2", "Tamarack Blue Energy I, LP", state="CA")]
+        per = assign_cluster(cluster, self._index())
+        assert per["g1"][0] == "tamarack" and per["g2"][0] == "tamarack", \
+            "shared GPs are evidence the unmatched vehicle belongs to the same manager"
+
+    def test_a_cluster_matching_nobody_stays_unattached(self):
+        from api.investors.cluster import assign_cluster
+        per = assign_cluster([_f("x1", "Winterlight Fund I, LP", state="MA")], self._index())
+        assert per["x1"][0] is None
