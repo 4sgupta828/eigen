@@ -102,3 +102,27 @@ def test_a_direction_that_barely_moves_the_set_is_never_offered():
     assert rank_directions(facet_directions(counts, SCHEMA, "thing")) == []
     counts = {"mode": {"remote": 60, "onsite": 40}}
     assert rank_directions(facet_directions(counts, SCHEMA, "thing"))
+
+
+class TestCoverageGuard:
+    """A key most of the pool has no value for cannot steer it."""
+
+    def _schema(self):
+        from eigen_kernel.facets import FacetKey, FacetSchema, FacetType
+        return FacetSchema(keys=(
+            FacetKey(key="area", type=FacetType.categorical, kinds=("c",), values=("a", "b"), label="Area"),
+            FacetKey(key="thin", type=FacetType.categorical, kinds=("c",), values=("x", "y"), label="Thin"),
+        ))
+
+    def test_a_sparsely_known_key_is_not_offered(self):
+        """Measured: a 232-company pool was offered a split that kept one company, because the share was
+        computed over the two rows that had the key at all."""
+        from eigen_kernel.facets import facet_directions
+        counts = {"thin": {"x": 1, "y": 1}, "area": {"a": 120, "b": 100}}
+        got = facet_directions(counts, self._schema(), "c", pool=232)
+        assert {d.key for d in got} == {"area"}, "the thin key filters by absence, not by intent"
+
+    def test_without_a_pool_the_guard_abstains(self):
+        from eigen_kernel.facets import facet_directions
+        counts = {"thin": {"x": 1, "y": 1}}
+        assert facet_directions(counts, self._schema(), "c") , "no pool given means the guard cannot judge"

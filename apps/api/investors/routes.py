@@ -290,7 +290,8 @@ def _directions(out: dict, c: Contract, matched: int | None) -> list[dict]:
         if not ok:
             return []
         settled = set(c.must or {}) | set(c.avoid or {}) | set((c.scope or {}).get("exclude") or {})
-        cands = facet_directions(out.get("counts") or {}, SCHEMA, KIND, exclude=settled, labels=labels())
+        cands = facet_directions(out.get("counts") or {}, SCHEMA, KIND, exclude=settled, labels=labels(),
+                                 pool=matched or 0)
         return [{"key": d.key, "label": d.label, "values": d.values, "section": d.section,
                  "hits": d.hits, "why": d.why, "source": d.source, "reason": why,
                  "register": REGISTER.get(d.key, "")}

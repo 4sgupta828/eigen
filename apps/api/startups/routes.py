@@ -550,7 +550,7 @@ def _directions(out: dict, c: Contract, matched: int | None) -> list[dict]:
         # Keys the reader has already decided about are not open questions.
         settled = set(c.must or {}) | set(c.avoid or {}) | set((c.scope or {}).get("exclude") or {})
         cands = facet_directions(out.get("counts") or {}, SCHEMA, KIND, exclude=settled,
-                                 labels=out.get("labels") or {})
+                                 labels=out.get("labels") or {}, pool=matched or 0)
         return [{"key": d.key, "label": d.label, "values": d.values, "section": d.section,
                  "hits": d.hits, "why": d.why, "source": d.source, "reason": why}
                 for d in rank_directions(cands, top=3)]

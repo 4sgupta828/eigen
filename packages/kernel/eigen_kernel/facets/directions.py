@@ -51,7 +51,7 @@ def _balance_score(share: float) -> float:
 
 def facet_directions(counts: dict, schema, kind: str, *, exclude: set = frozenset(),
                      labels: dict | None = None, min_share: float = 0.08,
-                     max_share: float = 0.92) -> list[Direction]:
+                     max_share: float = 0.92, pool: int = 0, min_known: float = 0.5) -> list[Direction]:
     """Candidate directions from the COUNTS over the current slice.
 
     Counts are slice-wide, not page-wide, which is why they — and not the ten rows on screen — are the
@@ -66,6 +66,13 @@ def facet_directions(counts: dict, schema, kind: str, *, exclude: set = frozense
         known = {v: int(n) for v, n in dist.items() if v != "unknown" and int(n) > 0}
         total = sum(known.values())
         if total <= 0 or len(known) < 2:
+            continue
+        # A KEY MOST OF THE POOL HAS NO VALUE FOR CANNOT STEER IT. Shares are computed over the values that
+        # are KNOWN, so a key known for two rows of two hundred offers a "perfectly balanced" split at one
+        # row each — and taking it filters by absence, dropping everything the key says nothing about.
+        # Measured: a 232-company pool was offered "last round: 0-6 months", which kept one company.
+        # This is the same rule the rail's must-warning states, applied before the offer is made.
+        if pool and total / float(pool) < min_known:
             continue
         for value, n in sorted(known.items(), key=lambda kv: -kv[1])[:4]:
             share = n / total
