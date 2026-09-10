@@ -24,7 +24,11 @@ FUND_TYPES = ("Venture Capital Fund", "Private Equity Fund", "Hedge Fund", "Othe
 # Letting them through does not merely add noise: their administrators sign hundreds of filings each and
 # become the hubs that collapse GP clustering (see `cluster.py`).
 SPV_NAME = re.compile(r"(?i)(\ba series of\b|,\s*a series\b|\bseries\s+[a-z0-9\-]+\s+of\b|\bspv\b|"
-                      r"\bco-?invest\w*\b|\(investment in [^)]+\)|\bfeeder\b|\bsidecar\b)")
+                      r"\bco-?invest\w*\b|\(investment in [^)]+\)|\bfeeder\b|\bsidecar\b|"
+                      # A TRAILING series designation is the same thing said the other way round:
+                      # "Okeanos Venture Partners II, LLC - Series 106" is one numbered cell of one fund, and
+                      # counting its 70 siblings as 70 funds put Okeanos above Apollo. 3,603 vehicles in prod.
+                      r"[-,]\s*series\s+[a-z0-9]+\s*$)")
 
 
 def is_spv(name: str) -> bool:

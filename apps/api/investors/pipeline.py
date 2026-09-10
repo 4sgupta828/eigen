@@ -261,18 +261,29 @@ async def run_attach(store: InvestorStore, *, jid: int | None = None) -> dict:
                                    FROM iv_fund WHERE fund_type IN ('Venture Capital Fund', 'Private Equity Fund')""")
         firms = [dict(r) for r in await conn.fetch("SELECT id, name, legal_name, cik, hq_state FROM iv_firm")]
     funds = []
+    respv: list[tuple] = []
     for r in rows:
         import json as _json
         persons = r["persons"] if isinstance(r["persons"], list) else _json.loads(r["persons"] or "[]")
+        # `is_spv` is DERIVED from the name, so it is recomputed here rather than trusted from the column.
+        # That means improving the pattern takes effect on the next attach instead of requiring all thirty
+        # quarters to be downloaded and re-parsed — which is how the trailing-series vehicles were fixed.
+        spv = funds_src.is_spv(r["name"])
+        if spv != r["is_spv"]:
+            respv.append((r["id"], spv))
         funds.append({"id": r["id"], "name": r["name"], "cik": r["cik"] or "", "state": r["state"] or "",
-                      "first_sale": str(r["first_sale"] or ""), "persons": persons, "is_spv": r["is_spv"]})
+                      "first_sale": str(r["first_sale"] or ""), "persons": persons, "is_spv": spv})
+    if respv:
+        async with pool.acquire() as conn:
+            await conn.executemany("UPDATE iv_fund SET is_spv = $2 WHERE id = $1", respv)
     assign = cl.cluster_funds(funds)
     groups: dict[str, list[dict]] = defaultdict(list)
     for f in funds:
         cid = assign.get(f["id"])
         if cid:
             groups[cid].append(f)
-    out = {"funds": len(funds), "spv": sum(1 for f in funds if f["is_spv"]), "clusters": len(groups),
+    out = {"funds": len(funds), "spv": sum(1 for f in funds if f["is_spv"]), "reclassified_spv": len(respv),
+           "clusters": len(groups),
            "attached_clusters": 0, "attached_funds": 0, "split_clusters": 0, "by_method": {}}
     index = cl.build_firm_index(firms)
     updates: list[tuple] = []

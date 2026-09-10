@@ -234,3 +234,19 @@ class TestClusterSpanningSeveralFirms:
         from api.investors.cluster import assign_cluster
         per = assign_cluster([_f("x1", "Winterlight Fund I, LP", state="MA")], self._index())
         assert per["x1"][0] is None
+
+
+class TestTrailingSeriesVehicles:
+    """Measured in prod: "Okeanos Venture Partners II, LLC - Series 106" and 69 siblings counted as 70 funds."""
+
+    def test_a_trailing_series_designation_is_a_vehicle_not_a_fund(self):
+        assert is_spv("Okeanos Venture Partners II, LLC - Series 106")
+        assert is_spv("EquityZen Growth Opportunity Fund XI LLC - Series 2")
+        assert is_spv("Acme Fund II, LLC, Series B")
+
+    def test_a_roman_numeral_fund_is_still_a_fund(self):
+        assert not is_spv("Tribe Capital Fund III, L.P.")
+        assert not is_spv("Bessemer Venture Partners Fund X, L.P.")
+
+    def test_a_series_word_inside_a_name_is_not_a_trailing_designation(self):
+        assert not is_spv("Series Ventures Fund I, LP")
