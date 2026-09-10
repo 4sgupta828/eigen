@@ -20,7 +20,8 @@ from pydantic import BaseModel
 
 from eigen_kernel.facets import Contract, evaluate, matches_must, validate_contract
 
-from . import compile as compile_mod, grouping as grouping_mod, pipeline, ranking
+from . import compile as compile_mod
+from . import intent_prompt, grouping as grouping_mod, pipeline, ranking
 from .schema import KIND, SCHEMA, WEIGHTS, labels
 from .store import StartupStore
 
@@ -139,6 +140,7 @@ async def _no_user(token: str):
 
 
 def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str, admin_token: str = "", user_of=None) -> APIRouter:
+    _intent_cache: dict = {}
     r = APIRouter()
     user_of = user_of or _no_user
 
@@ -318,6 +320,17 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         out["ranking"] = ranking.apply(out.get("rows") or [], body.sort)
         out["sorts"] = ranking.options()
         out["group_options"] = _group_options(out.get("rows") or [])
+        # THE INTENT DEBUGGER. `directions` filters what came back; this asks whether the question was
+        # understood at all — a reading, not a count. One model call, gated by `worth_asking` and cached
+        # on the query, the contract and the conversation so far.
+        if body.intent and providers.llm_json:
+            from api import intent_check as intent_mod
+            got = await intent_mod.check(llm_json=providers.llm_json, kind=KIND,
+                                         query=body.query or c.text or "", contract=c, out=out,
+                                         rows=out.get("rows") or [], schema=SCHEMA, prompt=intent_prompt,
+                                         cache=_intent_cache, history=body.history)
+            if got:
+                out["intent"] = got
         out["map"] = {"id": m["id"], "title": m["title"], "revision": m["revision"], "owner": m["owner"]}
         return out
 

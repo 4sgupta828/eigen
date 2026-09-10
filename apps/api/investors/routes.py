@@ -12,7 +12,10 @@ from pydantic import BaseModel
 
 from eigen_kernel.facets import Contract, evaluate, validate_contract
 
+from api import intent_check as intent_mod
+
 from . import advise as advise_mod
+from . import intent_prompt
 from . import compile as compile_mod
 from . import pipeline
 from .schema import KIND, REGISTER, SCHEMA, WEIGHTS, labels
@@ -40,6 +43,9 @@ class AdviseIn(BaseModel):
 class EvaluateIn(BaseModel):
     contract: dict
     counts: bool = True
+    query: str = ""           # the words the reader typed, for the intent debugger
+    history: list = []        # [{asked, offered, chose, told}] — the conversation so far
+    intent: bool = True       # a caller that does not want the question can say so
 
 
 class JobIn(BaseModel):
@@ -85,6 +91,7 @@ class _Bound:
 
 def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed=None, llm_json=None) -> APIRouter:
     r = APIRouter()
+    _intent_cache: dict = {}
     # Compiling the same brief twice must not cost twice. Keyed by the brief text; bounded so a long session
     # cannot grow it without limit.
     _compiled: dict = {}
@@ -149,6 +156,14 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
         out["coverage"]["matched"] = matched
         out["labels"] = labels()
         out["directions"] = _directions(out, c, matched)
+        # THE INTENT DEBUGGER. The directions above filter what came back; this asks whether the question
+        # was understood at all — a reading, not a count. One model call, gated and cached.
+        if body.intent:
+            got = await intent_mod.check(llm_json=llm_json, kind=KIND, query=body.query or c.text or "",
+                                         contract=c, out=out, rows=rows, schema=SCHEMA,
+                                         prompt=intent_prompt, cache=_intent_cache, history=body.history)
+            if got:
+                out["intent"] = got
         return out
 
     @r.post("/investors/advise")

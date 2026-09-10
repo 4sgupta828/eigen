@@ -1897,6 +1897,34 @@
   .themebtn:hover{color:var(--ink);border-color:var(--gold);}
   @media (max-width:640px){ .themebtn{left:.7rem;bottom:.7rem;font-size:.6rem;padding:.36rem .6rem;} }
 
+  /* ===== The intent debugger — did we understand the question? (both modes) =====
+     Not a filter and not the rail. The rail changes WHAT CAME BACK, key by key. This says what the search
+     believes it was asked, what it noticed in the results, and offers two or three READINGS — different
+     meanings, not different filters — plus a box to answer in your own words. */
+  .icheck{border:1px solid var(--hair);border-left:3px solid var(--gold);border-radius:12px;
+    background:var(--panel);padding:.7rem .85rem;margin:.2rem 0 .8rem;}
+  .ic-believed{font-size:.88rem;line-height:1.55;color:var(--ink);}
+  .ic-noticed{font-size:.8rem;line-height:1.6;color:var(--muted);margin-top:.4rem;
+    padding-left:.7rem;border-left:2px solid var(--hair);}
+  .ic-know{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.45rem;}
+  .ic-k{font-size:.7rem;padding:.1rem .45rem;border-radius:999px;border:1px solid var(--verified);
+    color:var(--verified);}
+  .ic-q{font-size:.9rem;font-weight:600;color:var(--ink);margin:.65rem 0 .1rem;line-height:1.5;}
+  .ic-reads{display:flex;flex-direction:column;gap:.35rem;margin-top:.45rem;}
+  .ic-r{display:block;width:100%;text-align:left;font:inherit;padding:.5rem .65rem;border-radius:10px;
+    border:1px solid var(--hair);background:var(--panel2,transparent);cursor:pointer;}
+  .ic-r:hover{border-color:var(--gold);background:rgba(var(--gold-rgb),.07);}
+  .ic-rl{font-weight:650;font-size:.84rem;color:var(--ink);}
+  .ic-rs{display:block;font-size:.78rem;line-height:1.5;color:var(--muted);margin-top:.15rem;}
+  .ic-ask{display:flex;gap:.4rem;margin-top:.55rem;flex-wrap:wrap;}
+  .ic-ask input{flex:1 1 200px;font:inherit;font-size:.82rem;padding:.45rem .6rem;min-height:38px;
+    border:1px solid var(--hair);border-radius:999px;background:var(--panel);color:var(--ink);min-width:0;}
+  .ic-ask button{font-family:var(--mono);font-size:.72rem;padding:.4rem .9rem;min-height:38px;
+    border:1px solid var(--gold);border-radius:999px;background:var(--gold);color:var(--on-accent);cursor:pointer;}
+  .ic-why{font-family:var(--mono);font-size:.6rem;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--dim,var(--muted));margin-bottom:.35rem;}
+  @media (max-width:560px){ .ic-ask input{flex:1 1 100%;} .ic-ask button{width:100%;} }
+
   /* ===== Directions — the few ways a search could usefully go next (both modes) =====
      The rail lets you change any key you can think of. This names the two or three changes that would
      actually move THIS result set — which the rail cannot do, because it shows every key at once in a
@@ -2271,6 +2299,7 @@
   <div id="su-mapsPanel" hidden></div>
   <div id="su-notes"></div>
   <div id="su-cov" class="cov"></div>
+  <div id="su-intent"></div>
   <div id="su-rail"></div>
   <div id="su-results"></div>
   <div class="toast" id="su-toast"></div>
@@ -2285,6 +2314,7 @@
   <div class="iv-examples" id="iv-examples"></div>
   <div id="iv-notes"></div>
   <div id="iv-cov" class="iv-cov"></div>
+  <div id="iv-intent"></div>
   <div id="iv-rail"></div>
   <div id="iv-results"></div>
 </section>
@@ -2681,6 +2711,44 @@ function wireDirs(box, apply){
   if(!box) return;
   box.querySelectorAll("[data-dir]").forEach(b =>
     b.addEventListener("click", () => apply(Number(b.dataset.dir))));
+}
+
+// The intent debugger's surface. Shared by both modes — and therefore, like wireDirs, at TRUE top level.
+function intentHtml(ic){
+  if(!ic) return "";
+  const know = (ic.understanding || []).map(u => `<span class="ic-k">${esc(u)}</span>`).join("");
+  const reads = (ic.readings || []).map((r, i) =>
+    `<button type="button" class="ic-r" data-read="${i}"><span class="ic-rl">${esc(r.label)}</span>
+       <span class="ic-rs">${esc(r.says || "")}</span></button>`).join("");
+  if(!ic.believed && !ic.noticed && !reads && !know) return "";
+  return `<div class="icheck">
+    ${ic.believed ? `<div class="ic-believed">${esc(ic.believed)}</div>` : ""}
+    ${ic.noticed ? `<div class="ic-noticed">${esc(ic.noticed)}</div>` : ""}
+    ${know ? `<div class="ic-know">${know}</div>` : ""}
+    ${ic.question ? `<div class="ic-q">${esc(ic.question)}</div>` : ""}
+    ${reads ? `<div class="ic-reads">${reads}</div>` : ""}
+    <div class="ic-ask"><input type="text" data-icask placeholder="${esc(ic.ask || "…or tell me in your own words")}">
+      <button type="button" data-icgo>Tell it</button></div>
+  </div>`;
+}
+
+// `choose(i)` takes a reading; `tell(text)` takes the reader's own words. Both re-run the search with the
+// conversation carried forward, which is what makes this a loop rather than a one-shot question.
+function wireIntent(box, choose, tell){
+  if(!box) return;
+  box.querySelectorAll("[data-read]").forEach(b =>
+    b.addEventListener("click", () => choose(Number(b.dataset.read))));
+  const inp = box.querySelector("[data-icask]"), go = box.querySelector("[data-icgo]");
+  const send = () => { const v = (inp && inp.value || "").trim(); if(v) tell(v); };
+  if(go) go.addEventListener("click", send);
+  if(inp) inp.addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); send(); } });
+}
+
+// One turn of the conversation, in the shape the debugger's evidence pack expects.
+function intentTurn(ic, asked, chose, told, pool){
+  return {asked: asked || "", offered: (ic && ic.readings || []).map(r => r.label),
+          chose: chose || "", told: told || "", pool: pool || 0,
+          understood: (ic && ic.understanding) || []};
 }
 
 // [n] AND grouped [n, m, k] citation refs → clickable sups, in ONE pass (a chained second replace
@@ -8083,6 +8151,8 @@ function renderResults(){
     }
     box.innerHTML=`<div class="su-empty">No startup in the index satisfies every must.${lines.length?`<ul style="text-align:left;margin:.6rem auto 0;max-width:640px;padding-left:1.2rem;font-size:.82rem">${lines.join("")}</ul>`:""}<div style="margin-top:.5rem">Tap a ● must chip in the rail to turn it into a ▲ preference, then Apply.</div></div>`; return; }
   d.rows.forEach((r,i)=>{ r.rank=i+1; });
+  const ib = $("#su-intent");
+  if(ib){ ib.innerHTML = intentHtml(d.intent); wireIntent(ib, chooseStartupReading, tellStartupIntent); }
   box.innerHTML = dirsHtml(d) + groupBarHtml(d) + groupedResultsHtml(d);
   wireDirs(box, applyDirection);
 }
@@ -8099,6 +8169,25 @@ function dirsHtml(d){
         title="${esc(x.why)} — applies the filter and re-runs">${esc(x.label)}<b>${x.hits}</b></button>`).join("")
     + `</div>`;
 }
+// A reading REPLACES the search — it is a different meaning of the words, not another filter on the last
+// answer. The conversation rides along so the next question builds on this one instead of restarting.
+function chooseStartupReading(i){
+  const ic = (STATE.data || {}).intent || {}, r = (ic.readings || [])[i];
+  if(!r) return;
+  STATE.history = (STATE.history || []).concat([intentTurn(ic, STATE.brief || "", r.label, "",
+                                                           (STATE.data.coverage || {}).matched)]);
+  runContract({kind: "company", text: r.text || "", must: {...(r.must || {})},
+               prefer: {...(r.prefer || {})}, limit: 60}, r.text || r.label, {keepHistory: true});
+}
+
+function tellStartupIntent(text){
+  const ic = (STATE.data || {}).intent || {};
+  STATE.history = (STATE.history || []).concat([intentTurn(ic, STATE.brief || "", "", text,
+                                                           (STATE.data.coverage || {}).matched)]);
+  q.value = text;
+  runCompile(text);
+}
+
 function applyDirection(i){
   const d = STATE.data, x = ((d && d.directions) || [])[i];
   if(!x || !x.key) return;
@@ -8581,7 +8670,8 @@ async function runEvaluate(contract, opts){
     // whole index.
     const askedNoRelax = contract && contract.merge && contract.merge.relax === false;
     const payload = {...contract, merge: {...(STATE.merge||{mode:"merged"}), off: (STATE.mergeOff||[]),
-                                          relax: !opts.diff && !opts.noRelax && !askedNoRelax}};
+                                          relax: !opts.diff && !opts.noRelax && !askedNoRelax},
+                     query: STATE.brief || contract.text || "", history: (STATE.history||[]).slice(-6)};
     const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json",...authHeaders()},body:JSON.stringify({contract: payload, sort: STATE.sort || "relevance"})});
     if(!r.ok){ toast("evaluate failed: "+(await r.text()).slice(0,120)); STATE.lastDiff=null; return; }
     const d=await r.json(); STATE.data=d; STATE.auto=null; STATE.openGroups={}; STATE.contract=d.contract; STATE.draft=null; STATE.labels=d.labels; STATE.open=null;
@@ -8634,7 +8724,11 @@ function rememberStartupSearch(contract, brief, hits){
   }catch(e){ /* a history entry is never worth breaking a search over */ }
 }
 
-function runContract(contract, brief, opts){ STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.brief=brief||""; if(brief) q.value=brief; STATE.merge=contract.merge||{mode:"merged"}; STATE.mergeOff=[]; renderNotes([]); renderMapBar(); return runEvaluate(contract, opts); }
+function runContract(contract, brief, opts){ STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null;
+  // A reading carries the conversation forward; anything else starts one. `opts.keepHistory` is how a
+  // reading says so — without it the debugger would re-ask what the reader just answered.
+  if(!(opts && opts.keepHistory)) STATE.history = [];
+  STATE.brief=brief||""; if(brief) q.value=brief; STATE.merge=contract.merge||{mode:"merged"}; STATE.mergeOff=[]; renderNotes([]); renderMapBar(); return runEvaluate(contract, opts); }
 function reset(){
   STATE.groupBy=""; STATE.openGroups={}; STATE.auto=null; STATE.autoBusy=false;
   STATE.data=null; STATE.contract=null; STATE.draft=null; STATE.map=null; STATE.lastDiff=null; STATE.prevMatched=null; STATE.mergeOff=[]; STATE.brief=""; STATE.open=null; STATE.busy=false;
@@ -9760,7 +9854,9 @@ async function openShare(token){
 
   function reset(){
     STATE.contract = STATE.draft = STATE.data = null; STATE.notes = [];
+    STATE.history = []; STATE.query = "";      // a new search is a new conversation
     $("#iv-notes").innerHTML = ""; $("#iv-cov").innerHTML = ""; $("#iv-rail").innerHTML = "";
+    $("#iv-intent").innerHTML = "";
     showLanding();
   }
 
@@ -9795,6 +9891,7 @@ async function openShare(token){
   async function search(text){
     text = (text || "").trim();
     if(!text) return;
+    STATE.query = text;
     try{ history.replaceState(null, "", "#investors?b=" + encodeURIComponent(text)); }catch(e){}
     box().innerHTML = `<div class="iv-empty">Reading your brief…</div>`;
     let compiled;
@@ -9826,13 +9923,16 @@ async function openShare(token){
     return c;
   }
 
-  async function runContract(contract){
+  async function runContract(contract, keepHistory){
     contract = withOrder(contract);
+    if(!keepHistory) STATE.history = [];      // a reading continues the conversation; anything else starts one
     STATE.contract = contract; STATE.draft = null;
     render();
     try{
       const r = await fetch("/investors/evaluate", {method: "POST", headers: {"Content-Type": "application/json"},
-                                                    body: JSON.stringify({contract: contract, counts: true})});
+                                                    body: JSON.stringify({contract: contract, counts: true,
+                                                      query: STATE.query || contract.text || "",
+                                                      history: (STATE.history || []).slice(-6)})});
       if(!r.ok) throw new Error("evaluate " + r.status);
       STATE.data = await r.json();
       STATE.labels = STATE.data.labels || STATE.labels;
@@ -10049,6 +10149,10 @@ async function openShare(token){
           : "Try different words."}</div>`;
       return;
     }
+    // The debugger asks whether the QUESTION was understood, so it sits with the question — above the rail
+    // and above the results, not buried under twenty rows of filters the reader has to scroll past.
+    $("#iv-intent").innerHTML = intentHtml(d.intent);
+    wireIntent($("#iv-intent"), chooseReading, tellIntent);
     box().innerHTML = (deg ? `<div class="iv-note">${esc(deg)}</div>` : "")
       + ivDirsHtml(d) + `<div class="iv-grid">${rows.map(cardHtml).join("")}</div>`;
     wireDirs(box(), applyIvDirection);
@@ -10073,6 +10177,27 @@ async function openShare(token){
     bag[x.key] = Array.from(new Set([...(bag[x.key] || []), ...x.values]));
     STATE.draft = null;
     runContract(base);
+  }
+
+  // A reading is a different MEANING, so taking one REPLACES the words and applies its facet edits —
+  // it does not stack another filter on the last search, which is what the rail is for.
+  function chooseReading(i){
+    const ic = (STATE.data || {}).intent || {}, r = (ic.readings || [])[i];
+    if(!r) return;
+    STATE.history = (STATE.history || []).concat([intentTurn(ic, STATE.query || "", r.label, "",
+                                                             (STATE.data.coverage || {}).matched)]);
+    const base = {kind: "investor", text: r.text || "", must: {...(r.must || {})},
+                  prefer: {...(r.prefer || {})}, limit: 60};
+    STATE.query = r.text || r.label;
+    runContract(base, true);
+  }
+
+  function tellIntent(text){
+    const ic = (STATE.data || {}).intent || {};
+    STATE.history = (STATE.history || []).concat([intentTurn(ic, STATE.query || "", "", text,
+                                                             (STATE.data.coverage || {}).matched)]);
+    q.value = text;
+    search(text);
   }
 
   function wireRail(){
