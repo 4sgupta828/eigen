@@ -475,7 +475,7 @@ before more data, not after.
 per-mode IIFEs mean anything shared must be defined at true top level (the DeepDive `usd()` lesson). The investor
 mode lands as one contiguous block, added when the file is quiet.*
 
-### Step 2 — portfolio, people, links (free)
+### Step 2 — portfolio, people, links (free) ✅ BUILT (2026-09-10)
 `sites` → `portfolio` → `people`. Firm sites crawled with the existing robots-first, paced fetcher; portfolio
 pages read structurally; team pages give people plus the LinkedIn / X / personal links they print. This is where
 "links to all startups they fund" and "their main people" actually arrive, and it back-fills new companies into
@@ -626,3 +626,37 @@ said once, quietly. Verified at 390px and 1280px.
 Still deferred: `api/startups/pipeline.py` is **not** yet ported onto the new generic
 `api/jobs.py` — that port touches a module with live ingest running against it, so it is a tracked follow-up
 rather than a drive-by.
+
+---
+
+## 11. Step 2 and the Advisor, as built (2026-09-10)
+
+Four free jobs — `sites`, `people`, `profiles`, `portfolio` — plus a fifth surface, the **Startup Advisor**.
+
+**The team-page parser is the substance of Step 2**, and the design changed twice under measurement:
+
+- v1 anchored on LinkedIn URLs. Measured on eight real team pages, that reads almost nobody: Bessemer prints
+  **zero** LinkedIn links, USV zero, Initialized one, Craft four. What every one of them prints is a link to
+  the person's own page whose slug is their name — `/team/david-sacks`, `/people/fred-wilson/`,
+  `data-name="byron deeter"`. That became the primary anchor; a heading followed by a known role catches the
+  pages that link nothing at all.
+- The social links live **one hop away**, on each person's own page, where the binding rule can loosen because
+  the subject is already known. What remains is telling their handle from the firm's, which sits on the same
+  page every time: `davidoliversacks` binds David Sacks, `craft_ventures` binds nobody. 87% of profile fetches
+  yielded a LinkedIn or an X handle.
+
+Two parser bugs worth keeping as rules: names are matched **per element**, because flattened HTML reads
+`<h4>David Sacks</h4><p>Partner</p><h4>Elyse Davis</h4>` as one four-token name; and role words are in the
+not-a-name stoplist, or the pattern swallows the title beside the name.
+
+**The Advisor** answers "who will fund me" as the nearest knowable thing — who has already funded companies
+like yours, at your stage, in your geography, and has filed a fund recently — with each row's signals labelled
+by register. Two rules keep it from becoming a list of everyone: *still deploying alone is not advice* (true of
+thousands of firms; ranking on it yields an alphabetical list wearing the costume of a recommendation), and
+*candidates come from one filter per signal, fused by RRF* — the first version passed the signals as
+preferences with no filter, which re-ranks a prominence-ordered slice and never retrieves the firm that
+actually matches. A deck's NAMED round is read; the amount it asks for is not.
+
+Conflicts — the firm already funds something in your sector — are shown as a warning at the foot of the card,
+because that is the one place a strong match argues against reaching out, and our sector labelling is on both
+sides of it.
