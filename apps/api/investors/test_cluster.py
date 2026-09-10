@@ -1,0 +1,152 @@
+"""The traps §5 says must fail, as tests. Each is designed to PASS a weaker gate while being wrong."""
+from api.investors.cluster import attach_cluster, cluster_funds, name_opens_with
+from api.investors.sources.funds import is_spv
+
+
+def _f(fid, name, persons=(), state="CA", cik="", spv=None, first_sale="2024-01-01"):
+    return {"id": fid, "name": name, "state": state, "cik": cik, "first_sale": first_sale,
+            "persons": [{"name": p, "roles": ["Executive Officer"]} for p in persons],
+            "is_spv": is_spv(name) if spv is None else spv}
+
+
+class TestNameGate:
+    def test_accepts_the_firms_own_fund(self):
+        assert name_opens_with("Bessemer Venture Partners", "Bessemer Venture Partners Fund X, L.P.")
+        assert name_opens_with("Tamarack Global", "Tamarack Global Opportunities III, LP")
+
+    def test_refuses_the_accela_class(self):
+        assert not name_opens_with("Accel", "Accela Software Fund I")
+
+    def test_refuses_the_hyphenated_spinout_class(self):
+        """The trap the existing prefix-only helper passes: Accel-KKR is not Accel."""
+        assert not name_opens_with("Accel", "Accel-KKR Capital Partners VI, L.P.")
+        assert not name_opens_with("Accel", "Accel KKR Capital Partners VI, L.P.")
+
+    def test_refuses_a_geographic_sibling_brand(self):
+        assert not name_opens_with("Sequoia Capital", "Sequoia Capital India Growth Fund III")
+
+    def test_refuses_an_spv_named_after_a_portfolio_company(self):
+        assert not name_opens_with("Anthropic", "Anthropic SPV I, LLC")
+
+
+class TestSpvDetection:
+    def test_series_vehicles_are_spvs(self):
+        assert is_spv("BI-0526 Fund I, a series of Exitfund Venture, LLC")
+        assert is_spv("Axci Capital Fund R a Series of CGF2021 LLC")
+        assert is_spv("OurCrowd (Investment in Morphisec) LP")
+        assert is_spv("Acme Co-Invest I, LLC")
+
+    def test_a_real_fund_is_not_an_spv(self):
+        assert not is_spv("Tamarack Global Opportunities III, LP")
+        assert not is_spv("Bessemer Venture Partners Fund X, L.P.")
+
+
+class TestClustering:
+    def test_shared_gps_join_a_managers_vehicles(self):
+        funds = [_f("f1", "Layer Global Fund I, L.P.", ["ada lovelace", "alan turing"]),
+                 _f("f2", "Layer China Fund I, L.P.", ["ada lovelace"]),
+                 _f("f3", "Unrelated Ventures Fund I, LP", ["grace hopper"])]
+        cl = cluster_funds(funds)
+        assert cl["f1"] == cl["f2"], "the same GPs should join two vehicles of one manager"
+        assert cl["f3"] != cl["f1"]
+
+    def test_an_spv_platform_administrator_cannot_merge_the_market(self):
+        """The measured failure: one admin signing many vehicles produced a 733-filing blob."""
+        admin = "llc sydecar"
+        funds = [_f(f"s{i}", f"Portfolio {i} Fund, LP", [admin, f"founder {i}"]) for i in range(30)]
+        cl = cluster_funds(funds)
+        assert len(set(cl.values())) == 30, "a hub signatory must not fuse unrelated managers"
+
+    def test_spvs_are_not_clustered_at_all(self):
+        funds = [_f("v1", "Deal One a Series of Platform Fund LLC", ["ops person"]),
+                 _f("v2", "Deal Two a Series of Platform Fund LLC", ["ops person"])]
+        assert cluster_funds(funds) == {}
+
+    def test_the_state_qualifies_a_common_name(self):
+        funds = [_f("a1", "Alpha Fund I, LP", ["john smith"], state="CA"),
+                 _f("b1", "Beta Fund I, LP", ["john smith"], state="NY")]
+        cl = cluster_funds(funds)
+        assert cl["a1"] != cl["b1"], "a namesake in another state is another person"
+
+
+class TestAttach:
+    FIRMS = [{"id": "accel", "name": "Accel", "legal_name": "Accel Management Co", "cik": ""},
+             {"id": "accel_kkr", "name": "Accel-KKR", "legal_name": "Accel-KKR Capital Partners", "cik": ""},
+             {"id": "tamarack", "name": "Tamarack Global", "legal_name": "", "cik": "1234"}]
+
+    def test_cik_wins(self):
+        fid, method, _ = attach_cluster([_f("f", "Some Fund IV, LP", cik="1234")], self.FIRMS)
+        assert (fid, method) == ("tamarack", "cik")
+
+    def test_name_sequence_attaches_the_right_firm(self):
+        fid, method, _ = attach_cluster([_f("f", "Accel-KKR Capital Partners VI, L.P.")], self.FIRMS)
+        assert fid == "accel_kkr" and method == "name_sequence", "must not land on Accel"
+
+    def test_an_unattachable_cluster_stays_unattached(self):
+        fid, method, note = attach_cluster([_f("f", "Winterlight Partners Fund I, LP")], self.FIRMS)
+        assert fid is None and method == "" and "no evidenced path" in note
+
+
+class TestBrandVariants:
+    def test_the_management_company_tail_is_stripped(self):
+        from api.investors.cluster import brand_variants
+        got = dict(brand_variants({"name": "UP PARTNERS MANAGEMENT COMPANY, LLC", "legal_name": ""}))
+        assert "UP PARTNERS MANAGEMENT COMPANY, LLC" in got and "up" in got
+
+    def test_a_one_token_brand_demands_a_state_match(self):
+        from api.investors.cluster import brand_variants
+        got = dict(brand_variants({"name": "Bond Capital", "legal_name": ""}))
+        assert got["bond"] is True, "a one-word brand must be confirmed by the state"
+
+    def test_a_two_token_brand_does_not(self):
+        from api.investors.cluster import brand_variants
+        got = dict(brand_variants({"name": "Tamarack Global Management LLC", "legal_name": ""}))
+        assert got["tamarack global"] is False
+
+
+class TestAttachWithBrands:
+    FIRMS = [{"id": "up", "name": "UP PARTNERS MANAGEMENT COMPANY, LLC", "legal_name": "", "cik": "", "hq_state": "CA"},
+             {"id": "bond", "name": "Bond Capital", "legal_name": "", "cik": "", "hq_state": "CA"},
+             {"id": "accel", "name": "Accel", "legal_name": "", "cik": "", "hq_state": "CA"},
+             {"id": "accel_kkr", "name": "Accel-KKR Capital Partners", "legal_name": "", "cik": "", "hq_state": "CA"}]
+
+    def test_the_brand_closes_the_recall_gap(self):
+        fid, method, _ = attach_cluster([_f("f", "UP Partners Fund II, LP", state="CA")], self.FIRMS)
+        assert (fid, method) == ("up", "name_sequence")
+
+    def test_a_one_token_brand_in_another_state_does_not_attach(self):
+        fid, _, _ = attach_cluster([_f("f", "Bond Fund I, LP", state="NY")], self.FIRMS)
+        assert fid is None, "a generic one-word brand needs the state to agree"
+
+    def test_the_hyphenated_spinout_trap_still_holds_after_the_recall_fix(self):
+        fid, _, _ = attach_cluster([_f("f", "Accel-KKR Capital Partners VI, L.P.", state="CA")], self.FIRMS)
+        assert fid == "accel_kkr"
+
+
+class TestBrandAmbiguity:
+    """The one doubtful class the hand-check found: a one-word brand two firms share."""
+
+    FIRMS = [{"id": "eclipse_ventures", "name": "Eclipse Ventures LLC", "legal_name": "", "cik": "", "hq_state": "CA"},
+             {"id": "eclipse_capital", "name": "Eclipse Capital Management", "legal_name": "", "cik": "", "hq_state": "CA"},
+             {"id": "lowercarbon", "name": "Lowercarbon Capital", "legal_name": "", "cik": "", "hq_state": "WY"}]
+
+    def test_a_shared_one_word_brand_attaches_to_neither(self):
+        from api.investors.cluster import attach_cluster
+        fid, _, note = attach_cluster([_f("f", "Eclipse Partners Fund VI, L.P.", state="CA")], self.FIRMS)
+        assert fid is None and "no evidenced path" in note
+
+    def test_an_unshared_one_word_brand_still_attaches(self):
+        from api.investors.cluster import attach_cluster
+        fid, method, _ = attach_cluster([_f("f", "Lowercarbon Fund IV, LP", state="WY")], self.FIRMS)
+        assert (fid, method) == ("lowercarbon", "name_sequence")
+
+    def test_a_named_vehicle_needs_a_clustermate_to_attach(self):
+        """"Lowercarbon Tesseract" is theirs, but the NAME alone cannot prove it — "Tesseract" is a content
+        word, and the same shape is how "Sequoia Capital India" would smuggle itself in. It attaches only
+        because a GP it shares signs a fund whose name does say so."""
+        from api.investors.cluster import attach_cluster
+        alone = attach_cluster([_f("f", "Lowercarbon Tesseract, LP", state="WY")], self.FIRMS)
+        assert alone[0] is None
+        with_mate = attach_cluster([_f("f", "Lowercarbon Tesseract, LP", state="WY"),
+                                    _f("g", "Lowercarbon Fund IV, LP", state="WY")], self.FIRMS)
+        assert with_mate[0] == "lowercarbon"

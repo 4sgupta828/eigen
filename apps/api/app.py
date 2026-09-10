@@ -27,6 +27,7 @@ from eigen_kernel.runtime.build import build_embedder, build_llm, build_web, loa
 from eigen_kernel.runtime.ingest import ingest_connector_to_postgres
 from api.voices.routes import voices_enabled as _voices_enabled
 from api.deepdive.routes import deepdive_enabled as _deepdive_on
+from api.investors.routes import investor_search_enabled as _investors_on
 from eigen_kernel.runtime.research import ResearchService
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -1898,6 +1899,43 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
         def startups_page(accept_encoding: str = Header(default="")):
             return _html_response("startups.html", accept_encoding)
 
+    # Investor Search — a DETACHED feature (apps/api/investors/), a SIBLING of Startup Search rather than a
+    # child of it: investor mode must not require EIGEN_STARTUP_SEARCH. Its own tables (iv_*), its own pool,
+    # its own jobs. OFF is a true no-op. docs/specs/investors.md.
+    from api.investors.routes import investor_search_enabled
+    _iv_dsn = os.environ.get("EIGEN_CORPUS_DSN")
+    if investor_search_enabled() and _iv_dsn:
+        from api.investors import pipeline as _iv_pipeline
+        from api.investors.routes import build_router as _iv_router
+        from api.investors.store import InvestorStore as _IvStore
+        _iv_state: dict = {}
+
+        async def _iv_pool():
+            if "pool" not in _iv_state:
+                import asyncpg
+                _iv_state["pool"] = await asyncpg.create_pool(_iv_dsn, min_size=1, max_size=4)
+            return _iv_state["pool"]
+        _iv_store = _IvStore(_iv_pool)
+        # The embedder is the startups feature's, because it is the same OpenAI seam and the same account —
+        # one provider config, not two. Absent an API key it is None and the search filters without ranking.
+        try:
+            from api.startups.pipeline import Providers as _IvProviders
+            _iv_embed = _IvProviders.from_env().embed
+        except Exception:      # noqa: BLE001 — no embedder is a degraded search, never a failed boot
+            _iv_embed = None
+        app.include_router(_iv_router(_iv_store, dsn=_iv_dsn,
+                                      admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""), embed=_iv_embed))
+
+        @app.on_event("startup")
+        async def _iv_orphan_jobs():
+            """A restart kills the job threads: mark their rows so waiters and operators see it."""
+            try:
+                n = await _iv_pipeline.orphan_running_jobs(_iv_store)
+                if n:
+                    logging.getLogger(__name__).warning("investors: %d job(s) orphaned by this restart", n)
+            except Exception:   # noqa: BLE001 — never block startup
+                pass
+
     # Voices — first-person startup content (founder/investor essays + podcast chapter pointers).
     # A MODE over the existing kernel corpus, not a new store: its rows are ordinary rs_block rows
     # written by the show_notes / founder_essay connectors. Flag-gated; OFF is a true no-op.
@@ -1956,6 +1994,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "startup_search_enabled": startup_search_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "voices_enabled": _voices_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "deepdive_enabled": _deepdive_on() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
+            "investor_search_enabled": _investors_on() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "structured_answers": structured_answers(),
             "clinical_synthesis": clinical_synthesis() and structured_answers(),
             "evidence_select": bool(getattr(svc, "evidence_select", False)),
