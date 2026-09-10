@@ -45,6 +45,14 @@ CREATE INDEX IF NOT EXISTS ix_su_company_vec  ON su_company USING hnsw (embeddin
 -- nothing else, so a query already lexically aligned with the corpus had no way to anchor: "Amplify"
 -- reached companies whose text merely resembled the word. `simple` rather than `english` because company
 -- names are proper nouns and stemming "Ventures" to "ventur" costs exact matching and buys nothing.
+--
+-- ON AN EXISTING DATABASE THIS IS A TABLE REWRITE — 93 s on prod's 33k rows, holding an exclusive lock,
+-- inside whichever request happens to call ensure_schema() first. It was therefore run by hand ahead of
+-- the deploy, so what runs here is a no-op; do the same for the next environment rather than letting a
+-- user's first search pay for it. And run it with parallelism off: a parallel worker needs a shared
+-- memory segment, a container's /dev/shm is small, and the first attempt died on
+-- "could not resize shared memory segment ... No space left on device" — which is that limit, not the
+-- data disk. `SET max_parallel_maintenance_workers = 0` is the whole fix.
 ALTER TABLE su_company ADD COLUMN IF NOT EXISTS tsv tsvector
     GENERATED ALWAYS AS (to_tsvector('simple'::regconfig,
         coalesce(name,'') || ' ' || coalesce(one_liner,'') || ' ' ||

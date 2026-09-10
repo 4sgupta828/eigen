@@ -598,6 +598,13 @@ async def run_sites(store: InvestorStore, *, limit: int = 400, recrawl_days: int
                 await store.note_crawl(r["id"], {"at": now_iso(), "error": str(e)[:200]})
                 return
             pages = got.get("pages") or []
+            # Raw HTML is kept only for the two kinds that are parsed FROM markup — the team page and the
+            # portfolio page, both of which are re-read whenever those parsers improve, which has happened
+            # repeatedly. `about` and `contact` are only ever read as text, so keeping their markup costs
+            # storage for nothing: 477 MB of HTML for 3,779 pages, and the index has 3,000 firms to go.
+            for p in pages:
+                if p.get("kind") not in ("team", "portfolio"):
+                    p["html"] = ""
             if pages:
                 out["crawled"] += 1
                 out["pages"] += await store.put_pages(r["id"], pages)
