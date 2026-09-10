@@ -256,3 +256,35 @@ class TestCompile:
         c, _ = self._build({"text": "x", "must": {"metro": ["bay_area"]}},
                            coverage={"metro": 0.4}, value_counts={"metro": {"bay_area": 900}}, brief="bay area")
         assert c.must["metro"] == ["bay_area"]
+
+
+class TestDeriveWritesWhatItDeclares:
+    """`put_facts` DELETES every key in its `keys=` list before inserting, so a key that is declared but never
+    produced does not merely go missing — it is actively erased on every run.
+
+    This is not hypothetical: reverting an unrelated block deleted the two lines that append `investor_type`,
+    the value was still computed and then dropped on the floor, and 7,424 investors shipped with no type at
+    all. It survived the unit tests because they test `_investor_type` in isolation, and survived the local
+    run because that ran before the revert.
+    """
+
+    def _derive_source(self):
+        import inspect
+        from api.investors import pipeline
+        return inspect.getsource(pipeline.run_derive)
+
+    def test_every_declared_key_is_actually_produced(self):
+        import re
+        src = self._derive_source()
+        declared = re.search(r"put_facts\(fid, facts, keys=\[(.*?)\]\)", src, re.S)
+        assert declared, "run_derive should declare the keys it rewrites"
+        keys = re.findall(r'"([a-z_]+)"', declared.group(1))
+        assert len(keys) > 5
+        body = src[:declared.start()]
+        for k in keys:
+            produced = f'"key": "{k}"' in body or f'num_fact("{k}"' in body or f'"{k}")' in body
+            assert produced, f"{k} is deleted on every derive but never written back"
+
+    def test_investor_type_specifically(self):
+        src = self._derive_source()
+        assert '"key": "investor_type"' in src, "the type is the primary facet; it must be written"

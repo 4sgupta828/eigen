@@ -420,12 +420,15 @@ async def run_derive(store: InvestorStore, *, ids: list[str] | None = None, jid:
                     facts.append({"key": "still_deploying", "value": "yes_recent" if recent else "quiet", **base})
             ftypes = {x["fund_type"] for x in funds}
             latest = next((x["sold_usd"] for x in funds if x["sold_usd"] is not None), None)
-            t = _investor_type(f, ftypes, latest)
             # A curated BRAND (a16z) carries no registration of its own, and its type stays UNKNOWN until one
             # of its own fund filings attaches. It is tempting to read the type off an affiliate that shares
             # the domain — but "a16z Perennial Management" is a wealth business, and typing the venture brand
             # `pe_fund` from it is precisely the subject-congruence failure this spec exists to prevent: the
             # evidence's subject is not the claim's subject. Unknown is the correct answer here.
+            t = _investor_type(f, ftypes, latest)
+            if t:
+                facts.append({"key": "investor_type", "value": t, "basis": "derived", "provenance": "derived",
+                              "source_url": src})
             # ---- observed, over the companies we actually hold ----
             edges = await conn.fetch("SELECT DISTINCT company_id FROM iv_edge WHERE firm_id = $1", fid)
             n = len(edges)
