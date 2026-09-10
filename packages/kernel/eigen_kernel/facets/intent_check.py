@@ -157,8 +157,11 @@ def parse(raw: dict | None, schema: FacetSchema, kind: str, *, max_readings: int
     or change something into a value the index does not hold, is worse than no option at all."""
     if not isinstance(raw, dict):
         return None
+    noticed = str(raw.get("noticed") or "").strip()[:280]
+    if absence_read_as_finding(noticed):
+        noticed = ""          # an observation that reads a blank as a fault is worse than no observation
     out = IntentCheck(believed=str(raw.get("believed") or "").strip(),
-                      noticed=str(raw.get("noticed") or "").strip()[:280],
+                      noticed=noticed,
                       question=str(raw.get("question") or "").strip(),
                       ask=str(raw.get("ask") or "").strip(),
                       understanding=[str(u).strip()[:120] for u in (raw.get("understanding") or [])
@@ -217,6 +220,21 @@ def reads_as_prose(text: str) -> bool:
     if not t:
         return True                       # no query is legitimate; a FAKE query is not
     return not _FACET_SYNTAX.search(t)
+
+
+# Phrases that turn a blank field into a claim about the subject. An empty field means we have not read it;
+# it never means the thing is missing, and it certainly never means anyone is hiding anything. Caught in
+# production: "no regulatory disclosures reported, indicating a lack of transparency" — where no disclosures
+# on file is a CLEAN record and the sentence made it an accusation.
+_ABSENCE_AS_FINDING = re.compile(
+    r"(?i)\b(lack of|failure to|refus\w+|hiding|hidden|opaque|opacity|not transparent|lack\w* transparen\w+"
+    r"|suggest\w*\s+(?:a\s+)?(?:lack|absence)|indicat\w*\s+(?:a\s+)?(?:lack|absence)"
+    r"|no\s+\w+\s+(?:report\w*|disclos\w*|filed)[^.]{0,40}?\bindicat)")
+
+
+def absence_read_as_finding(text: str) -> bool:
+    """Does this sentence turn something we have not read into a claim about the subject?"""
+    return bool(_ABSENCE_AS_FINDING.search(text or ""))
 
 
 def distinct_readings(readings: list) -> list:

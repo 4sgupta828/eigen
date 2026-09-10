@@ -180,3 +180,35 @@ class TestReadingsMustBeProse:
              "prefer": {"investor_type": ["seed_fund"]}}]}, sc, "i")
         assert got and len(got.readings) == 1
         assert got.readings[0].text == "" and got.readings[0].prefer == {"investor_type": ["seed_fund"]}
+
+
+class TestAbsenceIsNeverAFinding:
+    """Caught in production: "no regulatory disclosures reported, indicating a lack of transparency."
+    No disclosures on file is a CLEAN record; the sentence turned it into an accusation."""
+
+    def test_the_measured_sentence_is_rejected(self):
+        from eigen_kernel.facets.intent_check import absence_read_as_finding
+        assert absence_read_as_finding(
+            "There is a significant share of firms with no regulatory disclosures reported, "
+            "indicating a lack of transparency or recent activity")
+
+    def test_other_shapes_of_the_same_error(self):
+        from eigen_kernel.facets.intent_check import absence_read_as_finding
+        for t in ("this suggests a lack of activity", "the firms are opaque about their portfolio",
+                  "a failure to disclose their sectors", "these companies are hiding their funding"):
+            assert absence_read_as_finding(t), t
+
+    def test_an_honest_observation_survives(self):
+        from eigen_kernel.facets.intent_check import absence_read_as_finding
+        for t in ("72% of these firms are SEC-registered advisers",
+                  "we have not read their sites yet, so stated terms are missing for most",
+                  "most of these closed their latest fund in 2024 or later"):
+            assert not absence_read_as_finding(t), t
+
+    def test_parse_drops_the_observation_but_keeps_the_turn(self):
+        from eigen_kernel.facets import FacetKey, FacetSchema, FacetType
+        from eigen_kernel.facets.intent_check import parse
+        sc = FacetSchema(keys=(FacetKey(key="k", type=FacetType.categorical, kinds=("i",), values=("a", "b")),))
+        got = parse({"believed": "Right now I'm showing X", "understanding": ["asked for X"],
+                     "noticed": "no disclosures reported, indicating a lack of transparency"}, sc, "i")
+        assert got and got.noticed == "" and got.believed == "Right now I'm showing X"
