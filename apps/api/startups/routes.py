@@ -207,7 +207,6 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         total = (out.get("counts") or {}).pop("_total", None)
         out["rows"] = rows
         out["coverage"]["matched"] = total
-        out["directions"] = _directions(out, c, total)
         return out
 
     async def _slice(must: dict, exclude: dict) -> int:
@@ -251,6 +250,12 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         rows = out["rows"]
         out["coverage"]["index"] = await store.coverage()
         out["labels"] = await _labels_with_investors()
+        # DIRECTIONS ARE ATTACHED HERE, where both paths meet. `_evaluate_core` computes them, but the
+        # merged path builds its own response dict from `merged_search` and never carried them — so every
+        # real user search lost them while single-mode tests passed. The contract that ran is `out`'s own,
+        # because relaxing may have changed it.
+        out["directions"] = _directions(out, Contract.from_dict(out.get("contract") or c.to_dict()),
+                                        (out.get("coverage") or {}).get("matched"))
         if not rows:
             ic = await index_counts(store)
             why = {}

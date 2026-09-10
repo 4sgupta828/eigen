@@ -81,3 +81,33 @@ class TestKeywordLeg:
         from api.startups.store import _DDL
         assert "ix_su_company_tsv" in _DDL and "websearch_to_tsquery" not in _DDL
         assert "to_tsvector('simple'" in _DDL, "company names are proper nouns; stemming loses exact matches"
+
+
+class TestDirectionsSurviveBothPaths:
+    """A real user search runs MERGED, which builds its own response dict.
+
+    Directions were attached inside `_evaluate_core`, so single-mode tests passed and every actual search
+    lost them. The attach now happens where both paths meet, and this pins the shape so the next person
+    who adds a field to one path does not lose it on the other.
+    """
+
+    def _source(self):
+        import inspect
+        from api.startups import routes
+        return inspect.getsource(routes.build_router)
+
+    def test_directions_are_attached_after_the_merge_branch(self):
+        src = self._source()
+        merge_at = src.index('out["relaxed"] = relaxed')
+        attach_at = src.index('out["directions"]')
+        assert attach_at > merge_at, "attached before the paths converge — the merged path loses it"
+
+    def test_only_one_place_attaches_them(self):
+        assert self._source().count('out["directions"] =') == 1, \
+            "two attach points drift; the merged one is the one users hit"
+
+    def test_the_contract_used_is_the_one_that_ran(self):
+        """Relaxing can change the contract, and a direction on a key that was just relaxed away is noise."""
+        src = self._source()
+        i = src.index('out["directions"]')
+        assert 'out.get("contract")' in src[i:i + 260]
