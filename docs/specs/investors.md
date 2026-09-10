@@ -466,7 +466,7 @@ index already holds. **Ship criterion:** `vehicle_bound` precision ≥ 95% on a 
 and a coverage table published per key. **Ship criterion 2:** zero firms merged on a shared domain — the
 `linkedin.com` case is a regression test, not a note.
 
-### Step 1 — the card and the rail
+### Step 1 — the card and the rail ✅ BUILT (2026-09-09)
 The mode's UI: coverage banner, ported rail with the one-control-three-registers behaviour, cards, drawer, and
 the cross-mode "see their portfolio in Startups" jump. Investor Maps reuse the `su_map` share-token model.
 Mobile pass at ≤400px before it is called done. **This is the step that makes the data a product**, so it comes
@@ -615,7 +615,14 @@ Four things the build changed in the design, each because running it showed the 
    rather than a score blend because cosine similarity and `ts_rank` are not on comparable scales. The fused
    score maps back onto `sim`, so the kernel evaluator is untouched, and `found_by` travels to the card.
 
-Deferred deliberately: `POST /investors/compile` (brief → contract) is the one endpoint that costs a model call
-and lands with the UI in Step 1. And `api/startups/pipeline.py` is **not** yet ported onto the new generic
+**Step 1 shipped with Step 0's spine.** `POST /investors/compile`, the inline mode, the register-grouped rail,
+the cards and a named order control are live behind the flag. Two things only the rendered page revealed:
+with no words the kernel breaks a score tie on the id string, so results came back alphabetically (010118
+Management above 5AM Ventures) — there is now an explicit, labelled order defaulting to latest fund vintage,
+and the store's candidate slice is ordered the same way, since *which* 400 rows are fetched is itself a
+ranking decision. And every card shouted a red list of missing registers; a gap is not a failure, so it is
+said once, quietly. Verified at 390px and 1280px.
+
+Still deferred: `api/startups/pipeline.py` is **not** yet ported onto the new generic
 `api/jobs.py` — that port touches a module with live ingest running against it, so it is a tracked follow-up
 rather than a drive-by.
