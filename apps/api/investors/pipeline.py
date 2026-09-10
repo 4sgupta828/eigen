@@ -273,9 +273,15 @@ async def run_attach(store: InvestorStore, *, jid: int | None = None) -> dict:
             respv.append((r["id"], spv))
         funds.append({"id": r["id"], "name": r["name"], "cik": r["cik"] or "", "state": r["state"] or "",
                       "first_sale": str(r["first_sale"] or ""), "persons": persons, "is_spv": spv})
-    if respv:
-        async with pool.acquire() as conn:
+    async with pool.acquire() as conn:
+        if respv:
             await conn.executemany("UPDATE iv_fund SET is_spv = $2 WHERE id = $1", respv)
+        # Clear every attachment in scope before re-deciding. Without this the job is not idempotent: a
+        # vehicle reclassified as an SPV drops out of clustering and therefore out of the update list, and
+        # silently KEEPS the firm it was attached to on a previous run — which is why Okeanos still showed
+        # 76 funds after 2,708 of its series vehicles had been reclassified.
+        await conn.execute("""UPDATE iv_fund SET firm_id = NULL, cluster_id = '', match_method = '',
+                              match_note = '' WHERE fund_type IN ('Venture Capital Fund', 'Private Equity Fund')""")
     assign = cl.cluster_funds(funds)
     groups: dict[str, list[dict]] = defaultdict(list)
     for f in funds:
