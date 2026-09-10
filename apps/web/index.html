@@ -1948,6 +1948,7 @@
   .dir:hover{border-style:solid;background:rgba(var(--gold-rgb),.14);}
   .dir b{margin-left:.35rem;font-weight:600;opacity:.7;font-size:.68rem;}
   .dir.avoid{border-color:var(--gap);color:var(--gap);background:transparent;}
+  .dirs-none{font-size:.76rem;color:var(--muted);font-style:italic;}
   @media (max-width:560px){ .dirs-k{width:100%;margin-bottom:.1rem;} }
 
   /* ===== Investor Search — an inline MODE of the shell (body[data-mode="investors"]) =====
@@ -8205,8 +8206,15 @@ function renderResults(){
 // nothing to ignore. Tapping one edits the contract and re-runs — unlike the group bar, which only
 // re-arranges what is already on screen.
 function dirsHtml(d){
-  const ds = (d && d.directions) || [];
-  if(!ds.length) return "";
+  const ds = (d && d.directions) || [], st = (d && d.steering) || null;
+  // The row appears whenever there are results — with chips, or with the reason there are none. Vanishing
+  // silently is indistinguishable from being broken, and it vanished on precisely the narrow searches a
+  // reader studies most closely.
+  if(!ds.length){
+    if(!st || !(d && (d.rows || []).length)) return "";
+    return `<div class="dirs"><span class="dirs-k">Narrow by</span>
+      <span class="dirs-none">${esc(st.reason || "nothing here splits these results")}</span></div>`;
+  }
   return `<div class="dirs"><span class="dirs-k" title="${esc((ds[0]||{}).reason||"")}">Narrow by</span>`
     + ds.map((x,i)=>`<button type="button" class="dir${x.section==="avoid"?" avoid":""}" data-dir="${i}"
         title="${esc(x.why)} — applies the filter and re-runs">${esc(x.label)}<b>${x.hits}</b></button>`).join("")
@@ -10205,8 +10213,12 @@ async function openShare(token){
   // The register travels onto the chip: "narrow to firms who SAY they do seed" is a different offer
   // from "narrow to firms we have SEEN do seed", and a founder choosing between them should be told.
   function ivDirsHtml(d){
-    const ds = (d && d.directions) || [];
-    if(!ds.length) return "";
+    const ds = (d && d.directions) || [], st = (d && d.steering) || null;
+    if(!ds.length){
+      if(!st || !((d && d.rows) || []).length) return "";
+      return `<div class="dirs"><span class="dirs-k">Narrow by</span>
+        <span class="dirs-none">${esc(st.reason || "nothing here splits these results")}</span></div>`;
+    }
     return `<div class="dirs"><span class="dirs-k">Narrow by</span>`
       + ds.map((x, i) => `<button type="button" class="dir${x.section === "avoid" ? " avoid" : ""}" data-dir="${i}"
           title="${esc(x.why)}${x.register ? " — " + esc(REG_BLURB[x.register] || "") : ""}">${GLYPH[x.register] || ""} ${esc(x.label)}<b>${x.hits}</b></button>`).join("")

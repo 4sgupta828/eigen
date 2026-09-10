@@ -302,15 +302,21 @@ def _directions(out: dict, c: Contract, matched: int | None) -> list[dict]:
     from eigen_kernel.facets import facet_directions, rank_directions, worth_steering
     try:
         ok, why = worth_steering({"pool": matched or 0})
+        # The reason travels even when the answer is no — see the startups twin.
+        out["steering"] = {"offered": False, "reason": why, "pool": matched or 0}
         if not ok:
             return []
         settled = set(c.must or {}) | set(c.avoid or {}) | set((c.scope or {}).get("exclude") or {})
         cands = facet_directions(out.get("counts") or {}, SCHEMA, KIND, exclude=settled, labels=labels(),
                                  pool=matched or 0)
-        return [{"key": d.key, "label": d.label, "values": d.values, "section": d.section,
-                 "hits": d.hits, "why": d.why, "source": d.source, "reason": why,
-                 "register": REGISTER.get(d.key, "")}
-                for d in rank_directions(cands, top=3)]
+        got = [{"key": d.key, "label": d.label, "values": d.values, "section": d.section,
+                "hits": d.hits, "why": d.why, "source": d.source, "reason": why,
+                "register": REGISTER.get(d.key, "")}
+               for d in rank_directions(cands, top=3)]
+        out["steering"] = ({"offered": True, "reason": why, "pool": matched or 0} if got else
+                           {"offered": False, "pool": matched or 0,
+                            "reason": "nothing here splits these results usefully"})
+        return got
     except Exception:      # noqa: BLE001
         return []
 

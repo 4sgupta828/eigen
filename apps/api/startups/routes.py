@@ -563,15 +563,26 @@ def _directions(out: dict, c: Contract, matched: int | None) -> list[dict]:
     try:
         ok, why = worth_steering({"pool": matched or 0,
                                   "weak": bool(((out.get("coverage") or {}).get("merge") or {}).get("weak"))})
+        # THE REASON TRAVELS EVEN WHEN THE ANSWER IS NO. Silence is a legitimate outcome — a handful of
+        # results has nothing left to split — but silence that looks identical to a broken feature is not.
+        # Every other absence in this product says why it is absent; this one did not, and the row simply
+        # vanished on exactly the searches a reader is most likely to be studying closely.
+        out["steering"] = {"offered": False, "reason": why, "pool": matched or 0}
         if not ok:
             return []
         # Keys the reader has already decided about are not open questions.
         settled = set(c.must or {}) | set(c.avoid or {}) | set((c.scope or {}).get("exclude") or {})
         cands = facet_directions(out.get("counts") or {}, SCHEMA, KIND, exclude=settled,
                                  labels=out.get("labels") or {}, pool=matched or 0)
-        return [{"key": d.key, "label": d.label, "values": d.values, "section": d.section,
-                 "hits": d.hits, "why": d.why, "source": d.source, "reason": why}
-                for d in rank_directions(cands, top=3)]
+        got = [{"key": d.key, "label": d.label, "values": d.values, "section": d.section,
+                "hits": d.hits, "why": d.why, "source": d.source, "reason": why}
+               for d in rank_directions(cands, top=3)]
+        if not got:
+            out["steering"] = {"offered": False, "pool": matched or 0,
+                               "reason": "nothing here splits these results usefully"}
+        else:
+            out["steering"] = {"offered": True, "reason": why, "pool": matched or 0}
+        return got
     except Exception:      # noqa: BLE001 — a steering hint is never worth failing a search over
         return []
 

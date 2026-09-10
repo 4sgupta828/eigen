@@ -52,3 +52,13 @@ test("directions sit ABOVE the rail, with the intent debugger", () => {
   assert.ok(SRC.indexOf('id="su-intent"') < SRC.indexOf('id="su-rail"'), "startups slot must precede the rail");
   assert.ok(SRC.indexOf('id="iv-intent"') < SRC.indexOf('id="iv-rail"'), "investors slot must precede the rail");
 });
+
+test("the row explains itself when there is nothing to offer", () => {
+  // A search returning a handful of results legitimately has nothing left to split — but a row that just
+  // vanishes is indistinguishable from a broken feature, and it vanished on exactly the narrow searches a
+  // reader studies most closely. Reported twice as "still no directions".
+  const i = SRC.indexOf("function dirsHtml");
+  const body = SRC.slice(i, i + 1100);
+  assert.match(body, /d\.steering/, "must read the reason the gate gave");
+  assert.match(body, /dirs-none/, "must render the reason, not return empty");
+});
