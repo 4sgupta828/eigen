@@ -41,7 +41,14 @@ test("a tapped direction is never relaxed away", () => {
   assert.match(body, /relax:\s*false/, "a direction the reader tapped must not be relaxed away");
 });
 
-test("directions render inside the results box both modes wire", () => {
-  assert.match(SRC, /wireDirs\(box,\s*applyDirection\)/, "startups must wire its directions");
-  assert.match(SRC, /wireDirs\(box\(\),\s*applyIvDirection\)/, "investors must wire its directions");
+test("directions sit ABOVE the rail, with the intent debugger", () => {
+  // They answer the same question — "these are not quite right, now what" — and were split by twenty rows
+  // of filters, which is most of a phone screen of scrolling before you reach the second half.
+  assert.match(SRC, /wireDirs\(ib,\s*applyDirection\)/, "startups directions belong in the intent slot");
+  assert.match(SRC, /wireDirs\(\$\("#iv-intent"\),\s*applyIvDirection\)/, "investors likewise");
+  for (const slot of ["su-intent", "su-rail", "iv-intent", "iv-rail"]) {
+    assert.ok(SRC.includes(`id="${slot}"`), `${slot} missing`);
+  }
+  assert.ok(SRC.indexOf('id="su-intent"') < SRC.indexOf('id="su-rail"'), "startups slot must precede the rail");
+  assert.ok(SRC.indexOf('id="iv-intent"') < SRC.indexOf('id="iv-rail"'), "investors slot must precede the rail");
 });

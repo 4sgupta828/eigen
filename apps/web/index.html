@@ -8187,10 +8187,17 @@ function renderResults(){
     }
     box.innerHTML=`<div class="su-empty">No startup in the index satisfies every must.${lines.length?`<ul style="text-align:left;margin:.6rem auto 0;max-width:640px;padding-left:1.2rem;font-size:.82rem">${lines.join("")}</ul>`:""}<div style="margin-top:.5rem">Tap a ● must chip in the rail to turn it into a ▲ preference, then Apply.</div></div>`; return; }
   d.rows.forEach((r,i)=>{ r.rank=i+1; });
+  // BOTH STEERING SURFACES SIT TOGETHER, ABOVE THE RAIL. They answer the same question — "these are not
+  // quite right, now what" — and putting one above the rail and the other below it split them by twenty
+  // rows of filters, which on a phone is most of a screen of scrolling. The rail stays what it is: the
+  // exhaustive list you go to when you already know which key you want.
   const ib = $("#su-intent");
-  if(ib){ ib.innerHTML = intentHtml(d.intent); wireIntent(ib, chooseStartupReading, tellStartupIntent); }
-  box.innerHTML = dirsHtml(d) + groupBarHtml(d) + groupedResultsHtml(d);
-  wireDirs(box, applyDirection);
+  if(ib){
+    ib.innerHTML = intentHtml(d.intent) + dirsHtml(d);
+    wireIntent(ib, chooseStartupReading, tellStartupIntent);
+    wireDirs(ib, applyDirection);
+  }
+  box.innerHTML = groupBarHtml(d) + groupedResultsHtml(d);
 }
 
 // ---- directions: the few changes that would actually move THIS result set ----
@@ -10187,11 +10194,12 @@ async function openShare(token){
     }
     // The debugger asks whether the QUESTION was understood, so it sits with the question — above the rail
     // and above the results, not buried under twenty rows of filters the reader has to scroll past.
-    $("#iv-intent").innerHTML = intentHtml(d.intent);
+    // Both steering surfaces together, above the rail — see the startups twin for why.
+    $("#iv-intent").innerHTML = intentHtml(d.intent) + ivDirsHtml(d);
     wireIntent($("#iv-intent"), chooseReading, tellIntent);
+    wireDirs($("#iv-intent"), applyIvDirection);
     box().innerHTML = (deg ? `<div class="iv-note">${esc(deg)}</div>` : "")
-      + ivDirsHtml(d) + `<div class="iv-grid">${rows.map(cardHtml).join("")}</div>`;
-    wireDirs(box(), applyIvDirection);
+      + `<div class="iv-grid">${rows.map(cardHtml).join("")}</div>`;
   }
 
   // The register travels onto the chip: "narrow to firms who SAY they do seed" is a different offer
