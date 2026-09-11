@@ -40,6 +40,8 @@ import json
 import re
 from urllib.parse import urlparse
 
+from .gates import subject_bound
+
 # source_key -> (title when the document is THEIRS, title when they are merely NAMED, register).
 # The register describes what the SOURCE IS — a filing is `filed` whoever filed it — never how
 # confident the text sounds.
@@ -257,6 +259,60 @@ def same_org(a: str, b: str) -> bool:
     return bool(ca) and len(ca) >= 4 and ca == cb
 
 
+# ── is this name an IDENTIFIER, or just a word? ───────────────────────────────────────────────────
+#
+# "Anthropic" identifies one company. "Clay" does not: it is an ordinary noun and a personal name,
+# and a whole-word search for it returns William Clay Ford in Ford's proxy statement, Ms. Clay in
+# Jones Lang LaSalle's, a clay cap in a geothermal paper, and Clay Regazzoni winning the 1979 British
+# Grand Prix. Every one of those passed the whole-word check and arrived as a claim about a sales
+# automation startup.
+#
+# Rather than ship a dictionary, ASK THE CORPUS. The rows we just retrieved are the sample: if the
+# token turns up in lowercase running prose, or sitting inside somebody's name, it is a word people
+# use and not a mark that picks out a company.
+
+_HONORIFIC = re.compile(r"\b(mr|mrs|ms|miss|dr|prof|sir|lord|rev)\.?\s*$", re.IGNORECASE)
+
+
+def _uses_as_word(text: str, name: str) -> bool:
+    """Is `name` used here as an ordinary lowercase word, mid-sentence?"""
+    for m in re.finditer(r"(?<![A-Za-z0-9])" + re.escape(name.lower()) + r"(?![A-Za-z0-9])", text):
+        before = text[:m.start()].rstrip()
+        if before and before[-1] not in ".!?:;\n" and text[m.start():m.end()] == name.lower():
+            return True
+    return False
+
+
+def _uses_as_person(text: str, name: str) -> bool:
+    """Is `name` sitting inside somebody's name here? "Ms. Clay", "William Clay Ford".
+
+    Only two patterns count, both of which put the name in the MIDDLE or END of a person's name: an
+    honorific in front of it, or another capitalised word directly in front of it. A capitalised word
+    AFTER it is not evidence — that rule read "Anthropic CEO Dario Amodei" and "Anthropic Claude
+    Sonnet" as people, which is how a perfectly distinctive name was called ambiguous.
+    """
+    for m in re.finditer(r"(?<![A-Za-z0-9])" + re.escape(name) + r"(?![A-Za-z0-9])", text):
+        if _HONORIFIC.search(text[max(0, m.start() - 8):m.start()]):
+            return True
+        if re.search(r"(?:^|[\s(])([A-Z][a-z]{1,20})\s+$", text[max(0, m.start() - 26):m.start()]):
+            return True
+    return False
+# How much of the sample has to use the name as a word or a person before we stop trusting it alone.
+AMBIGUOUS_AT = 0.12
+MIN_SAMPLE = 12
+
+
+def name_is_ambiguous(name: str, texts: list[str]) -> tuple[bool, int]:
+    """(ambiguous, how many of the sample used it as a word or a person)."""
+    n = (name or "").strip()
+    if len(n) < 3 or " " in n:          # a multi-word mark is already specific
+        return False, 0
+    hits = sum(1 for t in texts if _uses_as_word(t, n) or _uses_as_person(t, n))
+    if len(texts) < MIN_SAMPLE:
+        return False, hits
+    return (hits / len(texts)) >= AMBIGUOUS_AT, hits
+
+
 def _host(url: str) -> str:
     try:
         return (urlparse(url).hostname or "").lower().replace("www.", "")
@@ -309,7 +365,7 @@ def _facets(raw) -> dict:
 
 
 async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant: str = "demo",
-                      ui=None) -> tuple[list[dict], dict]:
+                      ui=None, corroborators: tuple[str, ...] = ()) -> tuple[list[dict], dict]:
     """([hit], attempt). Keyword search over the corpus we already hold. Never raises: a corpus we
     cannot reach makes the dossier thinner and is reported as an attempt, like any failed fetch."""
     terms = _terms(name, domain)
@@ -342,8 +398,16 @@ async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant
         return [], {"source": "Eigen corpus", "found": 0, "unit": "passages",
                     "result": f"unavailable ({str(e)[:60]})"}
 
+    # IS THE NAME AN IDENTIFIER? Measured on the rows we just retrieved, which cost nothing extra.
+    dom = _domain(domain)
+    ambiguous, word_uses = name_is_ambiguous(name, [(r["text"] or "") for r in rows])
+    # When it is not, the name binds on its own. When it is, a passage has to carry something that
+    # picks out THIS company: the domain, or somebody we already hold as connected to them.
+    corro = tuple(c for c in ((dom,) + tuple(corroborators)) if c and len(c) >= 4)
+
     per: dict[str, int] = {}
     out: list[dict] = []
+    dropped = {"unbound": 0, "not-this-company": 0}
     for r in rows:
         if len(out) >= MAX_TOTAL:
             break
@@ -371,6 +435,20 @@ async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant
 
         owned_t, mention_t, register = _REGISTER.get(sk, _DEFAULT)
         theirs = is_theirs(r["document_id"], sk, title, url, name=name, domain=domain, cik=cik)
+
+        # A document that IS theirs needs no further binding — it is their page, their repo, their
+        # filing. Anything else has to earn its place.
+        if not theirs:
+            if ambiguous and not _corroborated(text, title, url, corro):
+                dropped["unbound"] += 1
+                continue
+            ok, _why = subject_bound(text, list(terms), url=url, own_domain=dom)
+            if not ok:
+                # Another company is the subject of this sentence. "William Clay Ford, Jr." in Ford's
+                # proxy statement is not a claim about a sales automation startup.
+                dropped["not-this-company"] += 1
+                continue
+
         per[sk] = per.get(sk, 0) + 1
         shown = headline(text, title)
         passage = clean_passage(text, shown)
@@ -384,9 +462,27 @@ async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant
                     "as_of": (r["published_at"] or "")[:10], "document_id": r["document_id"]})
 
     theirs_n = sum(1 for h in out if h["theirs"])
+    bits = [f"{theirs_n} theirs, {len(out) - theirs_n} naming them"] if out else []
+    # SAY WHY WE KEPT SO LITTLE. A name we cannot trust on its own is a finding about the search, and
+    # a reader who sees three passages where they expected thirty deserves to know it was deliberate.
+    if ambiguous:
+        bits.append(f'“{name}” is also an ordinary word or a person’s name '
+                    f"({word_uses} of the passages we found use it that way), so a passage had to "
+                    f"name {dom or 'their site'} or someone we already know is connected to them")
+    if dropped["unbound"]:
+        bits.append(f"{dropped['unbound']} dropped as unattributable")
+    if dropped["not-this-company"]:
+        bits.append(f"{dropped['not-this-company']} were about another company")
     return out, {"source": "Eigen corpus", "found": len(out), "unit": "passages",
-                 "result": "" if out else "nothing about this company in the corpus yet",
-                 "detail": (f"{theirs_n} theirs, {len(out) - theirs_n} naming them") if out else ""}
+                 "result": "" if out else ("nothing we could bind to this company"
+                                           if rows else "nothing about this company in the corpus yet"),
+                 "ambiguous_name": ambiguous, "detail": " · ".join(bits)}
+
+
+def _corroborated(text: str, title: str, url: str, corro: tuple[str, ...]) -> bool:
+    """Does this passage carry something that picks out THIS company, beyond a word anyone might use?"""
+    hay = f"{text}\n{title}\n{url}".lower()
+    return any(c.lower() in hay for c in corro)
 
 
 def as_sections(hits: list[dict]) -> list[dict]:

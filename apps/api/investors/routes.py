@@ -332,9 +332,20 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
         if not text and body.deck_text:
             text, sources = body.deck_text, ["pasted text"]
         if not (text or "").strip():
-            return {"profile": {}, "sources": [], "read": False,
-                    "note": "Nothing to read yet — give a website, a deck, or a description. A scanned "
-                            "deck with no text layer reads as empty here rather than being guessed at."}
+            # SAY WHICH NOTHING IT WAS. "Give a website" was returned to a founder who HAD given one
+            # — clay.ai, which does not resolve — so the product told them to do the thing they had
+            # just done instead of telling them their address was dead.
+            if body.url:
+                note = (f"{body.url} did not return a page we could read — it may not resolve, may be "
+                        "behind a login, or may render entirely in JavaScript. Check the address, or "
+                        "upload a deck or describe the company below.")
+            elif body.attachments:
+                note = ("That file had no text in it. A scanned or image-only deck reads as empty "
+                        "here rather than being guessed at — paste the text, or describe it below.")
+            else:
+                note = "Nothing to read yet — give a website, a deck, or a description."
+            return {"profile": {}, "sources": [], "read": False, "note": note,
+                    "tried": body.url or ""}
 
         # The sector vocabulary comes from the STARTUPS schema, which is where it is defined.
         # `observed_sector` is a derived free-set facet on the investor side, so investor labels()

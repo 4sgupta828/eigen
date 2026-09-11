@@ -73,3 +73,20 @@ test("dossier sections can be narrower than their longest line", () => {
     "without this the grid is as wide as its widest unbreakable string");
   assert.match(SRC, /\.dd-quote, \.dd-secnote, \.dd-v, \.dd-doc\{overflow-wrap:anywhere;\}/);
 });
+
+test("an ambiguous name is a question, not an empty result", () => {
+  // "Clay" resolves to four companies we hold. The reader dropped the whole response and said
+  // "Nothing to read yet — give a website", to a founder who had just given one.
+  const fn = SRC.slice(SRC.indexOf("async function readStartup()"),
+                       SRC.indexOf("function profileHtml(d)"));
+  assert.match(fn, /dd\.candidates \|\| \[\]/, "candidates must be surfaced, not discarded");
+  assert.match(SRC, /function candidatesHtml\(q, d\)/);
+  assert.match(SRC, /data-pick="\$\{esc\(c\.id\)\}"/, "each candidate has to be pickable");
+});
+
+test("a failed site read does not throw away the dive", () => {
+  // profileHtml returned the note INSTEAD of everything else, so one dead URL discarded a dossier
+  // that had already read the corpus, the filings and the open web.
+  assert.match(SRC, /if\(!d\.read && !dived\) return/,
+    "the early return must require that nothing was dived either");
+});

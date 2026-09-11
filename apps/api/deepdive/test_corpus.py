@@ -9,6 +9,9 @@ from api.deepdive.corpus import (
     MAX_PER_SOURCE,
     MAX_TOTAL,
     _terms,
+    _uses_as_person,
+    _uses_as_word,
+    name_is_ambiguous,
     as_sections,
     clean_passage,
     headline,
@@ -212,3 +215,77 @@ def test_html_entities_are_unescaped():
                         "and I&#8217;m told it works.", "")
     assert "&quot;" not in out and "&#x2F;" not in out and "&#8217;" not in out
     assert '"using Claude from Anthropic"' in out and "https://mozilla.org" in out
+
+
+# ── a name is not always an identifier ────────────────────────────────────────────────────────────
+#
+# This is the bug the Clay dossier was: a whole-word search for "Clay" returned William Clay Ford in
+# Ford's proxy statement, Ms. Clay in Jones Lang LaSalle's, a clay cap in a geothermal paper, and
+# Clay Regazzoni winning the 1979 British Grand Prix — all of it filed as evidence about a sales
+# automation startup.
+
+_CLAY = [
+    "Board of Directors also determined that Mr. Bagué and Ms. Clay, who are not standing",
+    "Non-PEO Named Executives for 2021 were John T. Lawler, William Clay Ford, Jr., Michael Amend",
+    "A clay cap develops together with a surface fumarolic activity along a corridor",
+    "Clay Regazzoni won Williams's first race at the 1979 British Grand Prix",
+    "Thanks to Clay from gpus.llm-utils.org!",
+    "Clay raises $115M at $7.1B valuation, doubling its worth in a year",
+    "Centralize your first and third party data sources in Clay",
+    "the clay tablets of Babylonian mathematics",
+    "Clay is a sales automation platform",
+    "We have verified emails 4x cheaper than Clay, Apollo, and ZoomInfo",
+    "experiments use materials from the Cascadia subduction zone",
+    "Clay valued at $7.1 billion in latest funding round",
+]
+_ANTHROPIC = [
+    "Anthropic raises $65 billion, nears $1T valuation",
+    "Anthropic was founded in January 2021",
+    "Our experiments are conducted on Anthropic's Helpful and Harmless dataset",
+    "Anthropic passes OpenAI to become the biggest AI startup",
+    "switch to direct LLM providers like OpenAI, Anthropic, Cohere",
+    "Anthropic partnered with Palantir and Amazon Web Services",
+    "Anthropic joined Palantir's FedStart program",
+    "the bugs are the ones that say using Claude from Anthropic here",
+    "Anthropic publicly disagreed with the administration",
+    "Anthropic CEO Dario Amodei said",
+    "Patterns and problems in multiagent systems \\ Anthropic",
+    "Anthropic Claude Sonnet 4.6 is a hybrid reasoning model",
+]
+
+
+def test_a_common_word_name_is_recognised_as_ambiguous():
+    ambiguous, uses = name_is_ambiguous("Clay", _CLAY)
+    assert ambiguous and uses >= 3
+
+
+def test_a_distinctive_name_is_not_called_ambiguous():
+    """The cost of a false positive here is a company's own corpus section going nearly empty."""
+    assert name_is_ambiguous("Anthropic", _ANTHROPIC) == (False, 0)
+
+
+def test_a_capitalised_word_AFTER_the_name_is_not_a_person():
+    """"Anthropic CEO Dario Amodei" and "Anthropic Claude Sonnet" are not people. Reading them as
+    people is what called a perfectly distinctive name ambiguous."""
+    assert not _uses_as_person("Anthropic CEO Dario Amodei said", "Anthropic")
+    assert not _uses_as_person("Anthropic Claude Sonnet 4.6", "Anthropic")
+
+
+def test_an_honorific_or_a_leading_given_name_is_a_person():
+    assert _uses_as_person("and Ms. Clay, who are not standing", "Clay")
+    assert _uses_as_person("were John T. Lawler, William Clay Ford, Jr.", "Clay")
+
+
+def test_the_lowercase_use_is_what_gives_a_common_word_away():
+    assert _uses_as_word("A clay cap develops together with fumarolic activity", "Clay")
+    assert not _uses_as_word("Clay raises $115M at $7.1B valuation", "Clay")
+
+
+def test_a_multi_word_mark_is_specific_enough_on_its_own():
+    """"Scale AI" is not the word "scale"."""
+    assert name_is_ambiguous("Scale AI", ["we scaled the cluster", "scale up the model"]) == (False, 0)
+
+
+def test_a_short_sample_never_condemns_a_name():
+    """Three passages are not evidence about a word's ordinary use."""
+    assert name_is_ambiguous("Clay", _CLAY[:3])[0] is False

@@ -20,6 +20,7 @@ The mode is flag-gated (EIGEN_DEEPDIVE). OFF is a true no-op: no routes, no tabl
 from __future__ import annotations
 
 import os
+import re
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
@@ -184,21 +185,26 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
             sites = await su_store.investor_sites()
         except Exception:      # noqa: BLE001 — investors are still named, just not linked
             sites = {}
-        # Our own corpus, every time. Free — it is our Postgres — so it is not gated behind a depth
-        # or a click: for a company we hold filings, patents, research or press about, this is the
-        # deepest material available and it was the one source the dive never looked in.
+        # THE FREE DOSSIER FIRST, then the corpus — in that order, deliberately. What we already hold
+        # about this company (who backs them, who runs it) is what tells a corpus passage apart from
+        # a passage about something that shares their name. A search for "Clay" cannot be resolved by
+        # the word "Clay"; it is resolved by clay.com, or by Sequoia sitting in the same sentence.
+        doss = build(c, pages, sites)
         corp_sections, corp_attempt = [], None
         try:
             from . import corpus as dd_corpus
             hits, corp_attempt = await dd_corpus.corpus_hits(
                 os.environ.get("EIGEN_CORPUS_DSN", ""),
                 name=c.get("name") or "", domain=c.get("website") or c.get("id") or "",
-                cik=str(c.get("cik") or ""), ui=getattr(manifest, "ui", None))
+                cik=str(c.get("cik") or ""), ui=getattr(manifest, "ui", None),
+                corroborators=_corroborators(c, doss))
             corp_sections = dd_corpus.as_sections(hits)
         except Exception as e:      # noqa: BLE001 — a corpus we cannot reach thins the dossier, never fails it
             corp_attempt = {"source": "Eigen corpus", "found": 0, "unit": "passages",
                             "result": f"unavailable ({str(e)[:60]})"}
-        doss = build(c, pages, sites, corpus_sections=corp_sections, corpus_attempt=corp_attempt)
+        doss["sections"].extend(corp_sections)
+        if corp_attempt:
+            doss["attempted"].append(corp_attempt)
         legs = ["held"] + ([CORPUS_MARK] if corp_attempt else [])
         doss["spend"] = {"projection": proj, "depth": depth}
         if discovered:
@@ -259,6 +265,39 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
         return {"dossiers": await dstore.recent(await pool_of(), limit=min(200, max(1, limit)))}
 
     return r
+
+
+def _corroborators(c: dict, doss: dict) -> tuple[str, ...]:
+    """Names that, appearing beside an ambiguous company name, say it IS that company.
+
+    Everything here is something we already hold about THIS company: who is on record backing them,
+    who runs it, and the words of their own one-liner. None of it is a guess.
+    """
+    out: list[str] = []
+    for sec in doss.get("sections") or []:
+        kind = sec.get("kind")
+        if kind not in ("investors", "people"):
+            continue
+        for cl in sec.get("claims") or []:
+            n = (cl.get("name") or "").strip()
+            if len(n) >= 4:
+                out.append(n)
+    one = (c.get("one_liner") or "")
+    out += [w for w in re.findall(r"[A-Za-z][A-Za-z0-9.\-]{4,}", one) if w.lower() not in _STOP]
+    seen, uniq = set(), []
+    for x in out:
+        if x.lower() not in seen:
+            seen.add(x.lower())
+            uniq.append(x)
+    return tuple(uniq[:24])
+
+
+# Words a one-liner is full of that identify nobody.
+_STOP = {"platform", "software", "company", "startup", "solution", "solutions", "service",
+         "services", "technology", "technologies", "product", "products", "business", "customer",
+         "customers", "teams", "their", "there", "which", "using", "build", "builds", "building",
+         "helps", "helping", "making", "makes", "provides", "providing", "powered", "modern",
+         "first", "world", "every", "across", "without", "better", "faster"}
 
 
 def _llm(providers):

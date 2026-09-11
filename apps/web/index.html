@@ -10601,6 +10601,21 @@ async function openShare(token){
 
   // ---- reading the startup -------------------------------------------------------------------
   let ADV_DECK_ATT = null;      // {name, media_type, data} — a deck, held until it is read
+  let ADV_PICK = "";            // the company the founder picked from an ambiguous name
+
+  // Four companies are called Clay. Which one is theirs is a question only they can answer, and
+  // asking it is a better answer than guessing or than reporting nothing.
+  function candidatesHtml(q, d){
+    const cs = (d.candidates || []).slice(0, 8);
+    const why = d.status === "unknown"
+      ? `We hold no company called ${esc(q)}.`
+      : `More than one company could be ${esc(q)}.`;
+    return `<div class="iv-dsec"><div class="iv-dh">${why} Which is yours?</div>`
+      + cs.map(c => `<button type="button" class="iv-chip" data-pick="${esc(c.id)}">`
+          + `<b>${esc(c.name || c.id)}</b> <span>${esc([c.id, c.hq, c.one_liner].filter(Boolean).join(" \u00b7 ").slice(0, 90))}</span></button>`).join("")
+      + `<div class="iv-readnote">Not listed? Give the exact website address above.</div></div>`;
+  }
+
   const ADV_Q = () => ((($("#adv-url") || {}).value || "").trim()
                        || (($("#adv-name") || {}).value || "").trim());
 
@@ -10625,13 +10640,25 @@ async function openShare(token){
       // is on so a company we have never seen is found and read rather than reported as unknown.
       let dossier = null;
       if(url || (($("#adv-name") || {}).value || "").trim()){
+        const q = ADV_PICK || url || $("#adv-name").value.trim();
         try{
-          const q = url || $("#adv-name").value.trim();
           const dr = await fetch("/deepdive", {method:"POST", headers:{"content-type":"application/json"},
-            body: JSON.stringify({q, depth: "full", discover: true, max_usd: 0.50})});
-          if(dr.ok){ const dd = await dr.json(); dossier = dd && (dd.dossier || dd); }
+            body: JSON.stringify(Object.assign({depth: "full", discover: true, max_usd: 0.50},
+                                               ADV_PICK ? {company_id: ADV_PICK} : {q}))});
+          if(dr.ok){
+            const dd = await dr.json();
+            // MORE THAN ONE COMPANY CAN BE MEANT, and that is an ANSWER. "Clay" resolves to four
+            // companies we hold; the reader used to drop the whole response on the floor and report
+            // "nothing to read", which is the one thing that was not true.
+            if(dd && !dd.dossier && (dd.candidates || []).length){
+              box.innerHTML = candidatesHtml(q, dd);
+              return;
+            }
+            dossier = dd && (dd.dossier || dd);
+          }
         }catch(e){ /* a dive we cannot get is a thinner reading, never a failed one */ }
       }
+      ADV_PICK = "";
       let deep = null;
       if(dossier && (dossier.sections || []).length){
         const fr = await fetch("/investors/from-dossier", {method:"POST", headers:{"content-type":"application/json"},
@@ -10639,8 +10666,11 @@ async function openShare(token){
         if(fr.ok){ deep = await fr.json(); deep.dossier = dossier; }
       }
       // The deck and any free-text still go through the reader, which is the only path that sees them.
+      // Once a dive has resolved the company, ITS website is the one to read — re-fetching the
+      // address the founder mistyped just fails again and reports the same dead link twice.
+      const site = ((dossier || {}).company || {}).website || ((dossier || {}).company || {}).id || url;
       const r = await fetch("/investors/read-startup", {method:"POST", headers:{"content-type":"application/json"},
-        body: JSON.stringify({url, deck_text: desc, attachments: ADV_DECK_ATT ? [ADV_DECK_ATT] : []})});
+        body: JSON.stringify({url: site, deck_text: desc, attachments: ADV_DECK_ATT ? [ADV_DECK_ATT] : []})});
       if(!r.ok && !deep) throw new Error("read failed (" + r.status + ")");
       const d = r.ok ? await r.json() : {read: true, profile: {}, sources: []};
       if(deep) d.deep = deep;
@@ -10658,7 +10688,12 @@ async function openShare(token){
 
   function profileHtml(d){
     const p = d.profile || {}, out = [];
-    if(!d.read) return `<div class="iv-gap">${esc(d.note || "Nothing to read.")}</div>`;
+    const dived = (((d.deep || {}).dossier || {}).sections || []).length;
+    // A FAILED SITE READ IS NOT A FAILED READING. This returned the note and nothing else, so a
+    // dossier that had just read their corpus, their filings and the open web was thrown away
+    // because one URL did not resolve. The note becomes a caveat; the dive still shows.
+    if(!d.read && !dived) return `<div class="iv-gap">${esc(d.note || "Nothing to read.")}</div>`;
+    if(!d.read) out.push(`<div class="iv-gap">${esc(d.note || "")}</div>`);
     const q = p.quotes || {};
     // Every field shows the words it came from. A reading the founder cannot check is a reading they
     // have to take on faith, which is the opposite of what this product is for.
@@ -10675,7 +10710,7 @@ async function openShare(token){
       row("Existing investors", (p.existing_investors || []).join(", "), ""),
     ].filter(Boolean).join("");
     if(body) out.push(`<div class="iv-dsec"><div class="iv-dh">What we read${d.chars_read ? ` <i>${Number(d.chars_read).toLocaleString()} characters</i>` : ""}</div>${body}</div>`);
-    else out.push(`<div class="iv-gap">We read ${Number(d.chars_read || 0).toLocaleString()} characters but could not structure it into anything we would rely on. Describe it below instead.</div>`);
+    else if(d.read) out.push(`<div class="iv-gap">We read ${Number(d.chars_read || 0).toLocaleString()} characters but could not structure it into anything we would rely on. Describe it below instead.</div>`);
     // EVERY section the dive produced, with each claim's register and source. The lens below adds
     // a fundraising reading on top; it does not get to decide what the founder may see.
     const secs = ((d.deep || {}).dossier || {}).sections || [];
@@ -10804,7 +10839,13 @@ async function openShare(token){
     // Save-as-map is rendered with the plan, so it is bound on the container rather than the button.
     const box = $("#adv-profile");
     if(box && !box.dataset.wired){ box.dataset.wired = "1";
-      box.addEventListener("click", e => { if(e.target.closest("#adv-savemap")) saveMap(); }); }
+      box.addEventListener("click", e => {
+        if(e.target.closest("#adv-savemap")) return saveMap();
+        const pick = e.target.closest("[data-pick]");
+        if(pick){ ADV_PICK = pick.dataset.pick;
+                  if($("#adv-name") && !$("#adv-name").value) $("#adv-name").value = ADV_PICK;
+                  readStartup(); }
+      }); }
 
     const bind = (id, key) => { const el = $(id); if(el) el.addEventListener("change", () => { ADV[key] = el.value; }); };
     bind("#adv-stage", "stage"); bind("#adv-sector", "sector"); bind("#adv-geo", "geo");
