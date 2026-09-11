@@ -3,201 +3,236 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Eigen Research — know what's real before you bet on it</title>
-<meta name="description" content="Ask a question about a company, market or technology. Get an answer in minutes, with every claim linked to the filing, patent or paper it came from." />
+<title>Eigen Research — the gap between announced and proven</title>
+<meta name="description" content="Deep-tech research that separates what a company has announced from what it has proven, and links every claim to the filing, patent or paper behind it." />
 <meta property="og:title" content="Eigen Research" />
-<meta property="og:description" content="Research for investors and founders. Answers in minutes, every claim linked to its source." />
+<meta property="og:description" content="See the gap between what was announced and what has been proven — with the documents behind both." />
 <meta property="og:type" content="website" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&family=Inter:wght@400;450;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..600&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
 <!-- ═══════════════════════════════════════════════════════════════════════════════════════════
      REUSABLE PRODUCT LANDING TEMPLATE
      ───────────────────────────────────────────────────────────────────────────────────────────
-     Split the way the codebase is split: MECHANICS below (layout, type scale, theming,
-     rendering) carry no product vocabulary, and every product-specific word lives in the SITE
-     object in the block marked CONFIG. To stand this up for a different product, copy this file
-     and replace SITE — nothing else changes. Sections with no config entry do not render.
+     Split the way the codebase is split: MECHANICS below carry no product vocabulary, and every
+     product-specific word lives in the SITE object in the block marked CONFIG. Copy this file and
+     replace SITE to stand it up for a different product.
+
+     DESIGN NOTE — the page has exactly one memorable element: the LEDGER in the hero, which sets
+     what a company has ANNOUNCED beside what it has PROVEN and names what is still unestablished.
+     That split is the product's whole thesis, so it gets the screen and everything else stays
+     quiet. Deliberately avoided: a feature-card grid, oversized step numerals, tick-circle lists,
+     an all-caps label above every heading, and an arrow glued to every button.
      ═══════════════════════════════════════════════════════════════════════════════════════════ -->
+
+<script>
+/* Theme is shared with the platform shell under the same "eigen-theme" key, with the same three
+   values and the SAME default (editorial for a first-time visitor). Applied here in <head> so the
+   page paints in the right theme instead of flashing light first. Keep this in sync with the
+   equivalent block in index.html — a reader moving between / and /app must not see it change. */
+(function(){
+  try{
+    var saved = localStorage.getItem("eigen-theme");
+    if(saved === "dark" || saved === "editorial") document.documentElement.setAttribute("data-theme", saved);
+    else if(saved !== "light") document.documentElement.setAttribute("data-theme", "editorial");
+  }catch(e){ document.documentElement.setAttribute("data-theme", "editorial"); }
+})();
+</script>
 
 <style>
   :root{
     color-scheme:light;
-    --bg:#EDF2F7; --panel:#FFFFFF; --panel2:#F4F8FC; --ink:#111F2B; --muted:#57687A;
-    --accent:#1568B5; --accent-strong:#0F5497; --accent-rgb:21,104,181;
-    --verified:#137A54; --gap:#B26A1E; --on-accent:#FFFFFF;
-    --hair:#D3DFEB; --hair-soft:rgba(17,31,43,.06);
-    --display:"Newsreader","Iowan Old Style",Palatino,Georgia,serif;
-    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --bg:#EEF3F8; --paper:#FFFFFF; --sunk:#F4F8FC; --ink:#132430; --muted:#5A6B7B;
+    --accent:#1568B5; --accent-deep:#0E4F8F; --accent-rgb:21,104,181;
+    --proven:#0F6B4A; --proven-bg:#E6F2EC;
+    --claimed:#9A5B12; --claimed-bg:#FAEEDC;
+    --rule:#D2DEEA; --rule-soft:rgba(19,36,48,.06);
+    --display:"Source Serif 4",Charter,Georgia,serif;
+    --ui:"Archivo",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  /* EDITORIAL — the platform shell's third theme, mapped onto this page's token names so a
+     reader who chose it in /app keeps it here. Warm parchment stock, umber ink, ink-gold accent. */
+  :root[data-theme="editorial"]{
+    color-scheme:light;
+    --bg:#F6F3EA; --paper:#FDFBF5; --sunk:#F0ECE0; --ink:#221D12; --muted:#6E6550;
+    --accent:#8A6A1F; --accent-deep:#6E5314; --accent-rgb:138,106,31;
+    --proven:#2E6B4F; --proven-bg:#E4EDE4;
+    --claimed:#A05C24; --claimed-bg:#F3E7D6;
+    --rule:#DCD4C0; --rule-soft:rgba(34,29,18,.06);
   }
   :root[data-theme="dark"]{
     color-scheme:dark;
-    --bg:#050D19; --panel:#0E1928; --panel2:#0B1421; --ink:#ECEBE3; --muted:#8B96A9;
-    --accent:#D3B37C; --accent-strong:#E7CB93; --accent-rgb:211,179,124;
-    --verified:#57B891; --gap:#D6975A; --on-accent:#17100A;
-    --hair:#22304A; --hair-soft:rgba(255,255,255,.06);
+    --bg:#060E1B; --paper:#0F1A2C; --sunk:#0C1524; --ink:#ECEBE3; --muted:#8B96A9;
+    --accent:#D3B37C; --accent-deep:#E7CB93; --accent-rgb:211,179,124;
+    --proven:#63C49D; --proven-bg:#0E2A20;
+    --claimed:#DBA05A; --claimed-bg:#2C1F10;
+    --rule:#22304A; --rule-soft:rgba(255,255,255,.06);
   }
 
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%;font-size:15px;scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
-    line-height:1.62;font-size:1rem;-webkit-font-smoothing:antialiased;
-    background-image:radial-gradient(115% 55% at 88% -12%, rgba(var(--accent-rgb),.075), transparent 62%);
-    background-attachment:fixed;}
-  .wrap{max-width:58rem;margin:0 auto;padding-inline:1.15rem;}
-  a{color:var(--accent-strong);text-underline-offset:3px;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);
+    font-size:1rem;line-height:1.58;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:60rem;margin:0 auto;padding-inline:1.2rem;}
+  a{color:var(--accent-deep);text-underline-offset:3px;}
 
-  h1,h2,.fname{font-family:var(--display);font-variation-settings:"opsz" 60;
-    font-weight:500;letter-spacing:-.016em;line-height:1.14;margin:0 0 .9rem;}
-  h1{font-size:clamp(2.2rem,6vw,3.8rem);line-height:1.08;letter-spacing:-.018em;font-weight:500;}
-  h2{font-size:clamp(1.62rem,3.7vw,2.32rem);font-weight:500;}
-  h3{font-size:1.04rem;font-weight:600;margin:0 0 .35rem;letter-spacing:-.004em;}
+  h1,h2{font-family:var(--display);font-weight:600;letter-spacing:-.014em;
+    line-height:1.14;margin:0 0 .85rem;}
+  h1{font-size:clamp(2.15rem,4.4vw,3.05rem);line-height:1.06;letter-spacing:-.02em;text-wrap:balance;}
+  h2{font-size:clamp(1.6rem,3.4vw,2.25rem);}
+  h3{font-size:1.02rem;font-weight:600;margin:0 0 .3rem;font-family:var(--ui);}
+  p{margin:0 0 .9rem;}
+  .lede{font-size:clamp(1.05rem,1.9vw,1.18rem);color:var(--muted);max-width:33rem;}
+  .note{color:var(--muted);max-width:34rem;font-size:.96rem;}
+  section{padding-block:clamp(2.8rem,5.5vw,4.4rem);}
+  section + section{border-top:1px solid var(--rule);}
 
-  .eyebrow{font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.17em;
-    color:var(--accent);margin:0 0 .85rem;}
-  .lede{font-size:clamp(1.06rem,2.1vw,1.25rem);color:var(--muted);max-width:38rem;margin:0 0 1.8rem;}
-  .sub{color:var(--muted);max-width:40rem;margin:0 0 2.1rem;}
-  section{padding-block:clamp(2.9rem,6vw,4.8rem);}
-  section + section{border-top:1px solid var(--hair);}
-
-  /* masthead */
-  header.top{position:sticky;top:0;z-index:20;
-    background:color-mix(in srgb, var(--bg) 86%, transparent);
-    backdrop-filter:blur(10px);border-bottom:1px solid var(--hair);}
-  .topin{max-width:58rem;margin:0 auto;padding:.5rem 1.15rem;display:flex;align-items:center;gap:.8rem;}
-  .logo{height:52px;width:auto;flex:none;}
-  .navlinks{display:flex;gap:1.15rem;margin-left:1rem;}
-  .navlinks a{color:var(--muted);text-decoration:none;font-size:.9rem;font-weight:450;
+  header.top{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--rule);}
+  .topin{max-width:60rem;margin:0 auto;padding:.45rem 1.2rem;display:flex;align-items:center;gap:1.4rem;}
+  .logo{height:50px;width:auto;flex:none;}
+  .nav{display:flex;gap:1.3rem;margin-left:.4rem;}
+  .nav a{color:var(--muted);text-decoration:none;font-size:.88rem;font-weight:500;
     display:inline-flex;align-items:center;min-height:40px;}
-  .navlinks a:hover{color:var(--ink);}
-  .cta{display:inline-flex;align-items:center;min-height:42px;padding:.5rem 1.05rem;
-    border-radius:9px;background:var(--accent);color:var(--on-accent);text-decoration:none;
-    font-weight:600;font-size:.92rem;border:1px solid var(--accent-strong);
-    transition:background .15s ease,transform .12s ease;}
-  .cta:hover{background:var(--accent-strong);}
-  .cta:active{transform:translateY(1px);}
-  .topin .cta{margin-left:auto;}
-  .themebtn{min-height:38px;min-width:38px;padding:.3rem .62rem;border-radius:8px;cursor:pointer;
-    background:transparent;border:1px solid var(--hair);color:var(--muted);
-    font-family:var(--mono);font-size:.7rem;}
-  .ghost{display:inline-flex;align-items:center;min-height:42px;padding:.5rem 1.05rem;border-radius:9px;
-    border:1px solid var(--hair);background:var(--panel);color:var(--ink);
-    text-decoration:none;font-weight:600;font-size:.92rem;}
-  .ghost:hover{border-color:var(--accent);}
+  .nav a:hover{color:var(--ink);}
+  .topcta{margin-left:auto;opacity:0;transform:translateY(-4px);pointer-events:none;
+    transition:opacity .22s ease,transform .22s ease;}
+  .topcta.on{opacity:1;transform:none;pointer-events:auto;}
 
-  /* hero */
-  .hero{padding-block:clamp(3.2rem,8vw,5.8rem) clamp(2.6rem,6vw,4.2rem);}
-  .ctas{display:flex;flex-wrap:wrap;gap:.7rem;align-items:center;}
-  .heroNote{font-family:var(--mono);font-size:.73rem;color:var(--muted);margin-top:1.2rem;}
+  .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;
+    padding:.55rem 1.15rem;border-radius:7px;background:var(--accent);color:#fff;
+    text-decoration:none;font-weight:600;font-size:.94rem;border:1px solid var(--accent-deep);
+    transition:background .15s ease;}
+  :root[data-theme="dark"] .btn:not(.quiet){color:#17100A;}
+  :root[data-theme="editorial"] .btn:not(.quiet){color:#FDF8EA;}
+  .btn:hover{background:var(--accent-deep);}
+  .btn.quiet{background:transparent;color:var(--ink);border-color:var(--rule);}
+  .btn.quiet:hover{background:var(--sunk);border-color:var(--accent);}
+  .themebtn{min-height:40px;padding:.3rem .6rem;border-radius:6px;cursor:pointer;
+    background:transparent;border:1px solid var(--rule);color:var(--muted);font-size:.78rem;
+    font-family:var(--ui);}
 
-  /* sample question → answer, the one product glimpse on the page */
-  .sample{margin-top:2.6rem;background:var(--panel);border:1px solid var(--hair);border-radius:14px;
-    overflow:hidden;box-shadow:0 1px 2px var(--hair-soft);}
-  .sq{padding:.95rem 1.05rem;border-bottom:1px solid var(--hair);background:var(--panel2);
-    display:flex;gap:.6rem;align-items:flex-start;}
-  .sqMark{font-family:var(--mono);font-size:.7rem;color:var(--accent);flex:none;padding-top:.16rem;}
-  .sqText{font-family:var(--display);font-variation-settings:"opsz" 30;
-    font-size:1.06rem;color:var(--ink);}
-  .sa{padding:1rem 1.05rem;}
-  .sa p{margin:0 0 .7rem;font-size:.97rem;}
-  .src{display:inline-flex;align-items:center;gap:.35rem;font-family:var(--mono);font-size:.68rem;
-    color:var(--accent);background:rgba(var(--accent-rgb),.08);border-radius:999px;
-    padding:.12rem .5rem;white-space:nowrap;}
-  .srcs{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.15rem;}
-  .dot{width:6px;height:6px;border-radius:50%;background:var(--verified);flex:none;}
+  .hero{padding-block:clamp(2.6rem,6vw,4.4rem) clamp(2.4rem,5vw,3.6rem);}
+  .heroGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);
+    gap:clamp(1.6rem,4vw,3rem);align-items:start;}
+  .heroActs{display:flex;flex-wrap:wrap;gap:.65rem;margin-top:1.4rem;}
 
-  /* grids */
-  .grid{display:grid;gap:1rem;}
-  .g2{grid-template-columns:repeat(2,minmax(0,1fr));}
-  .g4{grid-template-columns:repeat(4,minmax(0,1fr));}
-  .card{background:var(--panel);border:1px solid var(--hair);border-radius:12px;
-    padding:1.15rem 1.1rem;box-shadow:0 1px 2px var(--hair-soft);}
-  .card p{margin:0;color:var(--muted);font-size:.93rem;}
+  .ledger{background:var(--paper);border:1px solid var(--rule);border-radius:10px;
+    box-shadow:0 14px 34px -22px rgba(15,27,38,.45);overflow:hidden;}
+  .ledgerTabs{display:flex;border-bottom:1px solid var(--rule);background:var(--sunk);
+    overflow-x:auto;scrollbar-width:none;}
+  .ledgerTabs::-webkit-scrollbar{display:none}
+  .ltab{flex:1 0 auto;min-height:44px;padding:.55rem .9rem;border:0;background:transparent;
+    cursor:pointer;font-family:var(--ui);font-size:.8rem;font-weight:500;color:var(--muted);
+    border-bottom:2px solid transparent;white-space:nowrap;}
+  .ltab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);background:var(--paper);}
+  .ledgerQ{padding:.95rem 1.05rem .8rem;font-family:var(--display);font-size:1.1rem;
+    line-height:1.3;border-bottom:1px solid var(--rule);}
+  .cols{display:grid;grid-template-columns:1fr 1fr;}
+  .col{padding:.85rem 1.05rem 1rem;}
+  .col + .col{border-left:1px solid var(--rule);}
+  .colHead{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.7rem;
+    font-size:.82rem;font-weight:600;flex-wrap:wrap;}
+  .col.claimed .colHead{color:var(--claimed);}
+  .col.proven  .colHead{color:var(--proven);}
+  .colHead em{font-style:normal;font-weight:400;color:var(--muted);font-size:.74rem;}
+  .row{padding:.5rem 0;border-top:1px solid var(--rule-soft);font-size:.89rem;line-height:1.45;}
+  .row:first-of-type{border-top:0;}
+  .cite{display:inline-block;margin-top:.28rem;font-family:var(--mono);font-size:.66rem;
+    border-radius:4px;padding:.06rem .32rem;}
+  .col.proven .cite{color:var(--proven);background:var(--proven-bg);}
+  .col.claimed .cite{color:var(--claimed);background:var(--claimed-bg);}
+  .ledgerGap{padding:.7rem 1.05rem;border-top:1px solid var(--rule);background:var(--sunk);
+    font-size:.85rem;color:var(--muted);}
+  .ledgerGap b{color:var(--ink);font-weight:600;}
 
-  /* what we read — source families, each listing the real feeds behind it */
-  .srcgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.85rem;}
-  .srcgroup{background:var(--panel);border:1px solid var(--hair);border-radius:12px;
-    padding:.95rem .9rem;box-shadow:0 1px 2px var(--hair-soft);}
-  .sgTitle{display:flex;align-items:center;gap:.45rem;margin-bottom:.6rem;
-    font-size:.92rem;font-weight:600;letter-spacing:-.004em;}
-  .sgTitle .bar{width:3px;height:15px;border-radius:2px;background:var(--accent);flex:none;}
-  .srcgroup.signal .sgTitle .bar{background:var(--gap);}
-  .sgItems{display:flex;flex-wrap:wrap;gap:.3rem;}
-  .sgItem{font-family:var(--mono);font-size:.67rem;color:var(--muted);border:1px solid var(--hair);
-    border-radius:6px;padding:.15rem .42rem;background:var(--panel2);}
-  .sgNote{margin-top:.6rem;font-size:.79rem;color:var(--gap);line-height:1.45;}
-  .srcFoot{margin-top:1.15rem;font-size:.9rem;color:var(--muted);}
+  .strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1.1rem 1.6rem;}
+  .strip div{font-size:.95rem;}
+  .strip b{display:block;font-weight:600;}
+  .strip span{color:var(--muted);font-size:.88rem;}
 
-  /* numbered steps */
-  .steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.4rem;}
-  .stepN{font-family:var(--display);font-variation-settings:"opsz" 72;
-    font-size:2.3rem;line-height:1;color:var(--accent);opacity:.55;margin-bottom:.45rem;}
-  .step p{margin:0;color:var(--muted);font-size:.93rem;}
+  .flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;
+    border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:var(--paper);}
+  .fcell{padding:1.05rem 1.1rem;}
+  .fcell + .fcell{border-left:1px solid var(--rule);}
+  .fcell p{margin:0;color:var(--muted);font-size:.9rem;}
 
-  /* trust — one line each, no essays */
-  .trust{display:grid;gap:.05rem;}
-  .trow{display:flex;gap:.85rem;align-items:flex-start;padding:.95rem 0;border-bottom:1px solid var(--hair);}
-  .trow:last-child{border-bottom:0;}
-  .tickmark{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
-    background:rgba(var(--accent-rgb),.11);color:var(--accent);font-size:.72rem;margin-top:.1rem;}
-  .trow b{font-weight:600;}
-  .trow span{color:var(--muted);}
+  .srcTable{border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:var(--paper);}
+  .srcRow{display:grid;grid-template-columns:minmax(9rem,.8fr) minmax(0,2fr);gap:1rem;
+    padding:.7rem 1.05rem;border-top:1px solid var(--rule);align-items:baseline;}
+  .srcRow:first-child{border-top:0;}
+  .srcRow.sig{background:var(--claimed-bg);}
+  .srcName{font-weight:600;font-size:.92rem;}
+  .srcName small{display:block;font-weight:400;color:var(--muted);font-size:.76rem;margin-top:.1rem;}
+  .srcRow.sig .srcName{color:var(--claimed);}
+  .feeds{display:flex;flex-wrap:wrap;gap:.3rem;}
+  .feed{font-family:var(--mono);font-size:.68rem;color:var(--muted);background:var(--sunk);
+    border:1px solid var(--rule);border-radius:4px;padding:.1rem .4rem;}
+  .srcRow.sig .feed{background:var(--paper);border-color:transparent;color:var(--claimed);}
 
-  /* audiences */
-  .aud{background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:1.3rem 1.25rem;}
-  .audHead{display:flex;align-items:center;gap:.6rem;margin-bottom:.9rem;
-    padding-bottom:.7rem;border-bottom:1px solid var(--hair);flex-wrap:wrap;}
-  .audHead h3{margin:0;font-family:var(--display);font-variation-settings:"opsz" 40;
-    font-size:1.28rem;font-weight:550;}
-  .pill{font-family:var(--mono);font-size:.61rem;text-transform:uppercase;letter-spacing:.13em;
-    color:var(--accent);border:1px solid var(--hair);border-radius:999px;padding:.16rem .55rem;
-    background:rgba(var(--accent-rgb),.06);}
-  ul.ticks{list-style:none;margin:0;padding:0;}
-  ul.ticks li{position:relative;padding-left:1.45rem;margin-bottom:.68rem;font-size:.94rem;color:var(--muted);}
-  ul.ticks li:last-child{margin-bottom:0;}
-  ul.ticks li::before{content:"";position:absolute;left:.25rem;top:.62em;width:7px;height:7px;
-    border-radius:50%;background:var(--verified);}
-  ul.ticks li b{color:var(--ink);font-weight:600;}
+  .vs{border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:var(--paper);}
+  .vsRow{display:grid;grid-template-columns:minmax(0,1.5fr) 7.5rem 7.5rem;
+    border-top:1px solid var(--rule);align-items:center;}
+  .vsRow:first-child{border-top:0;background:var(--sunk);}
+  .vsRow > *{padding:.7rem 1rem;}
+  .vsRow .c{text-align:center;font-weight:600;font-size:.9rem;border-left:1px solid var(--rule);}
+  .vsRow.head .c{font-size:.82rem;}
+  .yes{color:var(--proven);}
+  .no{color:var(--muted);}
+  .vsQ{font-size:.93rem;}
 
-  /* about */
-  .about{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem;align-items:start;}
-  .fcard{background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:1.3rem 1.2rem;}
-  .fname{font-size:1.4rem;margin:0 0 .15rem;}
-  .frole{font-family:var(--mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.13em;
-    color:var(--accent);margin:0 0 .9rem;}
-  .fbio{margin:0 0 .9rem;color:var(--muted);font-size:.94rem;}
-  .chips{display:flex;flex-wrap:wrap;gap:.35rem;}
-  .chip{font-family:var(--mono);font-size:.68rem;color:var(--muted);border:1px solid var(--hair);
-    border-radius:6px;padding:.16rem .45rem;background:var(--panel2);}
+  .pull{font-family:var(--display);font-size:clamp(1.25rem,2.5vw,1.6rem);line-height:1.32;
+    border-left:3px solid var(--accent);padding-left:1rem;margin:0 0 1.3rem;max-width:32rem;}
+  .aboutGrid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:1.8rem;align-items:start;}
+  .facts{list-style:none;margin:0;padding:0;}
+  .facts li{padding:.5rem 0;border-top:1px solid var(--rule);color:var(--muted);font-size:.93rem;}
+  .facts li:first-child{border-top:0;}
+  .facts b{color:var(--ink);font-weight:600;}
+  .bio{background:var(--paper);border:1px solid var(--rule);border-radius:10px;padding:1.15rem;}
+  .bioName{font-family:var(--display);font-size:1.3rem;font-weight:600;margin:0 0 .1rem;}
+  .bioRole{color:var(--muted);font-size:.85rem;margin:0 0 .8rem;}
+  .bioText{color:var(--muted);font-size:.92rem;margin:0 0 .85rem;}
+  .past{display:flex;flex-wrap:wrap;gap:.3rem;}
+  .past span{font-family:var(--mono);font-size:.67rem;color:var(--muted);
+    border:1px solid var(--rule);border-radius:4px;padding:.1rem .4rem;}
 
-  .closing{text-align:center;}
-  .closing .lede{margin-inline:auto;}
-  .closing .ctas{justify-content:center;}
+  .close{text-align:center;}
+  .close .lede{margin-inline:auto;}
+  .close .heroActs{justify-content:center;}
 
-  footer{border-top:1px solid var(--hair);padding-block:1.6rem 2.4rem;color:var(--muted);font-size:.86rem;}
-  .footin{display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;align-items:center;}
+  footer{border-top:1px solid var(--rule);padding-block:1.5rem 2.4rem;color:var(--muted);font-size:.85rem;}
+  .footin{display:flex;flex-wrap:wrap;gap:.3rem 1.4rem;align-items:center;}
   .footin .sp{margin-left:auto;}
   .footin a{display:inline-flex;align-items:center;min-height:40px;}
 
-  @media (max-width:860px){
-    .about{grid-template-columns:1fr;}
-    .g4{grid-template-columns:repeat(2,minmax(0,1fr));}
-    .srcgrid{grid-template-columns:repeat(2,minmax(0,1fr));}
-    .steps{grid-template-columns:1fr;gap:1.15rem;}
-    .navlinks{display:none;}
+  :where(a,button,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+
+  @media (max-width:900px){
+    .heroGrid{grid-template-columns:1fr;gap:1.8rem;}
+    .lede,.note{max-width:none;}
+    .nav{display:none;}
+    .flow{grid-template-columns:1fr;}
+    .fcell + .fcell{border-left:0;border-top:1px solid var(--rule);}
+    .aboutGrid{grid-template-columns:1fr;gap:1.3rem;}
+    .strip{grid-template-columns:repeat(2,minmax(0,1fr));}
   }
-  @media (max-width:560px){
+  @media (max-width:620px){
     html{font-size:14.5px}
-    .g2,.g4{grid-template-columns:1fr;}
-    .srcgrid{grid-template-columns:1fr;}
-    .logo{height:42px;}
-    .topin{gap:.5rem;padding-inline:1rem;}
-    .cta{padding:.5rem .78rem;font-size:.85rem;}
-    .themebtn{display:none;}
+    .logo{height:40px;}
+    .topin{gap:.6rem;padding-inline:1rem;}
     .wrap{padding-inline:1rem;}
+    .cols{grid-template-columns:1fr;}
+    .col + .col{border-left:0;border-top:1px solid var(--rule);}
+    .srcRow{grid-template-columns:1fr;gap:.45rem;}
+    .vsRow{grid-template-columns:minmax(0,1fr) 4.4rem 4.4rem;}
+    .vsRow > *{padding:.6rem .7rem;}
+    .strip{grid-template-columns:1fr;gap:.85rem;}
+    /* wrap the ledger tabs rather than hiding the third behind a scrollbar-less swipe */
+    .ledgerTabs{flex-wrap:wrap;overflow-x:visible;}
+    .ltab{flex:1 1 auto;font-size:.76rem;padding-inline:.6rem;}
     .footin .sp{margin-left:0;}
   }
   @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} *{transition:none!important} }
@@ -211,19 +246,17 @@
 <footer><div class="wrap footin" id="foot"></div></footer>
 
 <script>
-/* ═══════════════════════════════════════════════════════════════════════════════════════════
-   CONFIG — the only product-specific block in this file. Replace wholesale to reuse.
-   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+/* ═══ CONFIG — the only product-specific block in this file. ═══ */
 const SITE = {
   brand: {
     name: "Eigen Research",
     appHref: "/app",
-    appLabel: "Open the platform",
+    appLabel: "Open Eigen",
+    askLabel: "Ask this in Eigen",
     contact: "sandeepgupta828@gmail.com",
     nav: [
-      { label: "What you can ask", href: "#ask" },
-      { label: "How it works", href: "#how" },
-      { label: "What we read", href: "#sources" },
+      { label: "The ledger", href: "#ledger" },
+      { label: "Sources", href: "#sources" },
       { label: "About", href: "#about" },
     ],
     markViewBox: "0 0 220 132",
@@ -234,231 +267,286 @@ const SITE = {
       <path d="M132 20 l-10 1 M132 20 l-1 10" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/>
       <circle cx="84" cy="46" r="3.1" fill="var(--accent)"/>
       <text x="110" y="92" text-anchor="middle" font-family="var(--display)" font-size="27" letter-spacing="7" fill="var(--ink)">EIGEN</text>
-      <text x="110" y="111" text-anchor="middle" font-family="var(--sans)" font-size="7.4" letter-spacing="3" fill="var(--accent)">DISCOVER · UNDERSTAND · ACT</text>`,
+      <text x="110" y="111" text-anchor="middle" font-family="var(--ui)" font-size="7.4" letter-spacing="3" fill="var(--accent)">DISCOVER · UNDERSTAND · ACT</text>`,
   },
 
   hero: {
-    eyebrow: "Research for investors and founders",
-    title: "Know what's real\nbefore you bet on it.",
-    lede: "Ask about a company, a market or a technology. Get a straight answer in minutes — with every claim linked to the filing, patent or paper it came from.",
-    secondary: { label: "See what you can ask", href: "#ask" },
-    note: "Diligence in an afternoon, not a fortnight.",
+    title: "Every company has\ntwo stories.",
+    lede: "One is what they announced. The other is what they can prove. Eigen reads the filings, patents and papers and shows you both — plus the part nobody has established yet.",
+    secondary: { label: "See where it reads", href: "#sources" },
   },
 
-  sample: {
-    q: "Who else is building solid-state batteries, and how far along are they really?",
-    a: [
-      "Four companies have moved past lab prototypes, and two have signed production agreements with carmakers. One widely-reported “breakthrough” is a patent application, not a shipping product.",
-      "Nobody has disclosed cycle-life data at automotive scale — so that part stays an open question rather than a guess.",
+  ledger: {
+    gapLabel: "Not established:",
+    cases: [
+      {
+        tab: "Solid-state batteries",
+        q: "Who is actually shipping solid-state cells, and who is still talking about it?",
+        claimed: { head: "Announced", sub: "press, decks, applications", rows: [
+          { t: "Mass production “by 2027”", c: "Press release" },
+          { t: "“Breakthrough” anode chemistry", c: "Patent application" },
+          { t: "Automotive partnership “in principle”", c: "Earnings call" },
+        ]},
+        proven: { head: "Proven", sub: "granted, audited, shipped", rows: [
+          { t: "Three granted cell-architecture patents", c: "USPTO grant" },
+          { t: "Two OEM supply agreements, signed", c: "10-K Item 1" },
+          { t: "Pilot line output disclosed in filings", c: "10-Q" },
+        ]},
+        gap: "cycle life at automotive scale — no disclosure from any party.",
+      },
+      {
+        tab: "Inference chips",
+        q: "Is this accelerator startup's performance claim backed by anything reproducible?",
+        claimed: { head: "Announced", sub: "press, decks, applications", rows: [
+          { t: "“10× faster than the incumbent”", c: "Company blog" },
+          { t: "Design win with a hyperscaler", c: "Press release" },
+          { t: "Next-gen node “on track”", c: "Conference talk" },
+        ]},
+        proven: { head: "Proven", sub: "granted, audited, shipped", rows: [
+          { t: "Published benchmark submission, one category", c: "Peer-reviewed" },
+          { t: "Compiler stack public and runnable", c: "GitHub" },
+          { t: "Two granted interconnect patents", c: "USPTO grant" },
+        ]},
+        gap: "performance at production batch sizes — benchmarked once, never independently.",
+      },
+      {
+        tab: "Drug discovery AI",
+        q: "Has this platform produced anything beyond retrospective validation?",
+        claimed: { head: "Announced", sub: "press, decks, applications", rows: [
+          { t: "“AI-discovered” molecule in the clinic", c: "Press release" },
+          { t: "Pharma collaboration, undisclosed terms", c: "Press release" },
+          { t: "Platform “validated” across targets", c: "Company blog" },
+        ]},
+        proven: { head: "Proven", sub: "granted, audited, shipped", rows: [
+          { t: "Trial registered and recruiting", c: "Registry" },
+          { t: "Federal grant awarded for the method", c: "NIH RePORTER" },
+          { t: "Method published with held-out results", c: "Peer-reviewed" },
+        ]},
+        gap: "whether the model chose the molecule, or confirmed one already known.",
+      },
     ],
-    sources: ["SEC 10-K", "Patent grant", "Peer-reviewed paper", "Earnings call"],
   },
 
-  sections: [
-    {
-      id: "ask", eyebrow: "What you can ask", title: "The questions that used to take a week.",
-      layout: "cards4",
-      items: [
-        { h: "Size up a company", p: "Funding, filings, patents and what they've actually shipped — in one place instead of fifteen browser tabs." },
-        { h: "Map a market", p: "Who's competing, who's genuinely ahead, and where nobody is playing yet." },
-        { h: "Check a claim", p: "Is that traction real or a press release? Follow the link and see the source for yourself." },
-        { h: "Track a space", p: "Keep up with what teams are patenting and publishing, without reading every filing." },
-      ],
-    },
-    {
-      id: "how", eyebrow: "How it works", title: "Ask. Read. Check.",
-      layout: "steps",
-      items: [
-        { h: "Ask in plain English", p: "No query syntax, no filters to learn. Ask it the way you'd ask a colleague who'd done the reading." },
-        { h: "We read the primary sources", p: "Company filings, patents, research papers and technical documentation — not a scrape of whatever ranked well today." },
-        { h: "You get an answer you can check", p: "Every claim carries a link to the document behind it, so you can verify anything that matters before you act on it." },
-      ],
-    },
-    {
-      id: "sources", eyebrow: "What we read", title: "We go to the primary sources. All of them.",
-      sub: "Most tools summarise whatever ranked well on the open web today. Eigen reads the record itself — filings, patents, papers, code and grant awards — and keeps it searchable so answers are reproducible rather than whatever happened to surface this morning.",
-      layout: "sources",
-      items: [
-        { h: "Regulatory filings", items: ["SEC EDGAR", "UK Companies House"] },
-        { h: "Patents", items: ["USPTO", "PatentsView"] },
-        { h: "Research papers", items: ["arXiv", "OpenAlex", "Semantic Scholar", "Crossref", "OpenReview"] },
-        { h: "Code & models", items: ["GitHub", "Hugging Face"] },
-        { h: "Public funding", items: ["NSF awards", "NIH RePORTER"] },
-        { h: "Company reference", items: ["Wikidata", "Wikipedia", "Y Combinator"] },
-        { h: "Founder & practitioner voices", items: ["Engineering blogs", "Founder essays", "Podcasts", "Conference talks"] },
-        { h: "Market signal", signal: true, items: ["News wires", "Hacker News", "Reddit", "Stack Exchange"],
-          note: "Treated as sentiment, never as fact — and always labelled that way." },
-      ],
-      foot: "Anything that can be downloaded, we hold and index ourselves. The live web is used only for things that genuinely change by the hour.",
-    },
-    {
-      id: "trust", eyebrow: "Why you can trust it", title: "Built to be checked, not just believed.",
-      layout: "trust",
-      items: [
-        { h: "Every claim shows its source.", p: "Click through to the original document. Nothing is asserted without one." },
-        { h: "Opinion stays labelled as opinion.", p: "Press coverage and forum chatter never get presented to you as established fact." },
-        { h: "It tells you what it doesn't know.", p: "Where the evidence isn't there, you get an honest gap instead of a confident guess." },
-      ],
-    },
-    {
-      id: "who", eyebrow: "Who it's for", title: "Whichever side of the table you're on.",
-      layout: "audiences",
-      items: [
-        { h: "For investors", pill: "Diligence", ticks: [
-          "<b>Move faster on more deals.</b> Cover a company or a sector in an afternoon.",
-          "<b>Walk in prepared.</b> Know the competitive picture before the first meeting, not after.",
-          "<b>Spot the gap between story and filing.</b> Before it costs you.",
-        ]},
-        { h: "For founders", pill: "Positioning", ticks: [
-          "<b>See what diligence will find.</b> Run it on yourself before an investor does.",
-          "<b>Watch your competitors properly.</b> What they're patenting and publishing, as it happens.",
-          "<b>Back your pitch with evidence.</b> Know which claims you can prove.",
-        ]},
-      ],
-    },
-  ],
+  abilities: {
+    title: "One question, then the reading is done.",
+    items: [
+      { b: "Size up a company", s: "Funding, filings, patents, shipped product." },
+      { b: "Map a market", s: "Who competes, who is genuinely ahead." },
+      { b: "Check a claim", s: "Traction, or a press release?" },
+      { b: "Track a space", s: "What teams file and publish, as it happens." },
+    ],
+  },
+
+  flow: {
+    title: "From question to evidence.",
+    steps: [
+      { h: "Describe what you're trying to underwrite", p: "In your own words. No syntax, no filters." },
+      { h: "Eigen reads the record", p: "Filings, patents, papers, code and grant awards — held and indexed, not scraped at answer time." },
+      { h: "You get claims you can open", p: "Each one carries the document behind it, and the unknowns stay marked unknown." },
+    ],
+  },
+
+  sources: {
+    title: "Your corpus of record.",
+    note: "Anything downloadable is held and indexed here. The live web is used only for what genuinely changes by the hour.",
+    rows: [
+      { name: "Regulatory filings", sub: "annual, quarterly, registration", feeds: ["SEC EDGAR", "UK Companies House"] },
+      { name: "Patents", sub: "applications and grants, kept apart", feeds: ["USPTO", "PatentsView"] },
+      { name: "Research papers", sub: "preprints and peer-reviewed", feeds: ["arXiv", "OpenAlex", "Semantic Scholar", "Crossref", "OpenReview"] },
+      { name: "Code and models", sub: "what actually ships", feeds: ["GitHub", "Hugging Face"] },
+      { name: "Public funding", sub: "who got paid to work on it", feeds: ["NSF awards", "NIH RePORTER"] },
+      { name: "Company reference", sub: "entities, people, structure", feeds: ["Wikidata", "Wikipedia", "Y Combinator"] },
+      { name: "Practitioner voices", sub: "first-person, from the builders", feeds: ["Engineering blogs", "Founder essays", "Podcasts", "Talks"] },
+      { name: "Market signal", sub: "read as sentiment, never as fact", signal: true, feeds: ["News wires", "Hacker News", "Reddit", "Stack Exchange"] },
+    ],
+  },
+
+  compare: {
+    title: "Built to be checked.",
+    us: "Eigen", them: "General AI chat",
+    rows: [
+      { q: "Links every claim to a source document", us: true, them: false },
+      { q: "Separates announced from proven", us: true, them: false },
+      { q: "Labels sentiment as sentiment", us: true, them: false },
+      { q: "Says so when the evidence isn't there", us: true, them: false },
+      { q: "Answers anything you ask, instantly", us: true, them: true },
+    ],
+  },
 
   about: {
-    eyebrow: "About us",
     title: "Why we built this.",
-    blurb: [
-      "Good investment decisions come down to separating what's proven from what's merely announced. That work is slow, and most of it is reading — filings, patents, papers — to find the handful of facts that actually matter.",
-      "Eigen Research does that reading. We built it because general-purpose AI tools are confident whether or not they're right, and for a decision that moves real money, you need to be able to check.",
+    pull: "The work of diligence is separating what's proven from what's merely announced. Most of that work is reading.",
+    facts: [
+      "<b>Deep tech and frontier deals.</b> Where the evidence is filings, patents and papers rather than dashboards.",
+      "<b>Primary sources only.</b> No answer is assembled from a summary of a summary.",
+      "<b>Explicit about the unknown.</b> A gap is a finding, not a failure.",
     ],
-    founder: {
+    bio: {
       name: "Sandeep Gupta",
       role: "Founder · San Francisco",
-      bio: "Twenty years building large-scale systems — most recently leading machine-learning infrastructure at Tubi, and before that engineering roles at Argo AI, Netflix and Microsoft. Previously founded GraphMind. IIT Kanpur.",
-      chips: ["Tubi", "Argo AI", "Netflix", "Microsoft", "IIT Kanpur"],
+      text: "Twenty years building large-scale systems — most recently leading machine-learning infrastructure at Tubi, and before that engineering roles at Argo AI, Netflix and Microsoft. Previously founded GraphMind.",
+      past: ["Tubi", "Argo AI", "Netflix", "Microsoft", "IIT Kanpur"],
     },
   },
 
-  closing: {
-    eyebrow: "Get started",
-    title: "Ask it something hard.",
-    lede: "Put a real question to it and follow the sources back yourself.",
+  close: {
+    title: "Bring a question you can't answer in an afternoon.",
+    lede: "Then follow the citations back to the filings yourself.",
   },
 };
 
-/* ═══════════════════════════════════════════════════════════════════════════════════════════
-   MECHANICS — domain-free rendering. Nothing below names a product.
-   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+/* ═══ MECHANICS — domain-free. ═══ */
 (function(){
   const el = (id) => document.getElementById(id);
   const h  = (s) => (s == null ? "" : String(s));
-  const cta = (cls) => `<a class="${cls}" href="${h(SITE.brand.appHref)}">${h(SITE.brand.appLabel)} →</a>`;
-  const logo = `<svg class="logo" viewBox="${h(SITE.brand.markViewBox)}" role="img" aria-label="${h(SITE.brand.name)}"><use href="#brand-mark"/></svg>`;
+  const B  = SITE.brand;
 
   el("brandmark").innerHTML =
     `<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-       <symbol id="brand-mark" viewBox="${h(SITE.brand.markViewBox)}">${SITE.brand.markSvg}</symbol></svg>`;
+       <symbol id="brand-mark" viewBox="${h(B.markViewBox)}">${B.markSvg}</symbol></svg>`;
 
   el("topbar").innerHTML = `
-    <a href="/" aria-label="${h(SITE.brand.name)} home" style="display:flex;text-decoration:none;">${logo}</a>
-    <nav class="navlinks">${(SITE.brand.nav || []).map(n => `<a href="${h(n.href)}">${h(n.label)}</a>`).join("")}</nav>
-    <button type="button" class="themebtn" id="themebtn" aria-label="Switch colour theme">☀ Light</button>
-    ${cta("cta")}`;
+    <a href="/" aria-label="${h(B.name)} home" style="display:flex;text-decoration:none">
+      <svg class="logo" viewBox="${h(B.markViewBox)}" role="img" aria-label="${h(B.name)}"><use href="#brand-mark"/></svg></a>
+    <nav class="nav">${(B.nav||[]).map(n=>`<a href="${h(n.href)}">${h(n.label)}</a>`).join("")}</nav>
+    <span class="topcta" id="topcta"><a class="btn" href="${h(B.appHref)}">${h(B.appLabel)}</a></span>
+    <button type="button" class="themebtn" id="themebtn" aria-label="Switch colour theme">Light</button>`;
 
-  const layouts = {
-    cards4: (items) => `<div class="grid g4">${items.map(i => `
-      <div class="card"><h3>${h(i.h)}</h3><p>${i.p}</p></div>`).join("")}</div>`,
-
-    sources: (items) => `<div class="srcgrid">${items.map(i => `
-      <div class="srcgroup${i.signal ? " signal" : ""}">
-        <div class="sgTitle"><span class="bar"></span>${h(i.h)}</div>
-        <div class="sgItems">${(i.items || []).map(x => `<span class="sgItem">${h(x)}</span>`).join("")}</div>
-        ${i.note ? `<p class="sgNote">${h(i.note)}</p>` : ""}
-      </div>`).join("")}</div>`,
-
-    steps: (items) => `<div class="steps">${items.map((i, n) => `
-      <div class="step"><div class="stepN">${n + 1}</div><h3>${h(i.h)}</h3><p>${i.p}</p></div>`).join("")}</div>`,
-
-    trust: (items) => `<div class="trust">${items.map(i => `
-      <div class="trow"><div class="tickmark">✓</div><div><b>${h(i.h)}</b> <span>${i.p}</span></div></div>`).join("")}</div>`,
-
-    audiences: (items) => `<div class="grid g2">${items.map(i => `
-      <div class="aud">
-        <div class="audHead"><h3>${h(i.h)}</h3>${i.pill ? `<span class="pill">${h(i.pill)}</span>` : ""}</div>
-        <ul class="ticks">${i.ticks.map(t => `<li>${t}</li>`).join("")}</ul>
-      </div>`).join("")}</div>`,
-  };
-
-  const sampleHtml = () => {
-    const S = SITE.sample; if(!S) return "";
-    return `<div class="sample">
-      <div class="sq"><span class="sqMark">ASK</span><span class="sqText">${h(S.q)}</span></div>
-      <div class="sa">${(S.a || []).map(p => `<p>${h(p)}</p>`).join("")}
-        <div class="srcs">${(S.sources || []).map(s =>
-          `<span class="src"><span class="dot"></span>${h(s)}</span>`).join("")}</div>
-      </div></div>`;
-  };
+  const ledgerCols = (c) => `
+    <div class="cols">
+      ${["claimed","proven"].map(k => `
+        <div class="col ${k}">
+          <div class="colHead">${h(c[k].head)} <em>${h(c[k].sub)}</em></div>
+          ${c[k].rows.map(r => `<div class="row">${h(r.t)}<br><span class="cite">${h(r.c)}</span></div>`).join("")}
+        </div>`).join("")}
+    </div>
+    <div class="ledgerGap"><b>${h(SITE.ledger.gapLabel)}</b> ${h(c.gap)}</div>`;
 
   const heroHtml = () => {
-    const H = SITE.hero; if(!H) return "";
-    return `<section class="hero"><div class="wrap">
-      ${H.eyebrow ? `<p class="eyebrow">${h(H.eyebrow)}</p>` : ""}
-      <h1>${h(H.title).replace(/\n/g, "<br>")}</h1>
-      ${H.lede ? `<p class="lede">${h(H.lede)}</p>` : ""}
-      <div class="ctas">${cta("cta")}${H.secondary ? `<a class="ghost" href="${h(H.secondary.href)}">${h(H.secondary.label)}</a>` : ""}</div>
-      ${H.note ? `<p class="heroNote">${h(H.note)}</p>` : ""}
-      ${sampleHtml()}
-    </div></section>`;
+    const H = SITE.hero, L = SITE.ledger;
+    return `<section class="hero"><div class="wrap"><div class="heroGrid">
+      <div>
+        <h1>${h(H.title).replace(/\n/g,"<br>")}</h1>
+        <p class="lede">${h(H.lede)}</p>
+        <div class="heroActs">
+          <a class="btn" href="${h(B.appHref)}">${h(B.askLabel)}</a>
+          ${H.secondary ? `<a class="btn quiet" href="${h(H.secondary.href)}">${h(H.secondary.label)}</a>` : ""}
+        </div>
+      </div>
+      <div class="ledger" id="ledger">
+        <div class="ledgerTabs" role="tablist" aria-label="Example questions">
+          ${L.cases.map((c,i)=>`<button class="ltab" role="tab" aria-selected="${i===0}" data-i="${i}">${h(c.tab)}</button>`).join("")}
+        </div>
+        <div>
+          <div class="ledgerQ">${h(L.cases[0].q)}</div>
+          <div id="ledgerCols">${ledgerCols(L.cases[0])}</div>
+        </div>
+      </div>
+    </div></div></section>`;
   };
 
-  const sectionHtml = (s) => `<section id="${h(s.id)}"><div class="wrap">
-      ${s.eyebrow ? `<p class="eyebrow">${h(s.eyebrow)}</p>` : ""}
-      ${s.title ? `<h2>${h(s.title)}</h2>` : ""}
-      ${s.sub ? `<p class="sub">${h(s.sub)}</p>` : ""}
-      ${layouts[s.layout] ? layouts[s.layout](s.items || []) : ""}
-      ${s.foot ? `<p class="srcFoot">${h(s.foot)}</p>` : ""}</div></section>`;
+  const abilitiesHtml = () => { const A = SITE.abilities; if(!A) return "";
+    return `<section><div class="wrap"><h2>${h(A.title)}</h2>
+      <div class="strip">${A.items.map(i=>`<div><b>${h(i.b)}</b><span>${h(i.s)}</span></div>`).join("")}</div>
+    </div></section>`; };
 
-  const aboutHtml = () => {
-    const A = SITE.about; if(!A) return "";
-    const F = A.founder;
-    return `<section id="about"><div class="wrap">
-      ${A.eyebrow ? `<p class="eyebrow">${h(A.eyebrow)}</p>` : ""}
-      ${A.title ? `<h2>${h(A.title)}</h2>` : ""}
-      <div class="about">
-        <div>${(A.blurb || []).map(p => `<p class="sub" style="margin-bottom:1rem">${h(p)}</p>`).join("")}</div>
-        ${F ? `<div class="fcard">
-          <p class="fname">${h(F.name)}</p>
-          <p class="frole">${h(F.role)}</p>
-          <p class="fbio">${h(F.bio)}</p>
-          <div class="chips">${(F.chips || []).map(c => `<span class="chip">${h(c)}</span>`).join("")}</div>
-        </div>` : ""}
-      </div></div></section>`;
-  };
+  const flowHtml = () => { const F = SITE.flow; if(!F) return "";
+    return `<section><div class="wrap"><h2>${h(F.title)}</h2>
+      <div class="flow">${F.steps.map(s=>`<div class="fcell"><h3>${h(s.h)}</h3><p>${h(s.p)}</p></div>`).join("")}</div>
+    </div></section>`; };
 
-  const closingHtml = () => {
-    const C = SITE.closing; if(!C) return "";
-    return `<section class="closing"><div class="wrap">
-      ${C.eyebrow ? `<p class="eyebrow">${h(C.eyebrow)}</p>` : ""}
-      ${C.title ? `<h2>${h(C.title)}</h2>` : ""}
-      ${C.lede ? `<p class="lede">${h(C.lede)}</p>` : ""}
-      <div class="ctas">${cta("cta")}</div></div></section>`;
-  };
+  const sourcesHtml = () => { const S = SITE.sources; if(!S) return "";
+    return `<section id="sources"><div class="wrap"><h2>${h(S.title)}</h2>
+      <div class="srcTable">${S.rows.map(r=>`
+        <div class="srcRow${r.signal?" sig":""}">
+          <div class="srcName">${h(r.name)}<small>${h(r.sub)}</small></div>
+          <div class="feeds">${r.feeds.map(f=>`<span class="feed">${h(f)}</span>`).join("")}</div>
+        </div>`).join("")}</div>
+      ${S.note?`<p class="note" style="margin-top:1rem">${h(S.note)}</p>`:""}
+    </div></section>`; };
 
-  el("main").innerHTML =
-    heroHtml() + (SITE.sections || []).map(sectionHtml).join("") + aboutHtml() + closingHtml();
+  const compareHtml = () => { const C = SITE.compare; if(!C) return "";
+    const mark = (v) => v ? `<span class="yes">Yes</span>` : `<span class="no">No</span>`;
+    return `<section><div class="wrap"><h2>${h(C.title)}</h2>
+      <div class="vs">
+        <div class="vsRow head"><div class="vsQ"></div><div class="c">${h(C.us)}</div><div class="c">${h(C.them)}</div></div>
+        ${C.rows.map(r=>`<div class="vsRow"><div class="vsQ">${h(r.q)}</div>
+          <div class="c">${mark(r.us)}</div><div class="c">${mark(r.them)}</div></div>`).join("")}
+      </div>
+    </div></section>`; };
+
+  const aboutHtml = () => { const A = SITE.about; if(!A) return "";
+    const b = A.bio;
+    return `<section id="about"><div class="wrap"><h2>${h(A.title)}</h2>
+      <div class="aboutGrid">
+        <div>
+          <p class="pull">${h(A.pull)}</p>
+          <ul class="facts">${A.facts.map(f=>`<li>${f}</li>`).join("")}</ul>
+        </div>
+        ${b?`<div class="bio">
+          <p class="bioName">${h(b.name)}</p>
+          <p class="bioRole">${h(b.role)}</p>
+          <p class="bioText">${h(b.text)}</p>
+          <div class="past">${b.past.map(p=>`<span>${h(p)}</span>`).join("")}</div>
+        </div>`:""}
+      </div></div></section>`; };
+
+  const closeHtml = () => { const C = SITE.close; if(!C) return "";
+    return `<section class="close"><div class="wrap">
+      <h2>${h(C.title)}</h2><p class="lede">${h(C.lede)}</p>
+      <div class="heroActs"><a class="btn" href="${h(B.appHref)}">${h(B.appLabel)}</a></div>
+    </div></section>`; };
+
+  el("main").innerHTML = heroHtml() + abilitiesHtml() + flowHtml() + sourcesHtml()
+                       + compareHtml() + aboutHtml() + closeHtml();
 
   el("foot").innerHTML = `
-    <span>© <span id="yr"></span> ${h(SITE.brand.name)}</span>
-    <span class="sp"><a href="${h(SITE.brand.appHref)}">Platform</a></span>
+    <span>&copy; <span id="yr"></span> ${h(B.name)}</span>
+    <span class="sp"><a href="${h(B.appHref)}">Platform</a></span>
     <span><a href="#about">About</a></span>
-    ${SITE.brand.contact ? `<span><a href="mailto:${h(SITE.brand.contact)}">Contact</a></span>` : ""}`;
+    ${B.contact?`<span><a href="mailto:${h(B.contact)}">Contact</a></span>`:""}`;
   el("yr").textContent = new Date().getFullYear();
 
-  const KEY = "eigen-theme", btn = el("themebtn");
-  const apply = (t) => {
-    if(t === "dark"){ document.documentElement.setAttribute("data-theme", "dark"); btn.textContent = "☾ Dark"; }
-    else { document.documentElement.removeAttribute("data-theme"); btn.textContent = "☀ Light"; }
+  const tabs = [...document.querySelectorAll(".ltab")];
+  const showCase = (i) => {
+    const c = SITE.ledger.cases[i];
+    document.querySelector(".ledgerQ").textContent = c.q;
+    el("ledgerCols").innerHTML = ledgerCols(c);
+    tabs.forEach((t,n) => t.setAttribute("aria-selected", String(n === i)));
   };
-  let saved = null; try{ saved = localStorage.getItem(KEY); }catch(e){}
-  apply(saved === "dark" ? "dark" : "light");
-  btn.addEventListener("click", () => {
-    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-    apply(next); try{ localStorage.setItem(KEY, next); }catch(e){}
+  tabs.forEach(t => {
+    t.addEventListener("click", () => showCase(Number(t.dataset.i)));
+    t.addEventListener("keydown", (e) => {
+      const i = Number(t.dataset.i);
+      if(e.key === "ArrowRight" || e.key === "ArrowLeft"){
+        e.preventDefault();
+        const n = (i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length;
+        tabs[n].focus(); showCase(n);
+      }
+    });
   });
+
+  const sentinel = document.querySelector(".hero");
+  const topcta = el("topcta");
+  if(sentinel && "IntersectionObserver" in window){
+    new IntersectionObserver(([e]) => topcta.classList.toggle("on", !e.isIntersecting),
+      {rootMargin: "-70px 0px 0px 0px"}).observe(sentinel);
+  } else { topcta.classList.add("on"); }
+
+  /* Same cycle, order and labels as the platform shell: light -> dark -> editorial. */
+  const ORDER = ["light","dark","editorial"];
+  const NAMES = {light:"\u2600 Light", dark:"\u{1F319} Dark", editorial:"\u2761 Editorial"};
+  const btn = el("themebtn");
+  const current = () => document.documentElement.getAttribute("data-theme") || "light";
+  const apply = (t) => {
+    if(t === "light") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", t);
+    try{ localStorage.setItem("eigen-theme", t); }catch(e){}
+    btn.textContent = NAMES[t] || NAMES.light;
+    btn.title = "Theme: " + (NAMES[t] || NAMES.light).slice(2) + " \u2014 click to switch";
+  };
+  apply(current());
+  btn.addEventListener("click", () => apply(ORDER[(ORDER.indexOf(current()) + 1) % ORDER.length]));
 })();
 </script>
 </body>
