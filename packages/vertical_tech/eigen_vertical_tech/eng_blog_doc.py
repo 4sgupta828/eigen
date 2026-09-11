@@ -16,6 +16,7 @@ published about itself — read off, judged not at all. A parsed feed item is a 
 """
 from __future__ import annotations
 
+import html
 import re
 from urllib.parse import urlparse
 
@@ -72,7 +73,13 @@ def facets(rec: dict) -> dict:
 
 
 def _strip_html(raw: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw)).strip()
+    """Tags out, entities decoded. Without the decode a card reads "the web&rsquo;s most popular
+    home pages" verbatim — the UI escapes what it renders, so an undecoded entity reaches the
+    reader as literal markup. Feeds double-escape often enough (&amp;#8217;) that one pass is not
+    enough, so unescape twice; the second pass is a no-op on clean text. Same treatment
+    expert_feed_doc already gives an essay."""
+    txt = html.unescape(html.unescape(raw or ""))
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", txt)).strip()
 
 
 def to_markdown(rec: dict) -> str:

@@ -115,3 +115,18 @@ def test_moment_passes_url_and_site_through_to_the_card():
     assert card["url"] == "https://stripe.com/blog/ledger"
     assert card["site"] == "https://stripe.com"
     assert card["show"] == "Stripe Engineering"
+
+
+def test_entities_are_decoded_not_shown_as_markup():
+    # The UI escapes what it renders, so an undecoded entity reaches the reader as literal markup:
+    # a card read "the web&rsquo;s most popular home pages" in prod.
+    out = eng_blog_doc._strip_html("<p>the web&rsquo;s pages &amp;#8212; alt text</p>")
+    assert "&rsquo;" not in out and "&#8212;" not in out and "&amp;" not in out
+    assert "web’s" in out and "—" in out
+
+
+def test_a_stub_block_is_not_offered_as_a_moment():
+    # A body that survives stripping as "…" renders a card with a link and nothing to read.
+    sql, _ = build_query(q="anything")
+    assert "length(btrim(text)) >= 30" in sql
+    assert "show_notes" in sql, "chapter pointers are legitimately short and must be spared"

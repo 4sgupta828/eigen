@@ -216,6 +216,11 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         # this an engineering-blog card would open with "Stripe — Jane Doe, 2026-09-01" instead of
         # the engineering itself.
         "text NOT LIKE '%(company engineering blog — a self-reported%'",
+        # A stub is not a moment. Feeds truncate, and a body that survives stripping as "…" or a
+        # half-sentence renders a card with a headline, a link and nothing to read. Chapter pointers
+        # are legitimately short ("[00:01:02] Intro"), and already have their own '[' format guard,
+        # so the minimum applies only to prose sources.
+        "(source_key IN ('show_notes','youtube_chapters') OR length(btrim(text)) >= 30)",
         "text NOT LIKE '%Chapter pointers written by the publisher%'",
     ]
     params: list = [list(VOICE_SOURCE_KEYS)]
