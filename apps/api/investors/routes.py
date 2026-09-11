@@ -253,6 +253,19 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
         sector_of = await _sectors_of_companies(
             store, [c2["id"] for r in rows for c2 in (hydrated.get(r["id"], {}).get("portfolio_sample") or [])])
 
+        # Round behaviour, computed once per request from edges we already hold. Answers the two
+        # questions the scenarios in the spec exposed as unanswerable: who comes in AFTER your
+        # backers, and — for a founder with no backers at all — who writes first cheques.
+        follows = {}
+        firsts = {}
+        try:
+            if co_investors:
+                follows = await store.follows_on_from(co_investors)
+            else:
+                firsts = await store.leads_first_rounds()
+        except Exception:      # a behaviour query that fails costs the two axes, never the search
+            follows, firsts = {}, {}
+
         ranked = []
         for x in rows:
             firm = hydrated.get(x["id"], {})
@@ -262,6 +275,7 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
                 # "has money and raised recently" is true of thousands of firms; ranking on it produces an
                 # alphabetical list wearing the costume of a recommendation.
                 continue
+            x["behaviour"] = {"follows_on": follows.get(x["id"], 0), "first_round": firsts.get(x["id"], 0)}
             conflicts = advise_mod.conflicts_for(firm.get("portfolio_sample"), sectors, sector_of)
             # Anti-signals move the RANK. A firm that already funds a direct competitor was previously
             # ranked exactly where its positive signals put it, with a warning attached — top of the

@@ -762,6 +762,55 @@ class InvestorStore:
                 "FROM iv_edge WHERE firm_id = $1 ORDER BY event_date DESC NULLS LAST LIMIT 400", firm_id)]
         return out
 
+    # ---- Round behaviour, from edges we already hold ------------------------------------------
+    # Two questions a founder actually asks, both answerable from iv_edge with no new ingestion and
+    # no model spend. Neither was ever queried; see docs/specs/fundraise-read.md §11.
+
+    async def follows_on_from(self, firm_ids: list[str], *, limit: int = 400) -> dict[str, int]:
+        """Firms that have historically come in AFTER these ones, in the same company.
+
+        "Who leads the A after a seed led by Amplify" is the question at every stage above pre-seed,
+        and it is a join: the same company_id, a later event_date, a different firm. Returns
+        {firm_id: how many times}, so a firm that has followed these backers four times outranks one
+        that did it once.
+        """
+        if not firm_ids:
+            return {}
+        await self.ensure_schema()
+        pool = await self.pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT b.firm_id AS fid, count(DISTINCT a.company_id) AS n
+                     FROM iv_edge a
+                     JOIN iv_edge b ON b.company_id = a.company_id
+                                   AND b.firm_id <> a.firm_id
+                                   AND b.event_date > a.event_date
+                    WHERE a.firm_id = ANY($1)
+                      AND a.event_date IS NOT NULL AND b.event_date IS NOT NULL
+                 GROUP BY 1 ORDER BY 2 DESC LIMIT $2""", list(firm_ids), limit)
+        return {r["fid"]: int(r["n"]) for r in rows}
+
+    async def leads_first_rounds(self, *, limit: int = 400) -> dict[str, int]:
+        """Firms that appear in a company's FIRST recorded round.
+
+        The co-investor signal — the strongest one we hold — is structurally unavailable to a founder
+        who has never raised, which is exactly the founder this feature is for (§10 scenario D).
+        Backing companies at their first institutional round is the closest groundable substitute:
+        it is a behaviour we can see rather than a claim about appetite.
+        """
+        await self.ensure_schema()
+        pool = await self.pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """WITH firsts AS (
+                       SELECT company_id, min(event_date) AS d
+                         FROM iv_edge WHERE event_date IS NOT NULL GROUP BY 1)
+                   SELECT e.firm_id AS fid, count(*) AS n
+                     FROM iv_edge e
+                     JOIN firsts f ON f.company_id = e.company_id AND e.event_date = f.d
+                 GROUP BY 1 ORDER BY 2 DESC LIMIT $1""", limit)
+        return {r["fid"]: int(r["n"]) for r in rows}
+
     # ---- SearchMaps: a saved plan + its result set ---------------------------------------------
     # The tables have existed since the schema was first written and nothing ever used them. A map is
     # what a founder actually wants to keep: the reading of their company, the plan, and the list as

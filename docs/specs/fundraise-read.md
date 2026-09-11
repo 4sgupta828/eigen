@@ -292,6 +292,33 @@ Round progression and first-round behaviour deserve emphasis: **both are computa
 `iv_edge` rows we already hold.** They need no new ingestion and no model spend — only a query we
 have never written. That makes them the highest-value additions on this list.
 
+### BUILT, 2026-09-11 — the two free ones
+
+`store.follows_on_from(firm_ids)` and `store.leads_first_rounds()`, scored as the axes `follows_on`
+(0.65) and `first_round` (0.55) — below a direct sector match, above geography: that a firm has
+repeatedly followed your backers is a better reason to email them than sharing a country.
+
+Re-running the scenarios that failed:
+
+| | before | after |
+|---|---|---|
+| **B.** has followed Amplify 4× | 0.877, indistinguishable in kind from a sector match | **1.083**, axes `[sector, follows_on]` — *"has come in after your backers 4 times"* |
+| **B.** sector only | 0.460 | 0.460 |
+| **D.** writes first cheques (22×) | 0.455 — tied | **1.003**, axes `[sector, first_round]` |
+| **D.** sector only | 0.455 | 0.455 |
+
+Three behaviours the implementation had to get right, each now a test:
+
+- **`first_round` is suppressed the moment a founder has backers.** For someone with a cap table,
+  "they write first cheques" is noise beside "they have followed yours"; offering both would pad the
+  reasoning with a line that does not bear on their round.
+- **More follows rank higher**, saturating — the fourth time a firm followed your backers means less
+  than the first, but it still means more than once.
+- **A dormant fund does not out-rank a live one on behaviour.** Round behaviour is history, and a
+  fund that stopped writing cheques in 2016 has plenty of it; the recency multiplier still governs.
+
+A failed behaviour query costs those two axes and never the search.
+
 ## 12. Showing the reasoning, not just the rank
 
 A number is not an explanation, and this product's entire claim is that its answers can be checked.

@@ -119,3 +119,55 @@ def test_a_sensible_cheque_is_not_penalised():
     r = row(_num={"latest_fund_year": 2026, "min_investment": 1_000_000})
     penalty, _ = penalties_for(r, conflicts=[], raise_target=3_000_000)
     assert penalty == 0.0
+
+
+# ── round behaviour: the two questions the spec's scenarios exposed (§10, §11) ─────────────────
+def behav(fid="f1", follows=0, firsts=0, **facets):
+    r = row(_id=fid, **facets)
+    r["behaviour"] = {"follows_on": follows, "first_round": firsts}
+    return r
+
+
+def test_a_firm_that_follows_your_backers_outranks_a_bare_sector_match():
+    """'Who leads the A after a seed led by Amplify' is the question at every stage above pre-seed,
+    and it was unanswerable: both firms scored on sector alone. It is a join over iv_edge rows we
+    already hold — same company, later date, different firm."""
+    follower = behav(follows=4, observed_sector=["devtools"],
+                     _num={"latest_fund_year": 2026}, _den={"observed_sector": 30})
+    plain    = behav(observed_sector=["devtools"],
+                     _num={"latest_fund_year": 2026}, _den={"observed_sector": 30})
+    ask = dict(sectors=["devtools"], co_investors=["amplify"])
+    assert fit(follower, **ask) > fit(plain, **ask)
+
+
+def test_following_more_often_ranks_higher():
+    a = behav(follows=6, observed_sector=["devtools"], _num={"latest_fund_year": 2026})
+    b = behav(follows=1, observed_sector=["devtools"], _num={"latest_fund_year": 2026})
+    ask = dict(sectors=["devtools"], co_investors=["amplify"])
+    assert fit(a, **ask) > fit(b, **ask)
+
+
+def test_a_founder_with_no_cap_table_gets_first_round_behaviour_instead():
+    """co_investor is structurally unavailable to anyone who has never raised — which is the founder
+    this feature is for. Writing first institutional cheques is the closest thing we can SEE."""
+    first = behav(firsts=22, observed_sector=["enterprise_saas"],
+                  _num={"latest_fund_year": 2026}, _den={"observed_sector": 50})
+    plain = behav(observed_sector=["enterprise_saas"],
+                  _num={"latest_fund_year": 2026}, _den={"observed_sector": 50})
+    ask = dict(sectors=["enterprise_saas"], co_investors=[])
+    assert fit(first, **ask) > fit(plain, **ask)
+
+
+def test_first_round_behaviour_is_suppressed_once_there_are_backers_to_follow():
+    # For a founder with a cap table, "they write first cheques" is noise beside "they followed yours".
+    r = behav(firsts=22, observed_sector=["devtools"], _num={"latest_fund_year": 2026})
+    why, _ = reasons_for(r, stage="", sectors=["devtools"], geo=[], co_investors=["amplify"], now_year=NOW)
+    assert "first_round" not in axes_with_evidence(why)
+
+
+def test_behaviour_axes_still_lose_to_a_dormant_multiplier():
+    # Round behaviour is history. A fund that stopped writing cheques in 2016 has plenty of it.
+    live   = behav(observed_sector=["devtools"], _num={"latest_fund_year": 2026})
+    zombie = behav(follows=8, observed_sector=["devtools"], _num={"latest_fund_year": 2016})
+    ask = dict(sectors=["devtools"], co_investors=["amplify"])
+    assert fit(live, **ask) > fit(zombie, **ask)

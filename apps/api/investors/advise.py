@@ -52,6 +52,11 @@ WEIGHTS = {
     "stage_stated": 0.35,     # they say so; a third of what we can see them do
     "geo": 0.5,
     "co_investor": 0.7,
+    # Behaviour we can see in the edges, about rounds shaped like this one. Weighted below a direct
+    # sector match and above geography: that a firm has repeatedly followed your backers, or
+    # repeatedly written first cheques, is a stronger reason to email them than sharing a country.
+    "follows_on": 0.65,
+    "first_round": 0.55,
     "cheque": 0.4,
 }
 
@@ -221,6 +226,21 @@ def reasons_for(row: dict, *, stage: str, sectors: list[str], geo: list[str],
         gs = [x for x in geo if x in (facets.get("geo_focus") or [])]
         if gs:
             add("geo", "stated", "says they fund in " + ", ".join(x.upper() for x in gs[:2]), STATED_STRENGTH)
+
+    # Round behaviour. `follows` and `firsts` are counts from iv_edge, handed in by the route —
+    # reasons_for stays pure and testable, and the SQL stays in the store.
+    n_follow = int((row.get("behaviour") or {}).get("follows_on") or 0)
+    if n_follow:
+        add("follows_on", "observed",
+            f"has come in after your backers {n_follow} time{'' if n_follow == 1 else 's'}",
+            _saturating(n_follow, 0.8))
+    n_first = int((row.get("behaviour") or {}).get("first_round") or 0)
+    if n_first and not co_investors:
+        # Only offered when there are no backers to follow: for a founder with a cap table, "they
+        # write first cheques" is noise beside "they have followed yours".
+        add("first_round", "observed",
+            f"has written the first institutional cheque {n_first} time{'' if n_first == 1 else 's'}",
+            _saturating(n_first, 0.25))
 
     co = [c for c in co_investors if c in (facets.get("co_investor") or [])]
     if co:
