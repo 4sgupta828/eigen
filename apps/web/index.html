@@ -282,6 +282,10 @@
   .vo-kicker{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;font-family:var(--mono);
     font-size:.62rem;letter-spacing:.05em;color:var(--dim);text-transform:uppercase;}
   .vo-kind{color:var(--vo-accent);border:1px solid currentColor;border-radius:999px;padding:.1rem .48rem;font-size:.56rem;}
+  /* Self-reported voices read in the GAP colour, the same one the rest of the product uses for
+     "announced, not established" — a company describing its own engineering is exactly that. */
+  .vo-kind.vo-selfrep{color:var(--gap);}
+  .vo-selfrep-tag{color:var(--gap);}
   .vo-dot{opacity:.45;}
   .vo-title{margin:.42rem 0 .3rem;font-size:1.01rem;line-height:1.38;font-weight:650;letter-spacing:-.005em;}
   .vo-sub{font-size:.76rem;line-height:1.45;color:var(--dim);}
@@ -2265,6 +2269,7 @@
     <button type="button" class="vo-chip" data-kind="podcast" aria-pressed="false">🎧 Podcasts</button>
     <button type="button" class="vo-chip" data-kind="video" aria-pressed="false">▶ Videos</button>
     <button type="button" class="vo-chip" data-kind="essay" aria-pressed="false">✎ Essays</button>
+    <button type="button" class="vo-chip" data-kind="blog" aria-pressed="false" title="A company's own engineering writing — self-reported, and labelled as such">⚙ Eng blogs</button>
     <button type="button" class="vo-chip" id="vo-recent" style="margin-left:auto" title="Searches you have run before">🕘 Recent</button>
     <button type="button" class="vo-chip" id="vo-share" title="Create a permanent link to exactly these results">🔗 Share</button>
     <button type="button" class="vo-chip" id="vo-saved" aria-pressed="false">★ Kept</button>
@@ -8983,6 +8988,7 @@ async function openShare(token){
     "video":   {order: "watched", label: "▶ most watched", why: "Ordered by the view count YouTube publishes."},
     "podcast": {order: "guest",   label: "🎙 interviews",   why: "Episodes with a named guest, rather than the weekly news round-ups. Podcast feeds publish no view counts."},
     "essay":   {order: "",        label: "",               why: ""},
+    "blog":    {order: "",        label: "",               why: ""},
   };
   function syncSort(){
     const b = document.getElementById("vo-sort");
@@ -9011,8 +9017,14 @@ async function openShare(token){
         + '">' + art + '<span class="vo-play">▶</span></button>'
       : '<span class="vo-art">' + art + "</span>";
 
-    const label = m.kind === "video" ? "video" : (m.kind === "podcast" ? "podcast" : "essay");
-    const kicker = ['<span class="vo-kind">' + label + "</span>"];
+    const label = m.kind === "video" ? "video"
+                : m.kind === "podcast" ? "podcast"
+                : m.kind === "blog" ? "engineering blog" : "essay";
+    const kicker = ['<span class="vo-kind' + (m.kind === "blog" ? " vo-selfrep" : "") + '">' + label + "</span>"];
+    // A company writing about its own engineering is a real technical account AND an interested
+    // party. The tier already grades it below independent analysis; this says so on the card, so a
+    // reader never mistakes it for the founder essay sitting next to it.
+    if(m.kind === "blog") kicker.push('<span class="vo-dot">·</span><span class="vo-selfrep-tag">self-reported</span>');
     if(m.show) kicker.push("<span>" + esc(m.show) + "</span>");
     if(m.published) kicker.push('<span class="vo-dot">·</span><span>' + esc(shortDate(m.published)) + "</span>");
     if(isPointer && m.t_start) kicker.push('<span class="vo-dot">·</span><span class="vo-stamp">' + stamp(m.t_start) + "</span>");

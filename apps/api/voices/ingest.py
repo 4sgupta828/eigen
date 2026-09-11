@@ -24,7 +24,10 @@ from .bind import bind_guest, facet_patch
 
 log = logging.getLogger(__name__)
 
-VOICE_CONNECTORS = ("founder_essay", "show_notes", "youtube_chapters")
+VOICE_CONNECTORS = ("founder_essay", "show_notes", "youtube_chapters", "eng_blog")
+# eng_blog is here because a company's own engineering writing is first-person startup content
+# too — but it is SELF-REPORTED, so it carries source_kind="corp_eng" (technical_signal tier,
+# strictly below an independent essay) and gets its own card kind rather than being filed as one.
 
 
 async def ingest_voices(manifest, pg_source, *, tenant_id: str, connectors=VOICE_CONNECTORS,

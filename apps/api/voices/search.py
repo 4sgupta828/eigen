@@ -23,7 +23,7 @@ from eigen_vertical_tech.show_notes_doc import deep_link
 # first-person practitioner talk but not founders and investors on building companies. Their
 # fragments — "[00:28:20.11] And these..." with no show or speaker on the card — diluted every
 # result. They stay in the corpus for research answers; they are simply not this mode's material.
-VOICE_SOURCE_KEYS = ("founder_essay", "show_notes", "youtube_chapters", "expert_feed")
+VOICE_SOURCE_KEYS = ("founder_essay", "show_notes", "youtube_chapters", "expert_feed", "eng_blog")
 
 # Words that carry no signal in a question about startup lessons. Dropping them matters because the
 # query is OR-ed: left in, "how" and "what" would match half the corpus and drown the real terms.
@@ -102,6 +102,12 @@ def kind_of(source_kind: str, source_key: str) -> str:
         return "podcast"
     if source_key == "podcast":
         return "transcript"
+    # A company engineering blog is the same ACT as a founder essay — someone who built the thing
+    # writing about it — but not the same authority: it is the company describing itself, which the
+    # tier already grades below independent analysis. Falling through to "essay" would have filed it
+    # beside Fred Wilson and quietly erased that difference, so it gets its own kind.
+    if source_key == "eng_blog" or (source_kind or "").lower() == "corp_eng":
+        return "blog"
     return "essay"
 
 
@@ -203,6 +209,10 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
         # builder itself wrote, which is the one thing every byline reliably contains.
         "text NOT LIKE '%(expert analysis / opinion%'",
         "text NOT LIKE '%(press report — reported, not audited%'",
+        # eng_blog_doc writes the same shape of byline, carrying its own register phrase. Without
+        # this an engineering-blog card would open with "Stripe — Jane Doe, 2026-09-01" instead of
+        # the engineering itself.
+        "text NOT LIKE '%(company engineering blog — a self-reported%'",
         "text NOT LIKE '%Chapter pointers written by the publisher%'",
     ]
     params: list = [list(VOICE_SOURCE_KEYS)]
@@ -211,7 +221,8 @@ def build_query(*, q: str, kinds: tuple[str, ...] = (), company_id: str = "", sp
     if kinds:
         by_kind = {"podcast": ["show_notes"], "video": ["youtube_chapters"],
                    "chapter": ["show_notes", "youtube_chapters"],      # kept: "both kinds of moment"
-                   "essay": ["founder_essay", "expert_feed"]}
+                   "essay": ["founder_essay", "expert_feed"],
+                   "blog": ["eng_blog"]}
         keys: list[str] = []
         for k in kinds:
             keys += by_kind.get(k, [])
