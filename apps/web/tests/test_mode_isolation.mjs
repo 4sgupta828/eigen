@@ -66,16 +66,16 @@ test("the Q&A placeholder is restated unconditionally", () => {
     "the Q&A branch must always restate its own placeholder");
 });
 
-test("the staleness banner cannot take the console copy down with it", () => {
-  // `const BUILD` is declared far below the loadConfig() call site, so calling this synchronously
-  // threw inside BUILD's temporal dead zone on the cached-config path — and the silent
-  // `catch(e){ /* config unavailable */ }` meant repeat visitors lost the vertical's placeholder,
-  // its examples and its disclaimers while a first visit looked perfect.
-  const i = SRC.indexOf("announceStaleBuild(c.build)");
-  assert.ok(i > 0, "the check should still run on the config the app already fetches");
-  const around = SRC.slice(i - 200, i + 120);
-  assert.match(around, /setTimeout/, "must be deferred past BUILD's initialisation");
-  assert.match(around, /try\{/, "and guarded, so it can never abort config loading");
+test("the console copy cannot come out empty", () => {
+  // loadConfig ends in `catch(e){ /* config unavailable */ }`, which once swallowed a ReferenceError
+  // and skipped every line after it — repeat visitors silently lost the vertical's placeholder, its
+  // example questions and its disclaimers while a first visit looked perfect. The banner that caused
+  // that has been removed, but the silent catch remains, so the fallback is what guarantees the
+  // reader never faces a blank intake box.
+  assert.match(SRC, /BASE_PLACEHOLDER = con\.placeholder \|\| "[^"]+"/,
+    "BASE_PLACEHOLDER must fall back to a real string, never to empty");
+  assert.match(SRC, /function pickPlaceholder\(\)\{[\s\S]{0,200}BASE_PLACEHOLDER/,
+    "pickPlaceholder must fall back to it when the vertical ships no examples");
 });
 
 test("the shell carries no medical-vertical vocabulary", () => {

@@ -1,8 +1,12 @@
 // Run: node --test apps/web/tests/test_stale_build.mjs
 //
-// A tab open across a deploy runs the JavaScript it started with. The server sends no-store, so a reload
-// always gets the new page — but an SPA never reloads itself, and nothing on screen said so. That cost a
-// real round of "it's deployed" / "I don't see it", with both statements true.
+// The page still stamps the build it was served with, but no longer nags about it. The banner
+// ("A newer version is available — Reload") was removed at the owner's request: it interrupted the
+// reader to report our deploy schedule, which is our problem, not theirs.
+//
+// The stamp itself stays. It is how anyone can tell which build a tab is running — type EIGEN_BUILD
+// in the console — which is the diagnostic the banner was wrapped around, and the part that actually
+// settles an "it's deployed" / "I don't see it" disagreement.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -13,31 +17,21 @@ test("the page carries a build stamp the server fills in", () => {
   assert.match(SRC, /const BUILD = "__BUILD__"/);
 });
 
-test("it compares its own build against the server's", () => {
-  const i = SRC.indexOf("function announceStaleBuild");
-  assert.ok(i > 0, "no staleness check");
-  const body = SRC.slice(i, i + 700);
-  assert.match(body, /serverBuild === BUILD/, "must compare, not just read");
-  assert.match(body, /location\.reload/, "must offer the one action that fixes it");
-});
-
-test("the check runs on the config the app already fetches", () => {
-  assert.match(SRC, /announceStaleBuild\(c\.build\)/, "no extra request should be needed");
-});
-
-test("an unstamped page (local dev) says nothing", () => {
-  const i = SRC.indexOf("function announceStaleBuild");
-  assert.match(SRC.slice(i, i + 400), /BUILD === UNSTAMPED/,
-    "local dev serves the placeholder and must not nag");
+test("the stamp is reachable from the console", () => {
+  assert.match(SRC, /window\.EIGEN_BUILD = BUILD/,
+    "without this there is no way to ask a tab which build it is running");
 });
 
 test("the placeholder is never written as a literal outside its one declaration", () => {
-  // The server replaces EVERY occurrence when it stamps the build. A second literal is silently rewritten
-  // into whatever the build is — which is how `BUILD === "__BUILD__"` shipped as an always-true test and
-  // the banner never appeared once.
+  // The server replaces EVERY occurrence when it stamps the build. A second literal is silently
+  // rewritten into whatever the build is — which is how `BUILD === "__BUILD__"` once shipped as an
+  // always-true test and the check never fired.
   const hits = SRC.match(/__BUILD__/g) || [];
   assert.equal(hits.length, 1, `the placeholder appears ${hits.length} times; only the declaration may use it`);
-  assert.match(SRC, /const BUILD = "__BUILD__"/);
-  assert.match(SRC, /const UNSTAMPED = "__" \+ "BUILD" \+ "__"/,
-    "the comparison must build the placeholder at runtime so substitution cannot reach it");
+});
+
+test("the nagging banner stays gone", () => {
+  for(const dead of ["announceStaleBuild", "stalebuild", "A newer version of Eigen"]){
+    assert.ok(!SRC.includes(dead), `"${dead}" is back`);
+  }
 });
