@@ -2142,7 +2142,7 @@
   </div>
   <form id="ask">
     <div class="field">
-      <textarea id="q" rows="1" placeholder="e.g. What treatments are being studied for type 2 diabetes?"
+      <textarea id="q" rows="1" placeholder="Ask a research question…"
                 aria-label="Research question"></textarea>
       <button class="attach" id="camera" type="button" hidden aria-label="Take a photo">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -2650,7 +2650,14 @@ async function loadConfig(){
       const ibtn = $("#investorsTab"); if(ibtn){ ibtn.hidden = !INVESTORS_ENABLED; ibtn.dataset.mode = "investors"; }
       wireModeSwitch($("#modeswitch"));
     }
-    announceStaleBuild(c.build);
+    // DEFERRED, and guarded. `const BUILD` is declared ~400 lines below the loadConfig() call site,
+    // so on the CACHED-config path — which has no `await` to yield on — this ran inside BUILD's
+    // temporal dead zone and threw "Cannot access 'BUILD' before initialization". The outer
+    // `catch(e){ /* config unavailable */ }` swallowed it, and every line after this one was skipped:
+    // repeat visitors silently lost the vertical's placeholder, its example questions and the
+    // disclaimers, while a first visit (which awaits /config, letting the script finish evaluating)
+    // looked perfect. A staleness banner must never be able to take the console's copy down with it.
+    setTimeout(() => { try{ announceStaleBuild(c.build); }catch(e){} }, 0);
     VISION_ENABLED = !!c.vision_enabled;
     if(EFFORT_ENABLED){
       $("#effort").hidden = false;
@@ -4690,8 +4697,18 @@ function setMode(mode, opts){
           || (mode === "deepdive" && DEEPDIVE_ENABLED)
           || (mode === "investors" && INVESTORS_ENABLED)
           || ((mode === "startups" || mode === "guided") && STARTUPS_ENABLED)) ? mode : "qa";
+  // Capture the mode we are LEAVING before overwriting it. The deepdive branch used to guard its
+  // own clear with `APP_MODE !== "deepdive"`, which could never be true because APP_MODE was already
+  // reassigned by then — so nothing on this page ever cleared the box and every mode inherited the
+  // previous mode's question.
+  const PREV_MODE = APP_MODE;
   APP_MODE = mode;
   GUIDED_REFINED = false;   // any mode change clears the stale "skip refine" flag (routeTriage re-sets it)
+  // Another mode's question is not this mode's question. Arriving in Deep Dive with "AI infrastructure"
+  // still in the box invites Go on a query that means nothing here. Cleared BEFORE the per-mode
+  // branches so a mode that legitimately prefills (panel's opts.prefill) and callers that fill the box
+  // after switching (routeTriage's hand-off) both still work.
+  if(PREV_MODE !== mode){ q.value = ""; if(typeof autoGrow === "function") autoGrow(); }
   document.body.dataset.mode = mode;
   if(mode !== "triage"){ document.body.classList.remove("triage-live");   // undock when leaving guided mode
     if(typeof voiceOff === "function") voiceOff(); }                      // leaving guided mode ends the voice loop
@@ -4707,6 +4724,7 @@ function setMode(mode, opts){
   if(mode === "panel"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
     $("#heading").textContent = "What should the panel weigh in on?";
+    q.setAttribute("placeholder", pickPanelCase());
     if(location.hash !== "#panel" && location.hash.indexOf("#p/") !== 0)
       history.pushState(null, "", "#panel");
     // resume an in-progress conference (toggling modes preserves it, like Q&A preserves its thread)
@@ -4738,10 +4756,6 @@ function setMode(mode, opts){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
     $("#heading").textContent = "Which company should we read end to end?";
     q.setAttribute("placeholder", "a company name or its domain \u2014 e.g. Anthropic, or anthropic.com");
-    // Another mode's question is not this mode's question. Arriving here with "AI infrastructure"
-    // still in the box invites the reader to press Go on a query that means nothing here; the dive
-    // itself then writes the company's own name into it.
-    if(APP_MODE !== "deepdive") q.value = "";
     if(location.hash.indexOf("#deepdive") !== 0) history.pushState(null, "", "#deepdive");
     if(window.DD) DD.enter(!!opts.fresh);
     q.focus();
@@ -4755,13 +4769,16 @@ function setMode(mode, opts){
   } else if(mode === "triage"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
     $("#heading").textContent = "Let's get to a crisp question";
+    q.setAttribute("placeholder", "Tell me what you're trying to figure out\u2026");
     if(location.hash !== "#triage") history.pushState(null, "", "#triage");
     renderTriage(!!opts.fresh);
     q.focus();
   } else {
     $("#heading").textContent = HEADING_QA;
     document.body.classList.toggle("chatting", THREAD.turns.length > 0);   // re-dock composer if a thread is live
-    if(!THREAD.turns.length) q.setAttribute("placeholder", pickPlaceholder());
+    // Always restate the Q&A placeholder. Guarding on an empty thread meant switching back from
+    // Startups mid-conversation left the startup-search example sitting in the box.
+    q.setAttribute("placeholder", THREAD.turns.length ? "Ask a follow-up\u2026" : pickPlaceholder());
     syncComposerPad();
     clearModeHash();
     q.focus();
@@ -6054,7 +6071,7 @@ async function ppRender(){
     if(e.target.classList.contains("wtag-x")) return;
     ppExpand(h.closest(".ppcard"));
   }));
-  // COVERAGE PULSE: movement across EVERY covered condition (cached board, self-refreshing)
+  // COVERAGE PULSE: movement across EVERY covered topic (cached board, self-refreshing)
   (async ()=>{
     const cb = $("#ppcoverage"); if(!cb) return;
     try{
@@ -6079,7 +6096,7 @@ async function ppRender(){
           ${conds.length} covered conditions · ${PULSE_DAYS}d
           <span class="ppsub">${b.refreshing?"refreshing…":asOf?("as of "+esc(asOf)):""}</span></div>`
         + (movers.length ? movers.map(row).join("") : `<div class="pitem-empty">Quiet window across the whole coverage map.</div>`)
-        + (quiet.length ? `<details class="ppcov-more"><summary>${quiet.length} quiet condition${quiet.length>1?"s":""}</summary>${quiet.map(row).join("")}</details>` : "");
+        + (quiet.length ? `<details class="ppcov-more"><summary>${quiet.length} quiet topic${quiet.length>1?"s":""}</summary>${quiet.map(row).join("")}</details>` : "");
       cb.querySelectorAll(".ppcov").forEach(h=>h.addEventListener("click", async ()=>{
         const body = h.nextElementSibling, open = h.querySelector(".prow-open");
         if(!body.hidden){ body.hidden = true; open.textContent = "▸"; return; }
@@ -6265,13 +6282,15 @@ const MISSION_HTML = (() => { const m = document.getElementById("mission"); retu
 function newConversation(){
   // a question in flight is cancelled first — otherwise its answer lands in the fresh thread
   if(typeof CURRENT_ABORT !== "undefined" && CURRENT_ABORT && typeof cancelResearch === "function"){ try{ cancelResearch(); }catch(e){} }
-  THREAD = {session_id:null, turns:[]};
   GUIDED_REFINED = false;
-  document.body.classList.remove("chatting"); out.style.paddingBottom = "";   // back to landing layout
-  out.innerHTML = MISSION_HTML;                                                // the landing again, not an empty pane
   q.value=""; q.style.height="auto"; if(typeof syncComposerPad === "function") syncComposerPad();
-  if(APP_MODE === "panel"){ closePanel(); return; }   // New chat from panel → back to Q&A landing
-  if(APP_MODE === "triage"){ TRIAGE = {transcript: [], busy: false, refined: "", register: "", urgent: false}; setMode("qa"); return; }
+
+  // "New chat" resets THE MODE YOU ARE IN, and leaves you in it. This used to wipe THREAD and
+  // repaint the Q&A landing BEFORE dispatching per-mode, so starting a fresh startup search also
+  // silently discarded an unrelated Q&A conversation — and New chat from Panel or Triage dumped
+  // you back into Q&A rather than giving you a fresh panel or a fresh intake.
+  if(APP_MODE === "panel"){ panelNewCase(); return; }          // fresh panel landing, still in panel
+  if(APP_MODE === "triage"){ renderTriage(true); q.focus(); return; }   // fresh intake, still in triage
   if(APP_MODE === "startups"){                          // a fresh Startup search: results, rail, map and notes cleared
     if(window.SU && SU.reset) SU.reset();
     try{ history.replaceState(null, "", "#startups"); }catch(e){}
@@ -6287,6 +6306,21 @@ function newConversation(){
     try{ history.replaceState(null, "", "#guided"); }catch(e){}
     window.scrollTo({top:0}); q.focus(); return;
   }
+  if(APP_MODE === "deepdive"){                          // a fresh dive, still in Deep Dive
+    if(window.DD) DD.enter(true);
+    try{ history.replaceState(null, "", "#deepdive"); }catch(e){}
+    window.scrollTo({top:0}); q.focus(); return;
+  }
+  if(APP_MODE === "voices"){                            // a fresh Voices search, still in Voices
+    if(window.VO) VO.enter(true);
+    try{ history.replaceState(null, "", "#voices"); }catch(e){}
+    window.scrollTo({top:0}); q.focus(); return;
+  }
+
+  // Q&A — and only Q&A — clears the thread and returns to the landing.
+  THREAD = {session_id:null, turns:[]};
+  document.body.classList.remove("chatting"); out.style.paddingBottom = "";   // back to landing layout
+  out.innerHTML = MISSION_HTML;                                                // the landing again, not an empty pane
   try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
   q.setAttribute("placeholder", pickPlaceholder());  // fresh question each New chat
   window.scrollTo({top:0}); q.focus();
