@@ -185,20 +185,14 @@
   .vsQ{font-size:.93rem;}
 
   .pull{font-family:var(--display);font-size:clamp(1.25rem,2.5vw,1.6rem);line-height:1.32;
-    border-left:3px solid var(--accent);padding-left:1rem;margin:0 0 1.3rem;max-width:32rem;}
-  .aboutGrid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:1.8rem;align-items:start;}
+    border-left:3px solid var(--accent);padding-left:1rem;margin:0;max-width:32rem;}
+  .aboutGrid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:1.8rem;align-items:start;}
   .facts{list-style:none;margin:0;padding:0;}
   .facts li{padding:.5rem 0;border-top:1px solid var(--rule);color:var(--muted);font-size:.93rem;}
   .facts li:first-child{border-top:0;}
   .facts b{color:var(--ink);font-weight:600;}
-  .bio{background:var(--paper);border:1px solid var(--rule);border-radius:10px;padding:1.15rem;}
-  .bioName{font-family:var(--display);font-size:1.3rem;font-weight:600;margin:0 0 .1rem;}
-  .bioRole{color:var(--muted);font-size:.85rem;margin:0 0 .8rem;}
-  .bioText{color:var(--muted);font-size:.92rem;margin:0 0 .85rem;}
-  .past{display:flex;flex-wrap:wrap;gap:.3rem;}
-  .past span{font-family:var(--mono);font-size:.67rem;color:var(--muted);
-    border:1px solid var(--rule);border-radius:4px;padding:.1rem .4rem;}
-
+  /* the link through to /about needs a thumb-sized target, not just its 16px text box */
+  .moreLink{display:inline-flex;align-items:center;min-height:40px;font-weight:500;}
   .close{text-align:center;}
   .close .lede{margin-inline:auto;}
   .close .heroActs{justify-content:center;}
@@ -257,7 +251,7 @@ const SITE = {
     nav: [
       { label: "The ledger", href: "#ledger" },
       { label: "Sources", href: "#sources" },
-      { label: "About", href: "#about" },
+      { label: "About", href: "/about" },
     ],
     markViewBox: "0 0 220 132",
     markSvg: `
@@ -381,12 +375,7 @@ const SITE = {
       "<b>Primary sources only.</b> No answer is assembled from a summary of a summary.",
       "<b>Explicit about the unknown.</b> A gap is a finding, not a failure.",
     ],
-    bio: {
-      name: "Sandeep Gupta",
-      role: "Founder · San Francisco",
-      text: "Twenty years building large-scale systems — most recently leading machine-learning infrastructure at Tubi, and before that engineering roles at Argo AI, Netflix and Microsoft. Previously founded GraphMind.",
-      past: ["Tubi", "Argo AI", "Netflix", "Microsoft", "IIT Kanpur"],
-    },
+    more: { label: "About us and who builds it", href: "/about" },
   },
 
   close: {
@@ -476,19 +465,11 @@ const SITE = {
     </div></section>`; };
 
   const aboutHtml = () => { const A = SITE.about; if(!A) return "";
-    const b = A.bio;
     return `<section id="about"><div class="wrap"><h2>${h(A.title)}</h2>
       <div class="aboutGrid">
-        <div>
-          <p class="pull">${h(A.pull)}</p>
-          <ul class="facts">${A.facts.map(f=>`<li>${f}</li>`).join("")}</ul>
-        </div>
-        ${b?`<div class="bio">
-          <p class="bioName">${h(b.name)}</p>
-          <p class="bioRole">${h(b.role)}</p>
-          <p class="bioText">${h(b.text)}</p>
-          <div class="past">${b.past.map(p=>`<span>${h(p)}</span>`).join("")}</div>
-        </div>`:""}
+        <p class="pull">${h(A.pull)}</p>
+        <div><ul class="facts">${A.facts.map(f=>`<li>${f}</li>`).join("")}</ul>
+        ${A.more?`<p style="margin:.5rem 0 0"><a class="moreLink" href="${h(A.more.href)}">${h(A.more.label)}</a></p>`:""}</div>
       </div></div></section>`; };
 
   const closeHtml = () => { const C = SITE.close; if(!C) return "";
@@ -503,7 +484,7 @@ const SITE = {
   el("foot").innerHTML = `
     <span>&copy; <span id="yr"></span> ${h(B.name)}</span>
     <span class="sp"><a href="${h(B.appHref)}">Platform</a></span>
-    <span><a href="#about">About</a></span>
+    <span><a href="/about">About</a></span>
     ${B.contact?`<span><a href="mailto:${h(B.contact)}">Contact</a></span>`:""}`;
   el("yr").textContent = new Date().getFullYear();
 

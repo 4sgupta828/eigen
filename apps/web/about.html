@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>About Eigen Research</title>
+<meta name="description" content="Who builds Eigen Research, and why: grounded deep-tech research that separates what a company has announced from what it has proven." />
+<meta property="og:title" content="About Eigen Research" />
+<meta property="og:description" content="Who builds Eigen Research, and why." />
+<meta property="og:type" content="website" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..600&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script>
+/* Shared with landing.html and the platform shell under the same "eigen-theme" key: same three
+   values, same default (editorial for a first-time visitor), applied before first paint so moving
+   between /, /about and /app never changes appearance. Keep in sync with those two files. */
+(function(){
+  try{
+    var saved = localStorage.getItem("eigen-theme");
+    if(saved === "dark" || saved === "editorial") document.documentElement.setAttribute("data-theme", saved);
+    else if(saved !== "light") document.documentElement.setAttribute("data-theme", "editorial");
+  }catch(e){ document.documentElement.setAttribute("data-theme", "editorial"); }
+})();
+</script>
+
+<style>
+  /* Tokens are identical to landing.html and mapped from the platform shell. Keep in sync. */
+  :root{
+    color-scheme:light;
+    --bg:#EEF3F8; --paper:#FFFFFF; --sunk:#F4F8FC; --ink:#132430; --muted:#5A6B7B;
+    --accent:#1568B5; --accent-deep:#0E4F8F; --accent-rgb:21,104,181;
+    --proven:#0F6B4A; --claimed:#9A5B12;
+    --rule:#D2DEEA; --rule-soft:rgba(19,36,48,.06);
+    --display:"Source Serif 4",Charter,Georgia,serif;
+    --ui:"Archivo",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  :root[data-theme="editorial"]{
+    color-scheme:light;
+    --bg:#F6F3EA; --paper:#FDFBF5; --sunk:#F0ECE0; --ink:#221D12; --muted:#6E6550;
+    --accent:#8A6A1F; --accent-deep:#6E5314; --accent-rgb:138,106,31;
+    --proven:#2E6B4F; --claimed:#A05C24;
+    --rule:#DCD4C0; --rule-soft:rgba(34,29,18,.06);
+  }
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#060E1B; --paper:#0F1A2C; --sunk:#0C1524; --ink:#ECEBE3; --muted:#8B96A9;
+    --accent:#D3B37C; --accent-deep:#E7CB93; --accent-rgb:211,179,124;
+    --proven:#63C49D; --claimed:#DBA05A;
+    --rule:#22304A; --rule-soft:rgba(255,255,255,.06);
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%;font-size:15px;scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);
+    font-size:1rem;line-height:1.58;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:48rem;margin:0 auto;padding-inline:1.2rem;}
+  a{color:var(--accent-deep);text-underline-offset:3px;}
+
+  h1,h2{font-family:var(--display);font-weight:600;letter-spacing:-.016em;line-height:1.14;margin:0 0 .85rem;}
+  h1{font-size:clamp(2.05rem,4.2vw,2.9rem);line-height:1.07;letter-spacing:-.02em;text-wrap:balance;}
+  h2{font-size:clamp(1.4rem,2.8vw,1.85rem);}
+  p{margin:0 0 .95rem;}
+  section{padding-block:clamp(2.4rem,5vw,3.8rem);}
+  section + section{border-top:1px solid var(--rule);}
+
+  header.top{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--rule);}
+  .topin{max-width:60rem;margin:0 auto;padding:.45rem 1.2rem;display:flex;align-items:center;gap:1.4rem;}
+  .logo{height:50px;width:auto;flex:none;}
+  .nav{display:flex;gap:1.3rem;margin-left:.4rem;}
+  .nav a{color:var(--muted);text-decoration:none;font-size:.88rem;font-weight:500;
+    display:inline-flex;align-items:center;min-height:40px;}
+  .nav a:hover,.nav a[aria-current="page"]{color:var(--ink);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;
+    padding:.55rem 1.15rem;border-radius:7px;background:var(--accent);color:#fff;
+    text-decoration:none;font-weight:600;font-size:.94rem;border:1px solid var(--accent-deep);
+    transition:background .15s ease;}
+  :root[data-theme="dark"] .btn:not(.quiet){color:#17100A;}
+  :root[data-theme="editorial"] .btn:not(.quiet){color:#FDF8EA;}
+  .btn:hover{background:var(--accent-deep);}
+  .btn.quiet{background:transparent;color:var(--ink);border-color:var(--rule);}
+  .btn.quiet:hover{background:var(--sunk);border-color:var(--accent);}
+  .topcta{margin-left:auto;}
+  .themebtn{min-height:40px;padding:.3rem .6rem;border-radius:6px;cursor:pointer;
+    background:transparent;border:1px solid var(--rule);color:var(--muted);font-size:.78rem;font-family:var(--ui);}
+
+  .intro{padding-block:clamp(2.6rem,5.5vw,4rem) clamp(2rem,4vw,3rem);}
+  .lede{font-family:var(--display);font-size:clamp(1.2rem,2.3vw,1.5rem);line-height:1.36;
+    max-width:34rem;margin:0 0 1.1rem;}
+  .said{color:var(--muted);max-width:38rem;}
+
+  .founder{display:grid;grid-template-columns:minmax(0,13.5rem) minmax(0,1fr);gap:1.8rem;align-items:start;}
+  .idcard{background:var(--paper);border:1px solid var(--rule);border-radius:10px;padding:1.2rem;
+    position:sticky;top:5.2rem;}
+  .fname{font-family:var(--display);font-size:1.45rem;font-weight:600;margin:0 0 .12rem;}
+  .frole{color:var(--muted);font-size:.87rem;margin:0 0 1rem;}
+  .linkedin{display:inline-flex;align-items:center;gap:.45rem;min-height:40px;
+    font-size:.87rem;font-weight:500;text-decoration:none;color:var(--accent-deep);}
+  .linkedin:hover{text-decoration:underline;}
+  .linkedin svg{flex:none;}
+  .past{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:1rem;padding-top:.9rem;border-top:1px solid var(--rule);}
+  .past span{font-family:var(--mono);font-size:.67rem;color:var(--muted);
+    border:1px solid var(--rule);border-radius:4px;padding:.1rem .4rem;}
+  .bioProse p{color:var(--ink);}
+  .bioProse p + p{margin-top:0;}
+
+  .facts{list-style:none;margin:0;padding:0;}
+  .facts li{padding:.6rem 0;border-top:1px solid var(--rule);color:var(--muted);font-size:.94rem;}
+  .facts li:first-child{border-top:0;}
+  .facts b{color:var(--ink);font-weight:600;}
+
+  .close{text-align:center;}
+  .close p{color:var(--muted);margin-inline:auto;max-width:32rem;}
+  .closeActs{display:flex;gap:.65rem;justify-content:center;flex-wrap:wrap;margin-top:1.2rem;}
+
+  footer{border-top:1px solid var(--rule);padding-block:1.5rem 2.4rem;color:var(--muted);font-size:.85rem;}
+  .footin{display:flex;flex-wrap:wrap;gap:.3rem 1.4rem;align-items:center;}
+  .footin .sp{margin-left:auto;}
+  .footin a{display:inline-flex;align-items:center;min-height:40px;}
+
+  :where(a,button,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+
+  @media (max-width:900px){
+    .nav{display:none;}
+    .founder{grid-template-columns:1fr;gap:1.3rem;}
+    .idcard{position:static;}
+  }
+  @media (max-width:620px){
+    html{font-size:14.5px}
+    .logo{height:40px;}
+    .topin{gap:.6rem;padding-inline:1rem;}
+    .wrap{padding-inline:1rem;}
+    .footin .sp{margin-left:0;}
+  }
+  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} *{transition:none!important} }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><symbol id="brand-mark" viewBox="0 0 220 132">
+  <path d="M120.1 15.0 A27 27 0 0 0 83.1 42.4" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M85.1 50.6 A27 27 0 0 0 136.6 35.3" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M84 46 C94 34 104 34 110 41 C116 48 122 34 132 20" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M132 20 l-10 1 M132 20 l-1 10" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="84" cy="46" r="3.1" fill="var(--accent)"/>
+  <text x="110" y="92" text-anchor="middle" font-family="var(--display)" font-size="27" letter-spacing="7" fill="var(--ink)">EIGEN</text>
+  <text x="110" y="111" text-anchor="middle" font-family="var(--ui)" font-size="7.4" letter-spacing="3" fill="var(--accent)">DISCOVER · UNDERSTAND · ACT</text>
+</symbol></svg>
+
+<header class="top"><div class="topin">
+  <a href="/" aria-label="Eigen Research home" style="display:flex;text-decoration:none">
+    <svg class="logo" viewBox="0 0 220 132" role="img" aria-label="Eigen Research"><use href="#brand-mark"/></svg></a>
+  <nav class="nav">
+    <a href="/#sources">Sources</a>
+    <a href="/about" aria-current="page">About</a>
+  </nav>
+  <span class="topcta"><a class="btn" href="/app">Open Eigen</a></span>
+  <button type="button" class="themebtn" id="themebtn" aria-label="Switch colour theme">Light</button>
+</div></header>
+
+<main>
+
+  <section class="intro"><div class="wrap">
+    <h1>About Eigen Research</h1>
+    <p class="lede">The work of diligence is separating what's proven from what's merely announced. Most of that work is reading.</p>
+    <p class="said">Eigen Research does that reading. It answers questions about companies, markets and technologies from primary sources — regulatory filings, patents, research papers, public code and grant awards — and links every claim back to the document behind it. We built it because general-purpose AI tools sound equally confident whether or not they are right, and for a decision that moves real money you need to be able to check.</p>
+  </div></section>
+
+  <section><div class="wrap">
+    <h2>What we hold ourselves to</h2>
+    <ul class="facts">
+      <li><b>Primary sources only.</b> No answer is assembled from a summary of a summary.</li>
+      <li><b>Announced is not proven.</b> A press release and a patent application describe intent; an audited number and a granted patent describe what happened. We keep the two apart and label which you are reading.</li>
+      <li><b>Sentiment stays sentiment.</b> Coverage tone and forum chatter are shown as market signal, never as established fact, and never as investment advice.</li>
+      <li><b>Explicit about the unknown.</b> Where the evidence is not there, you get a stated gap instead of a confident guess. A gap is a finding, not a failure.</li>
+    </ul>
+  </div></section>
+
+  <section><div class="wrap">
+    <h2>Founder</h2>
+    <div class="founder">
+      <div class="idcard">
+        <p class="fname">Sandeep Gupta</p>
+        <p class="frole">Founder &middot; San Francisco</p>
+        <a class="linkedin" href="https://www.linkedin.com/in/sandeep-gupta-6145235/" target="_blank" rel="noopener noreferrer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.42v1.56h.05a3.75 3.75 0 0 1 3.37-1.85c3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.55V9h3.57v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>
+          LinkedIn
+        </a>
+        <div class="past">
+          <span>Tubi</span><span>Argo AI</span><span>Netflix</span><span>Microsoft</span><span>IIT Kanpur</span>
+        </div>
+      </div>
+      <div class="bioProse">
+        <p>Sandeep Gupta is a highly accomplished engineering leader with over 20 years of experience designing, developing, and scaling software systems at industry-leading technology companies, including Tubi, Argo AI, Netflix, and Microsoft.</p>
+        <p>Sandeep possesses a deep and broad technical expertise, encompassing AI/ML, distributed systems, and various cloud technologies. He has consistently demonstrated the ability to lead teams, solve complex technical challenges, and deliver high-impact solutions throughout his career. His experience spans multiple domains, including personalization, search, content discovery, fraud detection, and building scalable infrastructure.</p>
+        <p>Most recently as Head of ML Infra at Tubi, Sandeep led the development and scaling of the company's machine learning infrastructure, delivering a real-time personalization system and a new search platform that significantly enhanced user engagement and content discovery.</p>
+        <p>He holds a B.Tech in Computer Science and Engineering from the Indian Institute of Technology Kanpur (IIT Kanpur).</p>
+      </div>
+    </div>
+  </div></section>
+
+  <section class="close"><div class="wrap">
+    <h2>Bring a question you can't answer in an afternoon.</h2>
+    <p>Then follow the citations back to the filings yourself.</p>
+    <div class="closeActs">
+      <a class="btn" href="/app">Open Eigen</a>
+      <a class="btn quiet" href="/">Back to the ledger</a>
+    </div>
+  </div></section>
+
+</main>
+
+<footer><div class="wrap footin">
+  <span>&copy; <span id="yr"></span> Eigen Research</span>
+  <span class="sp"><a href="/app">Platform</a></span>
+  <span><a href="/">Home</a></span>
+  <span><a href="mailto:sandeepgupta828@gmail.com">Contact</a></span>
+</div></footer>
+
+<script>
+(function(){
+  document.getElementById("yr").textContent = new Date().getFullYear();
+  /* Same cycle, order and labels as landing.html and the platform shell. */
+  var ORDER = ["light","dark","editorial"];
+  var NAMES = {light:"☀ Light", dark:"\u{1F319} Dark", editorial:"❡ Editorial"};
+  var btn = document.getElementById("themebtn");
+  function current(){ return document.documentElement.getAttribute("data-theme") || "light"; }
+  function apply(t){
+    if(t === "light") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", t);
+    try{ localStorage.setItem("eigen-theme", t); }catch(e){}
+    btn.textContent = NAMES[t] || NAMES.light;
+    btn.title = "Theme: " + (NAMES[t] || NAMES.light).slice(2) + " — click to switch";
+  }
+  apply(current());
+  btn.addEventListener("click", function(){ apply(ORDER[(ORDER.indexOf(current()) + 1) % ORDER.length]); });
+})();
+</script>
+</body>
+</html>

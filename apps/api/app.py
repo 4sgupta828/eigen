@@ -2171,6 +2171,12 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
     def index(accept_encoding: str = Header(default="")):
         return _html_response("index.html", accept_encoding)
 
+    @app.get("/about", response_class=HTMLResponse)
+    def about(accept_encoding: str = Header(default="")):
+        """Who builds this and why. Kept off the landing page so the front door stays about the
+        product; the founder bio lives here."""
+        return _html_response("about.html", accept_encoding)
+
     @app.get("/corpus", response_class=HTMLResponse)
     def corpus_explorer(accept_encoding: str = Header(default="")):
         """Admin corpus explorer — pure-retrieval source inspection (token entered client-side)."""
