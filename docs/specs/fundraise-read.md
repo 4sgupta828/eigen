@@ -226,3 +226,97 @@ extracting a signal that changes no outcome is work that only looks like depth.
    would poison the single strongest matching signal with companies that never invested.
 7. **"We use AI".** A crypto company mentioning AI once must not be tagged into AI-infra funds;
    extraction scopes to what they SELL.
+
+## 10. Worked scenarios, run against the real scorer
+
+Not reasoned about on paper — executed through `reasons_for` / `penalties_for` as they stand today
+(2026-09-11). The numbers below are what the code actually returns.
+
+### A. UK pre-seed hardware. Technical founders, no backers, capital-intensive.
+
+```
+US seed fund, huge, generalist              fit=0.000  axes=[]
+UK deep-tech specialist (the right answer)  fit=0.000  axes=[]
+```
+
+Both zero. The right answer ties a generalist, because we hold neither firm's sector nor geography.
+Worse, nothing in the model knows that **hardware and software need different amounts of money** —
+capital intensity is not a dimension, so a fund that writes $500k cheques and one that writes $15M
+look identical to a founder building a reactor.
+
+### B. US Series A devtools, seed led by Amplify. Who leads the A?
+
+```
+Co-invests with Amplify + sector   fit=0.877  axes=[sector, co_investor]
+Sector only                        fit=0.460  axes=[sector]
+Backs a direct competitor          fit=0.000  axes=[sector]   penalised: already funds your sector
+```
+
+This one works. The ordering is right and the conflict is correctly last. But the founder's actual
+question — *who **leads** an A after a seed led by Amplify* — is unanswerable: lead-versus-follow is
+not an axis and `leads_rounds` has effectively no coverage.
+
+### C. Seed medical device with an FDA 510(k) clearance.
+
+```
+Health specialist   fit=0.948  axes=[sector, stage]
+```
+
+A good score for the wrong reason. **The 510(k) — the single most de-risking fact this company owns —
+changes the ranking by nothing.** Neither side has a regulatory dimension.
+
+### D. Bootstrapped, revenue, never raised institutionally.
+
+```
+Generalist SaaS fund   fit=0.455  axes=[sector]
+```
+
+The strongest signal we hold, `co_investor`, is **structurally unavailable to every founder who has
+never raised** — which is precisely the founder most likely to use this feature. This is not a
+coverage gap that time fixes; it is a design flaw in relying on that axis.
+
+## 11. Dimensions these scenarios discovered
+
+Each is groundable, and none is currently modelled.
+
+| Dimension | Why it decides a match | Source | Scenario |
+|---|---|---|---|
+| **Capital intensity** | hardware, bio and infra need cheques software does not. A fund's typical cheque against the round's shape is a fit question, not a filter | `iv_fund.sold_usd / investors_n`, joined to `how_they_make_money` | A |
+| **Round progression** | "who led the round *after* a seed led by X" is the real question at every stage above pre-seed | `iv_edge`: same company, later `round_name`, different firm — **we already hold this and never query it** | B |
+| **Lead vs follow** | a founder needs someone to *lead*; a list of followers is not a round | `iv_edge.role`, where present | B |
+| **Regulatory fluency** | a fund that has taken companies through FDA or FedRAMP understands the timeline; one that has not will misprice it | portfolio companies' `regulatory_status` (the new KIND), joined through `iv_edge` | C |
+| **First-round behaviour** | which firms actually lead FIRST institutional rounds, for founders with no cap table | `iv_edge` where the company has no earlier round | D |
+| **Geographic coverage bias** | Form ADV is a **US register**. Non-US funds are not merely unknown, they are *systematically* under-represented — a UK founder gets a US-skewed list and no warning | structural; must be stated, not silently ranked around | A |
+
+Round progression and first-round behaviour deserve emphasis: **both are computable today from
+`iv_edge` rows we already hold.** They need no new ingestion and no model spend — only a query we
+have never written. That makes them the highest-value additions on this list.
+
+## 12. Showing the reasoning, not just the rank
+
+A number is not an explanation, and this product's entire claim is that its answers can be checked.
+Every row must carry the chain that produced it, in the reader's language:
+
+```
+Why this firm is here
+  ▣ filed      Their latest fund closed in 2026, so they are writing cheques now.
+  ◈ observed   Eleven of their thirty-one holdings are developer tooling — your category.
+  ◈ observed   They have co-invested with Amplify, who led your seed, four times.
+  ▢ stated     They say they lead at Series A. We have not seen this independently.
+Against
+  ⚠ conflict   They already fund Rival, in your category. Worth knowing before you email.
+What we could not check
+  Lead capability at your stage: we hold no round roles for this firm.
+  Cheque size: no Form D filings on record.
+```
+
+Three rules for that block:
+
+1. **Every line carries its register.** "They say they lead" and "we have seen them lead eleven
+   times" are different kinds of claim and the reader must be able to tell them apart at a glance.
+2. **The unchecked list is not optional.** A firm matched on one axis out of six must show the five
+   it was not matched on, or the reader infers confidence that was never earned — most dangerous at
+   today's 0.8% sector coverage.
+3. **No synthetic confidence.** No percentage, no "strong match", no stars. The reasoning IS the
+   score's justification; if it reads thin, the match IS thin, and the interface should let that show
+   rather than dress it.
