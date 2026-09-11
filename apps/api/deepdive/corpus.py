@@ -275,26 +275,54 @@ _HONORIFIC = re.compile(r"\b(mr|mrs|ms|miss|dr|prof|sir|lord|rev)\.?\s*$", re.IG
 
 
 def _uses_as_word(text: str, name: str) -> bool:
-    """Is `name` used here as an ordinary lowercase word, mid-sentence?"""
-    for m in re.finditer(r"(?<![A-Za-z0-9])" + re.escape(name.lower()) + r"(?![A-Za-z0-9])", text):
-        before = text[:m.start()].rstrip()
-        if before and before[-1] not in ".!?:;\n" and text[m.start():m.end()] == name.lower():
+    """Is `name` used here as an ordinary lowercase word, mid-sentence?
+
+    NOT when it is part of an address. `anthropic.com`, `https://anthropic.com/news` and
+    `press@anthropic.com` are all lowercase and none of them is the word "anthropic" — counting them
+    called the most distinctive name in the corpus ambiguous and cut its dossier in half.
+    """
+    low = name.lower()
+    for m in re.finditer(r"(?<![A-Za-z0-9])" + re.escape(low) + r"(?![A-Za-z0-9])", text):
+        if text[m.start():m.end()] != low:
+            continue
+        after = text[m.end():m.end() + 6]
+        if re.match(r"\.[a-z]{2,}", after):          # anthropic.com, anthropic.org
+            continue
+        before = text[:m.start()]
+        if before[-1:] in ("/", ".", "@", "-"):       # //anthropic, sub.anthropic, x@anthropic
+            continue
+        tail = before.rstrip()
+        if tail and tail[-1] not in ".!?:;\n":
             return True
     return False
 
 
-def _uses_as_person(text: str, name: str) -> bool:
-    """Is `name` sitting inside somebody's name here? "Ms. Clay", "William Clay Ford".
+_SUFFIX = re.compile(r"^\s*,?\s*(Jr|Sr|II|III|IV)\b\.?")
 
-    Only two patterns count, both of which put the name in the MIDDLE or END of a person's name: an
-    honorific in front of it, or another capitalised word directly in front of it. A capitalised word
-    AFTER it is not evidence — that rule read "Anthropic CEO Dario Amodei" and "Anthropic Claude
-    Sonnet" as people, which is how a perfectly distinctive name was called ambiguous.
+
+def _uses_as_person(text: str, name: str) -> bool:
+    """Is `name` sitting inside somebody's name here? "Ms. Clay", "William Clay Ford, Jr."
+
+    Deliberately narrow. "Any capitalised word in front of it" was the first rule, and it matched
+    "Google Anthropic", "About Anthropic", "Introducing Anthropic" and "At Anthropic" — 107 of 320
+    real passages, which condemned the name. A person's name is recognised only by an HONORIFIC, by
+    the name sitting BETWEEN two capitalised words, or by a generational suffix after it.
     """
     for m in re.finditer(r"(?<![A-Za-z0-9])" + re.escape(name) + r"(?![A-Za-z0-9])", text):
         if _HONORIFIC.search(text[max(0, m.start() - 8):m.start()]):
             return True
-        if re.search(r"(?:^|[\s(])([A-Z][a-z]{1,20})\s+$", text[max(0, m.start() - 26):m.start()]):
+        after = text[m.end():m.end() + 26]
+        if _SUFFIX.match(after):
+            return True
+        win = text[max(0, m.start() - 26):m.start()]
+        prev = re.search(r"(?:^|[\s(])([A-Z][a-z]{1,20})\s+$", win)
+        nxt = re.match(r"\s+([A-Z][a-z]{1,20})", after)
+        # …and the word in front must not simply be the start of a sentence. Every sentence begins
+        # capitalised, so without this "About Anthropic We are an AI safety company" and
+        # "Introducing Anthropic Claude" both read as somebody's middle name.
+        starts_sentence = prev and not text[:max(0, m.start() - 26) + prev.start(1)].rstrip().endswith(
+            tuple("abcdefghijklmnopqrstuvwxyz0123456789,"))
+        if prev and nxt and not starts_sentence:      # William | Clay | Ford
             return True
     return False
 # How much of the sample has to use the name as a word or a person before we stop trusting it alone.

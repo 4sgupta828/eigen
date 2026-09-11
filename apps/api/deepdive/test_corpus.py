@@ -334,3 +334,54 @@ def test_a_person_is_never_the_subject_even_beside_company_words():
     honorific settles it first."""
     assert not acts_like_a_company("Mr. Bagué and Ms. Clay, who are not standing for re-election "
                                    "at the Annual Meeting of the company", "Clay")
+
+
+# ── the ambiguity test must not condemn a distinctive name ────────────────────────────────────────
+#
+# The first version did, in prod, on real corpus text: 107 of 320 Anthropic passages were read as
+# "ordinary word or person" and the dossier halved. Both signals were too loose, in ways that only
+# real text shows.
+
+def test_a_domain_is_not_the_lowercase_word():
+    """`anthropic.com`, `https://anthropic.com/news` and `press@anthropic.com` are all lowercase and
+    none of them is the word "anthropic"."""
+    for t in ["Source: anthropic.com (anthropic.com) Language: en",
+              "see https://www.anthropic.com/news/x",
+              "write to press@anthropic.com",
+              "hosted at api.anthropic.com/v1"]:
+        assert not _uses_as_word(t, "Anthropic"), t
+
+
+def test_a_sentence_opener_is_not_somebody_s_middle_name():
+    """Every sentence starts capitalised. "About Anthropic We are an AI safety company" and
+    "Introducing Anthropic Claude" were both read as a person named Anthropic."""
+    for t in ["About Anthropic We are an AI safety company",
+              "Introducing Anthropic Claude",
+              "Google Anthropic and OpenAI compete",
+              "At Anthropic we build reliable systems"]:
+        assert not _uses_as_person(t, "Anthropic"), t
+
+
+def test_a_name_between_two_names_is_a_person():
+    assert _uses_as_person("were John T. Lawler, William Clay Ford, Michael Amend", "Clay")
+
+
+def test_a_generational_suffix_is_a_person():
+    assert _uses_as_person("signed by Clay, Jr. on behalf of the board", "Clay")
+
+
+def test_the_real_anthropic_sample_is_not_ambiguous():
+    assert name_is_ambiguous("Anthropic", [
+        "Source: anthropic.com (anthropic.com) Language: en",
+        "see https://www.anthropic.com/news/x",
+        "Google Anthropic and OpenAI compete",
+        "About Anthropic We are an AI safety company",
+        "Introducing Anthropic Claude",
+        "At Anthropic we build",
+        "write to press@anthropic.com",
+        "Anthropic CEO Dario Amodei said",
+        "the Anthropic Claude Sonnet model",
+        "Anthropic raises $65 billion",
+        "switch to providers like OpenAI, Anthropic, Cohere",
+        "Patterns and problems in multiagent systems \\ Anthropic",
+    ]) == (False, 0)
