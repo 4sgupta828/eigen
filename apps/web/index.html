@@ -2038,6 +2038,28 @@
   /* Advisor — the founder's side of the mode: describe your startup, get investors who have done it before */
   /* Raising is a SUB-SEARCH, not a peer of the default. A disclosure keeps it one line until
      wanted, so the page opens on the thing almost everyone came for. */
+  #investorsbody .iv-expand{display:block;width:100%;margin-top:.5rem;background:none;border:0;
+    border-top:1px solid var(--hair);padding:.55rem .2rem 0;min-height:40px;cursor:pointer;
+    font:inherit;font-size:.76rem;color:var(--muted);text-align:left;}
+  #investorsbody .iv-expand:hover{color:var(--gold);}
+  #investorsbody .iv-expand::before{content:"+ ";font-family:var(--mono);color:var(--gold);}
+  #investorsbody .iv-expand[aria-expanded="true"]::before{content:"– ";}
+  #investorsbody .iv-detail[hidden]{display:none;}
+  #investorsbody .iv-detail{margin-top:.5rem;border-top:1px dashed var(--hair);padding-top:.6rem;}
+  #investorsbody .iv-dload{font-size:.78rem;color:var(--muted);padding:.4rem 0;}
+  #investorsbody .iv-dsec{margin:0 0 .9rem;}
+  #investorsbody .iv-dh{font-family:var(--mono);font-size:.64rem;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink);margin-bottom:.35rem;}
+  #investorsbody .iv-dh i{font-style:normal;text-transform:none;letter-spacing:0;color:var(--muted);margin-left:.4rem;}
+  #investorsbody .iv-dabout{font-size:.85rem;line-height:1.6;color:var(--muted);margin:0;}
+  /* a wide table on a phone scrolls itself rather than pushing the page sideways */
+  #investorsbody .iv-dtw{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  #investorsbody .iv-dt{width:100%;border-collapse:collapse;font-size:.78rem;}
+  #investorsbody .iv-dt th{text-align:left;font-family:var(--mono);font-size:.62rem;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--muted);font-weight:400;padding:.25rem .5rem .25rem 0;border-bottom:1px solid var(--hair);}
+  #investorsbody .iv-dt td{padding:.32rem .5rem .32rem 0;border-bottom:1px solid var(--hair-soft);vertical-align:top;}
+  #investorsbody .iv-dt td.n,#investorsbody .iv-dt th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+  #investorsbody .iv-dmore{font-size:.72rem;color:var(--muted);margin-top:.3rem;}
   #investorsbody .iv-raise{margin:.2rem 0 .7rem;border:1px solid var(--hair);border-radius:12px;background:var(--panel);}
   #investorsbody .iv-raise > summary{cursor:pointer;list-style:none;padding:.6rem .8rem;min-height:44px;
     display:flex;align-items:center;gap:.45rem;font-size:.82rem;color:var(--muted);}
@@ -10261,8 +10283,117 @@ async function openShare(token){
       ${gaps.length ? `<div class="iv-gap">${esc(gaps.join(" · "))}</div>` : ""}
       ${(row.reasons || []).length ? `<div class="iv-why">${esc((row.reasons || []).slice(0, 2).join(" · "))}</div>` : ""}
       ${foot.length ? `<div class="iv-foot">${foot.join(" · ")}</div>` : ""}
+      <button type="button" class="iv-expand" data-fid="${esc(row.id)}" aria-expanded="false">Everything we hold on ${esc(f.name || row.id)}</button>
+      <div class="iv-detail" id="iv-d-${esc(row.id)}" hidden></div>
     </div>`;
   }
+
+  // ── THE DETAIL. GET /investors/{id} has always returned the firm's whole record — every fund
+  // vehicle with its size and date, every portfolio line with its round, the full team, and each
+  // fact with the register and source that justify it. The card showed a sample and the endpoint
+  // was never called from the list, so the depth was there and unreachable.
+  const ivFmtDate = iso => { if(!iso) return ""; const d = String(iso).slice(0, 10);
+    return d.length === 10 ? d : ""; };
+
+  async function expandFirm(id, btn){
+    const el = document.getElementById("iv-d-" + id);
+    if(!el) return;
+    if(!el.hidden){ el.hidden = true; btn.setAttribute("aria-expanded", "false"); return; }
+    el.hidden = false; btn.setAttribute("aria-expanded", "true");
+    if(el.dataset.loaded) return;
+    el.innerHTML = `<div class="iv-dload"><span class="su-spin"></span>reading the record\u2026</div>`;
+    try{
+      const r = await fetch("/investors/" + encodeURIComponent(id));
+      if(!r.ok) throw new Error("could not load (" + r.status + ")");
+      const d = await r.json();
+      el.dataset.loaded = "1";
+      el.innerHTML = firmDetailHtml(d);
+    }catch(e){
+      el.innerHTML = `<div class="iv-gap">${esc(e && e.message ? e.message : String(e))}</div>`;
+    }
+  }
+
+  function firmDetailHtml(d){
+    const out = [];
+    if(d.about) out.push(`<div class="iv-dsec"><div class="iv-dh">In their words</div><p class="iv-dabout">${esc(d.about)}</p></div>`);
+
+    // FUNDS — the card could only say how many and how big the latest was. The history is the thing
+    // a founder actually reads: whether they are still raising, and at what size.
+    const funds = (d.funds || []).filter(f => f.name || f.sold_usd || f.offered_usd);
+    if(funds.length){
+      const rows = funds.slice(0, 20).map(f => {
+        const size = f.sold_usd != null ? ivUsd(f.sold_usd)
+                   : f.offered_usd != null ? ivUsd(f.offered_usd) + " sought" : "";
+        return `<tr><td>${esc(f.name || "—")}</td><td class="n">${esc(size)}</td>
+          <td class="n">${esc(ivFmtDate(f.first_sale))}</td>
+          <td class="n">${f.investors_n != null ? esc(String(f.investors_n)) + " LPs" : ""}</td></tr>`;
+      }).join("");
+      out.push(`<div class="iv-dsec"><div class="iv-dh">${GLYPH.filed} Fund vehicles <i>Form D</i></div>
+        <div class="iv-dtw"><table class="iv-dt"><thead><tr><th>Vehicle</th><th class="n">Raised</th><th class="n">First sale</th><th class="n">Investors</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+        ${funds.length > 20 ? `<div class="iv-dmore">${funds.length - 20} more on file</div>` : ""}</div>`);
+    }
+
+    // PORTFOLIO — the card lists names; the record knows the round and the date, which is what tells
+    // you whether they lead at your stage or came in later.
+    const edges = (d.edges || []).filter(e => e.company_name || e.company_id);
+    if(edges.length){
+      const rows = edges.slice(0, 40).map(e => {
+        const nm = esc(e.company_name || e.company_id);
+        const link = e.company_site ? `<a href="${esc(e.company_site)}" target="_blank" rel="noopener">${nm}</a>` : nm;
+        return `<tr><td>${link}</td><td>${esc(e.round_name || "")}</td><td class="n">${esc(ivFmtDate(e.event_date))}</td>
+          <td>${e.source_url ? `<a href="${esc(e.source_url)}" target="_blank" rel="noopener" title="${esc(e.basis || "source")}">source ↗</a>` : esc(e.basis || "")}</td></tr>`;
+      }).join("");
+      out.push(`<div class="iv-dsec"><div class="iv-dh">${GLYPH.observed} Portfolio <i>${edges.length} we hold — not the whole book</i></div>
+        <div class="iv-dtw"><table class="iv-dt"><thead><tr><th>Company</th><th>Round</th><th class="n">Date</th><th>Basis</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+        ${edges.length > 40 ? `<div class="iv-dmore">${edges.length - 40} more held</div>` : ""}</div>`);
+    }
+
+    // TEAM — everyone, not the first few.
+    const ppl = (d.people || []).filter(p => p.name);
+    if(ppl.length){
+      out.push(`<div class="iv-dsec"><div class="iv-dh">${GLYPH.stated} Team <i>as printed on their own site</i></div>
+        <div class="iv-people">${ppl.map(p => {
+          const l = p.links || {};
+          const chips = [l.linkedin ? `<a class="li" href="${esc(l.linkedin)}" target="_blank" rel="noopener">in</a>` : "",
+                         l.x ? `<a class="x" href="${esc(l.x)}" target="_blank" rel="noopener">𝕏</a>` : ""].filter(Boolean).join("");
+          return `<div class="iv-p"><span class="iv-pn">${esc(p.name)}</span>`
+            + (p.title ? `<span class="iv-pt">${esc(p.title)}</span>` : "")
+            + (chips ? `<span class="iv-pl">${chips}</span>` : "") + `</div>`;
+        }).join("")}</div></div>`);
+    }
+
+    // FACTS — every one carries the register that grades it, when it was true, and where it came
+    // from. This is the part that makes the card checkable rather than merely informative.
+    const facts = (d.facts || []).filter(f => f.display || f.value);
+    if(facts.length){
+      const rows = facts.slice(0, 60).map(f => {
+        const reg = (f.register || "").toLowerCase();
+        const g = GLYPH[reg] || "";
+        return `<tr><td><span class="iv-g ${esc(reg)}" title="${esc(REG_BLURB[reg] || "")}">${g}</span> ${esc(f.key)}</td>
+          <td>${esc(f.display || f.value)}</td><td class="n">${esc(ivFmtDate(f.as_of))}</td>
+          <td>${f.source_url ? `<a href="${esc(f.source_url)}" target="_blank" rel="noopener">${esc(f.basis || "source")} ↗</a>` : esc(f.basis || "")}</td></tr>`;
+      }).join("");
+      out.push(`<div class="iv-dsec"><div class="iv-dh">Everything on file</div>
+        <div class="iv-dtw"><table class="iv-dt"><thead><tr><th>Fact</th><th>Value</th><th class="n">As of</th><th>Source</th></tr></thead>
+        <tbody>${rows}</tbody></table></div></div>`);
+    }
+
+    return out.length ? out.join("") : `<div class="iv-gap">Nothing beyond what the card already shows.</div>`;
+  }
+
+  // Delegated once on the results container: cards are re-rendered on every search, and per-card
+  // listeners would either leak or quietly stop working after the first re-render.
+  (function wireExpand(){
+    const host = document.getElementById("iv-results");
+    if(!host || host.dataset.xwired) return;
+    host.dataset.xwired = "1";
+    host.addEventListener("click", e => {
+      const b = e.target.closest(".iv-expand");
+      if(b) expandFirm(b.dataset.fid, b);
+    });
+  })();
 
   function render(){
     const notes = (STATE.notes || []).map(n =>
@@ -10445,7 +10576,7 @@ async function openShare(token){
     advise();
   }
 
-  window.IV = {search, enter, reset, runContract, advise, adviseFromText, showTab,
+  window.IV = {search, enter, reset, runContract, advise, adviseFromText, showTab, expandFirm, firmDetailHtml,
                // the composer's Go in advisor mode is a deck paste, not a query
                isAdvising: () => { const d = $("#iv-raise"); return !!(d && d.open); }};
 })();
