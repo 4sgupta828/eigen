@@ -2347,12 +2347,12 @@
     <button type="button" class="vo-chip" id="dd-refresh" title="Read the company again and keep the old version">↻ Refresh</button>
   </div>
   <div class="dd-depth" id="dd-depth">
-    <button type="button" class="dd-dbtn" data-depth="held" aria-pressed="true"
-            title="What we already hold, plus the public sources that need no key. Free.">what we hold</button>
+    <button type="button" class="dd-dbtn" data-depth="full" aria-pressed="true"
+            title="Our corpus, the public record, the company's own pages and the open web. A few cents.">everything we can read</button>
     <button type="button" class="dd-dbtn" data-depth="read" aria-pressed="false"
-            title="Also read the company's own site with a model">+ read their site</button>
-    <button type="button" class="dd-dbtn" data-depth="full" aria-pressed="false"
-            title="Also read the open web for coverage a company's own pages never carry">+ read the web</button>
+            title="Our corpus, the public record and the company's own pages — no open-web read">their site only</button>
+    <button type="button" class="dd-dbtn" data-depth="held" aria-pressed="false"
+            title="Our corpus and the public record we already hold. Spends nothing.">free</button>
     <span class="dd-cost" id="dd-cost"></span>
   </div>
   <p class="dd-note" id="dd-note"></p>
@@ -9532,7 +9532,15 @@ async function openShare(token){
 // "zero granted patents against a proprietary-technology claim" is the finding.
 // ---------------------------------------------------------------------------------------------
 (function(){
-  const STATE = { dossier: null, cid: "", busy: false, depth: "held" };
+  // A DIVE READS. The default was `held` — what we already had on file — so the dossier a reader got
+  // depended on how many upgrade buttons they found and pressed, and the first screen of a company
+  // nobody had dived was two reference rows. The default is now the deepest read; `held` stays as a
+  // deliberate downshift for someone who wants to spend nothing.
+  const STATE = { dossier: null, cid: "", busy: false, depth: "full" };
+  // Spend up to this much without interrupting the reader. Above it they are asked, with the number.
+  // The cap is what enforces the credit discipline here; a per-leg click never did — it just made
+  // the answer worse for anyone who did not click.
+  const AUTO_USD = 0.10;
   const out = () => document.getElementById("dd-out");
   const note = () => document.getElementById("dd-note");
 
@@ -9731,11 +9739,23 @@ async function openShare(token){
       + "{className:'dd-logo dd-mono',textContent:'" + mono + "'}));}\">";
   }
 
+  // The basis is a list of LEGS ("held+corpus+read+web"), not a fixed set of three strings. It used
+  // to be matched against an exact-string map, so the day a leg was added every dossier fell through
+  // to printing its own basis id at the reader.
+  const LEG_WORDS = {held: "the record we hold", corpus: "our corpus",
+                     read: "their own pages", web: "the open web"};
+  function basisWords(basis){
+    const legs = String(basis || "").split("+").map(x => x.trim()).filter(x => LEG_WORDS[x]);
+    if(!legs.length) return String(basis || "");
+    const words = legs.map(l => LEG_WORDS[l]);
+    return "read " + (words.length === 1 ? words[0]
+      : words.slice(0, -1).join(", ") + " and " + words[words.length - 1]);
+  }
+
   function render(d){
     const c = d.company || {};
     const when = (d.updated_at || d.as_of || "").slice(0, 10);
-    const depth = {held: "what we hold", "held+read": "their site, read",
-                   "held+read+web": "their site and the web, read"}[d.basis] || d.basis;
+    const depth = basisWords(d.basis);
     const bits = [c.hq, c.yc_batch ? "YC " + c.yc_batch : "", c.cik ? "SEC CIK " + c.cik : "",
                   depth, when ? "as of " + when : "",
                   d.revision ? "revision " + d.revision : ""].filter(Boolean);
@@ -9777,21 +9797,22 @@ async function openShare(token){
     if(acc) acc.addEventListener("click", () => dive({q: q, accept_domain: res.discovered.domain}));
   }
 
-  // Nothing above "what we hold" runs without the number being shown first and the answer being yes.
+  // Nothing runs unpriced — but a projection of less than AUTO_USD does not need a dialog. Asking
+  // the reader to approve two cents, twice, for a company they just typed in is not discipline, it
+  // is friction; the cost is reported afterwards in the cost line either way.
   async function confirmSpend(body){
-    if(body.discover || body.accept_domain){
-      return window.confirm("This searches the web for the company's own site, then reads their "
-        + "pages.\n\nProjected cost: about $0.03\n\nGo ahead?");
-    }
-    if((body.depth || "held") === "held") return true;
-    const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
-                                        body: JSON.stringify(Object.assign({}, body, {project_only: true}))});
-    const d = await r.json();
-    const p = d.projection || {};
-    if(!p.projected_usd){ return true; }
+    if((body.depth || "full") === "held" && !body.discover && !body.accept_domain) return true;
+    let p = {};
+    try{
+      const r = await fetch("/deepdive", {method: "POST", headers: Object.assign({"content-type": "application/json"}, ddAuth()),
+                                          body: JSON.stringify(Object.assign({}, body, {project_only: true}))});
+      p = ((await r.json()) || {}).projection || {};
+    }catch(e){ p = {}; }
+    const usd = Number(p.projected_usd || 0);
+    if(usd <= AUTO_USD) return true;
     const bits = [p.pages ? p.pages + " of their pages" : "", p.web_usd ? "a bounded web read" : ""].filter(Boolean);
-    return window.confirm("This reads " + bits.join(" and ") + ".\n\nProjected cost: $"
-      + Number(p.projected_usd).toFixed(3) + "\n\nGo ahead?");
+    return window.confirm("This reads " + (bits.join(" and ") || "this company") + ".\n\nProjected cost: $"
+      + usd.toFixed(3) + "\n\nGo ahead?");
   }
 
   async function dive(body, opts){
@@ -9818,26 +9839,24 @@ async function openShare(token){
       const n = (d.dossier.sections || []).length;
       const sp = (d.dossier.spend || {}).projection || {};
       if(sp.projected_usd) cost().textContent = "last read \u00b7 $" + Number(sp.projected_usd).toFixed(3);
-      // A thin dossier is usually a company nobody has read yet, not a company with nothing to say.
-      // Say which, and put the next step in the sentence rather than leaving it to be inferred.
-      const claims = (d.dossier.sections || []).reduce((t, s) => t + (s.claims || []).length, 0);
+      // A thin dossier used to mean "nobody has pressed the read button yet", and the note offered
+      // that button. A dive READS now, so a thin dossier means the sources are thin — the Manifest
+      // of Absence below already names which one came back empty. The only case left where an
+      // upgrade is worth offering is a reader who deliberately asked for the free depth.
       const unread = String(d.dossier.basis || "").indexOf("read") < 0;
-      const thin = unread && claims < 12
-        ? ' \u00b7 <b>nobody has read their site yet</b> \u2014 <a href="#" id="dd-read">read their site</a>'
+      const thin = unread && STATE.depth === "held"
+        ? ' \u00b7 free depth \u2014 <a href="#" id="dd-read">read their site and the web</a>'
         : "";
       // SAY WHAT WAS ACTUALLY READ. The line was hardcoded to "the public record we hold", so a dive
       // that had just read six of their pages and the open web still claimed it had read neither.
-      // The dossier reports its own basis (`held` / `held+read` / `held+read+web`); use it.
-      const BASIS = {"held": "the public record we hold",
-                     "held+read": "the public record we hold and their own pages",
-                     "held+read+web": "the public record we hold, their own pages and the open web"};
-      const builtFrom = "Built from " + (BASIS[String(d.dossier.basis || "")] || "the public record we hold");
+      // The dossier reports its own basis; `basisWords` turns that list of legs into the sentence.
+      const builtFrom = "Built from " + basisWords(d.dossier.basis).replace(/^read /, "");
       note().innerHTML = (d.cached ? "A dossier we already built" : builtFrom)
         + " \u00b7 " + n + (n === 1 ? " section" : " sections") + thin
         + (d.cached ? ' \u00b7 <a href="#" id="dd-again">read it again</a>' : "");
       const rd = document.getElementById("dd-read");
       if(rd) rd.addEventListener("click", e => { e.preventDefault();
-        dive({company_id: STATE.cid, depth: "read", refresh: true}); });
+        dive({company_id: STATE.cid, depth: "full", refresh: true}); });
       // The box the reader types into must say what is on screen. It used to keep the startup-search
       // text that led here, so a dossier for Metis sat under the words "AI infrastructure".
       setQ((d.dossier.company || {}).name || STATE.cid || "");
@@ -10520,7 +10539,7 @@ async function openShare(token){
     // read a word of what they had already written down.
     return `<div class="iv-form" style="padding:.8rem">
       <div class="iv-read">
-        <input id="adv-url" type="url" placeholder="yourstartup.com — we read the site" autocomplete="url">
+        <input id="adv-url" type="url" placeholder="yourstartup.com — we read your site, our corpus and the web" autocomplete="url">
         <label class="iv-file" for="adv-deck">Upload deck<input id="adv-deck" type="file" accept=".pdf,application/pdf,.txt,text/plain" hidden></label>
         <button type="button" class="iv-go" id="adv-read">Read my startup</button>
       </div>
@@ -10551,18 +10570,23 @@ async function openShare(token){
       box.innerHTML = `<div class="iv-gap">Give a website, a deck or a description first.</div>`;
       return;
     }
-    box.innerHTML = `<div class="iv-dload"><span class="su-spin"></span>reading${url ? " " + esc(url) : ""}\u2026</div>`;
+    box.innerHTML = `<div class="iv-dload"><span class="su-spin"></span>reading${url ? " " + esc(url) : ""}\u2026`
+      + `<span class="iv-readnote">their pages, our corpus, the public record and the open web \u2014 this takes a moment</span></div>`;
     try{
-      // DEEP DIVE FIRST. The shallow read was crawling a couple of pages and making one model call,
-      // beside a module that resolves the company, discovers it on the web when we do not hold it,
-      // reads its site properly and gates every claim. Asking DeepDive at `held` costs nothing and
-      // answers with what we already hold; the founder can go deeper from the dive itself.
+      // DEEP DIVE FIRST, AND ALL THE WAY. The shallow read was crawling a couple of pages and making
+      // one model call, beside a module that resolves the company, discovers it on the web when we do
+      // not hold it, searches our own corpus, reads its site properly and gates every claim.
+      //
+      // This used to ask for `held` and then offer a priced button to go deeper — for a founder's OWN
+      // company, which we almost never already hold, that meant the first answer was empty and the
+      // real one was behind a click. A founder who typed their website asked to be read. `discover`
+      // is on so a company we have never seen is found and read rather than reported as unknown.
       let dossier = null;
       if(url || (($("#adv-name") || {}).value || "").trim()){
         try{
           const q = url || $("#adv-name").value.trim();
           const dr = await fetch("/deepdive", {method:"POST", headers:{"content-type":"application/json"},
-            body: JSON.stringify({q, depth: "held"})});
+            body: JSON.stringify({q, depth: "full", discover: true, max_usd: 0.50})});
           if(dr.ok){ const dd = await dr.json(); dossier = dd && (dd.dossier || dd); }
         }catch(e){ /* a dive we cannot get is a thinner reading, never a failed one */ }
       }
@@ -10571,20 +10595,6 @@ async function openShare(token){
         const fr = await fetch("/investors/from-dossier", {method:"POST", headers:{"content-type":"application/json"},
           body: JSON.stringify({dossier, stage_claimed: "", sectors: [], geo: []})});
         if(fr.ok){ deep = await fr.json(); deep.dossier = dossier; }
-      }
-      // `held` answers from what we already hold, which for a founder's OWN company is usually very
-      // little — that is the case this feature exists for. Price the real read and offer it; the
-      // number is shown because spending is the reader's decision, not ours.
-      if(ADV_Q()){
-        try{
-          const pr = await fetch("/deepdive", {method:"POST", headers:{"content-type":"application/json"},
-            body: JSON.stringify({q: ADV_Q(), depth: "read", project_only: true})});
-          if(pr.ok){
-            const pj = await pr.json();
-            if(pj && pj.projection){ deep = deep || {profile:{}, contract:{}};
-              deep.offer = Object.assign({q: ADV_Q()}, pj.projection); }
-          }
-        }catch(e){ /* no projection, no offer — never a blocked read */ }
       }
       // The deck and any free-text still go through the reader, which is the only path that sees them.
       const r = await fetch("/investors/read-startup", {method:"POST", headers:{"content-type":"application/json"},
@@ -10671,14 +10681,6 @@ async function openShare(token){
     // ABOUT THIS COMPANY: the gaps naming which signal is unavailable and why.
     ((d.plan || {}).gaps || []).filter(g => !/Portfolio coverage is/.test(g))
       .forEach(g => out.push(`<div class="iv-gap">${esc(g)}</div>`));
-    if((d.deep || {}).offer){
-      const o = d.deep.offer;
-      out.push(`<div class="iv-dsec"><div class="iv-dh">Read the site properly</div>
-        <div class="iv-prow"><span>We have only what we already hold for this company. A full read of
-        ${esc(String(o.pages || 6))} pages — every claim quoted and checked — costs
-        <b>$${esc((o.projected_usd || 0).toFixed(3))}</b>.</span></div>
-        <button type="button" class="iv-go" id="adv-deep" data-q="${esc(o.q || "")}" style="margin-top:.5rem">Read it — $${esc((o.projected_usd || 0).toFixed(2))}</button></div>`);
-    }
     return out.join("");
   }
 

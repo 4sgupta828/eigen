@@ -759,22 +759,55 @@ def test_a_domain_is_not_a_biography():
 def test_a_stored_dossier_covers_a_shallower_request():
     """A dive that read their site and the web answers a later `read` or `held` ask for nothing."""
     from api.deepdive.routes import basis_covers
-    assert basis_covers("held+read+web", "full")
-    assert basis_covers("held+read+web", "read")
-    assert basis_covers("held+read+web", "held")
+    assert basis_covers("held+corpus+read+web", "full")
+    assert basis_covers("held+corpus+read+web", "read")
+    assert basis_covers("held+corpus+read+web", "held")
 
 
 def test_a_shallow_dossier_does_not_cover_a_deeper_request():
     """The reverse is not true — asking for the web when we only read their site must still pay."""
     from api.deepdive.routes import basis_covers
-    assert basis_covers("held+read", "read")
-    assert not basis_covers("held+read", "full")
-    assert not basis_covers("held", "read")
-    assert not basis_covers("held", "full")
+    assert basis_covers("held+corpus+read", "read")
+    assert not basis_covers("held+corpus+read", "full")
+    assert not basis_covers("held+corpus", "read")
+    assert not basis_covers("held+corpus", "full")
 
 
-def test_a_missing_basis_covers_only_the_free_depth():
-    """An old row with no basis recorded must never be treated as though it had read the web."""
+def test_a_dossier_built_before_the_corpus_leg_covers_nothing():
+    """Every dossier written before DeepDive searched our own corpus says only "held" / "held+read".
+
+    Those are INCOMPLETE now — they are missing the deepest material we have about the company — so
+    they must not be served as though they answered the request. One rebuild each and they carry it.
+    Without this the cache would keep handing back the pre-corpus dossier forever."""
     from api.deepdive.routes import basis_covers
-    assert basis_covers("", "held") and basis_covers(None, "held")
+    assert not basis_covers("held", "held")
+    assert not basis_covers("held+read", "read")
+    assert not basis_covers("held+read+web", "full")
+
+
+def test_a_missing_basis_covers_nothing():
+    """An old row with no basis recorded must never be treated as though it had read anything."""
+    from api.deepdive.routes import basis_covers
+    assert not basis_covers("", "held") and not basis_covers(None, "held")
     assert not basis_covers("", "read") and not basis_covers(None, "full")
+
+
+def test_a_dive_defaults_to_reading_everything():
+    """The default depth is the DEEPEST one. A dive that defaults to `held` answers a company nobody
+    has read with two reference rows and hides the real reading behind a button — which is the
+    behaviour this default was changed to end."""
+    from api.deepdive.routes import DiveIn
+    assert DiveIn().depth == "full"
+    assert DiveIn().discover is True
+
+
+def test_pricing_a_dive_for_an_unknown_company_does_not_run_discovery():
+    """`project_only` must spend nothing. Discovery is a web search that costs money and it used to
+    run BEFORE the project_only check, so pricing-then-diving paid for it twice."""
+    import inspect
+
+    from api.deepdive import routes as ddr
+    src = inspect.getsource(ddr.build_router)
+    before = src.index("body.project_only")
+    find = src.index("discovery.find(")
+    assert before < find, "the project_only guard must come before discovery.find spends"

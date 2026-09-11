@@ -425,7 +425,8 @@ def merge_sections(sections: list[dict]) -> list[dict]:
     return out
 
 
-def build(c: dict, pages: list[dict], sites: dict | None = None) -> dict:
+def build(c: dict, pages: list[dict], sites: dict | None = None,
+          corpus_sections: list[dict] | None = None, corpus_attempt: dict | None = None) -> dict:
     """The whole free dossier for one resolved company.
 
     A strict SUPERSET of the startup card: everything the card shows — founders and their bios,
@@ -480,12 +481,20 @@ def build(c: dict, pages: list[dict], sites: dict | None = None) -> dict:
     mkt = [_fact_claim(f) for k in _MARKET for f in byk.get(k, [])]
     sections.append(_section("Model and traction", "fact", mkt))
 
+    # What OUR OWN corpus holds about them — filings, patents, research, press. Free, and for a
+    # company we have ingested anything about it is often the deepest material in the dossier. It was
+    # never queried: the product is built on this corpus and the dive looked everywhere except in it.
+    for cs in (corpus_sections or []):
+        sections.append(cs)
+
     return {
         "company": {"id": c.get("id"), "name": c.get("name"), "website": c.get("website") or "",
                     "one_liner": c.get("one_liner") or "", "hq": c.get("hq") or "",
                     "cik": c.get("cik"), "yc_batch": c.get("yc_batch") or ""},
         "sections": [s for s in sections if s],
-        "attempted": attempted(c, byk, pages),
+        # The Manifest of Absence carries the corpus attempt too: "nothing about this company in the
+        # corpus yet" is a finding, and silence about a source we searched is not.
+        "attempted": attempted(c, byk, pages) + ([corpus_attempt] if corpus_attempt else []),
         "basis": "held",          # nothing here was fetched or generated for this dossier
         "as_of": date.today().isoformat(),
     }

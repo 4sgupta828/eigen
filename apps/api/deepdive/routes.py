@@ -1,6 +1,6 @@
 """DeepDive routes.
 
-Three depths, and the shallowest is the default:
+Three depths, and the DEEPEST is the default:
 
 - `held`  — free. Rows we already hold plus the keyless public sources. No model, no web.
 - `read`  — spends a little: a deeper crawl of the company's own site, then one model call per page,
@@ -8,7 +8,12 @@ Three depths, and the shallowest is the default:
 - `full`  — adds the bounded web read for what only news and analysis carry, kept in a signal register.
 
 Every depth above `held` is PROJECTED and GATED before anything is spent: a projection over `max_usd`
-returns a refusal with the number in it and charges nothing.
+returns a refusal with the number in it and charges nothing. That cap is the gate — NOT a click per
+leg. A dive used to default to `held` and then offer to read their site, then offer the web, so the
+answer a reader got depended on how many times they pressed a button; the legs are cheap and the
+reader asked for the company, so the dive reads everything it can and the cap stops it going wide.
+
+`held` survives as an explicit downshift for a reader who wants only what costs nothing.
 
 The mode is flag-gated (EIGEN_DEEPDIVE). OFF is a true no-op: no routes, no tables touched.
 """
@@ -41,16 +46,23 @@ class DiveIn(BaseModel):
     company_id: str = ""            # set when the caller already picked from candidates
     refresh: bool = False           # write a new revision instead of returning the stored one
     public: bool = True             # the keyless public sources (EDGAR, Wikidata, GitHub) — free
-    depth: str = "held"             # held | read | full
-    discover: bool = False          # a name we do not hold: look for it on the web and admit it
+    depth: str = "full"             # held | read | full — a dive READS, that is what a dive is
+    discover: bool = True           # a name we do not hold: look for it on the web and admit it
     accept_domain: str = ""         # the caller confirmed an unsure match
     max_usd: float = 0.50           # refuse before spending more than this
     project_only: bool = False      # return the projection and spend nothing
 
 
-# What each depth ADDS to the dossier's basis, which is how a stored dossier says what it was built
-# from ("held" / "held+read" / "held+read+web").
-_DEPTH_NEEDS = {"held": (), "read": ("read",), "full": ("read", "web")}
+# A dossier's `basis` is the record of WHICH LEGS RAN, written as "held+corpus+read+web". It is also
+# the cache key: a stored dossier answers a request only if it ran every leg the request needs.
+#
+# `corpus` is listed for `held` too, and that is deliberate. The corpus leg is free and runs at every
+# depth — but dossiers written before it existed say only "held", so without it in the needs list
+# they would keep being served as complete while missing the deepest material we have. One rebuild
+# each and they carry it.
+CORPUS_MARK = "corpus"
+_DEPTH_NEEDS = {"held": (CORPUS_MARK,), "read": (CORPUS_MARK, "read"),
+                "full": (CORPUS_MARK, "read", "web")}
 
 
 def basis_covers(basis: str, depth: str) -> bool:
@@ -93,12 +105,7 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
 
     @r.post("/deepdive")
     async def dd_dive(body: DiveIn, authorization: str = Header(default="")):
-        depth = body.depth if body.depth in DEPTHS else "held"
-        # Finding a company on the web is already a spend the caller approved. Stopping at "what we
-        # hold" then shows a company we have held for four seconds — a stub. A discovered company is
-        # read.
-        if (body.discover or body.accept_domain) and depth == "held":
-            depth = "read"
+        depth = body.depth if body.depth in DEPTHS else "full"
         cid = (body.company_id or "").strip().lower()
         pool = await pool_of()
         discovered = False
@@ -111,6 +118,14 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
             if res["status"] == "resolved":
                 cid = res["company"]["id"]
             elif res["status"] == "unknown" and body.discover:
+                # A PROJECTION MUST NOT SPEND. `project_only` was only honoured further down, past
+                # `discovery.find` — so pricing a dive for a company we do not hold ran the web
+                # search, and a caller that priced-then-dived paid for discovery twice.
+                if body.project_only:
+                    return {"status": "projection", "company": {"id": "", "name": body.q},
+                            "projection": {"depth": depth, "pages": 0, "extract_usd": 0.0, "web_usd": 0.0,
+                                           "discover": True,
+                                           **discovery.project_discover_cost()}}
                 found = await discovery.find(body.q, manifest=manifest, llm=_llm(providers))
                 if found["status"] != "found":
                     return {"status": found["status"], "reason": found["why"],
@@ -137,6 +152,13 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
                             "company": {"id": cid, "name": held.get("name") or ""}}
                 return {"status": "ok", "cached": True, "dossier": held}
 
+        # Finding a company on the web is already a spend. Stopping at "what we hold" then shows a
+        # company we have held for four seconds — a stub. A company we just discovered is READ.
+        # This used to fire on `discover` being *permitted* rather than having *happened*, which with
+        # discovery on by default would have quietly overridden an explicit `held`.
+        if discovered and depth == "held":
+            depth = "read"
+
         c = await su_store.company(cid)
         if not c:
             raise HTTPException(status_code=404, detail="we hold no company with that id")
@@ -162,7 +184,21 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
             sites = await su_store.investor_sites()
         except Exception:      # noqa: BLE001 — investors are still named, just not linked
             sites = {}
-        doss = build(c, pages, sites)
+        # Our own corpus, every time. Free — it is our Postgres — so it is not gated behind a depth
+        # or a click: for a company we hold filings, patents, research or press about, this is the
+        # deepest material available and it was the one source the dive never looked in.
+        corp_sections, corp_attempt = [], None
+        try:
+            from . import corpus as dd_corpus
+            hits, corp_attempt = await dd_corpus.corpus_hits(
+                os.environ.get("EIGEN_CORPUS_DSN", ""),
+                name=c.get("name") or "", domain=c.get("id") or "")
+            corp_sections = dd_corpus.as_sections(hits)
+        except Exception as e:      # noqa: BLE001 — a corpus we cannot reach thins the dossier, never fails it
+            corp_attempt = {"source": "Eigen corpus", "found": 0, "unit": "passages",
+                            "result": f"unavailable ({str(e)[:60]})"}
+        doss = build(c, pages, sites, corpus_sections=corp_sections, corpus_attempt=corp_attempt)
+        legs = ["held"] + ([CORPUS_MARK] if corp_attempt else [])
         doss["spend"] = {"projection": proj, "depth": depth}
         if discovered:
             doss["discovered"] = True
@@ -180,7 +216,7 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
                                           "result": "could not be reached on this run"})
 
         if depth in ("read", "full"):
-            doss["basis"] = "held+read"
+            legs.append("read")
             pages = await _deep_crawl(su_store, c, pages)
             got = await _read_pages(providers, c, pages)
             doss["sections"].extend(got["sections"])
@@ -188,7 +224,7 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
                                       "result": _read_result(got)})
 
         if depth == "full":
-            doss["basis"] = "held+read+web"
+            legs.append("web")
             from .web import read_web
             got = await read_web(c, manifest=manifest, subject_terms=_terms(c))
             doss["sections"].extend(got["sections"])
@@ -196,6 +232,7 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
             doss["spend"]["web_dropped"] = got.get("dropped") or {}
 
         # Every leg has contributed; one heading, one card.
+        doss["basis"] = "+".join(legs)
         doss["sections"] = merge_sections(doss["sections"])
         meta = await dstore.save(pool, doss, owner_id=await _owner(authorization),
                                  reason=depth if body.refresh or depth != "held" else "initial")
