@@ -765,10 +765,16 @@
 
   /* identity gate (name + email at landing) */
   .idmodal[hidden]{display:none;}
+  /* The overlay SCROLLS. It was a fixed grid with place-items:center and no overflow, so on a phone
+     — where the on-screen keyboard also halves the viewport — a card taller than the screen was
+     clipped at both ends with no way to reach "continue". `margin:auto` on a flex child is the
+     centring that still scrolls: centred when it fits, scrollable from the true top when it does not. */
   .idmodal{position:fixed;inset:0;z-index:70;background:rgba(4,10,20,.82);
-    -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);display:grid;place-items:center;padding:1.2rem;}
+    -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
+    display:flex;align-items:center;justify-content:center;padding:1.2rem;
+    overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;}
   .idcard{background:var(--panel);border:1px solid var(--hair);border-radius:16px;padding:1.7rem 1.5rem;
-    max-width:25rem;width:100%;box-shadow:0 24px 70px -34px #000;}
+    max-width:25rem;width:100%;box-shadow:0 24px 70px -34px #000;margin:auto;flex:0 0 auto;}
   .idcard img,.idcard .idlogo{height:74px;width:auto;display:block;margin:0 auto .6rem;}
   .idcard h2{font-family:var(--serif);font-size:1.35rem;text-align:center;margin:0 0 .3rem;}
   .idcard p{color:var(--muted);font-size:.84rem;text-align:center;margin:0 0 1.2rem;line-height:1.5;}
@@ -779,6 +785,10 @@
     font-weight:600;padding:.7rem;cursor:pointer;margin-top:.35rem;}
   .idcard .idgo:hover{background:var(--gold-strong);}
   .idcard .iderr{color:var(--gap);font-size:.75rem;min-height:1rem;margin-top:.35rem;text-align:center;}
+  .idcard .idskip{display:block;width:100%;margin-top:.55rem;background:none;border:none;font:inherit;
+    font-size:.82rem;color:var(--muted);cursor:pointer;padding:.55rem;min-height:40px;border-radius:9px;}
+  .idcard .idskip:hover{color:var(--ink);background:var(--panel2);}
+  .idcard .idskip[hidden]{display:none;}
   .idcard select{width:100%;background:var(--panel2);border:1px solid var(--hair);border-radius:10px;
     font:inherit;color:var(--ink);padding:.6rem .7rem;margin-bottom:.6rem;}
   /* product-settings modal (reuses the idcard shell) */
@@ -835,7 +845,6 @@
   #grfilter{margin:.2rem 0 .4rem;padding:.4rem .6rem;font-size:.8rem;width:100%;}
   @media (max-width:640px){ .grimpact{grid-template-columns:1fr;} }
   .idcard .idrow{display:flex;gap:.5rem;} .idcard .idrow>*{flex:1;min-width:0;}
-  .idcard .idhint{font-size:.68rem;color:var(--muted);line-height:1.45;margin:-.1rem 0 .5rem;}
   /* per-answer feedback (accounts flag) — the W-taxonomy signal loop. The RESTING state is a
      one-line whisper (the top-toolbar thumbs already provide the prominent pair); the root-cause
      PICKER regains full card treatment when it opens — that's the moment it earns the space. */
@@ -2393,17 +2402,12 @@
       <a href="#" id="idswitch" style="color:var(--gold);text-decoration:none;">Already have an account? Sign in</a>
     </div>
     <div class="idextra" id="idextra" hidden>
-      <select id="idprof" aria-label="I am a">
-        <option value="">I am a…</option>
-        <option>Investor / VC</option><option>Founder</option><option>Analyst</option>
-        <option>Operator</option><option>Researcher</option><option>Student</option><option>Other</option>
-      </select>
       <div class="idrow" hidden><select id="idcountry" hidden><option value=""></option></select><input id="idnpi" hidden /></div>
-      <div class="idhint">Optional — helps tailor answers to your role.</div>
     </div>
     <div class="iderr" id="iderr"></div>
     <div class="iddisc" id="iddisc" hidden></div>
     <button type="button" class="idgo" id="idgo">I understand — continue</button>
+    <button type="button" class="idskip" id="idskip">Not now — let me look around</button>
   </div>
 </div>
 
@@ -2632,7 +2636,6 @@ async function loadConfig(){
     maybeShowPulseBell();
     DYN_ENGINES = !!c.dynamic_engines_enabled;
     if(ACCOUNTS_ENABLED){
-      const ex = $("#idextra"); if(ex) ex.hidden = false;   // reveal profession/NPI/country in the gate
       // an existing local-only user predates accounts → ask them to register once (prefilled).
       // Not while they are reading a link someone sent them: a shared page must open for anyone.
       const _shared = (typeof isSharedLink === "function") && isSharedLink();
@@ -4508,6 +4511,13 @@ function cancelResearch(){
 $("#ask").addEventListener("submit", e=>{
   e.preventDefault();
   const question = q.value.trim();
+  // Every mode's search funnels through here, so the count and the gate live here once rather than
+  // in seven places. An empty submit is not a run: Guided restarts itself with send(""), and
+  // charging that against the allowance would lock a reader out without them asking anything.
+  if(question || ATTACHMENTS.length){
+    if(gateRequired()){ showGate(true); return; }
+    noteRun();
+  }
   if(APP_MODE === "triage"){ submitTriage(question); return; }        // guided intake → next clarifying turn
   if(APP_MODE === "panel"){ submitPanelIntake(question); return; }   // panel mode → convene / follow-up
   if(APP_MODE === "startups"){ if(question && window.SU) SU.search(question); return; }   // startup search → compile + evaluate
@@ -6441,6 +6451,17 @@ q.addEventListener("input", autoGrow);
 window.addEventListener("resize", syncComposerPad);
 window.addEventListener("load", autoGrow);
 $("#newbtn").addEventListener("click", newConversation);   // masthead: start a fresh chat
+// "Not now" — look around first. Remembered, so it does not ask again on every load; it returns as
+// a requirement once the free runs are spent.
+(function(){
+  const b = $("#idskip"); if(!b) return;
+  b.addEventListener("click", () => {
+    if(gateRequired()) return;                 // no waiver left to give
+    waiveGate();
+    const m = $("#idmodal"); if(m) m.hidden = true;
+    const qq = $("#q"); if(qq) qq.focus();
+  });
+})();
 
 // ---- Past Sessions: full-page master/detail ----
 const sessionsEl = $("#sessions"), slist = $("#slist"), sdetail = $("#sdetail");
@@ -6782,6 +6803,33 @@ document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !sessionsEl.hid
 // returns the moment they leave the shared view to use the app themselves.
 function isSharedLink(){ return /^#share\//.test(location.hash || ""); }
 
+// ---- SOFT GATE ----------------------------------------------------------------------------
+// Asking a stranger to create an account before they have seen the product answer anything is a
+// door with no window: they cannot tell whether it is worth the signup. So the gate can be waived
+// once ("Not now"), and returns as a REQUIREMENT after a few real runs — at which point the reader
+// has seen what they would be signing up for, which is the only moment the ask is fair.
+const FREE_RUNS = 3;                         // runs allowed before an account is required
+function runsUsed(){ try{ return parseInt(localStorage.getItem("eigen_runs") || "0", 10) || 0; }catch(e){ return 0; } }
+function noteRun(){ try{ localStorage.setItem("eigen_runs", String(runsUsed() + 1)); }catch(e){} }
+function gateWaived(){ try{ return localStorage.getItem("eigen_gate_skipped") === "1"; }catch(e){ return false; } }
+function waiveGate(){ try{ localStorage.setItem("eigen_gate_skipped", "1"); }catch(e){} }
+// Accounts off, already signed in, or a shared link → never gate. Otherwise it is required only
+// once the free runs are spent.
+function gateRequired(){
+  if(!ACCOUNTS_ENABLED || loggedIn() || isSharedLink()) return false;
+  return runsUsed() >= FREE_RUNS;
+}
+function showGate(required){
+  const m = $("#idmodal"); if(!m) return;
+  const skip = $("#idskip"), sub = m.querySelector("p");
+  if(skip) skip.hidden = !!required;          // out of free runs → the way out closes
+  if(sub) sub.textContent = required
+    ? "You have had a few runs on us. Create an account to keep going — it also saves your questions and answers."
+    : "Tell us who you are, so your questions are saved to your name.";
+  m.hidden = false;
+  setTimeout(() => { const n = $("#idname"); if(n) n.focus(); }, 60);
+}
+
 function initIdentity(opts){
   opts = opts || {};
   try{ USER = JSON.parse(localStorage.getItem("eigen_user")||"null"); }catch(e){ USER = null; }
@@ -6792,7 +6840,9 @@ function initIdentity(opts){
   // Show the gate for new users AND for returning users who predate the disclaimer (never attested).
   if(!USER || !USER.email || !USER.disclaimer_ack){
     if(USER){ if(USER.name) $("#idname").value = USER.name; if(USER.email) $("#idemail").value = USER.email; }
-    $("#idmodal").hidden = false; setTimeout(()=>$("#idname").focus(), 60);
+    // A waiver holds until the free runs are spent; then the gate comes back and cannot be waived.
+    const required = gateRequired();
+    if(required || !gateWaived()) showGate(required);
   }
 }
 // ---- accounts (roster's model): password sign-in / create account; per-device bearer token ----
@@ -6804,7 +6854,6 @@ function updateAuthUI(){
   if(!ACCOUNTS_ENABLED){ if(pw) pw.hidden = true; if(tg) tg.hidden = true; if(tabs) tabs.hidden = true; return; }
   if(pw) pw.hidden = false; if(tg) tg.hidden = false;
   if(tabs){ tabs.hidden = false; tabs.querySelectorAll(".authtab").forEach(b => b.setAttribute("aria-selected", b.dataset.auth === AUTH_MODE ? "true" : "false")); }
-  const ex = $("#idextra"); if(ex) ex.hidden = (AUTH_MODE === "login");   // "I am a…" only when creating an account
   if(go) go.textContent = (AUTH_MODE === "login") ? "Sign in" : "Create account";
   if(sw) sw.textContent = (AUTH_MODE === "login") ? "New here? Create an account" : "Already have an account? Sign in";
   if(nm) nm.hidden = (AUTH_MODE === "login");
@@ -6836,7 +6885,7 @@ $("#idgo").addEventListener("click", async ()=>{
     try{
       const url = (AUTH_MODE === "login") ? "/auth/login" : "/auth/register";
       const body = (AUTH_MODE === "login") ? {email, password}
-        : {email, password, name, profession: (($("#idprof")||{}).value||""), country: (($("#idcountry")||{}).value||""), disclaimer_ack: true};
+        : {email, password, name, country: (($("#idcountry")||{}).value||""), disclaimer_ack: true};
       const r = await fetch(url, {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(body)});
       if(!r.ok){
         let msg = (AUTH_MODE === "login") ? "Incorrect email or password." : "Could not create the account.";
