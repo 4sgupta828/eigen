@@ -169,6 +169,64 @@ def looks_like_bibliography(text: str) -> bool:
     return len(_CITE.findall(text)) >= 3
 
 
+# An ingested web page arrives with a header the ingest wrote and a navigation bar the site wrote.
+# Quoting either at a reader is quoting furniture: "# Claude Sonnet \\ Anthropic / Published: … /
+# Source: anthropic.com (anthropic.com) / Language: en / ## Story / Skip to main contentSkip to
+# footer / [Home](…)". The page's actual first sentence is three hundred characters further down.
+_PREAMBLE = re.compile(r"^\s*(?:published|source|language|author|date|updated)\s*:.*$",
+                       re.IGNORECASE | re.MULTILINE)
+_NAV = re.compile(r"skip to (?:main content|footer|content)", re.IGNORECASE)
+_MD_LINK = re.compile(r"\[([^\]]{0,80})\]\(https?://[^)]+\)")
+_H1 = re.compile(r"^\s*#\s+(.{3,140}?)\s*$", re.MULTILINE)
+_SECTION_HEAD = re.compile(r"^\s*#{1,6}\s*(?:story|article|content)\s*$", re.IGNORECASE | re.MULTILINE)
+
+
+def headline(text: str, document_title: str) -> str:
+    """The best name we have for this document.
+
+    An ingested page's stored title is often just the site's ("Anthropic" for every page on
+    anthropic.com), while the page's own H1 says which page it is. Prefer the H1 when the stored
+    title is a prefix of it or the site's bare name — otherwise keep what was stored.
+    """
+    t = (document_title or "").strip()
+    m = _H1.search(text or "")
+    h = (m.group(1).strip() if m else "").replace(" \\ ", " — ")
+    if h and (not t or t.lower() in h.lower()):
+        return h[:160]
+    return t[:160]
+
+
+def clean_passage(text: str, title: str = "") -> str:
+    """The passage with the ingest header, the navigation chrome and the repeated title taken out.
+
+    A page's name appears three times before its first real sentence — once as the ingest's H1, once
+    under the "## Story" divider, once as the page's own H1 — so a quote that began at character
+    zero was the title, the title, and the title again.
+    """
+    t = _PREAMBLE.sub("", text or "")
+    t = _SECTION_HEAD.sub("", t)
+    t = _NAV.sub("", t)
+    t = _MD_LINK.sub(r"\1", t)                 # a link's text, not its markdown
+    t = re.sub(r"^\s*#{1,6}\s*", "", t, flags=re.MULTILINE)
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r"\n{2,}", "\n", t).strip()
+    lines = [ln.strip() for ln in t.split("\n") if ln.strip()]
+    ts = _slug(title)
+    dropped = 0
+    while lines and dropped < 12:
+        ls = _slug(lines[0])
+        # the title again…
+        if ts and len(ts) >= 4 and ls and (ls in ts or ts in ls):
+            lines.pop(0); dropped += 1; continue
+        # …or a navigation item: a short fragment with no sentence in it. The moment a line reads
+        # like prose we stop, so a genuinely terse first sentence is never eaten.
+        bare = lines[0].lstrip("-*• ").strip()
+        if len(bare) < 30 and not re.search(r"[.!?:]$", bare) and len(bare.split()) <= 4:
+            lines.pop(0); dropped += 1; continue
+        break
+    return " ".join(lines).strip()
+
+
 def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
@@ -309,10 +367,15 @@ async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant
         owned_t, mention_t, register = _REGISTER.get(sk, _DEFAULT)
         theirs = is_theirs(r["document_id"], sk, title, url, name=name, domain=domain, cik=cik)
         per[sk] = per.get(sk, 0) + 1
+        shown = headline(text, title)
+        passage = clean_passage(text, shown)
+        if len(passage) < MIN_CHARS:           # nothing left but furniture
+            per[sk] = per.get(sk, 0) - 1
+            continue
         out.append({"section": owned_t if theirs else mention_t, "theirs": theirs,
                     "register": register, "source_key": sk,
-                    "claim": (title or text)[:160], "document_title": title,
-                    "quote": text[:MAX_QUOTE], "source_url": url,
+                    "claim": shown or text[:160], "document_title": shown or title,
+                    "quote": passage[:MAX_QUOTE], "source_url": url,
                     "as_of": (r["published_at"] or "")[:10], "document_id": r["document_id"]})
 
     theirs_n = sum(1 for h in out if h["theirs"])

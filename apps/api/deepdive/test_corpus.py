@@ -10,6 +10,8 @@ from api.deepdive.corpus import (
     MAX_TOTAL,
     _terms,
     as_sections,
+    clean_passage,
+    headline,
     is_theirs,
     looks_like_bibliography,
     names_subject,
@@ -155,3 +157,49 @@ def test_a_domain_with_a_scheme_still_matches_their_own_pages():
 
 def test_the_search_terms_are_a_bare_host_too():
     assert _terms("Anthropic", "https://www.anthropic.com/") == ["Anthropic", "anthropic.com"]
+
+
+# ── a quote must be the page's words, not its furniture ───────────────────────────────────────────
+
+_PAGE = """# Patterns and problems in multiagent systems \\ Anthropic
+
+Published: 2026-08-13T01:21:29+00:00
+Source: anthropic.com (anthropic.com)
+Language: en
+
+## Story
+
+Patterns and problems in multiagent systems \\ Anthropic
+
+Skip to main contentSkip to footer
+
+[Home](https://www.anthropic.com/)
+
+- [Research](https://www.anthropic.com/research)
+
+Multi-agent systems fail in ways single agents do not."""
+
+
+def test_the_quote_is_the_page_not_its_chrome():
+    """An ingested page carries a header the ingest wrote and a nav bar the site wrote. Quoted as-is,
+    the reader got "Published: … Source: … Language: en … Skip to main contentSkip to footer [Home]"
+    where the evidence should be."""
+    out = clean_passage(_PAGE, headline(_PAGE, "Anthropic"))
+    assert out == "Multi-agent systems fail in ways single agents do not."
+
+
+def test_the_headline_is_the_page_not_the_site():
+    """Every page on anthropic.com is stored with the title "Anthropic", so a list of them said the
+    same word eleven times. The page's own H1 says which page it is."""
+    assert headline(_PAGE, "Anthropic") == "Patterns and problems in multiagent systems — Anthropic"
+
+
+def test_a_stored_title_that_is_not_the_site_is_kept():
+    assert headline("# Something else", "Zoom Communications, Inc. — 10-Q") == \
+        "Zoom Communications, Inc. — 10-Q"
+
+
+def test_a_terse_first_sentence_is_not_eaten_as_navigation():
+    """The nav trim stops the moment a line reads like prose."""
+    assert clean_passage("We raised $450M.\nLed by Spark.", "Funding") == \
+        "We raised $450M. Led by Spark."
