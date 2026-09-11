@@ -25,7 +25,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
-PROD_DEFAULT = "https://eigen-api-production.up.railway.app"
+PROD_DEFAULT = os.environ.get("EIGEN_PROD_URL", "https://eigen-api-production.up.railway.app")
 ARXIV_API = "https://export.arxiv.org/api/query"
 ARXIV_PDF = "https://arxiv.org/pdf/{id}"
 UA = "eigen-pdf-bridge/1.0 (mailto:sandeepgupta828@gmail.com)"

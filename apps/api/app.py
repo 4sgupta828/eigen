@@ -2159,7 +2159,15 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                             headers={**_NO_CACHE, "Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
         return Response(raw, media_type="text/html", headers=_NO_CACHE)
 
+    # PUBLIC FACE vs PRODUCT. "/" is the marketing landing page (who this is for, how the grounding
+    # works, who built it); the research platform itself lives at "/app" and is reached from the
+    # "Access Eigen Platform" link. Keeping them on one origin means one deploy, one cert, one
+    # domain — and the shell only uses location.pathname for share links, so it is path-agnostic.
     @app.get("/", response_class=HTMLResponse)
+    def landing(accept_encoding: str = Header(default="")):
+        return _html_response("landing.html", accept_encoding)
+
+    @app.get("/app", response_class=HTMLResponse)
     def index(accept_encoding: str = Header(default="")):
         return _html_response("index.html", accept_encoding)
 
