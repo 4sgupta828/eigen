@@ -397,6 +397,70 @@ def _facets(raw) -> dict:
     return raw or {}
 
 
+_COLS = """SELECT document_id, block_id, text, document_title, source_key, facets,
+                  facets->>'published_at' AS published_at
+             FROM rs_block"""
+
+# The words a funding event is written in. A fixed literal — never built from user input — so it can
+# be an OR-query without any escaping question.
+_EVENT_TSQ = ("raise | raised | raises | valuation | funding | investor | investors | series | "
+              "startup | founded | acquire | acquired | customers | revenue")
+MAX_TARGETED = 8
+
+
+async def _by_relevance(conn, tenant: str, websearch: str, limit: int) -> list:
+    return await conn.fetch(
+        _COLS + """ WHERE tenant_id = $1 AND tsv @@ websearch_to_tsquery('english', $2)
+                 ORDER BY ts_rank(tsv, websearch_to_tsquery('english', $2)) DESC
+                    LIMIT $3""", tenant, websearch, limit)
+
+
+async def _with_term(conn, tenant: str, name: str, other: str, limit: int) -> list:
+    """Passages holding the name AND `other`. Both are bound parameters, never concatenated."""
+    return await conn.fetch(
+        _COLS + """ WHERE tenant_id = $1
+                      AND tsv @@ (plainto_tsquery('english', $2) && plainto_tsquery('english', $3))
+                 ORDER BY ts_rank(tsv, plainto_tsquery('english', $3)) DESC
+                    LIMIT $4""", tenant, name, other, limit)
+
+
+async def _with_event_words(conn, tenant: str, name: str, limit: int) -> list:
+    """Passages holding the name beside the vocabulary of a funding event. The OR-list is a fixed
+    literal defined in this file, so there is nothing to escape."""
+    return await conn.fetch(
+        _COLS + f""" WHERE tenant_id = $1
+                       AND tsv @@ (plainto_tsquery('english', $2)
+                                   && to_tsquery('english', '{_EVENT_TSQ}'))
+                  ORDER BY ts_rank(tsv, plainto_tsquery('english', $2)) DESC
+                     LIMIT $3""", tenant, name, limit)
+
+
+async def _targeted(conn, tenant: str, name: str, corro: tuple[str, ...]) -> list:
+    """The narrow questions: the name beside something that says WHICH one it is."""
+    out: list = []
+    for c in corro[:5]:
+        try:
+            out += await _with_term(conn, tenant, name, c, MAX_TARGETED)
+        except Exception:      # noqa: BLE001 — one narrow miss must not lose the others
+            pass
+    try:
+        out += await _with_event_words(conn, tenant, name, MAX_TARGETED * 3)
+    except Exception:      # noqa: BLE001 — the event sweep is a bonus, never why a dive fails
+        pass
+    return out
+
+
+def _dedupe_rows(rows: list) -> list:
+    seen, out = set(), []
+    for r in rows:
+        k = (r["document_id"], r["block_id"])
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(r)
+    return out
+
+
 async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant: str = "demo",
                       ui=None, corroborators: tuple[str, ...] = ()) -> tuple[list[dict], dict]:
     """([hit], attempt). Keyword search over the corpus we already hold. Never raises: a corpus we
@@ -415,28 +479,31 @@ async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant
     # a perfectly good second term sat unused. `websearch_to_tsquery` is the one query parser that
     # takes an OR.
     q = " OR ".join(f'"{t}"' if " " in t else t for t in terms)
+    dom = _domain(domain)
+    corro = tuple(c for c in ((dom,) + tuple(corroborators)) if c and len(c) >= 4)
     try:
         conn = await asyncpg.connect(dsn)
         try:
-            rows = await conn.fetch(
-                """SELECT document_id, block_id, text, document_title, source_key, facets,
-                          facets->>'published_at' AS published_at
-                     FROM rs_block
-                    WHERE tenant_id = $1 AND tsv @@ websearch_to_tsquery('english', $2)
-                 ORDER BY ts_rank(tsv, websearch_to_tsquery('english', $2)) DESC
-                    LIMIT $3""", tenant, q, MAX_TOTAL * 8)
+            rows = await _by_relevance(conn, tenant, q, MAX_TOTAL * 8)
+            # IS THE NAME AN IDENTIFIER? Measured on the rows we just read, which costs nothing extra.
+            ambiguous, word_uses = name_is_ambiguous(name, [(r["text"] or "") for r in rows])
+            if ambiguous:
+                # THE BINDING IS NOT THE ONLY THING THAT BREAKS ON A COMMON WORD — SO DOES THE
+                # RANKING. `ts_rank` puts the documents where "clay" occurs most at the top, which
+                # for a common noun means geology papers and pottery, and the article headlined
+                # "Clay raises $115M" never appears in the first three hundred rows to be judged.
+                # Tightening the binding on THAT sample just emptied the section.
+                #
+                # So ask narrower questions: the name AND the domain, the name AND each backer we
+                # already hold, the name AND the vocabulary of a funding event. Each is an indexed
+                # query and costs nothing, and their answers go in FRONT of the broad sweep.
+                rows = await _targeted(conn, tenant, name, corro) + rows
+                rows = _dedupe_rows(rows)
         finally:
             await conn.close()
     except Exception as e:      # noqa: BLE001
         return [], {"source": "Eigen corpus", "found": 0, "unit": "passages",
                     "result": f"unavailable ({str(e)[:60]})"}
-
-    # IS THE NAME AN IDENTIFIER? Measured on the rows we just retrieved, which cost nothing extra.
-    dom = _domain(domain)
-    ambiguous, word_uses = name_is_ambiguous(name, [(r["text"] or "") for r in rows])
-    # When it is not, the name binds on its own. When it is, a passage has to carry something that
-    # picks out THIS company: the domain, or somebody we already hold as connected to them.
-    corro = tuple(c for c in ((dom,) + tuple(corroborators)) if c and len(c) >= 4)
 
     per: dict[str, int] = {}
     out: list[dict] = []
