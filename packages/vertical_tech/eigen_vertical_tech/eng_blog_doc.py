@@ -21,6 +21,7 @@ import re
 from urllib.parse import urlparse
 
 from .expert_feed_doc import lead_image
+from .feed_dates import iso_date
 
 _MAX_BODY = 16000
 
@@ -63,6 +64,13 @@ def facets(rec: dict) -> dict:
         # whose account you are reading is the whole point.
         "site": _site_of(link),
         "image": str(rec.get("image") or "").strip() or lead_image(rec),
+        # WHEN it was published, in the sortable form the browse filters on. Without published_at a
+        # post is invisible under "Everything": the default window is "this week", the filter reads
+        # (facets->>'published_at') >= $since, and NULL fails that comparison — so every blog was
+        # dropped from the one view most readers start in, while the blog-only filter (which passes
+        # no window) showed them fine. `published` is kept for display, `published_at` for ordering.
+        "published": str(rec.get("published") or "").strip()[:64],
+        "published_at": iso_date(rec.get("published")),
         "source_country": "global",
         "entity_type": "corp_eng",
         "author": " ".join(str(rec.get("author") or "").split()).strip(),

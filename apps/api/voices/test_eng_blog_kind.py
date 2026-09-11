@@ -130,3 +130,21 @@ def test_a_stub_block_is_not_offered_as_a_moment():
     sql, _ = build_query(q="anything")
     assert "length(btrim(text)) >= 30" in sql
     assert "show_notes" in sql, "chapter pointers are legitimately short and must be spared"
+
+
+def test_a_blog_carries_a_sortable_publication_date():
+    # Without published_at a post is invisible under "Everything": the default browse window is
+    # "this week" and the filter is (facets->>'published_at') >= $since, which NULL never satisfies.
+    # The blog-only filter passes no window, so the category looked fine while the main view was empty.
+    f = eng_blog_doc.facets({**_REC, "published": "Mon, 08 Sep 2026 10:00:00 GMT"})
+    assert f["published_at"] == "2026-09-08"
+    assert f["published"].startswith("Mon, 08 Sep 2026")
+
+
+def test_the_voices_builders_agree_on_the_facets_a_card_needs():
+    # These two builders do nearly the same job and have now diverged four times — permalink, lead
+    # image, entity decoding and publication date — each found in production rather than in a test.
+    rec = {**_REC, "published": "Mon, 08 Sep 2026 10:00:00 GMT"}
+    for key in ("url", "image", "published_at", "publication"):
+        for mod in (eng_blog_doc, expert_feed_doc):
+            assert mod.facets(rec).get(key), f"{mod.__name__} is missing {key!r}"
