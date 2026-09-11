@@ -192,7 +192,8 @@ def build_router(pool_of, su_store, *, providers=None, manifest=None, user_of=No
             from . import corpus as dd_corpus
             hits, corp_attempt = await dd_corpus.corpus_hits(
                 os.environ.get("EIGEN_CORPUS_DSN", ""),
-                name=c.get("name") or "", domain=c.get("id") or "")
+                name=c.get("name") or "", domain=c.get("website") or c.get("id") or "",
+                cik=str(c.get("cik") or ""), ui=getattr(manifest, "ui", None))
             corp_sections = dd_corpus.as_sections(hits)
         except Exception as e:      # noqa: BLE001 — a corpus we cannot reach thins the dossier, never fails it
             corp_attempt = {"source": "Eigen corpus", "found": 0, "unit": "passages",

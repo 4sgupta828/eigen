@@ -435,6 +435,12 @@
   .dd-src:hover{color:var(--gold);border-color:var(--gold);background:var(--panel);}
   .dd-quote{font-size:.8rem;color:var(--dim);border-left:2px solid var(--hair);padding-left:.65rem;
     margin:.2rem 0 0;line-height:1.6;}
+  /* A corpus row's headline is the DOCUMENT it came from — long, and it must wrap. The hiring
+     chip (.dd-title) is a pill and truncates, which hides exactly the part that says whose. */
+  .dd-doc{flex:1 1 12rem;min-width:0;color:var(--ink);text-decoration:none;
+    border-bottom:1px solid transparent;overflow-wrap:anywhere;}
+  a.dd-doc:hover{color:var(--gold);border-bottom-color:var(--gold);}
+  .dd-sec[data-kind="corpus"]{border-left-color:#7a8ba6;}
 
   .dd-people{display:grid;gap:.7rem;}
   .dd-person{display:flex;gap:.6rem;align-items:flex-start;}
@@ -9672,8 +9678,23 @@ async function openShare(token){
       + '<div class="dd-quote">' + esc(String(c.excerpt || "").slice(0, 320)) + "\u2026</div></div>";
   }
 
+  // A corpus row is a PASSAGE from a document we hold, so the document is the headline and the
+  // passage is the evidence under it. Without its own renderer these fell through to factRow, which
+  // prints a claim and drops the title — the one thing that says whose document this is.
+  function corpusRow(c){
+    const t = esc(c.document_title || c.claim || "");
+    const head = c.source_url
+      ? '<a class="dd-doc" href="' + esc(c.source_url) + '" target="_blank" rel="noopener">' + t + " \u2197</a>"
+      : '<span class="dd-doc">' + t + "</span>";
+    return '<div class="dd-row">' + reg(c.register) + head
+      + (c.as_of ? '<span class="dd-k">' + esc(c.as_of) + "</span>" : "")
+      + (c.quote ? '<div class="dd-quote">\u201c' + esc(String(c.quote).slice(0, 300)) + "\u201d</div>" : "")
+      + "</div>";
+  }
+
   const ROW = { fact: factRow, people: personRow, hiring: hiringRow, stated: statedRow,
-                filed: filedRow, financing: finRow, pages: pageRow, investors: investorRow };
+                filed: filedRow, financing: finRow, pages: pageRow, investors: investorRow,
+                corpus: corpusRow };
 
   // A mark per section, so the eye finds "how they make money" without reading every heading.
   const SECTION_ICON = {
@@ -9686,6 +9707,21 @@ async function openShare(token){
     "Limits they state themselves": "\u26a0", "Reference profile": "\u25a7", "Public code": "\u2328",
     "Funding coverage": "\u25cc", "Competition and traction, as covered": "\u25cc",
     "Model and traction": "\u25a4",
+    // from our own corpus — their documents, then documents that name them
+    "What they have filed": "\u2637", "Their patents": "\u25c8",
+    "Public funding they were awarded": "\u25b3", "Their public code": "\u2328",
+    "Their public models": "\u25c9", "Their YC profile": "\u25a7",
+    "Their engineering writing": "\u270e", "Their founders' writing": "\u270e",
+    "Their writing": "\u270e", "Them, in their own words": "\u25d5",
+    "Their own pages, as we hold them": "\u25a4", "Press": "\u25cc", "Discussion": "\u25cc",
+    "Research": "\u25c7", "Research that names them": "\u25c7",
+    "Named in others' filings": "\u2637", "Named in others' patents": "\u25c8",
+    "Named in public funding records": "\u25b3", "Named in public code": "\u2328",
+    "Named in public models": "\u25c9", "Named in YC records": "\u25a7",
+    "Named in reference pages": "\u25a7", "Engineering writing that names them": "\u270e",
+    "Founder and investor writing about them": "\u270e", "Analysis that names them": "\u270e",
+    "Conversations that name them": "\u25d5", "Web pages that name them": "\u25cc",
+    "Also in our corpus": "\u25cc", "Elsewhere in our corpus": "\u25cc",
   };
 
   function sectionHtml(sec){

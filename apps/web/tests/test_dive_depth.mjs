@@ -56,3 +56,12 @@ test("the basis is read as a list of legs, not matched as a fixed string", () =>
   assert.ok(!SRC.includes('"held+read+web": "their site and the web, read"'),
     "the old exact-match basis map is back");
 });
+
+test("a corpus row shows the document it came from", () => {
+  // These rows used to fall through to factRow, which prints a claim and drops the document title —
+  // the one thing that says whose document the passage is.
+  assert.match(SRC, /corpus: corpusRow/, "the corpus section kind must have its own renderer");
+  assert.match(SRC, /function corpusRow\(c\)[\s\S]{0,400}c\.document_title/);
+  assert.match(SRC, /function corpusRow\(c\)[\s\S]{0,600}c\.quote/,
+    "the passage is the evidence; a headline without it is a claim to take on faith");
+});

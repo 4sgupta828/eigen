@@ -8,42 +8,102 @@ anything about, the deepest source available was the one we never queried.
 This is FREE — our own Postgres, keyword search over the tsvector that already exists. It runs at
 every depth, including `held`, which is what turns `held` from two reference rows into a real reading.
 
-Discipline, unchanged from the rest of DeepDive:
-  - A hit must NAME the company. `subject_bound` decides that, not this module.
-  - Each hit keeps its source_key, its title and its URL, so every row can be opened.
-  - The register comes from what the source IS — a filing is `filed`, a paper or news is `stated` —
-    never from how confident the text sounds.
+THE HARD PART IS NOT FINDING BLOCKS, IT IS SAYING WHOSE THEY ARE.
+A keyword search returns every block that names the company, and most of them are somebody ELSE'S
+document. Amazon's 10-K discusses its stake in Anthropic; a hundred GitHub READMEs list Anthropic
+among their providers; a paper's bibliography cites them. Filing those under "What they have filed"
+and "Their public code" is wrong-company attribution — the exact failure class the standing directive
+names, and the reason "the quote exists" is never the same as "the quote is about them".
+
+So every hit is classified on ONE question: is the company the document's SUBJECT, or is it named
+inside somebody else's? Both are kept — Amazon disclosing a stake in Anthropic is a strong signal —
+but they never share a heading, and a mention is never dressed up as the company's own filing.
+
+Ownership is decided from the document id and the document's host — facts about where a document came
+from — never from how the text reads:
+  - `edgar`    — the accession's leading digits ARE the filer's CIK. Theirs iff it is the company's.
+  - `github` / `huggingface` — the native id is `owner/name`. Theirs iff the owner is the company.
+  - feeds, web, news, blogs — the document URL's host. Theirs iff it is the company's own domain.
+  - `wikipedia` / `wikidata` / `yc` — a reference page ABOUT one subject; theirs iff the title names
+    them.
+  - research and patents — authored or assigned, and we hold no reliable affiliation or assignee, so
+    it is always "research that names them". Saying less than we know beats saying more than we can
+    show.
+
+Links come from the vertical's own canonical link builder (`ui.source_url`), not from guessing which
+facet key a connector used. A row the reader cannot open is a row they have to take on faith.
 """
 from __future__ import annotations
 
+import json
 import re
+from urllib.parse import urlparse
 
-# source_key -> (section title, register). A filing is a filing; an article is somebody writing.
+# source_key -> (title when the document is THEIRS, title when they are merely NAMED, register).
+# The register describes what the SOURCE IS — a filing is `filed` whoever filed it — never how
+# confident the text sounds.
 _REGISTER = {
-    "edgar": ("Regulatory filings", "filed"),
-    "filing": ("Regulatory filings", "filed"),
-    "uspto": ("Patents", "filed"),
-    "patentsview": ("Patents", "filed"),
-    "nsf": ("Public funding", "filed"),
-    "nih_reporter": ("Public funding", "filed"),
-    "companies_house": ("Regulatory filings", "filed"),
-    "arxiv": ("Research", "stated"),
-    "openalex": ("Research", "stated"),
-    "semantic_scholar": ("Research", "stated"),
-    "crossref": ("Research", "stated"),
-    "openreview": ("Research", "stated"),
-    "github": ("Public code", "observed"),
-    "huggingface": ("Public models", "observed"),
-    "startup_news": ("Press", "stated"),
-    "gdelt": ("Press", "stated"),
-    "news": ("Press", "stated"),
-    "eng_blog": ("Their engineering writing", "stated"),
-    "founder_essay": ("Founder and investor writing", "stated"),
-    "yc": ("Programmes", "stated"),
+    "edgar":            ("What they have filed", "Named in others' filings", "filed"),
+    "filing":           ("What they have filed", "Named in others' filings", "filed"),
+    "companies_house":  ("What they have filed", "Named in others' filings", "filed"),
+    "uspto":            ("Their patents", "Named in others' patents", "filed"),
+    "patentsview":      ("Their patents", "Named in others' patents", "filed"),
+    "nsf":              ("Public funding they were awarded", "Named in public funding records", "filed"),
+    "nih_reporter":     ("Public funding they were awarded", "Named in public funding records", "filed"),
+    "arxiv":            ("Research", "Research that names them", "stated"),
+    "openalex":         ("Research", "Research that names them", "stated"),
+    "semantic_scholar": ("Research", "Research that names them", "stated"),
+    "crossref":         ("Research", "Research that names them", "stated"),
+    "openreview":       ("Research", "Research that names them", "stated"),
+    "github":           ("Their public code", "Named in public code", "observed"),
+    "huggingface":      ("Their public models", "Named in public models", "observed"),
+    "news":             ("Press", "Press", "stated"),
+    "startup_news":     ("Press", "Press", "stated"),
+    "gdelt":            ("Press", "Press", "stated"),
+    "hackernews":       ("Discussion", "Discussion", "stated"),
+    "lobsters":         ("Discussion", "Discussion", "stated"),
+    "reddit":           ("Discussion", "Discussion", "stated"),
+    "stackoverflow":    ("Discussion", "Discussion", "stated"),
+    "eng_blog":         ("Their engineering writing", "Engineering writing that names them", "stated"),
+    "founder_essay":    ("Their founders' writing", "Founder and investor writing about them", "stated"),
+    "expert_feed":      ("Their writing", "Analysis that names them", "stated"),
+    "podcast":          ("Them, in their own words", "Conversations that name them", "stated"),
+    "show_notes":       ("Them, in their own words", "Conversations that name them", "stated"),
+    "youtube_chapters": ("Them, in their own words", "Conversations that name them", "stated"),
+    "yc":               ("Their YC profile", "Named in YC records", "stated"),
+    "wikipedia":        ("Reference profile", "Named in reference pages", "stated"),
+    "wikidata":         ("Reference profile", "Named in reference pages", "stated"),
+    "web":              ("Their own pages, as we hold them", "Web pages that name them", "stated"),
 }
+_DEFAULT = ("Also in our corpus", "Elsewhere in our corpus", "stated")
+
+# Their own documents first, a filing before a blog post, and everybody else's documents after all of
+# them. This is the order a reader should meet the evidence in: an authority statement, not layout.
+_OWN_ORDER = [
+    "What they have filed", "Their patents", "Public funding they were awarded",
+    "Their public code", "Their public models", "Their YC profile", "Reference profile",
+    "Their engineering writing", "Their founders' writing", "Their writing",
+    "Them, in their own words", "Their own pages, as we hold them", "Press", "Discussion",
+    "Also in our corpus",
+]
+_MENTION_ORDER = [
+    "Named in others' filings", "Named in others' patents", "Named in public funding records",
+    "Named in public code", "Named in public models", "Named in YC records",
+    "Named in reference pages", "Research", "Research that names them",
+    "Engineering writing that names them", "Founder and investor writing about them",
+    "Analysis that names them", "Conversations that name them", "Web pages that name them",
+    "Elsewhere in our corpus",
+]
+_ORDER = _OWN_ORDER + _MENTION_ORDER
+# "Research" is reachable both ways in the table above, but nothing we can bind ever lands there, so
+# it is grouped with the documents that merely name them. "Press" is genuinely about them whoever
+# wrote it, which is why press is not demoted.
+_MENTION_TITLES = frozenset(_MENTION_ORDER)
 
 MAX_PER_SOURCE = 4
 MAX_TOTAL = 40
+MIN_CHARS = 40
+MAX_QUOTE = 360
 
 
 def _terms(name: str, domain: str) -> list[str]:
@@ -63,9 +123,9 @@ def _terms(name: str, domain: str) -> list[str]:
 
 
 def names_subject(text: str, title: str, terms: list[str]) -> bool:
-    """Does this passage actually NAME the company? Case-insensitive, and a bare name must stand as
-    its own word — "Scale" must not be matched inside "scaled", which is how a generic name turns
-    half the corpus into claims about one startup."""
+    """Does this passage NAME the company? Case-insensitive, and a bare name must stand as its own
+    word — "Scale" must not be matched inside "scaled", which is how a generic name turns half the
+    corpus into claims about one startup."""
     hay = f"{text}\n{title}".lower()
     for t in terms:
         t = t.lower().strip()
@@ -80,68 +140,171 @@ def names_subject(text: str, title: str, terms: list[str]) -> bool:
     return False
 
 
-async def corpus_hits(dsn: str, *, name: str, domain: str, tenant: str = "demo") -> tuple[list[dict], dict]:
+_CITE = re.compile(r"\((?:19|20)\d\d[a-z]?\)")
+
+
+def looks_like_bibliography(text: str) -> bool:
+    """A reference list is not a finding.
+
+    Papers store their bibliography in the same blocks as their argument, and a bibliography ranks
+    for any term it cites — which is how "Aboulkhair et al. (2016), On the formation of…" arrived as
+    a claim about an AI lab. Three or more year-citations in one passage, or a heading that says so.
+    """
+    if text.lstrip()[:40].lower().startswith(("references", "bibliography", "works cited")):
+        return True
+    return len(_CITE.findall(text)) >= 3
+
+
+def _slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+# An org handle is rarely the company name character for character: Anthropic publishes as
+# `anthropics`, and labs routinely append `ai`, `hq`, `labs` or `inc`. Stripping those before
+# comparing is the difference between finding their SDK and filing it as somebody else's repo.
+_ORG_SUFFIX = ("labs", "inc", "hq", "ai", "io", "s")
+
+
+def _org_core(s: str) -> str:
+    s = _slug(s)
+    for suf in _ORG_SUFFIX:
+        if len(s) > len(suf) + 3 and s.endswith(suf):
+            return s[: -len(suf)]
+    return s
+
+
+def same_org(a: str, b: str) -> bool:
+    """Do these two handles name the same organisation? Requires a core of at least four characters,
+    so `ai` and `x` never match everything."""
+    ca, cb = _org_core(a), _org_core(b)
+    return bool(ca) and len(ca) >= 4 and ca == cb
+
+
+def _host(url: str) -> str:
+    try:
+        return (urlparse(url).hostname or "").lower().replace("www.", "")
+    except Exception:      # noqa: BLE001
+        return ""
+
+
+def is_theirs(document_id: str, source_key: str, document_title: str, url: str, *,
+              name: str, domain: str, cik: str = "") -> bool:
+    """Is the company the document's SUBJECT, or is it named inside somebody else's document?
+
+    Unsure is `False`. A mention filed as a mention is honest; somebody else's 10-K filed as this
+    company's own filing is the wrong-company attribution the gates exist to make impossible.
+    """
+    src, _, native = (document_id or "").partition(":")
+    src = (src or source_key or "").lower()
+    dom = (domain or "").lower().replace("www.", "")
+    nslug = _slug(name)
+    dslug = _slug(dom.split(".")[0]) if dom else ""
+
+    if src in ("edgar", "sec", "filing"):
+        # An accession is {10-digit filer CIK}-{YY}-{sequence}: its leading digits ARE the filer.
+        head = native.split("-", 1)[0] if native else ""
+        filer = head.lstrip("0") if head.isdigit() else ""
+        return bool(cik) and bool(filer) and filer == str(cik).lstrip("0")
+
+    if src in ("github", "huggingface"):
+        owner = (native or "").split("/")[0]
+        return any(same_org(owner, cand) for cand in (nslug, dslug) if cand)
+
+    if src in ("wikipedia", "wikidata", "yc", "companies_house"):
+        return bool(nslug) and nslug in _slug(document_title)
+
+    if src in ("arxiv", "openalex", "semantic_scholar", "crossref", "openreview",
+               "uspto", "patentsview", "nsf", "nih_reporter"):
+        return False
+
+    # Everything that came off a URL — feeds, blogs, news, web pages: the host says whose it is.
+    h = _host(url) or _host(native)
+    return bool(dom) and bool(h) and (h == dom or h.endswith("." + dom))
+
+
+def _facets(raw) -> dict:
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw) or {}
+        except Exception:      # noqa: BLE001
+            return {}
+    return raw or {}
+
+
+async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant: str = "demo",
+                      ui=None) -> tuple[list[dict], dict]:
     """([hit], attempt). Keyword search over the corpus we already hold. Never raises: a corpus we
-    cannot reach makes the dossier thinner and is reported as an attempt, exactly like a failed fetch."""
+    cannot reach makes the dossier thinner and is reported as an attempt, like any failed fetch."""
     terms = _terms(name, domain)
     if not dsn or not terms:
         return [], {"source": "Eigen corpus", "found": 0, "unit": "passages",
                     "result": "no corpus configured" if not dsn else "no usable name to search for"}
     try:
         import asyncpg
-    except Exception:
+    except Exception:      # noqa: BLE001
         return [], {"source": "Eigen corpus", "found": 0, "unit": "passages", "result": "unavailable"}
 
     # EVERY term, not just the first. The search used to pass `terms[0]` and drop the rest, so a
-    # company whose corpus presence is under its DOMAIN (github, papers citing a URL) went unfound
-    # while a perfectly good second term sat unused. `websearch_to_tsquery` is the one form that
+    # company whose corpus presence is under its DOMAIN (repos, pages citing a URL) went unfound while
+    # a perfectly good second term sat unused. `websearch_to_tsquery` is the one query parser that
     # takes an OR.
     q = " OR ".join(f'"{t}"' if " " in t else t for t in terms)
-    rows = []
     try:
         conn = await asyncpg.connect(dsn)
         try:
             rows = await conn.fetch(
-                """SELECT document_id, block_id, text, document_title, source_key,
-                          COALESCE(facets->>'url', facets->>'source_url', facets->>'link',
-                                   facets->>'permalink', facets->>'landing_page') AS url,
+                """SELECT document_id, block_id, text, document_title, source_key, facets,
                           facets->>'published_at' AS published_at
                      FROM rs_block
                     WHERE tenant_id = $1 AND tsv @@ websearch_to_tsquery('english', $2)
                  ORDER BY ts_rank(tsv, websearch_to_tsquery('english', $2)) DESC
-                    LIMIT $3""", tenant, q, MAX_TOTAL * 6)
+                    LIMIT $3""", tenant, q, MAX_TOTAL * 8)
         finally:
             await conn.close()
     except Exception as e:      # noqa: BLE001
-        return [], {"source": "Eigen corpus", "found": 0, "unit": "passages", "result": f"unavailable ({str(e)[:60]})"}
+        return [], {"source": "Eigen corpus", "found": 0, "unit": "passages",
+                    "result": f"unavailable ({str(e)[:60]})"}
 
     per: dict[str, int] = {}
-    out = []
+    out: list[dict] = []
     for r in rows:
+        if len(out) >= MAX_TOTAL:
+            break
         sk = (r["source_key"] or "").lower()
-        title, register = _REGISTER.get(sk, ("Also in our corpus", "stated"))
         if per.get(sk, 0) >= MAX_PER_SOURCE:
             continue
         text = (r["text"] or "").strip()
-        # SUBJECT BINDING, ours to enforce here. `tsv` matches a stemmed lexeme anywhere in the
-        # block; that is a candidate, not a claim about this company. Keep only passages where the
-        # company is NAMED — in the passage or in its document title — which is the same rule
-        # gates.subject_bound applies to everything else in the dossier.
-        if not names_subject(text, r["document_title"] or "", terms):
+        if len(text) < MIN_CHARS or looks_like_bibliography(text):
             continue
-        # The claim is the passage itself, quoted. We are not summarising our own corpus back at the
-        # reader — the point is that they can see the sentence and open the document.
-        if len(text) < 40:
+        # SUBJECT BINDING. `tsv` matches stemmed lexemes anywhere in the block, which makes a row a
+        # candidate, not a claim. The company has to be NAMED in the passage itself — binding on the
+        # document title alone let every block of a paper through, bibliography included.
+        if not names_subject(text, "", terms):
             continue
+
+        title = r["document_title"] or ""
+        facets = _facets(r["facets"])
+        url = ""
+        if ui is not None:
+            try:
+                url = ui.source_url(r["document_id"], text[:120], facets) or ""
+            except Exception:      # noqa: BLE001 — a link we cannot build is a row without one
+                url = ""
+        url = url or facets.get("url") or facets.get("source_url") or facets.get("link") or ""
+
+        owned_t, mention_t, register = _REGISTER.get(sk, _DEFAULT)
+        theirs = is_theirs(r["document_id"], sk, title, url, name=name, domain=domain, cik=cik)
         per[sk] = per.get(sk, 0) + 1
-        out.append({"section": title, "register": register, "source_key": sk,
-                    "claim": text[:400], "quote": text[:400],
-                    "document_title": r["document_title"] or "", "source_url": r["url"] or "",
+        out.append({"section": owned_t if theirs else mention_t, "theirs": theirs,
+                    "register": register, "source_key": sk,
+                    "claim": (title or text)[:160], "document_title": title,
+                    "quote": text[:MAX_QUOTE], "source_url": url,
                     "as_of": (r["published_at"] or "")[:10], "document_id": r["document_id"]})
-        if len(out) >= MAX_TOTAL:
-            break
+
+    theirs_n = sum(1 for h in out if h["theirs"])
     return out, {"source": "Eigen corpus", "found": len(out), "unit": "passages",
-                 "result": "" if out else "nothing about this company in the corpus yet"}
+                 "result": "" if out else "nothing about this company in the corpus yet",
+                 "detail": (f"{theirs_n} theirs, {len(out) - theirs_n} naming them") if out else ""}
 
 
 def as_sections(hits: list[dict]) -> list[dict]:
@@ -149,14 +312,15 @@ def as_sections(hits: list[dict]) -> list[dict]:
     by: dict[str, list[dict]] = {}
     for h in hits:
         by.setdefault(h["section"], []).append(h)
-    order = ["Regulatory filings", "Patents", "Public funding", "Research", "Public code",
-             "Public models", "Press", "Their engineering writing", "Founder and investor writing",
-             "Programmes", "Also in our corpus"]
-    out = []
-    for title in order:
-        if title in by:
-            out.append({"title": title, "kind": "corpus", "claims": by[title]})
-    for title, cl in by.items():
-        if title not in order:
-            out.append({"title": title, "kind": "corpus", "claims": cl})
+    out = [_sec(t, by.pop(t)) for t in _ORDER if t in by]
+    out += [_sec(t, cl) for t, cl in by.items()]   # an unmapped source still gets its rows shown
     return out
+
+
+def _sec(title: str, claims: list[dict]) -> dict:
+    sec = {"title": title, "kind": "corpus", "claims": claims}
+    if title in _MENTION_TITLES:
+        # Say it on the SECTION, not once per row. A reader who skims headings must not come away
+        # thinking somebody else's filing was this company's.
+        sec["note"] = "Somebody else's document, naming them — not theirs."
+    return sec
