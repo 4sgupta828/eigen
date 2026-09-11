@@ -35,6 +35,7 @@ facet key a connector used. A row the reader cannot open is a row they have to t
 """
 from __future__ import annotations
 
+import html
 import json
 import re
 from urllib.parse import urlparse
@@ -203,7 +204,11 @@ def clean_passage(text: str, title: str = "") -> str:
     under the "## Story" divider, once as the page's own H1 — so a quote that began at character
     zero was the title, the title, and the title again.
     """
-    t = _PREAMBLE.sub("", text or "")
+    # ENTITIES FIRST. Feed ingests store the escaped source, so a Hacker News comment reached the
+    # reader as `&quot;using Claude from Anthropic&quot; here: https:&#x2F;&#x2F;www.mozilla.org` —
+    # the same missing unescape that made engineering-blog rows unreadable.
+    t = html.unescape(text or "")
+    t = _PREAMBLE.sub("", t)
     t = _SECTION_HEAD.sub("", t)
     t = _NAV.sub("", t)
     t = _MD_LINK.sub(r"\1", t)                 # a link's text, not its markdown

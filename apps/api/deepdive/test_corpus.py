@@ -203,3 +203,12 @@ def test_a_terse_first_sentence_is_not_eaten_as_navigation():
     """The nav trim stops the moment a line reads like prose."""
     assert clean_passage("We raised $450M.\nLed by Spark.", "Funding") == \
         "We raised $450M. Led by Spark."
+
+
+def test_html_entities_are_unescaped():
+    """Feed ingests store the escaped source. A Hacker News comment reached the reader as
+    `&quot;using Claude&quot; here: https:&#x2F;&#x2F;www.mozilla.org`."""
+    out = clean_passage("&quot;using Claude from Anthropic&quot; at https:&#x2F;&#x2F;mozilla.org "
+                        "and I&#8217;m told it works.", "")
+    assert "&quot;" not in out and "&#x2F;" not in out and "&#8217;" not in out
+    assert '"using Claude from Anthropic"' in out and "https://mozilla.org" in out
