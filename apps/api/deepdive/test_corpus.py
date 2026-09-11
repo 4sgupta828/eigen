@@ -385,3 +385,50 @@ def test_the_real_anthropic_sample_is_not_ambiguous():
         "switch to providers like OpenAI, Anthropic, Cohere",
         "Patterns and problems in multiagent systems \\ Anthropic",
     ]) == (False, 0)
+
+
+# ── the balance, not a threshold ──────────────────────────────────────────────────────────────────
+
+_ANTH_REAL = [
+    "pip install anthropic", "from anthropic import Anthropic", "@anthropic-ai/sdk v0.30",
+    "anthropic-sdk-python is the official client", "anthropic.Anthropic(api_key=...)",
+    "Source: anthropic.com Language: en", "see https://www.anthropic.com/news",
+    "Anthropic raises $65 billion at a $1T valuation", "Anthropic announced Claude Sonnet 4.6",
+    "Anthropic partners with Palantir and AWS", "Customers of Anthropic include Intercom",
+    "Anthropic was founded in January 2021 by seven former OpenAI employees",
+    "Anthropic's competitors include OpenAI and Google",
+    "About Anthropic We are an AI safety company", "Introducing Anthropic Claude",
+    "Google Anthropic and OpenAI compete",
+]
+_CLAY_REAL_MIX = [
+    "A clay cap develops with fumarolic activity", "the clay tablets of Babylonian mathematics",
+    "whether a solid clay cylinder is used", "clay minerals form in the subduction zone",
+    "and Ms. Clay, who are not standing", "John T. Lawler, William Clay Ford, Michael Amend",
+    "Clay Regazzoni won the 1979 British Grand Prix", "Thanks to Clay from gpus.llm-utils.org",
+    "the clay Ifa Oracle around 500 BC", "heat treatment of the clay body",
+    "Clay raises $115M at $7.1B valuation",
+    "Sales automation startup Clay has raised a $100M Series C",
+]
+
+
+def test_a_package_name_is_not_an_ordinary_word():
+    """`import anthropic`, `@anthropic-ai/sdk`, `anthropic-sdk-python` and `anthropic.Anthropic()`
+    are lowercase and every one is still the company. Counting them put Anthropic's own dossier
+    behind the corroboration wall and cut it from 36 passages to 15 in production."""
+    for t in _ANTH_REAL[:5]:
+        assert not _uses_as_word(t, "Anthropic"), t
+
+
+def test_ambiguity_is_a_balance_not_a_percentage():
+    """No fixed threshold is right for both. What separates them is how often the corpus uses the
+    token as THIS COMPANY versus as a word or a person."""
+    assert name_is_ambiguous("Anthropic", _ANTH_REAL) == (False, 0)
+    assert name_is_ambiguous("Clay", _CLAY_REAL_MIX)[0] is True
+
+
+def test_a_handful_of_odd_sentences_never_condemns_a_name():
+    mostly_company = ["Acme raised $10M", "Acme announced a product", "Acme customers include X",
+                      "Acme was founded in 2020", "Acme partners with Y", "Acme revenue grew",
+                      "Acme competitors include Z", "Acme acquired Q", "Acme employees number 40",
+                      "the acme of achievement", "Acme startup news", "Acme valuation"]
+    assert name_is_ambiguous("Acme", mostly_company)[0] is False

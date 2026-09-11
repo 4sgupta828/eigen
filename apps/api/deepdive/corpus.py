@@ -285,11 +285,17 @@ def _uses_as_word(text: str, name: str) -> bool:
     for m in re.finditer(r"(?<![A-Za-z0-9])" + re.escape(low) + r"(?![A-Za-z0-9])", text):
         if text[m.start():m.end()] != low:
             continue
-        after = text[m.end():m.end() + 6]
-        if re.match(r"\.[a-z]{2,}", after):          # anthropic.com, anthropic.org
+        after = text[m.end():m.end() + 8]
+        # An ADDRESS or an IDENTIFIER is not prose. `anthropic.com`, `anthropic-sdk-python`,
+        # `@anthropic-ai/sdk`, `anthropic_api_key`, `anthropic.Anthropic()` and `import anthropic`
+        # are all lowercase and every one of them is still the company's name.
+        if after[:1] in (".", "-", "_", "/", "(", ":", "="):
             continue
         before = text[:m.start()]
-        if before[-1:] in ("/", ".", "@", "-"):       # //anthropic, sub.anthropic, x@anthropic
+        if before[-1:] in ("/", ".", "@", "-", "_"):
+            continue
+        if re.search(r"\b(import|from|install|require|pip|npm|yarn|package|pypi)\s+$", before[-16:],
+                     re.IGNORECASE):
             continue
         tail = before.rstrip()
         if tail and tail[-1] not in ".!?:;\n":
@@ -326,19 +332,28 @@ def _uses_as_person(text: str, name: str) -> bool:
             return True
     return False
 # How much of the sample has to use the name as a word or a person before we stop trusting it alone.
-AMBIGUOUS_AT = 0.12
 MIN_SAMPLE = 12
+# Below this the sample says nothing: two odd sentences are not evidence about a word's ordinary use.
+MIN_WORD_USES = 4
 
 
 def name_is_ambiguous(name: str, texts: list[str]) -> tuple[bool, int]:
-    """(ambiguous, how many of the sample used it as a word or a person)."""
+    """(ambiguous, how many of the sample used it as a word or a person).
+
+    A COMPARISON, not a percentage. A fixed threshold cannot be right for both "Clay" and
+    "Anthropic": a company whose name is also a package (`import anthropic`, `@anthropic-ai/sdk`)
+    picks up lowercase uses that are still unmistakably about it, while a genuinely common word
+    picks up uses that are about something else entirely. What separates them is the BALANCE — how
+    often the corpus uses this token as this company versus as a word or somebody's name.
+    """
     n = (name or "").strip()
     if len(n) < 3 or " " in n:          # a multi-word mark is already specific
         return False, 0
-    hits = sum(1 for t in texts if _uses_as_word(t, n) or _uses_as_person(t, n))
-    if len(texts) < MIN_SAMPLE:
-        return False, hits
-    return (hits / len(texts)) >= AMBIGUOUS_AT, hits
+    word = sum(1 for t in texts if _uses_as_word(t, n) or _uses_as_person(t, n))
+    if len(texts) < MIN_SAMPLE or word < MIN_WORD_USES:
+        return False, word
+    company = sum(1 for t in texts if acts_like_a_company(t, n))
+    return word >= company, word
 
 
 # What only a COMPANY does. "Clay raises $115M at a $7.1B valuation" is unmistakably the startup;
