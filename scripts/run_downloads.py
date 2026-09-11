@@ -262,10 +262,16 @@ GITHUB_ORGS = [
     "ollama","comfyanonymous","Lightning-AI","ray-project",
 ]
 
+# Prod sits behind Cloudflare, which answers 403 to the DEFAULT urllib user-agent. Identifying
+# ourselves is the right thing regardless — it is what this codebase demands of its own crawler — and
+# without it every call here fails with a 403 that looks like an auth problem and is not one.
+UA = "EigenIngest/1.0 (+https://askeigen.com; sandeepgupta828@gmail.com)"
+
+
 def _post(path: str, body: dict) -> dict:
     req = urllib.request.Request(PROD + path, method="POST",
         data=json.dumps(body).encode(),
-        headers={"content-type": "application/json",
+        headers={"content-type": "application/json", "User-Agent": UA,
                  "X-Admin-Token": os.environ.get("EIGEN_ADMIN_TOKEN", "")})
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.loads(r.read().decode())

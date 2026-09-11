@@ -284,6 +284,11 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
             ranked.append({**x, "firm": firm, "why": why, "fit": round(max(0.0, score - penalty), 2),
                            "matched_on": advise_mod.axes_with_evidence(why),
                            "against": warn, "conflicts": conflicts})
+        # Said BEFORE the results, not as a footnote under them: a reader who has already scanned a
+        # US-skewed list has drawn their conclusion by the time a caveat arrives.
+        bias = advise_mod.coverage_bias_note(geo)
+        if bias:
+            notes.insert(0, bias)
         ranked.sort(key=lambda r: (-r["fit"], -len(r["why"]), r["id"]))
         for i, r in enumerate(ranked):
             r["rank"] = i + 1

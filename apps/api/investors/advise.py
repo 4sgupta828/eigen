@@ -304,3 +304,23 @@ def conflicts_for(portfolio: list[dict], sectors: list[str], sector_of) -> list[
             out.append({"id": c["id"], "name": c.get("name") or c["id"],
                         "sector": overlap[0].replace("_", " ")})
     return out[:4]
+
+
+# ── Coverage bias: Form ADV is a US register ───────────────────────────────────────────────────
+# Not a gap that time closes. The SEC adviser registers are the spine of this index, and a firm with
+# no US adviser registration is not merely unknown to us — it is systematically absent. A founder in
+# London searching "seed funds in the UK" gets a US-skewed list that LOOKS complete, and silence about
+# that is the difference between a coverage limit and a misleading answer.
+US_TOKENS = {"us", "usa", "united states"}
+
+
+def coverage_bias_note(geo: list[str]) -> str:
+    """The warning a non-US search must carry, or '' when the search is US-based."""
+    outside = [g for g in (geo or []) if str(g).strip().lower() not in US_TOKENS]
+    if not outside:
+        return ""
+    where = ", ".join(sorted({str(g).upper() for g in outside}))
+    return (f"This index is built on the SEC adviser registers, which are a US filing system. Firms "
+            f"in {where} appear only where they also register in the US, so this list is skewed "
+            f"toward US investors — that is a limit of what we have read, not a finding about who "
+            f"funds companies in {where}.")

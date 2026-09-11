@@ -171,3 +171,28 @@ def test_behaviour_axes_still_lose_to_a_dormant_multiplier():
     zombie = behav(follows=8, observed_sector=["devtools"], _num={"latest_fund_year": 2016})
     ask = dict(sectors=["devtools"], co_investors=["amplify"])
     assert fit(live, **ask) > fit(zombie, **ask)
+
+
+# ── the coverage bias a non-US founder is otherwise never told about (§11) ─────────────────────
+from api.investors.advise import coverage_bias_note
+
+
+def test_a_non_us_search_says_the_index_is_a_us_register():
+    """Form ADV is a US filing system, so a London founder searching UK seed funds gets a US-skewed
+    list that LOOKS complete. Silence about that is the difference between a coverage limit and a
+    misleading answer."""
+    n = coverage_bias_note(["uk"])
+    assert "SEC adviser registers" in n and "UK" in n
+    assert "not a finding about" in n, "must name it as our limit, not a fact about the market"
+
+
+def test_a_us_search_is_not_warned():
+    assert coverage_bias_note(["us"]) == ""
+    assert coverage_bias_note([]) == ""
+
+
+def test_a_mixed_search_warns_about_the_non_us_part_only():
+    # The warned REGION is IN; "US" still appears in the prose explaining why, which is correct.
+    n = coverage_bias_note(["us", "in"])
+    assert "Firms in IN appear" in n
+    assert "Firms in IN, US" not in n and "Firms in US" not in n
