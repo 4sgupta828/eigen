@@ -416,6 +416,12 @@
   .dd-sec[data-kind="people"], .dd-sec[data-kind="investors"]{border-left-color:#6b7fd7;}
   .dd-sec[data-kind="hiring"]{border-left-color:#c9822f;}
   .dd-sec .dd-secnote{font-family:var(--mono);font-size:.63rem;color:var(--dim);margin:-.25rem 0 .6rem;line-height:1.5;}
+  /* A GRID ITEM DEFAULTS TO min-width:auto, so its MIN-CONTENT width wins over the track. One long
+     URL inside a quote, or a document title with nowhere to break, made every dossier section 641px
+     wide inside a 363px column on a phone — the whole page scrolled sideways. The grid is only as
+     narrow as its items are allowed to be. */
+  .dd-secs > *, .dd-rows > *{min-width:0;}
+  .dd-quote, .dd-secnote, .dd-v, .dd-doc{overflow-wrap:anywhere;}
   .dd-rows{display:grid;gap:.5rem;}
   .dd-row{display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;font-size:.88rem;line-height:1.55;}
   .dd-row + .dd-row{border-top:1px solid var(--hair);padding-top:.5rem;}

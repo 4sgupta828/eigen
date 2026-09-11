@@ -65,3 +65,11 @@ test("a corpus row shows the document it came from", () => {
   assert.match(SRC, /function corpusRow\(c\)[\s\S]{0,600}c\.quote/,
     "the passage is the evidence; a headline without it is a claim to take on faith");
 });
+
+test("dossier sections can be narrower than their longest line", () => {
+  // A grid item defaults to min-width:auto, so one long URL inside a quote made every dossier
+  // section 641px wide inside a 363px column and the whole page scrolled sideways on a phone.
+  assert.match(SRC, /\.dd-secs > \*, \.dd-rows > \*\{min-width:0;\}/,
+    "without this the grid is as wide as its widest unbreakable string");
+  assert.match(SRC, /\.dd-quote, \.dd-secnote, \.dd-v, \.dd-doc\{overflow-wrap:anywhere;\}/);
+});
