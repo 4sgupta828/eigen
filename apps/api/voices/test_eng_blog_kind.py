@@ -66,3 +66,52 @@ def test_the_engineering_blog_byline_is_excluded():
     # any paragraph, so without this a card would open with "Stripe — Jane Doe, 2026-09-01".
     sql, _ = build_query(q="anything")
     assert "company engineering blog" in sql
+
+
+# ── the link, and whose account it is ─────────────────────────────────────────────────────────────
+from eigen_vertical_tech import eng_blog_doc
+from eigen_vertical_tech import expert_feed_doc
+from apps.api.voices.search import moment
+
+_REC = {"link": "https://stripe.com/blog/ledger", "title": "Ledger", "author": "Jane Doe",
+        "publication": "Stripe Engineering", "published": "Mon, 01 Sep 2026 00:00:00 GMT",
+        "content": '<p>text</p><img src="https://stripe.com/img/lead.png">'}
+
+
+def test_the_permalink_reaches_the_card():
+    # It used to live only in the document body as a "URL: …" line — which build_query filters out
+    # as furniture — so the card rendered a summary above "No link published". A summary the reader
+    # cannot check is the one thing this product must never ship.
+    assert eng_blog_doc.facets(_REC)["url"] == "https://stripe.com/blog/ledger"
+
+
+def test_the_card_exposes_the_publisher_site():
+    assert eng_blog_doc.facets(_REC)["site"] == "https://stripe.com"
+
+
+def test_a_post_with_no_link_yields_no_url_rather_than_a_broken_one():
+    f = eng_blog_doc.facets({**_REC, "link": ""})
+    assert "url" not in f and "site" not in f, "never invent a link"
+
+
+def test_the_lead_image_is_carried_like_an_essay_s():
+    assert eng_blog_doc.facets(_REC)["image"] == "https://stripe.com/img/lead.png"
+
+
+def test_every_voices_builder_puts_its_link_in_facets():
+    # The guarantee, not the instance: a card renders from facets, so any voices builder that keeps
+    # its link only in prose ships an uncheckable summary.
+    for mod in (eng_blog_doc, expert_feed_doc):
+        f = mod.facets(_REC)
+        assert f.get("url"), f"{mod.__name__} must put its permalink in facets"
+
+
+def test_moment_passes_url_and_site_through_to_the_card():
+    row = {"text": "We rebuilt the ledger.", "source_key": "eng_blog", "document_title": "Ledger",
+           "facets": {"source_kind": "corp_eng", "url": "https://stripe.com/blog/ledger",
+                      "site": "https://stripe.com", "publication": "Stripe Engineering"}}
+    card = moment(row)
+    assert card["kind"] == "blog"
+    assert card["url"] == "https://stripe.com/blog/ledger"
+    assert card["site"] == "https://stripe.com"
+    assert card["show"] == "Stripe Engineering"

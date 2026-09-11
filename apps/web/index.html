@@ -285,6 +285,9 @@
   /* Self-reported voices read in the GAP colour, the same one the rest of the product uses for
      "announced, not established" — a company describing its own engineering is exactly that. */
   .vo-kind.vo-selfrep{color:var(--gap);}
+  .vo-site{display:inline-flex;align-items:center;gap:.26rem;color:inherit;text-decoration:none;}
+  .vo-site:hover{color:var(--ink);text-decoration:underline;}
+  .vo-favicon{width:11px;height:11px;border-radius:2px;object-fit:contain;flex:none;}
   .vo-selfrep-tag{color:var(--gap);}
   .vo-dot{opacity:.45;}
   .vo-title{margin:.42rem 0 .3rem;font-size:1.01rem;line-height:1.38;font-weight:650;letter-spacing:-.005em;}
@@ -9025,7 +9028,18 @@ async function openShare(token){
     // party. The tier already grades it below independent analysis; this says so on the card, so a
     // reader never mistakes it for the founder essay sitting next to it.
     if(m.kind === "blog") kicker.push('<span class="vo-dot">·</span><span class="vo-selfrep-tag">self-reported</span>');
-    if(m.show) kicker.push("<span>" + esc(m.show) + "</span>");
+    // The publisher, as somewhere you can go. A self-reported account is only readable as such if
+    // you can see whose it is — so a blog names its company, marks it, and links to the site.
+    if(m.show && m.site){
+      const host = String(m.site).replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      kicker.push('<a class="vo-site" href="' + esc(m.site) + '" target="_blank" rel="noopener noreferrer"'
+        + ' title="' + esc(m.show) + " — open " + esc(host) + '">'
+        + '<img class="vo-favicon" src="https://icons.duckduckgo.com/ip3/' + esc(host) + '.ico" alt=""'
+        + ' loading="lazy" referrerpolicy="no-referrer"'
+        + " onerror=\"this.onerror=null;this.src='https://www.google.com/s2/favicons?sz=64&domain=" + esc(host) + "';\""
+        + " onload=\"if(this.naturalWidth<=1) this.remove();\">"
+        + esc(m.show) + "</a>");
+    } else if(m.show) kicker.push("<span>" + esc(m.show) + "</span>");
     if(m.published) kicker.push('<span class="vo-dot">·</span><span>' + esc(shortDate(m.published)) + "</span>");
     if(isPointer && m.t_start) kicker.push('<span class="vo-dot">·</span><span class="vo-stamp">' + stamp(m.t_start) + "</span>");
     if(m.views) kicker.push('<span class="vo-dot">·</span><span class="vo-views">' + views(m.views) + "</span>");

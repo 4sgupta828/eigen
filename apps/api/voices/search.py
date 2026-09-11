@@ -171,6 +171,9 @@ def moment(row: dict) -> dict:
         # reused here to decide whether a profile link is safe to print
         "bind_basis": str(facets.get("bind_basis") or ""),
         "image": str(facets.get("image") or ""),
+        # Whose engineering account this is, as somewhere you can go. For a self-reported source the
+        # publisher is not decoration — it is the thing that qualifies the claim.
+        "site": str(facets.get("site") or ""),
         "views": int(facets["views"]) if str(facets.get("views") or "").isdigit() else 0,
         "published_at": str(facets.get("published_at") or ""),
         "media": media,

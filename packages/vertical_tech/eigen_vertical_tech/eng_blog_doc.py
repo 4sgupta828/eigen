@@ -17,6 +17,9 @@ published about itself — read off, judged not at all. A parsed feed item is a 
 from __future__ import annotations
 
 import re
+from urllib.parse import urlparse
+
+from .expert_feed_doc import lead_image
 
 _MAX_BODY = 16000
 
@@ -36,9 +39,29 @@ def _year(rec: dict) -> str:
     return m.group(0) if m else ""
 
 
+def _site_of(link: str) -> str:
+    """The blog's own home, derived from the post URL. Structural only — no fetch, no guessing."""
+    try:
+        u = urlparse(link)
+    except Exception:
+        return ""
+    return f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else ""
+
+
 def facets(rec: dict) -> dict:
+    link = str(rec.get("link") or "").strip()
     f = {
         "source_kind": "corp_eng",        # → technical_signal tier (rank 2, self-reported)
+        # The permalink belongs in the FACETS, not only in the document body. A card renders from
+        # facets, and the body's "URL: …" line is filtered out of search as furniture — so a post
+        # whose link lived only in its prose reached the reader as a summary with nothing to open,
+        # which is worse than not showing it at all: we asked them to take our word for it.
+        "url": link,
+        # Who published it, as something you can go to. The post permalink answers "this article";
+        # the site answers "whose engineering is this?" — and for a self-reported source, knowing
+        # whose account you are reading is the whole point.
+        "site": _site_of(link),
+        "image": str(rec.get("image") or "").strip() or lead_image(rec),
         "source_country": "global",
         "entity_type": "corp_eng",
         "author": " ".join(str(rec.get("author") or "").split()).strip(),
