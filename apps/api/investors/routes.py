@@ -49,6 +49,13 @@ class ReadStartupIn(BaseModel):
     attachments: list[dict] = []        # [{name, media_type, data(base64)}] — a deck as a PDF
 
 
+class FromDossierIn(BaseModel):
+    dossier: dict = {}
+    stage_claimed: str = ""
+    sectors: list[str] = []
+    geo: list[str] = []
+
+
 class SaveMapIn(BaseModel):
     title: str = ""
     brief: str = ""
@@ -328,6 +335,29 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
             cov = {}
         return {"profile": profile, "sources": sources, "read": True,
                 "chars_read": len(text), "plan": rs.plan_for(profile, coverage=cov, matched=0)}
+
+    @r.post("/investors/from-dossier")
+    async def from_dossier(body: FromDossierIn) -> dict:
+        """A DeepDive dossier, read for what a raise needs.
+
+        Pure computation — no store, no model, no fetch. DeepDive has already done the resolving,
+        crawling, extraction and gating, and has already projected and gated whatever it spent. This
+        re-reads those gated claims through a fundraising lens: who already backs them (the strongest
+        match signal we hold), what rounds they can evidence, who the team is, and what they have
+        publicly claimed — each keeping the source and register it arrived with.
+        """
+        from api.investors import from_dossier as fd
+        prof = fd.fundraising_profile(body.dossier or {})
+        contract = fd.contract_from(prof, claimed_stage=body.stage_claimed,
+                                    sectors=body.sectors, geo=body.geo)
+        try:
+            cov = await store.coverage()
+        except Exception:
+            cov = {}
+        from api.investors import read_startup as rs
+        return {"profile": prof, "contract": contract,
+                "plan": rs.plan_for({"sectors": body.sectors, "stage_claimed": contract["stage"]},
+                                    coverage=cov, matched=0)}
 
     @r.post("/investors/maps")
     async def save_map(body: SaveMapIn, x_eigen_token: str = Header(default="")) -> dict:
