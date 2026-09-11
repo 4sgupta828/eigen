@@ -43,6 +43,20 @@ class AdviseIn(BaseModel):
     limit: int = 40
 
 
+class ReadStartupIn(BaseModel):
+    url: str = ""                       # the startup's own site — read for free
+    deck_text: str = ""                 # text already extracted client-side
+    attachments: list[dict] = []        # [{name, media_type, data(base64)}] — a deck as a PDF
+
+
+class SaveMapIn(BaseModel):
+    title: str = ""
+    brief: str = ""
+    contract: dict = {}
+    rows: list = []
+    notes: str = ""
+
+
 class EvaluateIn(BaseModel):
     contract: dict
     counts: bool = True
@@ -265,6 +279,76 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
         return {"rows": ranked[:body.limit], "subject": subject, "notes": notes, "labels": labels(),
                 "asked": {"stage": stage, "sectors": sectors, "geo": geo},
                 "coverage": out.get("coverage") or {}}
+
+    @r.post("/investors/read-startup")
+    async def read_startup(body: ReadStartupIn) -> dict:
+        """Read a startup from its own site or its deck, and say what we can match it against.
+
+        Reading is free: site.crawl for a URL, the PDF text layer for a deck. Exactly one model call
+        turns that into a structured profile, and only when there is text to turn. The PLAN comes
+        back either way, because with observed sector known for under 1% of firms a ranked list is
+        often the less honest of the two things we could hand over (docs/specs/investor-matching.md).
+        """
+        import asyncio as _a
+        from api.investors import read_startup as rs
+
+        text, sources = "", []
+        if body.attachments:
+            t, names = rs.text_from_attachments(body.attachments)
+            text, sources = t, names
+        if not text and body.url:
+            loop = _a.get_event_loop()
+            try:
+                text, sources = await loop.run_in_executor(None, rs.text_from_site, body.url)
+            except Exception as e:      # a site that will not be read is a stated gap, not a 500
+                return {"profile": {}, "sources": [], "read": False,
+                        "note": f"Could not read {body.url}: {str(e)[:160]}"}
+        if not text and body.deck_text:
+            text, sources = body.deck_text, ["pasted text"]
+        if not (text or "").strip():
+            return {"profile": {}, "sources": [], "read": False,
+                    "note": "Nothing to read yet — give a website, a deck, or a description. A scanned "
+                            "deck with no text layer reads as empty here rather than being guessed at."}
+
+        lab = labels()
+        sect_vocab = [v["value"] for v in (lab.get("observed_sector") or {}).get("values", [])] or []
+        geo_vocab = [v["value"] for v in (lab.get("observed_geo") or {}).get("values", [])] or []
+        profile = {}
+        if llm_json:
+            try:
+                profile = await rs.read_profile(llm_json, text, sectors_vocab=sect_vocab, geo_vocab=geo_vocab)
+            except Exception as e:
+                return {"profile": {}, "sources": sources, "read": True,
+                        "note": f"Read the text but could not structure it: {str(e)[:160]}"}
+        # Coverage only supplies the plan's framing numbers. Losing it must not lose the reading the
+        # founder just waited on — a stats query is not a reason to throw away a crawled site.
+        try:
+            cov = await store.coverage()
+        except Exception:
+            cov = {}
+        return {"profile": profile, "sources": sources, "read": True,
+                "chars_read": len(text), "plan": rs.plan_for(profile, coverage=cov, matched=0)}
+
+    @r.post("/investors/maps")
+    async def save_map(body: SaveMapIn, x_eigen_token: str = Header(default="")) -> dict:
+        if not x_eigen_token:
+            raise HTTPException(status_code=401, detail="sign in to save a search map")
+        return await store.save_map(owner_id=x_eigen_token, title=body.title or "Investor search",
+                                    brief=body.brief, contract=body.contract, rows=body.rows,
+                                    coverage=await store.coverage(), notes=body.notes)
+
+    @r.get("/investors/maps")
+    async def my_maps(x_eigen_token: str = Header(default="")) -> dict:
+        if not x_eigen_token:
+            return {"maps": []}
+        return {"maps": await store.my_maps(x_eigen_token)}
+
+    @r.get("/investors/maps/{map_id}")
+    async def get_map(map_id: str, share: str = "", x_eigen_token: str = Header(default="")) -> dict:
+        got = await store.get_map(map_id, owner_id=x_eigen_token, share=share)
+        if not got:
+            raise HTTPException(status_code=404, detail="no such map")
+        return got
 
     @r.get("/investors/coverage")
     async def coverage() -> dict:

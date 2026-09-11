@@ -2072,6 +2072,19 @@
      .iv-form is a wrapping flex row built for the old all-dropdowns layout, which squeezed
      the textarea into a column two characters wide. */
   #investorsbody .iv-raise .iv-form{display:block;margin:0;}
+  #investorsbody .iv-read{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin-bottom:.5rem;}
+  #investorsbody #adv-url{flex:1 1 16rem;min-width:0;background:var(--panel2);border:1px solid var(--hair);
+    border-radius:10px;color:var(--ink);font:inherit;font-size:.88rem;padding:.5rem .7rem;min-height:40px;}
+  #investorsbody .iv-file{display:inline-flex;align-items:center;min-height:40px;padding:.4rem .8rem;
+    border:1px dashed var(--hair);border-radius:9px;color:var(--muted);font-size:.8rem;cursor:pointer;}
+  #investorsbody .iv-file:hover{color:var(--ink);border-color:var(--gold);border-style:solid;}
+  #investorsbody .iv-readnote{font-size:.72rem;color:var(--muted);margin:.25rem 0 .4rem;line-height:1.5;}
+  #investorsbody .iv-prow{display:flex;flex-wrap:wrap;gap:.2rem .6rem;padding:.35rem 0;
+    border-top:1px solid var(--hair-soft);font-size:.86rem;}
+  #investorsbody .iv-prow:first-of-type{border-top:0;}
+  #investorsbody .iv-plabel{flex:0 0 9rem;font-weight:600;}
+  #investorsbody .iv-pq{flex:1 1 100%;color:var(--muted);font-style:italic;font-size:.78rem;}
+  @media (max-width:560px){ #investorsbody .iv-plabel{flex:1 1 100%;} }
   #investorsbody #adv-desc{display:block;width:100%;background:var(--panel2);border:1px solid var(--hair);border-radius:10px;
     color:var(--ink);font:inherit;font-size:.9rem;padding:.6rem .7rem;resize:vertical;min-height:4.6rem;}
   #investorsbody .iv-opt{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:.5rem 0 .2rem;}
@@ -10502,11 +10515,18 @@ async function openShare(token){
 
   function advFormHtml(){
     const opt = (v, l, sel) => `<option value="${esc(v)}"${sel === v ? " selected" : ""}>${esc(l)}</option>`;
-    // Natural language FIRST. The dropdowns used to lead, which asked a founder to translate their
-    // company into three enum values before we would look — and the free-text path was a sentence
-    // of instructions telling them to use a different box entirely.
+    // We ASK FOR THE SOURCE first. Before this the box took a description and the dropdowns did the
+    // work, which meant a founder translated their own company into three enum values and we never
+    // read a word of what they had already written down.
     return `<div class="iv-form" style="padding:.8rem">
-      <textarea id="adv-desc" rows="3" placeholder="What you build, who it's for, what you're raising — or paste your deck.">${esc(ADV.deck || "")}</textarea>
+      <div class="iv-read">
+        <input id="adv-url" type="url" placeholder="yourstartup.com — we read the site" autocomplete="url">
+        <label class="iv-file" for="adv-deck">Upload deck<input id="adv-deck" type="file" accept=".pdf,application/pdf,.txt,text/plain" hidden></label>
+        <button type="button" class="iv-go" id="adv-read">Read my startup</button>
+      </div>
+      <div class="iv-readnote" id="adv-deckname" hidden></div>
+      <div id="adv-profile"></div>
+      <textarea id="adv-desc" rows="3" placeholder="…or describe it: what you build, who it's for, what you're raising.">${esc(ADV.deck || "")}</textarea>
       <div class="iv-opt">
         <span>optional</span>
         <input id="adv-name" type="text" placeholder="startup name or domain" value="${esc(ADV.name)}" size="18">
@@ -10515,8 +10535,90 @@ async function openShare(token){
         <select id="adv-geo" aria-label="Based in">${opt("", "anywhere", ADV.geo)}${GEOS.map(([v, l]) => opt(v, l, ADV.geo)).join("")}</select>
       </div>
       <button type="button" class="iv-go" id="adv-go">Find investors</button>
-      <div class="iv-note" style="margin:.5rem 0 0">Naming your startup beats the dropdowns — we read its real sector, geography and backers.</div>
     </div>`;
+  }
+
+  // ---- reading the startup -------------------------------------------------------------------
+  let ADV_DECK_ATT = null;      // {name, media_type, data} — a deck, held until it is read
+
+  async function readStartup(){
+    const url = (($("#adv-url") || {}).value || "").trim();
+    const desc = (($("#adv-desc") || {}).value || "").trim();
+    const box = $("#adv-profile");
+    if(!url && !desc && !ADV_DECK_ATT){
+      box.innerHTML = `<div class="iv-gap">Give a website, a deck or a description first.</div>`;
+      return;
+    }
+    box.innerHTML = `<div class="iv-dload"><span class="su-spin"></span>reading${url ? " " + esc(url) : ""}\u2026</div>`;
+    try{
+      const r = await fetch("/investors/read-startup", {method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({url, deck_text: desc, attachments: ADV_DECK_ATT ? [ADV_DECK_ATT] : []})});
+      if(!r.ok) throw new Error("read failed (" + r.status + ")");
+      const d = await r.json();
+      box.innerHTML = profileHtml(d);
+      // What we READ fills the form, so the founder can correct us before anything is searched.
+      const p = d.profile || {};
+      if(p.name && $("#adv-name") && !$("#adv-name").value) $("#adv-name").value = p.name;
+      if(p.stage_claimed && $("#adv-stage")) $("#adv-stage").value = p.stage_claimed;
+      if((p.sectors || [])[0] && $("#adv-sector")) $("#adv-sector").value = p.sectors[0];
+      if((p.geo || [])[0] && $("#adv-geo")) $("#adv-geo").value = p.geo[0];
+    }catch(e){
+      box.innerHTML = `<div class="iv-gap">${esc(e && e.message ? e.message : String(e))}</div>`;
+    }
+  }
+
+  function profileHtml(d){
+    const p = d.profile || {}, out = [];
+    if(!d.read) return `<div class="iv-gap">${esc(d.note || "Nothing to read.")}</div>`;
+    const q = p.quotes || {};
+    // Every field shows the words it came from. A reading the founder cannot check is a reading they
+    // have to take on faith, which is the opposite of what this product is for.
+    const row = (label, val, quote) => val
+      ? `<div class="iv-prow"><span class="iv-plabel">${esc(label)}</span><span>${esc(val)}</span>`
+        + (quote ? `<span class="iv-pq">“${esc(String(quote).slice(0, 120))}”</span>` : "") + `</div>` : "";
+    const body = [
+      row("Company", p.name, ""),
+      row("What it does", p.one_liner || p.what_it_does, q.one_liner),
+      row("Customer", p.customer, q.customer),
+      row("Raising", p.stage_claimed ? vlabel("stated_stage", p.stage_claimed) : "", q.stage_claimed),
+      row("Sectors", (p.sectors || []).map(x => vlabel("observed_sector", x)).join(", "), ""),
+      row("Based", (p.geo || []).map(x => String(x).toUpperCase()).join(", "), ""),
+      row("Existing investors", (p.existing_investors || []).join(", "), ""),
+    ].filter(Boolean).join("");
+    if(body) out.push(`<div class="iv-dsec"><div class="iv-dh">What we read${d.chars_read ? ` <i>${Number(d.chars_read).toLocaleString()} characters</i>` : ""}</div>${body}</div>`);
+    else out.push(`<div class="iv-gap">We read ${Number(d.chars_read || 0).toLocaleString()} characters but could not structure it into anything we would rely on. Describe it below instead.</div>`);
+    if((p.unknown || []).length)
+      out.push(`<div class="iv-gap">Not established from what we read: ${esc((p.unknown || []).join("; "))}</div>`);
+    if((d.sources || []).length)
+      out.push(`<div class="iv-readnote">read: ${(d.sources || []).slice(0, 5).map(u => esc(String(u).replace(/^https?:\/\//, "").slice(0, 44))).join(" · ")}</div>`);
+    const pl = d.plan || {};
+    if((pl.steps || []).length){
+      out.push(`<div class="iv-dsec"><div class="iv-dh">How to search, given what we can and cannot see</div>`
+        + pl.steps.map(s => `<div class="iv-prow"><span class="iv-plabel">${esc(s.do)}</span><span>${esc(s.why)}</span></div>`).join("")
+        + (pl.gaps || []).map(g => `<div class="iv-gap">${esc(g)}</div>`).join("")
+        + `<div class="iv-readnote">${esc(pl.note || "")}</div>`
+        + `<button type="button" class="iv-go" id="adv-savemap" style="margin-top:.5rem">Save as SearchMap</button></div>`);
+    }
+    return out.join("");
+  }
+
+  async function saveMap(){
+    const btn = $("#adv-savemap"); if(btn){ btn.disabled = true; btn.textContent = "Saving\u2026"; }
+    try{
+      const r = await fetch("/investors/maps", {method:"POST",
+        headers:{"content-type":"application/json", "x-eigen-token": (USER && USER.token) || ""},
+        body: JSON.stringify({title: (($("#adv-name")||{}).value || "Investor search"),
+                              brief: (($("#adv-desc")||{}).value || ""),
+                              contract: {stage: ADV.stage, sector: ADV.sector, geo: ADV.geo},
+                              rows: (STATE.data && STATE.data.rows) || []})});
+      if(r.status === 401) throw new Error("Sign in to save a SearchMap");
+      if(!r.ok) throw new Error("could not save (" + r.status + ")");
+      if(btn){ btn.textContent = "Saved"; }
+    }catch(e){
+      if(btn){ btn.disabled = false; btn.textContent = "Save as SearchMap"; }
+      const box = $("#adv-profile");
+      if(box) box.insertAdjacentHTML("beforeend", `<div class="iv-gap">${esc(e.message || e)}</div>`);
+    }
   }
 
   async function advise(){
@@ -10564,6 +10666,22 @@ async function openShare(token){
   }
 
   function wireAdvForm(){
+    const rd = $("#adv-read"); if(rd) rd.addEventListener("click", readStartup);
+    // The deck is held client-side until "Read my startup" — nothing is uploaded by picking a file.
+    const fp = $("#adv-deck");
+    if(fp) fp.addEventListener("change", async () => {
+      const f = (fp.files || [])[0]; if(!f) return;
+      const nm = $("#adv-deckname");
+      try{
+        ADV_DECK_ATT = {name: f.name, media_type: f.type || "application/pdf", data: await readAsBase64(f)};
+        if(nm){ nm.hidden = false; nm.textContent = "deck ready: " + f.name; }
+      }catch(e){ if(nm){ nm.hidden = false; nm.textContent = "could not read that file"; } }
+    });
+    // Save-as-map is rendered with the plan, so it is bound on the container rather than the button.
+    const box = $("#adv-profile");
+    if(box && !box.dataset.wired){ box.dataset.wired = "1";
+      box.addEventListener("click", e => { if(e.target.closest("#adv-savemap")) saveMap(); }); }
+
     const bind = (id, key) => { const el = $(id); if(el) el.addEventListener("change", () => { ADV[key] = el.value; }); };
     bind("#adv-stage", "stage"); bind("#adv-sector", "sector"); bind("#adv-geo", "geo");
     const nm = $("#adv-name"); if(nm) nm.addEventListener("input", () => { ADV.name = nm.value.trim(); });
@@ -10576,7 +10694,7 @@ async function openShare(token){
     advise();
   }
 
-  window.IV = {search, enter, reset, runContract, advise, adviseFromText, showTab, expandFirm, firmDetailHtml,
+  window.IV = {search, enter, reset, runContract, advise, adviseFromText, showTab, expandFirm, firmDetailHtml, profileHtml, readStartup,
                // the composer's Go in advisor mode is a deck paste, not a query
                isAdvising: () => { const d = $("#iv-raise"); return !!(d && d.open); }};
 })();

@@ -762,6 +762,51 @@ class InvestorStore:
                 "FROM iv_edge WHERE firm_id = $1 ORDER BY event_date DESC NULLS LAST LIMIT 400", firm_id)]
         return out
 
+    # ---- SearchMaps: a saved plan + its result set ---------------------------------------------
+    # The tables have existed since the schema was first written and nothing ever used them. A map is
+    # what a founder actually wants to keep: the reading of their company, the plan, and the list as
+    # it stood — so that coming back next week does not mean retyping the brief and re-running it.
+    async def save_map(self, *, owner_id: str, title: str, brief: str, contract: dict,
+                       rows: list, coverage: dict, notes: str = "") -> dict:
+        import secrets
+        await self.ensure_schema()
+        pool = await self.pool()
+        mid = "m_" + secrets.token_hex(8)
+        share = secrets.token_urlsafe(16)
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO iv_map (id, owner_id, title, brief, contract, rows, coverage, notes, share_token)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)""",
+                mid, owner_id, title[:200], brief[:4000], _json(contract), _json(rows),
+                _json(coverage), notes[:4000], share)
+        return {"id": mid, "share_token": share, "title": title}
+
+    async def my_maps(self, owner_id: str, *, limit: int = 50) -> list[dict]:
+        await self.ensure_schema()
+        pool = await self.pool()
+        async with pool.acquire() as conn:
+            return [dict(r) for r in await conn.fetch(
+                "SELECT id, title, brief, updated_at, revision FROM iv_map WHERE owner_id = $1 "
+                "ORDER BY updated_at DESC LIMIT $2", owner_id, limit)]
+
+    async def get_map(self, map_id: str, *, owner_id: str = "", share: str = "") -> dict | None:
+        """Readable by its owner, or by anyone holding the share token. Never by id alone — a map
+        carries someone's unreleased fundraising plan."""
+        await self.ensure_schema()
+        pool = await self.pool()
+        async with pool.acquire() as conn:
+            r = await conn.fetchrow("SELECT * FROM iv_map WHERE id = $1", map_id)
+        if not r:
+            return None
+        d = dict(r)
+        if not ((owner_id and d["owner_id"] == owner_id) or (share and share == d["share_token"])):
+            return None
+        for k in ("contract", "rows", "coverage"):
+            if isinstance(d.get(k), str):
+                import json as _j
+                d[k] = _j.loads(d[k])
+        return d
+
     async def coverage(self) -> dict:
         await self.ensure_schema()
         pool = await self.pool()
