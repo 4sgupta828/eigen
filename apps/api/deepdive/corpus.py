@@ -313,6 +313,39 @@ def name_is_ambiguous(name: str, texts: list[str]) -> tuple[bool, int]:
     return (hits / len(texts)) >= AMBIGUOUS_AT, hits
 
 
+# What only a COMPANY does. "Clay raises $115M at a $7.1B valuation" is unmistakably the startup;
+# "Ms. Clay, who are not standing for re-election" and "a clay cap develops" are unmistakably not.
+# This is how a common-word name earns a passage back when the domain is not written out — press
+# almost never prints a URL, and dropping every article about a company called Clay is as wrong in
+# the other direction as admitting Ford's proxy statement was.
+_CORPORATE = re.compile(
+    r"\b(?:raise[sd]?|raising|valued\s+at|valuation|series\s+[a-j]\b|seed\s+round|funding\s+round|"
+    r"acqui(?:re[sd]?|sition)|merger|ipo\b|s-1\b|arr\b|annual\s+recurring|customers?\b|founded\b|"
+    r"co-?founder|headquartered|launch(?:e[sd]|ing)?|announce[sd]|unveil(?:e[sd])?|partners?\s+with|"
+    r"hires?\b|employees\b|revenue\b|competitors?\b|platform\b|startup\b|the\s+company)\b",
+    re.IGNORECASE)
+# How far after the name that verb still has the name as its subject.
+_SUBJ_WINDOW = 90
+
+
+def acts_like_a_company(text: str, name: str) -> bool:
+    """Is the name used here as a company — the subject of something only a company does?"""
+    if not name:
+        return False
+    for m in re.finditer(r"(?<![A-Za-z0-9])" + re.escape(name) + r"(?![A-Za-z0-9])", text or ""):
+        if _HONORIFIC.search(text[max(0, m.start() - 8):m.start()]):
+            continue
+        if re.search(r"(?:^|[\s(])([A-Z][a-z]{1,20})\s+$", text[max(0, m.start() - 26):m.start()]):
+            continue                                   # part of a person's name — not our subject
+        if _CORPORATE.search(text[m.end():m.end() + _SUBJ_WINDOW]):
+            return True
+        # …or just before it: "Customers of Clay include Anthropic", "the startup Clay". A shorter
+        # window, because further back the verb belongs to a different subject.
+        if _CORPORATE.search(text[max(0, m.start() - 40):m.start()]):
+            return True
+    return False
+
+
 def _host(url: str) -> str:
     try:
         return (urlparse(url).hostname or "").lower().replace("www.", "")
@@ -439,7 +472,8 @@ async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant
         # A document that IS theirs needs no further binding — it is their page, their repo, their
         # filing. Anything else has to earn its place.
         if not theirs:
-            if ambiguous and not _corroborated(text, title, url, corro):
+            if ambiguous and not (_corroborated(text, title, url, corro)
+                                  or acts_like_a_company(text, name)):
                 dropped["unbound"] += 1
                 continue
             ok, _why = subject_bound(text, list(terms), url=url, own_domain=dom)
@@ -468,7 +502,8 @@ async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant
     if ambiguous:
         bits.append(f'“{name}” is also an ordinary word or a person’s name '
                     f"({word_uses} of the passages we found use it that way), so a passage had to "
-                    f"name {dom or 'their site'} or someone we already know is connected to them")
+                    f"name {dom or 'their site'}, name someone we already know is connected to "
+                    "them, or be used the way only a company is used")
     if dropped["unbound"]:
         bits.append(f"{dropped['unbound']} dropped as unattributable")
     if dropped["not-this-company"]:

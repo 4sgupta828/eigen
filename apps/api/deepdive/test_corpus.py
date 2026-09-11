@@ -7,6 +7,7 @@ its Anthropic stake, filed under "What Anthropic has filed", is wrong-company at
 """
 from api.deepdive.corpus import (
     MAX_PER_SOURCE,
+    acts_like_a_company,
     MAX_TOTAL,
     _terms,
     _uses_as_person,
@@ -289,3 +290,47 @@ def test_a_multi_word_mark_is_specific_enough_on_its_own():
 def test_a_short_sample_never_condemns_a_name():
     """Three passages are not evidence about a word's ordinary use."""
     assert name_is_ambiguous("Clay", _CLAY[:3])[0] is False
+
+
+# ── a common-word name can still earn a passage back ──────────────────────────────────────────────
+#
+# Dropping every passage for an ambiguous name is as wrong as admitting Ford's proxy statement: the
+# press almost never prints a URL, so "Clay raises $115M" would be lost with the junk. What separates
+# them is whether the name is used the way only a COMPANY is used.
+
+_CLAY_REAL = [
+    "Clay raises $115M at $7.1B valuation, doubling its worth in a year",
+    "Clay valued at $7.1 billion in latest funding round as AI agent startups run hot",
+    "Sales automation startup Clay has raised a $100 million Series C",
+    "Customers of Clay include Anthropic, Intercom and Verkada",
+    "Founded in 2017, Clay was valued at $3.1 billion in August 2025",
+    "Clay's top competitors include Scalestack, Cognism, and Artisan AI",
+]
+_CLAY_JUNK = [
+    "Board of Directors also determined that Mr. Bagué and Ms. Clay, who are not standing for "
+    "re-election at the Annual Meeting",
+    "Non-PEO Named Executives for 2021 were John T. Lawler, William Clay Ford, Jr., Michael Amend",
+    "A clay cap develops together with a surface fumarolic activity along a corridor",
+    "Clay Regazzoni won Williams's first race at the 1979 British Grand Prix",
+    "Thanks to Clay from gpus.llm-utils.org!",
+    "the clay tablets of Babylonian mathematics around 2500 BC",
+    "The tone depends on the material used, the exact alloy, and whether a solid clay cylinder is used",
+]
+
+
+def test_a_company_verb_rescues_a_real_passage():
+    assert all(acts_like_a_company(t, "Clay") for t in _CLAY_REAL)
+
+
+def test_no_junk_passage_acts_like_a_company():
+    """Every one of these reached a real reader's screen as evidence about a sales automation
+    startup. Not one of them may come back."""
+    for t in _CLAY_JUNK:
+        assert not acts_like_a_company(t, "Clay"), t
+
+
+def test_a_person_is_never_the_subject_even_beside_company_words():
+    """"Ms. Clay … re-election at the Annual Meeting" has corporate vocabulary all around it. The
+    honorific settles it first."""
+    assert not acts_like_a_company("Mr. Bagué and Ms. Clay, who are not standing for re-election "
+                                   "at the Annual Meeting of the company", "Clay")
