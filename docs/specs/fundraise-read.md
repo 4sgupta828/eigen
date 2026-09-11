@@ -51,23 +51,42 @@ Splitting them would have built two shallow readers where one deeper one serves 
 - **Hiring SHAPE, not headcount.** "5 engineers, 0 sales" says builder-phase; a count says nothing.
 - **Prior employers promoted** from a field inside Key people to something the lens can read directly.
 
-### What does NOT go into DeepDive: the deck
+### A deck makes the reading ACCOUNT-PRIVATE, and the interface must say so
 
 A dossier lives in `su_dossier`, keyed by `company_id`, carrying a `share_token` — **one shared,
-versioned artifact per company**. A pitch deck is a private document. Two consequences, and they are
-not negotiable:
+versioned artifact per company**. A pitch deck is a private document. Two consequences follow, and
+neither is negotiable:
 
-1. Deck claims in a shared dossier mean **sharing the dossier leaks the deck**.
+1. Deck claims inside a shared dossier mean **sharing the dossier leaks the deck**.
 2. One dossier per company means **one founder's deck would surface for anyone else diving that
-   company** — including an investor, or a competitor.
+   company** — an investor, or a competitor.
 
-So the deck is read by a separate, owner-scoped path, and its claims live with the founder's
-SearchMap, never in `su_dossier`. It still imports `subject_bound` and `metric_defined`, because a
-deck claim must clear the same congruence bar as a site claim — and it carries its own register:
-a deck is a company making claims about itself in a document written to raise money, which is the
-most interested source we will ever read.
+**The rule: if a deck is supplied, the resulting reading is private to the account that supplied it.**
 
-### Depths
+Concretely:
+
+- The **public dossier is never written from deck content.** It stays exactly what it is today: what
+  public sources say, shareable, one per company.
+- The **deck-enriched reading is a separate, owner-scoped artifact**, stored against the account and
+  carried in that founder's SearchMap. It is not reachable by `company_id`, has no share token, and
+  never merges into the public record.
+- Deck claims still pass `subject_bound` and `metric_defined` — the same congruence bar as a site
+  claim — and carry their own register: a company making claims about itself, in a document written
+  to raise money, is the most interested source we will ever read.
+
+**The interface must state this where the deck is attached, not in a settings page or a policy.** A
+founder uploading a confidential deck is entitled to know, at the moment they upload it, exactly what
+becomes of it. Required copy, at the upload control and again on the resulting reading:
+
+> Attaching a deck makes this reading private to your account. It is not shared, not added to the
+> public record for your company, and not visible to anyone else who looks that company up.
+
+And the corollary, which must be equally visible: a reading produced **without** a deck, from public
+sources only, is the ordinary shareable kind. The difference between the two states is never implied
+by a subtle badge — it is stated in words, because a founder guessing wrong about this is the one
+failure in the feature that cannot be undone.
+
+### Depths### Depths
 
 DeepDive's existing three are reused as they are. No second stack, no second crawling policy, no
 second basis string. The fundraising read is `held` or `read` on the dossier, plus the deck if one
