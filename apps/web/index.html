@@ -1975,10 +1975,6 @@
   body[data-mode="investors"] #investorsbody{display:block;}
   body[data-mode="investors"] #out, body[data-mode="investors"] #effort{display:none !important;}
   #investorsbody{--filed:#2E7D6B;--stated:#8a6d3b;--observed:#4a6fa5;}
-  #investorsbody .iv-examples{display:flex;flex-wrap:wrap;gap:.35rem;margin:.2rem 0 .6rem;}
-  #investorsbody .iv-ex{font-size:.74rem;padding:.4rem .6rem;min-height:40px;border:1px dashed var(--hair);
-    border-radius:999px;background:transparent;color:var(--muted);cursor:pointer;text-align:left;}
-  #investorsbody .iv-ex:hover{color:var(--ink);border-color:var(--gold);border-style:solid;}
   #investorsbody .iv-note{font-size:.78rem;line-height:1.55;color:var(--muted);margin:.35rem 0;padding-left:1rem;
     border-left:2px solid var(--hair);}
   #investorsbody .iv-note.refuse{border-left-color:var(--gold);color:var(--ink);}
@@ -2350,7 +2346,6 @@
 </section>
 
 <section id="investorsbody" aria-label="Investor search">
-  <div class="iv-examples" id="iv-examples"></div>
   <div id="iv-notes"></div>
   <div id="iv-cov" class="iv-cov"></div>
   <details class="iv-raise" id="iv-raise">
@@ -10006,13 +10001,6 @@ async function openShare(token){
     observed: "measured over the companies we hold — not the whole portfolio"
   };
 
-  const EXAMPLES = [
-    "seed funds that lead in AI infra, US or Europe, $50–250M latest fund, still deploying",
-    "who funds pre-seed fintech in India",
-    "private equity firms in Texas with over $1B under management",
-    "venture funds in London that raised a fund since 2024"
-  ];
-
   function enter(params){
     if(!STATE.entered){
       STATE.entered = true;
@@ -10021,10 +10009,6 @@ async function openShare(token){
         if(raise.open && !$("#iv-advform").innerHTML){ $("#iv-advform").innerHTML = advFormHtml(); wireAdvForm(); }
       });
     }
-    $("#iv-examples").innerHTML = EXAMPLES.map(t =>
-      `<button type="button" class="iv-ex" data-ex="${esc(t)}">${esc(t)}</button>`).join("");
-    $("#iv-examples").querySelectorAll("[data-ex]").forEach(b =>
-      b.addEventListener("click", () => { q.value = b.dataset.ex; search(b.dataset.ex); }));
     if(params && params.brief){ q.value = params.brief; search(params.brief); return; }
     if(!STATE.data) showLanding();
   }
