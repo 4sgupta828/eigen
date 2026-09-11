@@ -262,8 +262,11 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
         cov = await store.coverage()
         cov["registers"] = dict(REGISTER)
         # The honest caveat that belongs next to every count: this register is American.
-        cov["caveats"] = ["Form ADV is a US register: a firm with no US adviser registration has no filed AUM "
-                          "here, which is a coverage fact and not a judgment about its size."]
+        # Says the same thing in half the words. The point a reader needs is that a missing number is a
+        # gap in the register, not a small firm — "coverage fact, not a judgment about its size" was
+        # explaining our own reasoning rather than telling them what to conclude.
+        cov["caveats"] = ["Form ADV is a US register — no US registration means no filed AUM here, "
+                          "not a small firm."]
         return cov
 
     @r.get("/investors/{firm_id}")

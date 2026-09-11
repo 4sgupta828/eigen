@@ -1976,7 +1976,7 @@
   body[data-mode="investors"] #out, body[data-mode="investors"] #effort{display:none !important;}
   #investorsbody{--filed:#2E7D6B;--stated:#8a6d3b;--observed:#4a6fa5;}
   #investorsbody .iv-examples{display:flex;flex-wrap:wrap;gap:.35rem;margin:.2rem 0 .6rem;}
-  #investorsbody .iv-ex{font-size:.74rem;padding:.3rem .6rem;min-height:34px;border:1px dashed var(--hair);
+  #investorsbody .iv-ex{font-size:.74rem;padding:.4rem .6rem;min-height:40px;border:1px dashed var(--hair);
     border-radius:999px;background:transparent;color:var(--muted);cursor:pointer;text-align:left;}
   #investorsbody .iv-ex:hover{color:var(--ink);border-color:var(--gold);border-style:solid;}
   #investorsbody .iv-note{font-size:.78rem;line-height:1.55;color:var(--muted);margin:.35rem 0;padding-left:1rem;
@@ -2047,16 +2047,33 @@
   #investorsbody .iv-co:hover{border-color:var(--gold);color:var(--gold-strong);}
   #investorsbody .iv-more{font-size:.72rem;color:var(--muted);align-self:center;}
   /* Advisor — the founder's side of the mode: describe your startup, get investors who have done it before */
-  #investorsbody .iv-tabs{display:flex;gap:.4rem;margin:0 0 .6rem;}
-  #investorsbody .iv-tab{font-family:var(--mono);font-size:.7rem;letter-spacing:.03em;padding:.35rem .8rem;
-    min-height:36px;border:1px solid var(--hair);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer;}
-  #investorsbody .iv-tab.on{background:var(--gold);color:var(--on-accent);border-color:var(--gold);font-weight:600;}
+  /* Raising is a SUB-SEARCH, not a peer of the default. A disclosure keeps it one line until
+     wanted, so the page opens on the thing almost everyone came for. */
+  #investorsbody .iv-raise{margin:.2rem 0 .7rem;border:1px solid var(--hair);border-radius:12px;background:var(--panel);}
+  #investorsbody .iv-raise > summary{cursor:pointer;list-style:none;padding:.6rem .8rem;min-height:44px;
+    display:flex;align-items:center;gap:.45rem;font-size:.82rem;color:var(--muted);}
+  #investorsbody .iv-raise > summary::-webkit-details-marker{display:none;}
+  #investorsbody .iv-raise > summary::before{content:"+";font-family:var(--mono);color:var(--gold);flex:none;}
+  #investorsbody .iv-raise[open] > summary::before{content:"–";}
+  #investorsbody .iv-raise > summary:hover{color:var(--ink);}
+  #investorsbody .iv-raise[open] > summary{border-bottom:1px solid var(--hair);color:var(--ink);}
+  /* The raising form stacks: description, then the optional refinements, then the action.
+     .iv-form is a wrapping flex row built for the old all-dropdowns layout, which squeezed
+     the textarea into a column two characters wide. */
+  #investorsbody .iv-raise .iv-form{display:block;margin:0;}
+  #investorsbody #adv-desc{display:block;width:100%;background:var(--panel2);border:1px solid var(--hair);border-radius:10px;
+    color:var(--ink);font:inherit;font-size:.9rem;padding:.6rem .7rem;resize:vertical;min-height:4.6rem;}
+  #investorsbody .iv-opt{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:.5rem 0 .2rem;}
+  #investorsbody .iv-opt > span{font-family:var(--mono);font-size:.64rem;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted);}
+  #investorsbody .iv-opt select,#investorsbody .iv-opt input{background:var(--panel2);border:1px solid var(--hair);
+    border-radius:8px;color:var(--ink);font:inherit;font-size:.78rem;padding:.4rem .5rem;min-height:40px;}
   #investorsbody .iv-form{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;margin:.2rem 0 .7rem;}
   #investorsbody .iv-f{display:flex;flex-direction:column;gap:.2rem;flex:1 1 150px;min-width:0;}
   #investorsbody .iv-f label{font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
   #investorsbody .iv-f select,#investorsbody .iv-f input{font:inherit;font-size:.82rem;padding:.4rem .5rem;min-height:38px;
     border:1px solid var(--hair);border-radius:8px;background:var(--panel);color:var(--ink);width:100%;box-sizing:border-box;}
-  #investorsbody .iv-go{flex:0 0 auto;font-family:var(--mono);font-size:.75rem;padding:.45rem 1.1rem;min-height:38px;
+  #investorsbody .iv-go{flex:0 0 auto;font-family:var(--mono);font-size:.75rem;padding:.45rem 1.1rem;min-height:40px;
     border:1px solid var(--gold);border-radius:999px;background:var(--gold);color:var(--on-accent);font-weight:600;cursor:pointer;}
   #investorsbody .iv-why{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.4rem;}
   #investorsbody .iv-w{font-size:.73rem;padding:.15rem .5rem;border-radius:999px;border:1px solid;white-space:nowrap;}
@@ -2333,14 +2350,13 @@
 </section>
 
 <section id="investorsbody" aria-label="Investor search">
-  <div class="iv-tabs" id="iv-tabs">
-    <button type="button" class="iv-tab on" data-tab="search">Search investors</button>
-    <button type="button" class="iv-tab" data-tab="advise">Find investors for my startup</button>
-  </div>
-  <div id="iv-advform" hidden></div>
   <div class="iv-examples" id="iv-examples"></div>
   <div id="iv-notes"></div>
   <div id="iv-cov" class="iv-cov"></div>
+  <details class="iv-raise" id="iv-raise">
+    <summary>Raising? Find investors for your startup</summary>
+    <div id="iv-advform"></div>
+  </details>
   <div id="iv-intent"></div>
   <div id="iv-rail"></div>
   <div id="iv-results"></div>
@@ -4523,8 +4539,7 @@ $("#ask").addEventListener("submit", e=>{
   if(APP_MODE === "startups"){ if(question && window.SU) SU.search(question); return; }   // startup search → compile + evaluate
   if(APP_MODE === "investors"){                                                          // investor search → compile + evaluate
     if(!question || !window.IV) return;
-    // In advisor mode the box holds the founder's own deck or description, not a query about investors.
-    if(IV.isAdvising && IV.isAdvising()) IV.adviseFromText(question); else IV.search(question);
+    IV.search(question);   // the raising sub-search has its own box; this one always searches
     return;
   }
   if(APP_MODE === "voices"){ if(window.VO) VO.search(question); return; }                 // voices → keyword search over first-person content
@@ -10001,8 +10016,10 @@ async function openShare(token){
   function enter(params){
     if(!STATE.entered){
       STATE.entered = true;
-      const tabs = $("#iv-tabs");
-      if(tabs) tabs.querySelectorAll(".iv-tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+      const raise = $("#iv-raise");
+      if(raise) raise.addEventListener("toggle", () => {
+        if(raise.open && !$("#iv-advform").innerHTML){ $("#iv-advform").innerHTML = advFormHtml(); wireAdvForm(); }
+      });
     }
     $("#iv-examples").innerHTML = EXAMPLES.map(t =>
       `<button type="button" class="iv-ex" data-ex="${esc(t)}">${esc(t)}</button>`).join("");
@@ -10021,14 +10038,13 @@ async function openShare(token){
   }
 
   function showLanding(){
-    box().innerHTML = `<div class="iv-empty">Search the investor index by what the public record actually says:
-      the SEC adviser registers for who a firm is and what it manages, its Form D fund filings for how much it
-      raised and when, and our own company index for what it has backed.
-      <br><br>Three kinds of fact, never mixed:
+    // Was a 45-word paragraph, a "three kinds of fact" heading and three stacked legend lines. The
+    // legend stays — it decodes the marker on every row — but as one line, not a lecture.
+    box().innerHTML = `<div class="iv-empty">From the filings: SEC adviser registers, Form D raises, and what each firm has backed.
       <span class="iv-legend" style="display:block;margin-top:.5rem">
-        <span><b style="color:var(--filed)">▣ filed</b> — ${esc(REG_BLURB.filed)}</span>
-        <span><b style="color:var(--stated)">▢ stated</b> — ${esc(REG_BLURB.stated)}</span>
-        <span><b style="color:var(--observed)">◈ observed</b> — ${esc(REG_BLURB.observed)}</span>
+        <span><b style="color:var(--filed)">▣ filed</b> — a regulator says so</span>
+        <span><b style="color:var(--stated)">▢ stated</b> — the firm says so</span>
+        <span><b style="color:var(--observed)">◈ observed</b> — over companies we hold</span>
       </span></div>`;
     loadCoverage();
   }
@@ -10399,20 +10415,21 @@ async function openShare(token){
 
   function advFormHtml(){
     const opt = (v, l, sel) => `<option value="${esc(v)}"${sel === v ? " selected" : ""}>${esc(l)}</option>`;
-    return `<div class="iv-form">
-      <div class="iv-f"><label for="adv-name">Your startup</label>
-        <input id="adv-name" type="text" placeholder="name or domain — optional" value="${esc(ADV.name)}"></div>
-      <div class="iv-f"><label for="adv-stage">Raising</label><select id="adv-stage">
-        ${STAGES.map(v => opt(v, vlabel("stated_stage", v), ADV.stage)).join("")}</select></div>
-      <div class="iv-f"><label for="adv-sector">Sector</label><select id="adv-sector">
-        ${opt("", "any", ADV.sector)}${SECTORS.map(v => opt(v, vlabel("observed_sector", v), ADV.sector)).join("")}</select></div>
-      <div class="iv-f"><label for="adv-geo">Based in</label><select id="adv-geo">
-        ${opt("", "anywhere", ADV.geo)}${GEOS.map(([v, l]) => opt(v, l, ADV.geo)).join("")}</select></div>
+    // Natural language FIRST. The dropdowns used to lead, which asked a founder to translate their
+    // company into three enum values before we would look — and the free-text path was a sentence
+    // of instructions telling them to use a different box entirely.
+    return `<div class="iv-form" style="padding:.8rem">
+      <textarea id="adv-desc" rows="3" placeholder="What you build, who it's for, what you're raising — or paste your deck.">${esc(ADV.deck || "")}</textarea>
+      <div class="iv-opt">
+        <span>optional</span>
+        <input id="adv-name" type="text" placeholder="startup name or domain" value="${esc(ADV.name)}" size="18">
+        <select id="adv-stage" aria-label="Raising">${STAGES.map(v => opt(v, vlabel("stated_stage", v), ADV.stage)).join("")}</select>
+        <select id="adv-sector" aria-label="Sector">${opt("", "any sector", ADV.sector)}${SECTORS.map(v => opt(v, vlabel("observed_sector", v), ADV.sector)).join("")}</select>
+        <select id="adv-geo" aria-label="Based in">${opt("", "anywhere", ADV.geo)}${GEOS.map(([v, l]) => opt(v, l, ADV.geo)).join("")}</select>
+      </div>
       <button type="button" class="iv-go" id="adv-go">Find investors</button>
-    </div>
-    <div class="iv-note">Naming your startup is worth more than the dropdowns: if it is in the index we use its
-      real sector, geography and existing investors instead of what you guess. Or paste your deck in the box
-      above and press Go — the round you name in it is read, never the amount you are asking for.</div>`;
+      <div class="iv-note" style="margin:.5rem 0 0">Naming your startup beats the dropdowns — we read its real sector, geography and backers.</div>
+    </div>`;
   }
 
   async function advise(){
@@ -10422,6 +10439,7 @@ async function openShare(token){
     const val = id => { const el = $(id); return el ? el.value : ""; };
     if($("#adv-stage")){ ADV.stage = val("#adv-stage"); ADV.sector = val("#adv-sector");
                          ADV.geo = val("#adv-geo"); ADV.name = (val("#adv-name") || "").trim(); }
+    if($("#adv-desc")) ADV.deck = val("#adv-desc");   // the description IS the free-text signal
     ADV.busy = true;
     box().innerHTML = `<div class="iv-empty">Looking for investors who have done this before…</div>`;
     let d;
@@ -10447,19 +10465,15 @@ async function openShare(token){
     box().innerHTML = subj + `<div class="iv-grid">` + rows.map(r => cardHtml(r, true)).join("") + `</div>`;
   }
 
+  // Kept as the module's entry point for "open the raising sub-search" — the tab bar it used to
+  // drive is gone, because search is the default and a default needs no button.
   function showTab(which){
-    const adv = which === "advise";
-    $("#iv-tabs").querySelectorAll(".iv-tab").forEach(b => b.classList.toggle("on", b.dataset.tab === which));
-    $("#iv-advform").hidden = !adv;
-    $("#iv-examples").hidden = adv;
-    if(adv && !$("#iv-advform").innerHTML){
-      $("#iv-advform").innerHTML = advFormHtml();
-      wireAdvForm();
-    }
-    if(adv){ box().innerHTML = `<div class="iv-empty">Tell us your stage, sector and geography — then we look
-      for investors who have already funded companies like yours and have filed a fund recently.</div>`;
-      $("#iv-rail").innerHTML = ""; $("#iv-notes").innerHTML = ""; }
-    else { showLanding(); }
+    const d = $("#iv-raise"); if(!d) return;
+    if(which === "advise"){
+      if(!$("#iv-advform").innerHTML){ $("#iv-advform").innerHTML = advFormHtml(); wireAdvForm(); }
+      d.open = true;
+      const t = $("#adv-desc"); if(t) setTimeout(() => t.focus(), 40);
+    } else { d.open = false; }
   }
 
   function wireAdvForm(){
@@ -10477,7 +10491,7 @@ async function openShare(token){
 
   window.IV = {search, enter, reset, runContract, advise, adviseFromText, showTab,
                // the composer's Go in advisor mode is a deck paste, not a query
-               isAdvising: () => !$("#iv-advform").hidden};
+               isAdvising: () => { const d = $("#iv-raise"); return !!(d && d.open); }};
 })();
 </script>
 </body>
