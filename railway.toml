@@ -5,7 +5,12 @@ dockerfilePath = "deploy/Dockerfile"
 [deploy]
 startCommand = "bash deploy/start.sh"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+# 30s was a coin-flip: this image imports pymupdf/docling and builds the service before the
+# first /health can answer, which lands right at the edge of the window. A deploy whose own
+# logs say "Application startup complete" was being killed for being slightly slow to boot
+# (deploy d131483a, 2026-09-10). The check still catches a genuinely dead container; it just
+# no longer fails a healthy one for starting in 35s instead of 25s.
+healthcheckTimeout = 180
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 # 1 replica during the ingest-heavy phase: each replica runs its own gap-processor, and two
