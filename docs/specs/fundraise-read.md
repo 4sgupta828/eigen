@@ -16,50 +16,64 @@ deciding whether to take the meeting is looking for things a diligence dossier d
 `from_dossier.py` is the first cut of that lens: existing backers, round history, team, milestones,
 hiring. This spec is about making it **deep enough to matter**.
 
-## 0a. ARCHITECTURE: a lens plus a deck reader. DeepDive is not modified, and not duplicated.
+## 0a. ARCHITECTURE: DeepDive becomes the superset. One reader, deeper.
 
-**This section is a correction.** The first draft chose "a separate reader that re-crawls the site,
-reusing DeepDive's gates", justified by the claim that ICP, pricing, named customers and founder prior
-employers "are not sections DeepDive produces". **That claim was false** — asserted without grepping
-for it. The reviewers split on the decision, and the one that checked the code was right:
+Two corrections stand behind this section; both are recorded because the reasoning matters more than
+the conclusion.
+
+**First correction (mine).** The original draft proposed a separate reader that re-crawls the site,
+justified by the claim that ICP, pricing, named customers and founder prior employers "are not
+sections DeepDive produces". **That was false** — asserted without grepping for it:
 
 ```
-deepdive/assemble.py:217   named_customers()            customers section
-deepdive/assemble.py:225   pricing()                    pricing section
-deepdive/assemble.py:444   "prior": prior_companies     founder prior employers, already surfaced
-startups/extract.py:81     founders[].prior_companies   extracted with quotes
-extract.KINDS              what_they_sell, how_they_make_money, who_buys, pricing_terms,
-                           named_customer, named_partner, differentiator, competitor, milestone
+assemble.py:217  named_customers()          assemble.py:225  pricing()
+assemble.py:444  prior employers            startups/extract.py:81  prior_companies
+extract.KINDS    what_they_sell, how_they_make_money, who_buys, pricing_terms,
+                 named_customer, named_partner, differentiator, competitor, milestone
 ```
 
-DeepDive already extracts every signal the draft proposed to build a second crawler for.
+**Second correction (the owner's, and the better one).** The reviewers argued between "build
+separately" and "lens the output". Both accepted a premise neither questioned: that DeepDive stays as
+it is. The owner's call is the third option — **make DeepDive a superset.** The signals a fundraising
+read wants are mostly signals a DILIGENCE read wants too. Regulatory clearance de-risks a market for
+an acquirer exactly as it does for an investor; business model determines capital intensity for both.
+Splitting them would have built two shallow readers where one deeper one serves everyone.
 
-**The decision, corrected: a LENS over the stored dossier, plus a separate DECK reader.**
+**So: DeepDive is extended, not forked, and not duplicated.**
 
-- **Lens** — `from_dossier.py`, extended. Re-reads gated claims the dossier already holds, for a
-  raise. No crawl, no model call, no new claims.
-- **Deck reader** — genuinely new, because a deck is the one source DeepDive has no path to. It
-  imports `deepdive/gates.py` (`subject_bound`, `metric_defined`) so a deck claim faces exactly the
-  same congruence bar as a site claim, and it does **not** touch the site.
-- **DeepDive** — unchanged, and still the only thing that crawls a company's own site.
+### What is added to DeepDive itself (public sources, benefits every reader)
 
-The reason to reject a second site reader is not the duplicate fetch. It is **DRIFT**: two readers
-giving different answers about the same company, in a product whose entire claim is that every
-answer can be checked. One crawler, one gate set, one set of claims about a company.
+- `extract.KINDS` gains **`regulatory_status`** — FDA 510(k)/PMA, ClinicalTrials.gov phase, FCC ID,
+  SOC 2 / ISO 27001 / FedRAMP. `filed` where it joins a registry entry, `stated` where only the
+  company's own compliance page says it. This is diligence-grade evidence that happens to matter
+  enormously to an investor.
+- **`how_they_make_money` is surfaced to the contract.** It is already extracted and goes nowhere.
+- **Hiring SHAPE, not headcount.** "5 engineers, 0 sales" says builder-phase; a count says nothing.
+- **Prior employers promoted** from a field inside Key people to something the lens can read directly.
 
-### Depths: do not mirror DeepDive's three
+### What does NOT go into DeepDive: the deck
 
-The draft proposed `held` / `read` / `full` on a second stack. That adds a second crawling policy, a
-second basis string to keep in sync, and two ways for a cache to go stale. Two levels are enough:
+A dossier lives in `su_dossier`, keyed by `company_id`, carrying a `share_token` — **one shared,
+versioned artifact per company**. A pitch deck is a private document. Two consequences, and they are
+not negotiable:
 
-- **held** — lens the stored dossier and filings. Free. What `from_dossier` does today.
-- **fundraise read** — held, plus the deck reader over an uploaded deck.
+1. Deck claims in a shared dossier mean **sharing the dossier leaks the deck**.
+2. One dossier per company means **one founder's deck would surface for anyone else diving that
+   company** — including an investor, or a competitor.
 
-There is deliberately **no separate "fundraise full web" leg**. DeepDive's `full` depth exists for
-news and third-party commentary in a signal register — which is precisely the sentiment this product
-refuses to rank. Diligence can use it; investor selection has no business doing so.
+So the deck is read by a separate, owner-scoped path, and its claims live with the founder's
+SearchMap, never in `su_dossier`. It still imports `subject_bound` and `metric_defined`, because a
+deck claim must clear the same congruence bar as a site claim — and it carries its own register:
+a deck is a company making claims about itself in a document written to raise money, which is the
+most interested source we will ever read.
 
-## 1. The honest constraint, restated## 1. The honest constraint, restated
+### Depths
+
+DeepDive's existing three are reused as they are. No second stack, no second crawling policy, no
+second basis string. The fundraising read is `held` or `read` on the dossier, plus the deck if one
+was given.
+
+## 1. The honest constraint, restated## 1. The honest constraint, restated## 1. The honest constraint, restated
 
 `investor-matching.md` §1 measured the other side: observed sector is known for 0.8% of 7,453 firms,
 observed stage for 0.6%, and the stated register is empty. A richer read of the STARTUP does not fix
