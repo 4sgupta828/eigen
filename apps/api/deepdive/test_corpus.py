@@ -139,3 +139,19 @@ def test_an_unmapped_section_is_kept_rather_than_dropped():
 def test_no_single_source_can_fill_the_dossier():
     """40 news blocks about one company would bury the one filing that matters."""
     assert MAX_PER_SOURCE * 4 < MAX_TOTAL
+
+
+# ── a company's site arrives in more than one shape ───────────────────────────────────────────────
+
+def test_a_domain_with_a_scheme_still_matches_their_own_pages():
+    """A company row carries `website` as "https://www.anthropic.com/" and `id` as a bare host, and
+    both reach here. With the scheme still attached the host comparison could never match, so every
+    page ON their own site was filed as a page that merely named them."""
+    for d in ("anthropic.com", "www.anthropic.com", "https://www.anthropic.com",
+              "https://www.anthropic.com/"):
+        assert is_theirs("web:https://www.anthropic.com/news/x", "web", "",
+                         "https://www.anthropic.com/news/x", name="Anthropic", domain=d), d
+
+
+def test_the_search_terms_are_a_bare_host_too():
+    assert _terms("Anthropic", "https://www.anthropic.com/") == ["Anthropic", "anthropic.com"]

@@ -106,6 +106,20 @@ MIN_CHARS = 40
 MAX_QUOTE = 360
 
 
+def _domain(d: str) -> str:
+    """A bare host, whatever we were handed.
+
+    A company row carries its site as `website` ("https://www.anthropic.com/") and its id as a bare
+    host, and the two were used interchangeably. With a scheme still attached, the host comparison in
+    `is_theirs` could never match — so every page ON anthropic.com was filed as a page that merely
+    NAMED Anthropic, which is the same attribution error in the other direction.
+    """
+    d = (d or "").strip().lower()
+    d = re.sub(r"^[a-z]+://", "", d).split("/")[0].split("?")[0].split("#")[0]
+    d = d.split("@")[-1].split(":")[0]
+    return d[4:] if d.startswith("www.") else d
+
+
 def _terms(name: str, domain: str) -> list[str]:
     """What counts as naming this company. Deliberately narrow: a short or generic name matched
     loosely turns every block mentioning 'Scale' or 'Anthropic-like' into a claim about them."""
@@ -113,7 +127,7 @@ def _terms(name: str, domain: str) -> list[str]:
     n = (name or "").strip()
     if len(n) >= 3:
         out.append(n)
-    d = (domain or "").strip().lower().replace("www.", "")
+    d = _domain(domain)
     if d and "." in d:
         out.append(d)
         stem = d.split(".")[0]
@@ -196,7 +210,7 @@ def is_theirs(document_id: str, source_key: str, document_title: str, url: str, 
     """
     src, _, native = (document_id or "").partition(":")
     src = (src or source_key or "").lower()
-    dom = (domain or "").lower().replace("www.", "")
+    dom = _domain(domain)
     nslug = _slug(name)
     dslug = _slug(dom.split(".")[0]) if dom else ""
 
