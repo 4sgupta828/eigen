@@ -10540,6 +10540,8 @@ async function openShare(token){
 
   // ---- reading the startup -------------------------------------------------------------------
   let ADV_DECK_ATT = null;      // {name, media_type, data} — a deck, held until it is read
+  const ADV_Q = () => ((($("#adv-url") || {}).value || "").trim()
+                       || (($("#adv-name") || {}).value || "").trim());
 
   async function readStartup(){
     const url = (($("#adv-url") || {}).value || "").trim();
@@ -10568,7 +10570,21 @@ async function openShare(token){
       if(dossier && (dossier.sections || []).length){
         const fr = await fetch("/investors/from-dossier", {method:"POST", headers:{"content-type":"application/json"},
           body: JSON.stringify({dossier, stage_claimed: "", sectors: [], geo: []})});
-        if(fr.ok) deep = await fr.json();
+        if(fr.ok){ deep = await fr.json(); deep.dossier = dossier; }
+      }
+      // `held` answers from what we already hold, which for a founder's OWN company is usually very
+      // little — that is the case this feature exists for. Price the real read and offer it; the
+      // number is shown because spending is the reader's decision, not ours.
+      if(ADV_Q()){
+        try{
+          const pr = await fetch("/deepdive", {method:"POST", headers:{"content-type":"application/json"},
+            body: JSON.stringify({q: ADV_Q(), depth: "read", project_only: true})});
+          if(pr.ok){
+            const pj = await pr.json();
+            if(pj && pj.projection){ deep = deep || {profile:{}, contract:{}};
+              deep.offer = Object.assign({q: ADV_Q()}, pj.projection); }
+          }
+        }catch(e){ /* no projection, no offer — never a blocked read */ }
       }
       // The deck and any free-text still go through the reader, which is the only path that sees them.
       const r = await fetch("/investors/read-startup", {method:"POST", headers:{"content-type":"application/json"},
@@ -10608,7 +10624,27 @@ async function openShare(token){
     ].filter(Boolean).join("");
     if(body) out.push(`<div class="iv-dsec"><div class="iv-dh">What we read${d.chars_read ? ` <i>${Number(d.chars_read).toLocaleString()} characters</i>` : ""}</div>${body}</div>`);
     else out.push(`<div class="iv-gap">We read ${Number(d.chars_read || 0).toLocaleString()} characters but could not structure it into anything we would rely on. Describe it below instead.</div>`);
-    // What the dive found, which is the half a shallow page-read cannot reach.
+    // EVERY section the dive produced, with each claim's register and source. The lens below adds
+    // a fundraising reading on top; it does not get to decide what the founder may see.
+    const secs = ((d.deep || {}).dossier || {}).sections || [];
+    if(secs.length){
+      out.push(`<div class="iv-dsec"><div class="iv-dh">What the deep dive found <i>${secs.length} section${secs.length === 1 ? "" : "s"}</i></div>`
+        + secs.map(sx => {
+            const cl = (sx.claims || []).slice(0, 10).map(c2 => {
+              const txt = esc(c2.claim || c2.name || c2.title || c2.round_name || "");
+              if(!txt) return "";
+              const reg = String(c2.register || "").toLowerCase();
+              const g = GLYPH[reg] || "";
+              const src = c2.source_url ? ` <a href="${esc(c2.source_url)}" target="_blank" rel="noopener">source ↗</a>` : "";
+              const att = c2.attribution ? `<span class="iv-pq">${esc(c2.attribution)}</span>` : "";
+              return `<div class="iv-prow"><span class="iv-g ${esc(reg)}">${g}</span><span>${txt}${src}</span>${att}</div>`;
+            }).filter(Boolean).join("");
+            return cl ? `<div style="margin:.4rem 0"><div class="iv-plabel">${esc(sx.title || "")}</div>${cl}</div>` : "";
+          }).filter(Boolean).join("")
+        + `</div>`);
+    }
+
+    // The fundraising reading on top of it.
     const dp = (d.deep || {}).profile, dc = (d.deep || {}).contract;
     if(dp){
       const bits = [];
@@ -10621,9 +10657,7 @@ async function openShare(token){
           dc.stage_disagrees ? "your deck says " + vlabel("stated_stage", dc.stage_claimed) + " — both are kept, neither overwritten" : ""));
       if((dp.team || []).length)
         bits.push(row("Team", dp.team.map(t => t.name + (t.title ? " (" + t.title + ")" : "")).join(", "), ""));
-      if((dp.milestones || []).length)
-        bits.push(row("They have stated", dp.milestones.map(m => m.claim).slice(0, 3).join(" · "),
-          (dp.milestones[0] || {}).attribution));
+
       if(bits.filter(Boolean).length)
         out.push(`<div class="iv-dsec"><div class="iv-dh">From the deep dive</div>${bits.filter(Boolean).join("")}</div>`);
       (dp.gaps || []).forEach(g => out.push(`<div class="iv-gap">${esc(g)}</div>`));
@@ -10632,13 +10666,18 @@ async function openShare(token){
       out.push(`<div class="iv-gap">Not established from what we read: ${esc((p.unknown || []).join("; "))}</div>`);
     if((d.sources || []).length)
       out.push(`<div class="iv-readnote">read: ${(d.sources || []).slice(0, 5).map(u => esc(String(u).replace(/^https?:\/\//, "").slice(0, 44))).join(" · ")}</div>`);
-    const pl = d.plan || {};
-    if((pl.steps || []).length){
-      out.push(`<div class="iv-dsec"><div class="iv-dh">How to search, given what we can and cannot see</div>`
-        + pl.steps.map(s => `<div class="iv-prow"><span class="iv-plabel">${esc(s.do)}</span><span>${esc(s.why)}</span></div>`).join("")
-        + (pl.gaps || []).map(g => `<div class="iv-gap">${esc(g)}</div>`).join("")
-        + `<div class="iv-readnote">${esc(pl.note || "")}</div>`
-        + `<button type="button" class="iv-go" id="adv-savemap" style="margin-top:.5rem">Save as SearchMap</button></div>`);
+    // The four-step "how to search" plan was the same words for every company — generic advice
+    // padding the page while the actual reading was thin. Cut. What survives is the part that is
+    // ABOUT THIS COMPANY: the gaps naming which signal is unavailable and why.
+    ((d.plan || {}).gaps || []).filter(g => !/Portfolio coverage is/.test(g))
+      .forEach(g => out.push(`<div class="iv-gap">${esc(g)}</div>`));
+    if((d.deep || {}).offer){
+      const o = d.deep.offer;
+      out.push(`<div class="iv-dsec"><div class="iv-dh">Read the site properly</div>
+        <div class="iv-prow"><span>We have only what we already hold for this company. A full read of
+        ${esc(String(o.pages || 6))} pages — every claim quoted and checked — costs
+        <b>$${esc((o.projected_usd || 0).toFixed(3))}</b>.</span></div>
+        <button type="button" class="iv-go" id="adv-deep" data-q="${esc(o.q || "")}" style="margin-top:.5rem">Read it — $${esc((o.projected_usd || 0).toFixed(2))}</button></div>`);
     }
     return out.join("");
   }
