@@ -336,9 +336,15 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
                     "note": "Nothing to read yet — give a website, a deck, or a description. A scanned "
                             "deck with no text layer reads as empty here rather than being guessed at."}
 
-        lab = labels()
-        sect_vocab = [v["value"] for v in (lab.get("observed_sector") or {}).get("values", [])] or []
-        geo_vocab = [v["value"] for v in (lab.get("observed_geo") or {}).get("values", [])] or []
+        # The sector vocabulary comes from the STARTUPS schema, which is where it is defined.
+        # `observed_sector` is a derived free-set facet on the investor side, so investor labels()
+        # carries no value list for it — and reading it there returned an EMPTY vocabulary, which the
+        # model was then asked to map a company into. It could not, every time, and reported so
+        # honestly: "we could not place your company in the index's sector vocabulary". The reading
+        # was not failing; it was being handed nothing to read into.
+        from api.startups.schema import TECH_AREAS
+        sect_vocab = list(TECH_AREAS)
+        geo_vocab = ["us", "uk", "in", "ae", "sg", "au", "ca", "de", "fr", "il"]
         profile = {}
         if llm_json:
             try:

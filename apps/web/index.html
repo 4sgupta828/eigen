@@ -10551,10 +10551,31 @@ async function openShare(token){
     }
     box.innerHTML = `<div class="iv-dload"><span class="su-spin"></span>reading${url ? " " + esc(url) : ""}\u2026</div>`;
     try{
+      // DEEP DIVE FIRST. The shallow read was crawling a couple of pages and making one model call,
+      // beside a module that resolves the company, discovers it on the web when we do not hold it,
+      // reads its site properly and gates every claim. Asking DeepDive at `held` costs nothing and
+      // answers with what we already hold; the founder can go deeper from the dive itself.
+      let dossier = null;
+      if(url || (($("#adv-name") || {}).value || "").trim()){
+        try{
+          const q = url || $("#adv-name").value.trim();
+          const dr = await fetch("/deepdive", {method:"POST", headers:{"content-type":"application/json"},
+            body: JSON.stringify({q, depth: "held"})});
+          if(dr.ok){ const dd = await dr.json(); dossier = dd && (dd.dossier || dd); }
+        }catch(e){ /* a dive we cannot get is a thinner reading, never a failed one */ }
+      }
+      let deep = null;
+      if(dossier && (dossier.sections || []).length){
+        const fr = await fetch("/investors/from-dossier", {method:"POST", headers:{"content-type":"application/json"},
+          body: JSON.stringify({dossier, stage_claimed: "", sectors: [], geo: []})});
+        if(fr.ok) deep = await fr.json();
+      }
+      // The deck and any free-text still go through the reader, which is the only path that sees them.
       const r = await fetch("/investors/read-startup", {method:"POST", headers:{"content-type":"application/json"},
         body: JSON.stringify({url, deck_text: desc, attachments: ADV_DECK_ATT ? [ADV_DECK_ATT] : []})});
-      if(!r.ok) throw new Error("read failed (" + r.status + ")");
-      const d = await r.json();
+      if(!r.ok && !deep) throw new Error("read failed (" + r.status + ")");
+      const d = r.ok ? await r.json() : {read: true, profile: {}, sources: []};
+      if(deep) d.deep = deep;
       box.innerHTML = profileHtml(d);
       // What we READ fills the form, so the founder can correct us before anything is searched.
       const p = d.profile || {};
@@ -10587,6 +10608,26 @@ async function openShare(token){
     ].filter(Boolean).join("");
     if(body) out.push(`<div class="iv-dsec"><div class="iv-dh">What we read${d.chars_read ? ` <i>${Number(d.chars_read).toLocaleString()} characters</i>` : ""}</div>${body}</div>`);
     else out.push(`<div class="iv-gap">We read ${Number(d.chars_read || 0).toLocaleString()} characters but could not structure it into anything we would rely on. Describe it below instead.</div>`);
+    // What the dive found, which is the half a shallow page-read cannot reach.
+    const dp = (d.deep || {}).profile, dc = (d.deep || {}).contract;
+    if(dp){
+      const bits = [];
+      if((dp.existing_investors || []).length)
+        bits.push(row("Existing backers", dp.existing_investors.map(i => i.name).join(", "), ""));
+      if((dp.rounds || []).length)
+        bits.push(row("Rounds on record", dp.rounds.map(r2 => [r2.round, r2.date].filter(Boolean).join(" ")).join(" · "), ""));
+      if(dc && dc.stage_evidenced)
+        bits.push(row("Stage we can evidence", vlabel("stated_stage", dc.stage_evidenced),
+          dc.stage_disagrees ? "your deck says " + vlabel("stated_stage", dc.stage_claimed) + " — both are kept, neither overwritten" : ""));
+      if((dp.team || []).length)
+        bits.push(row("Team", dp.team.map(t => t.name + (t.title ? " (" + t.title + ")" : "")).join(", "), ""));
+      if((dp.milestones || []).length)
+        bits.push(row("They have stated", dp.milestones.map(m => m.claim).slice(0, 3).join(" · "),
+          (dp.milestones[0] || {}).attribution));
+      if(bits.filter(Boolean).length)
+        out.push(`<div class="iv-dsec"><div class="iv-dh">From the deep dive</div>${bits.filter(Boolean).join("")}</div>`);
+      (dp.gaps || []).forEach(g => out.push(`<div class="iv-gap">${esc(g)}</div>`));
+    }
     if((p.unknown || []).length)
       out.push(`<div class="iv-gap">Not established from what we read: ${esc((p.unknown || []).join("; "))}</div>`);
     if((d.sources || []).length)
