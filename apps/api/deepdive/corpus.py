@@ -401,10 +401,12 @@ _COLS = """SELECT document_id, block_id, text, document_title, source_key, facet
                   facets->>'published_at' AS published_at
              FROM rs_block"""
 
-# The words a funding event is written in. A fixed literal — never built from user input — so it can
-# be an OR-query without any escaping question.
-_EVENT_TSQ = ("raise | raised | raises | valuation | funding | investor | investors | series | "
-              "startup | founded | acquire | acquired | customers | revenue")
+# The words a funding event is written in. One query per word — `websearch_to_tsquery` ANDs bare
+# terms, which is exactly what is wanted ("Clay" AND "valuation"), and it is the only parser in this
+# file already proven to work against this corpus. The earlier form built an OR-list with
+# `to_tsquery` inside an f-string, wrapped in `except Exception: pass`, and returned nothing without
+# ever saying so — a silent failure is worse than a loud one, so the count is now reported.
+_EVENT_WORDS = ("funding", "valuation", "raised", "investors", "startup", "acquired", "customers")
 MAX_TARGETED = 8
 
 
@@ -415,39 +417,26 @@ async def _by_relevance(conn, tenant: str, websearch: str, limit: int) -> list:
                     LIMIT $3""", tenant, websearch, limit)
 
 
-async def _with_term(conn, tenant: str, name: str, other: str, limit: int) -> list:
-    """Passages holding the name AND `other`. Both are bound parameters, never concatenated."""
-    return await conn.fetch(
-        _COLS + """ WHERE tenant_id = $1
-                      AND tsv @@ (plainto_tsquery('english', $2) && plainto_tsquery('english', $3))
-                 ORDER BY ts_rank(tsv, plainto_tsquery('english', $3)) DESC
-                    LIMIT $4""", tenant, name, other, limit)
+def _and_query(*parts: str) -> str:
+    """A websearch query that requires every part. Quoted so a multi-word name stays one phrase."""
+    return " ".join('"' + p.replace('"', " ").strip() + '"' for p in parts if (p or "").strip())
 
 
-async def _with_event_words(conn, tenant: str, name: str, limit: int) -> list:
-    """Passages holding the name beside the vocabulary of a funding event. The OR-list is a fixed
-    literal defined in this file, so there is nothing to escape."""
-    return await conn.fetch(
-        _COLS + f""" WHERE tenant_id = $1
-                       AND tsv @@ (plainto_tsquery('english', $2)
-                                   && to_tsquery('english', '{_EVENT_TSQ}'))
-                  ORDER BY ts_rank(tsv, plainto_tsquery('english', $2)) DESC
-                     LIMIT $3""", tenant, name, limit)
-
-
-async def _targeted(conn, tenant: str, name: str, corro: tuple[str, ...]) -> list:
-    """The narrow questions: the name beside something that says WHICH one it is."""
+async def _targeted(conn, tenant: str, name: str, corro: tuple[str, ...]) -> tuple[list, int]:
+    """The narrow questions: the name beside something that says WHICH one it is. (rows, n_queries)"""
     out: list = []
-    for c in corro[:5]:
+    asked = 0
+    wanted = list(corro[:5]) + list(_EVENT_WORDS)
+    for other in wanted:
+        q = _and_query(name, other)
+        if not q:
+            continue
+        asked += 1
         try:
-            out += await _with_term(conn, tenant, name, c, MAX_TARGETED)
+            out += await _by_relevance(conn, tenant, q, MAX_TARGETED)
         except Exception:      # noqa: BLE001 — one narrow miss must not lose the others
             pass
-    try:
-        out += await _with_event_words(conn, tenant, name, MAX_TARGETED * 3)
-    except Exception:      # noqa: BLE001 — the event sweep is a bonus, never why a dive fails
-        pass
-    return out
+    return out, asked
 
 
 def _dedupe_rows(rows: list) -> list:
@@ -480,6 +469,7 @@ async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant
     # takes an OR.
     q = " OR ".join(f'"{t}"' if " " in t else t for t in terms)
     dom = _domain(domain)
+    targeted_n, n_asked = 0, 0
     corro = tuple(c for c in ((dom,) + tuple(corroborators)) if c and len(c) >= 4)
     try:
         conn = await asyncpg.connect(dsn)
@@ -497,8 +487,9 @@ async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant
                 # So ask narrower questions: the name AND the domain, the name AND each backer we
                 # already hold, the name AND the vocabulary of a funding event. Each is an indexed
                 # query and costs nothing, and their answers go in FRONT of the broad sweep.
-                rows = await _targeted(conn, tenant, name, corro) + rows
-                rows = _dedupe_rows(rows)
+                narrow, n_asked = await _targeted(conn, tenant, name, corro)
+                targeted_n = len(narrow)
+                rows = _dedupe_rows(narrow + rows)
         finally:
             await conn.close()
     except Exception as e:      # noqa: BLE001
@@ -571,6 +562,8 @@ async def corpus_hits(dsn: str, *, name: str, domain: str, cik: str = "", tenant
                     f"({word_uses} of the passages we found use it that way), so a passage had to "
                     f"name {dom or 'their site'}, name someone we already know is connected to "
                     "them, or be used the way only a company is used")
+    if n_asked:
+        bits.append(f"{n_asked} narrower searches returned {targeted_n}")
     if dropped["unbound"]:
         bits.append(f"{dropped['unbound']} dropped as unattributable")
     if dropped["not-this-company"]:
