@@ -16,39 +16,50 @@ deciding whether to take the meeting is looking for things a diligence dossier d
 `from_dossier.py` is the first cut of that lens: existing backers, round history, team, milestones,
 hiring. This spec is about making it **deep enough to matter**.
 
-## 0a. ARCHITECTURE: a separate reader. DeepDive is not modified.
+## 0a. ARCHITECTURE: a lens plus a deck reader. DeepDive is not modified, and not duplicated.
 
-Decided before drafting: **DeepDive's pipeline is not touched.** It is a live, tested, cost-gated
-diligence feature and a fundraising lens has no business changing its prompts, its sections or its
-store.
+**This section is a correction.** The first draft chose "a separate reader that re-crawls the site,
+reusing DeepDive's gates", justified by the claim that ICP, pricing, named customers and founder prior
+employers "are not sections DeepDive produces". **That claim was false** — asserted without grepping
+for it. The reviewers split on the decision, and the one that checked the code was right:
 
-Three options were on the table:
+```
+deepdive/assemble.py:217   named_customers()            customers section
+deepdive/assemble.py:225   pricing()                    pricing section
+deepdive/assemble.py:444   "prior": prior_companies     founder prior employers, already surfaced
+startups/extract.py:81     founders[].prior_companies   extracted with quotes
+extract.KINDS              what_they_sell, how_they_make_money, who_buys, pricing_terms,
+                           named_customer, named_partner, differentiator, competitor, milestone
+```
 
-| | | |
-|---|---|---|
-| **A. Consume its output** | call `POST /deepdive`, re-read the dossier | what `from_dossier.py` does today. Zero risk, and permanently limited to what a DILIGENCE extraction happened to surface. ICP, pricing shape, customer names and founder prior employers are not sections it produces. |
-| **B. Reuse its primitives** | a separate module importing `deepdive/gates.py` and the shared site crawler, with its own fundraising-intent extraction, its own prompts, its own store | **chosen** |
-| **C. Independent implementation** | rebuild crawling, gating, costing | rejected: it would fork the congruence gates, which are the part that must never diverge |
+DeepDive already extracts every signal the draft proposed to build a second crawler for.
 
-**B**, because the thing worth sharing is the DISCIPLINE, not the output. `subject_bound` and
-`metric_defined` are the gates that stop a customer testimonial on a company's own case-study page
-becoming a claim about that company, and stop a number whose metric word is absent from becoming a
-metric. A fundraising reader needs exactly those gates and a different set of questions.
+**The decision, corrected: a LENS over the stored dossier, plus a separate DECK reader.**
 
-Concretely:
+- **Lens** — `from_dossier.py`, extended. Re-reads gated claims the dossier already holds, for a
+  raise. No crawl, no model call, no new claims.
+- **Deck reader** — genuinely new, because a deck is the one source DeepDive has no path to. It
+  imports `deepdive/gates.py` (`subject_bound`, `metric_defined`) so a deck claim faces exactly the
+  same congruence bar as a site claim, and it does **not** touch the site.
+- **DeepDive** — unchanged, and still the only thing that crawls a company's own site.
 
-- **Shared, imported, unchanged:** `deepdive/gates.py`, `startups/sources/site.py` (one crawling
-  policy in this codebase, not two), the projection-and-cap discipline.
-- **New and separate:** extraction prompts written for a raise, the fundraising profile shape, its
-  store rows, its routes.
-- **Untouched:** every file under `apps/api/deepdive/`. If this spec ever requires a change there,
-  that is a signal the lens is wrong, not that DeepDive is.
+The reason to reject a second site reader is not the duplicate fetch. It is **DRIFT**: two readers
+giving different answers about the same company, in a product whose entire claim is that every
+answer can be checked. One crawler, one gate set, one set of claims about a company.
 
-The cost of B is one more crawl of the same site when a founder has already run a dive. Accepted:
-caching across two features whose depths and freshness rules differ is a worse problem than a second
-fetch, and the crawler is paced and robots-first either way.
+### Depths: do not mirror DeepDive's three
 
-## 1. The honest constraint, restated
+The draft proposed `held` / `read` / `full` on a second stack. That adds a second crawling policy, a
+second basis string to keep in sync, and two ways for a cache to go stale. Two levels are enough:
+
+- **held** — lens the stored dossier and filings. Free. What `from_dossier` does today.
+- **fundraise read** — held, plus the deck reader over an uploaded deck.
+
+There is deliberately **no separate "fundraise full web" leg**. DeepDive's `full` depth exists for
+news and third-party commentary in a signal register — which is precisely the sentiment this product
+refuses to rank. Diligence can use it; investor selection has no business doing so.
+
+## 1. The honest constraint, restated## 1. The honest constraint, restated
 
 `investor-matching.md` §1 measured the other side: observed sector is known for 0.8% of 7,453 firms,
 observed stage for 0.6%, and the stated register is empty. A richer read of the STARTUP does not fix
@@ -71,8 +82,13 @@ The test for every row is not "would an investor care" but "can we show the word
 | Existing backers | who has already underwritten them | **yes** | dossier Investors section |
 | Founder background | pattern-matching on prior work | **partly** — prior employers are quotable; "quality" is not | team page, public profiles |
 | Hiring velocity | growth, and what they are building next | **yes**, as open roles — never as headcount growth | ATS |
-| Open-source traction | developer pull | **yes** | GitHub stars/forks, as *observed* |
-| Research output | technical depth | **yes** | papers, patents (application vs grant kept apart) |
+| **Business model** | capital intensity, fund thesis fit | **yes** | `how_they_make_money` — already extracted, and never passed to the contract |
+| **Regulatory / compliance standing** | go-to-market de-risking | **yes** — *filed* against a registry, *stated* from a compliance page | FDA 510(k), ClinicalTrials.gov, FCC OET; SOC 2 / ISO 27001 / FedRAMP claims on their own site |
+| **Raise intent and terms** | what they are actually asking for | **yes**, from a deck, as *stated* | the deck — the one source DeepDive has no path to |
+| **Use of funds / next milestones** | what the money buys | **yes**, as *plans* — never as facts | deck, explicitly registered as intent |
+| **Hiring shape** | builder phase vs go-to-market phase | **yes** | ATS role distribution, not headcount |
+| ~~Open-source traction~~ | — | **cut** | feeds no ranking axis |
+| ~~Research output~~ | — | **cut** | feeds no ranking axis |
 | Revenue / ARR | the number everyone wants | **NO** | refused: DeepDive refuses a revenue integer for a private company and this must not undo it |
 | Burn, runway, cap table | the other numbers everyone wants | **NO** | not public; asking a model to infer them is fabrication |
 | "Momentum" / "traction strength" | narrative | **NO** | an assessment, not a fact |
@@ -134,12 +150,46 @@ Unchanged from `investor-matching.md` §6. The posture is *who has already done 
 say yes*, and never how much to raise. A fundraising lens makes that line easier to cross, which is
 why it is restated here.
 
-## 8. Questions for the panel
+## 8. Panel outcome (Codex + Gemini, 2026-09-11)
 
-1. Is the ground/refuse split in §2 right? Specifically: is founder prior-employer extraction
-   defensible, given both reviewers previously refused founder-based *scoring*?
-2. Is there a signal investors weigh heavily that is genuinely groundable and missing from §2?
-3. §3 says network/value-add is unrankable and becomes a question in the plan. Is that the right
-   call, or a cop-out?
-4. What should `read` depth extract that DeepDive's diligence pass does not already?
-5. What in this spec is not worth building?
+**Agreed by both.**
+
+- **Prior-employer extraction is defensible; scoring on it is not.** The line is between *reading a
+  fact* and *inventing a preference*. "Founder X worked at Stripe" is quotable and STATED. It becomes
+  fabrication only when fed to something that assumes a fund prefers Stripe alumni. Precedent already
+  in the codebase: `iv_person` is kept for transparency and excluded from the score.
+- **Refusing revenue, burn, runway and cap table is correct**, and useful rather than merely strict:
+  it forces the interface to say "we cannot see your revenue — tell us and the match improves",
+  which is honest and actionable.
+- **Investor network value stays unranked.** Ranking it needs a proxy — follower counts, board seats
+  — which is the hallucinated synthesis this product exists to refuse. It becomes a question in the
+  plan, named as one.
+
+**Where they split, and how it was resolved.**
+
+Gemini endorsed the original "build a separate reader". Codex argued the reasoning was weaker than it
+looked and cited the code above. Codex is right; Gemini was answering a question whose premise —
+that DeepDive lacks these sections — I had supplied and which is false. §0a is rewritten accordingly.
+
+**Signals added by the review:** business model (already extracted, never used), regulatory and
+compliance standing, raise intent and terms, use of funds as plans, hiring shape.
+**Signals cut:** open-source traction and research output — neither moves a ranking axis, and
+extracting a signal that changes no outcome is work that only looks like depth.
+
+## 9. Evaluation — cases designed to pass a naive fundraising reader while being wrong
+
+1. **The case-study trap.** The site reads "Customer Acme increased revenue $50M and raised a Series
+   C." A naive reader files that as the STARTUP's stage and milestone. `subject_bound` must reject it:
+   the claim names another organisation.
+2. **The unitless hype metric.** "Growth is up 5,000%." No base, no metric word. `metric_defined`
+   must drop it rather than log a milestone.
+3. **Intent versus evidence on stage.** The deck says Seed; a filed Form D shows Series A six months
+   ago. Both are kept, `stage_disagrees` is true, and neither overwrites the other.
+4. **The stale extrapolation.** A two-year-old press figure presented as current traction. It must
+   carry its date, or not appear.
+5. **The founder-pedigree booster.** A team page full of famous employers must change the ranking by
+   exactly nothing.
+6. **The logo wall misread as investors.** A "trusted by" customer wall parsed into `existing_investors`
+   would poison the single strongest matching signal with companies that never invested.
+7. **"We use AI".** A crypto company mentioning AI once must not be tagged into AI-infra funds;
+   extraction scopes to what they SELL.
