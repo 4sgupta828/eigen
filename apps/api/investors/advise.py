@@ -39,14 +39,70 @@ from .schema import KIND
 # What each signal is worth when ordering the list. `still_deploying` leads deliberately: a fund that closed
 # last year is raising, and a firm whose last filing was in 2019 is not going to write your cheque however
 # good the sector fit looks. Sector is next, because it is the reason a partner takes the meeting.
+# Per-AXIS weight. Each axis contributes weight x STRENGTH in [0,1], not weight x presence — a firm
+# that has done eleven rounds in your sector should not tie one that merely lists the sector.
+#
+# `still_deploying` is deliberately NOT here. It used to carry 1.0, the largest weight of any signal,
+# which meant a generalist matching nothing but "filed a fund recently" outranked a specialist who
+# actually invests in the founder's sector. Recency is NECESSARY, NOT SUFFICIENT, so it multiplies the
+# score instead of adding to it (see `recency_multiplier`).
 WEIGHTS = {
-    "still_deploying": 1.0,
-    "sector": 0.9,
-    "stage_observed": 0.6,
-    "stage_stated": 0.5,
-    "geo": 0.4,
+    "sector": 1.0,
+    "stage_observed": 0.8,
+    "stage_stated": 0.35,     # they say so; a third of what we can see them do
+    "geo": 0.5,
     "co_investor": 0.7,
+    "cheque": 0.4,
 }
+
+# A dormant fund is not a match however well its history reads: it is not writing cheques. Recency
+# scales the whole score rather than adding to it, and never quite reaches zero so a perfect match
+# with an old filing still appears — labelled — rather than vanishing without explanation.
+DORMANT_YEARS = 7
+_RECENCY_FLOOR = 0.25
+_DORMANT_MULT = 0.06   # >= DORMANT_YEARS with no filing: shown, labelled, and effectively last
+CONFLICT_PENALTY = 1.6        # a direct competitor is disqualifying, not a footnote
+CHEQUE_MISMATCH_PENALTY = 0.5
+
+
+def _saturating(n: int, alpha: float = 0.55) -> float:
+    """n hits -> [0,1), saturating. The first round in your sector is worth far more than the tenth."""
+    import math
+    return 1.0 - math.exp(-alpha * max(0, n))
+
+
+OBSERVED_FLOOR = 0.30   # any hit we have SEEN scores at least this
+STATED_STRENGTH = 0.20  # a firm's own claim scores below the weakest thing we have observed
+
+
+def _strength(hits: int, denom: int | None) -> float:
+    """Strength of an observed overlap, normalised by the population it was measured over where we
+    know it. Five of ten is a thesis; five of a thousand is noise. Without a denominator we can only
+    say "at least this many", so we fall back to the saturating count and never invent a rate.
+
+    Floored at OBSERVED_FLOOR so that dividing by a big portfolio can never push an observed fact
+    below a stated one — one devtools company out of nine hundred is weak, but we watched it happen,
+    and "they say they do devtools" must not outrank it."""
+    if hits <= 0:
+        return 0.0
+    shaped = _saturating(hits)
+    if denom and denom > 0:
+        # half the signal is "how many", half is "out of how many". A clamp here instead would make
+        # every single-hit firm identical and throw away the concentration entirely.
+        shaped = 0.5 * shaped + 0.5 * min(1.0, hits / denom)
+    return OBSERVED_FLOOR + (1.0 - OBSERVED_FLOOR) * shaped
+
+
+def recency_multiplier(latest_fund_year, now_year: int) -> float:
+    """1.0 for a fund filed this year, decaying with a ~3-year half-life to a floor. No filing at all
+    is treated as dormant rather than as unknown-but-fine: we would be ranking on a guess."""
+    import math
+    if not latest_fund_year:
+        return _DORMANT_MULT
+    gap = max(0, now_year - int(latest_fund_year))
+    if gap >= DORMANT_YEARS:
+        return _DORMANT_MULT      # not "old", but out of the market — a history, not a match
+    return max(_RECENCY_FLOOR, math.exp(-math.log(2) * gap / 3.0))
 
 STAGES = ("pre_seed", "seed", "series_a", "series_b", "series_c", "growth")
 
@@ -110,46 +166,108 @@ def is_advice(why: list[dict]) -> bool:
 
 
 def reasons_for(row: dict, *, stage: str, sectors: list[str], geo: list[str],
-                co_investors: list[str]) -> tuple[list[dict], float]:
+                co_investors: list[str], now_year: int | None = None) -> tuple[list[dict], float]:
     """([{signal, register, detail}], score) — why this firm is on the list, in the registers it came from.
 
     Every reason names its register, because "they say they do seed" and "we can see eleven seed rounds" are
     different kinds of claim and a founder deciding who to email should be able to tell them apart.
+
+    The score is weight x STRENGTH per axis, then multiplied by recency. It used to be a sum of weights
+    over signal PRESENCE, which had two consequences worth stating plainly:
+      - `still_deploying` carried the largest weight of any signal (1.0), so a generalist that had
+        merely filed a fund recently outranked a specialist who actually invests in the sector; and
+      - matching `stated_stage` (0.5) plus `geo` (0.4) tied real observed sector overlap (0.9),
+        so what a firm SAYS about itself could outweigh what we can see it do.
     """
+    import datetime as _dt
+    now_year = now_year or _dt.date.today().year
     facets = row.get("facets") or {}
+    nums = row.get("numeric") or {}
+    denom = row.get("denom") or {}
     out: list[dict] = []
     score = 0.0
 
-    def add(signal: str, register: str, detail: str) -> None:
+    def add(signal: str, register: str, detail: str, strength: float = 1.0) -> None:
         nonlocal score
-        out.append({"signal": signal, "register": register, "detail": detail})
-        score += WEIGHTS.get(signal, 0.2)
+        out.append({"signal": signal, "register": register, "detail": detail,
+                    "strength": round(max(0.0, min(1.0, strength)), 3)})
+        score += WEIGHTS.get(signal, 0.2) * max(0.0, min(1.0, strength))
 
+    # Recency is reported as a reason (a founder wants to know they are live) but scores nothing on
+    # its own — it multiplies the whole at the end.
+    yr = nums.get("latest_fund_year")
     if "yes_recent" in (facets.get("still_deploying") or []):
-        yr = (row.get("numeric") or {}).get("latest_fund_year")
-        add("still_deploying", "filed", f"filed a fund in {int(yr)}" if yr else "filed a fund recently")
+        add("still_deploying", "filed", f"filed a fund in {int(yr)}" if yr else "filed a fund recently", 0.0)
 
-    hit = [s for s in sectors if s in (facets.get("observed_sector") or [])]
+    hit = [x for x in sectors if x in (facets.get("observed_sector") or [])]
     if hit:
-        add("sector", "observed", "funds " + ", ".join(s.replace("_", " ") for s in hit[:2]))
-    said = [s for s in sectors if s in (facets.get("sector_focus") or [])]
+        st = _strength(len(hit), denom.get("observed_sector") or nums.get("portfolio_count"))
+        add("sector", "observed", "funds " + ", ".join(x.replace("_", " ") for x in hit[:2]), st)
+    said = [x for x in sectors if x in (facets.get("sector_focus") or [])]
     if said and not hit:
-        add("sector", "stated", "says they fund " + ", ".join(s.replace("_", " ") for s in said[:2]))
+        add("sector", "stated", "says they fund " + ", ".join(x.replace("_", " ") for x in said[:2]), STATED_STRENGTH)
 
     if stage and stage in (facets.get("observed_stage") or []):
-        add("stage_observed", "observed", f"has done {stage.replace('_', ' ')} rounds")
+        st = _strength(1, denom.get("observed_stage"))
+        add("stage_observed", "observed", f"has done {stage.replace('_', ' ')} rounds", max(0.6, st))
     elif stage and stage in (facets.get("stated_stage") or []):
-        add("stage_stated", "stated", f"says they invest at {stage.replace('_', ' ')}")
+        add("stage_stated", "stated", f"says they invest at {stage.replace('_', ' ')}", 1.0)
 
-    g = [x for x in geo if x in (facets.get("observed_geo") or []) or x in (facets.get("geo_focus") or [])]
+    g = [x for x in geo if x in (facets.get("observed_geo") or [])]
     if g:
-        add("geo", "observed", "funds in " + ", ".join(x.upper() for x in g[:2]))
+        add("geo", "observed", "funds in " + ", ".join(x.upper() for x in g[:2]),
+            _strength(len(g), denom.get("observed_geo")))
+    else:
+        gs = [x for x in geo if x in (facets.get("geo_focus") or [])]
+        if gs:
+            add("geo", "stated", "says they fund in " + ", ".join(x.upper() for x in gs[:2]), STATED_STRENGTH)
 
     co = [c for c in co_investors if c in (facets.get("co_investor") or [])]
     if co:
-        add("co_investor", "observed", "co-invests with " + ", ".join(c.replace("_", " ") for c in co[:2]))
+        add("co_investor", "observed", "co-invests with " + ", ".join(c.replace("_", " ") for c in co[:2]),
+            _strength(len(co), denom.get("co_investor")))
 
-    return out, score
+    return out, score * recency_multiplier(yr, now_year)
+
+
+def axes_with_evidence(why: list[dict]) -> list[str]:
+    """Which axes we actually had evidence on. Shown to the reader, because a firm ranked on one axis
+    out of five is a different object from one matched on four, and a list that hides the difference
+    invites a founder to read confidence we do not have — which matters most in exactly the regime we
+    are in, where observed sector is known for under 1% of firms."""
+    seen, order = set(), []
+    for w in why or []:
+        a = {"stage_observed": "stage", "stage_stated": "stage"}.get(w["signal"], w["signal"])
+        if a != "still_deploying" and a not in seen:
+            seen.add(a); order.append(a)
+    return order
+
+
+def penalties_for(row: dict, *, conflicts: list[dict], raise_target: float | None = None) -> tuple[float, list[str]]:
+    """(penalty, notes) — the reasons to push a firm DOWN. These used to be decoration: conflicts_for
+    attached a warning to the card and changed nothing about where the card sat, so the single most
+    disqualifying fact we hold — that they already fund a direct competitor — left the firm at the top
+    of the list a founder was about to email."""
+    import datetime as _dt
+    nums = row.get("numeric") or {}
+    penalty, notes = 0.0, []
+
+    if conflicts:
+        penalty += CONFLICT_PENALTY
+        notes.append("already funds a company in your sector")
+
+    yr = nums.get("latest_fund_year")
+    if yr and (_dt.date.today().year - int(yr)) >= DORMANT_YEARS:
+        notes.append(f"no fund filed since {int(yr)}")
+
+    # Filed data, so this is cheap and certain: a fund whose MINIMUM cheque dwarfs the whole round is
+    # not a candidate for it, however well the sector reads.
+    mn = nums.get("min_investment")
+    if raise_target and mn and mn > 5 * raise_target:
+        penalty += CHEQUE_MISMATCH_PENALTY
+        notes.append("their minimum cheque is far larger than your raise")
+
+    return penalty, notes
 
 
 def conflicts_for(portfolio: list[dict], sectors: list[str], sector_of) -> list[dict]:

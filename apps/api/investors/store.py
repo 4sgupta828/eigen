@@ -576,8 +576,13 @@ class InvestorStore:
     async def _rows(self, conn, ids: list[str], sims: dict[str, float]) -> list[dict]:
         if not ids:
             return []
-        facts = await conn.fetch("SELECT firm_id, key, value, number FROM iv_fact WHERE firm_id = ANY($1)", ids)
-        by = {i: {"id": i, "kind": KIND, "sim": sims.get(i, 0.0), "facets": {}, "numeric": {}} for i in ids}
+        # `denominator` rides along because an observed fact is only meaningful against the population
+        # it was measured over: five climate companies out of ten is a thesis, five out of a thousand
+        # is a rounding error, and without the denominator a ranker cannot tell those apart.
+        facts = await conn.fetch(
+            "SELECT firm_id, key, value, number, denominator FROM iv_fact WHERE firm_id = ANY($1)", ids)
+        by = {i: {"id": i, "kind": KIND, "sim": sims.get(i, 0.0), "facets": {}, "numeric": {}, "denom": {}}
+              for i in ids}
         for f in facts:
             r = by[f["firm_id"]]
             r["facets"].setdefault(f["key"], [])
@@ -586,6 +591,9 @@ class InvestorStore:
             if f["number"] is not None:
                 cur = r["numeric"].get(f["key"])
                 r["numeric"][f["key"]] = max(cur, f["number"]) if cur is not None else f["number"]
+            if f["denominator"] is not None:
+                d = r["denom"].get(f["key"])
+                r["denom"][f["key"]] = max(d, f["denominator"]) if d is not None else f["denominator"]
         return [by[i] for i in ids]
 
     async def enumerate(self, kind: str, must: dict, *, cap: int = 400, exclude: dict | None = None) -> list[dict]:

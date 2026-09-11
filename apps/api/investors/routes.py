@@ -37,6 +37,9 @@ class AdviseIn(BaseModel):
     geo: list[str] = []       # country tokens: us, uk, in, ae
     sectors: list[str] = []   # the startup schema's tech-area vocabulary
     deck_text: str = ""       # text pulled from an uploaded deck
+    # An explicit "we are raising $X", used ONLY to demote funds whose minimum cheque dwarfs the round.
+    # Never to infer a stage — an amount is not a round, and stage_from_text exists so we never guess it.
+    raise_target: float | None = None
     limit: int = 40
 
 
@@ -238,8 +241,14 @@ def build_router(store: InvestorStore, *, dsn: str, admin_token: str = "", embed
                 # "has money and raised recently" is true of thousands of firms; ranking on it produces an
                 # alphabetical list wearing the costume of a recommendation.
                 continue
-            ranked.append({**x, "firm": firm, "why": why, "fit": round(score, 2),
-                           "conflicts": advise_mod.conflicts_for(firm.get("portfolio_sample"), sectors, sector_of)})
+            conflicts = advise_mod.conflicts_for(firm.get("portfolio_sample"), sectors, sector_of)
+            # Anti-signals move the RANK. A firm that already funds a direct competitor was previously
+            # ranked exactly where its positive signals put it, with a warning attached — top of the
+            # list, for the one founder who must not email it first.
+            penalty, warn = advise_mod.penalties_for(x, conflicts=conflicts, raise_target=body.raise_target)
+            ranked.append({**x, "firm": firm, "why": why, "fit": round(max(0.0, score - penalty), 2),
+                           "matched_on": advise_mod.axes_with_evidence(why),
+                           "against": warn, "conflicts": conflicts})
         ranked.sort(key=lambda r: (-r["fit"], -len(r["why"]), r["id"]))
         for i, r in enumerate(ranked):
             r["rank"] = i + 1
