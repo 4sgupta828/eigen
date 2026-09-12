@@ -57,6 +57,10 @@ class VerticalManifest:
     # Optional vertical judgment used by a decision-testing surface. The kernel never calls or
     # interprets it; app mechanics pass evidence-shaped dictionaries through this opaque seam.
     thesis_policy: object | None = None
+    # The adaptation seam for the kernel's decision-testing engine (eigen_kernel.decision): a
+    # DecisionProfile supplying the coverage structure, question directives, authority and judgment for
+    # this vertical. The engine names no domain noun; the profile carries all the vocabulary.
+    decision_profile: object | None = None
 
     # Presentation (P4)
     ui: UIContract | None = None
