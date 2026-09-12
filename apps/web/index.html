@@ -425,6 +425,10 @@
   .th-ask-row button{font-family:var(--mono);font-size:.65rem;padding:.35rem .7rem;border-radius:8px;
     border:1px solid var(--hair);background:var(--panel2);color:var(--ink);cursor:pointer;min-height:34px;}
   .th-ask-row button:hover{border-color:var(--gold);color:var(--gold);}
+  .th-progress{font-family:var(--mono);font-size:.68rem;color:var(--dim);margin:.1rem 0 .6rem;
+    display:flex;align-items:center;gap:.45rem;min-height:1.1rem;line-height:1.5;}
+  .th-progress:empty{display:none;}
+  .th-acts button[disabled]{opacity:.6;cursor:progress;}
   .th-ref{font-size:.62em;vertical-align:super;line-height:0;text-decoration:none;color:var(--gold);
     border:1px solid var(--hair);border-radius:4px;padding:0 .22em;margin-left:.12em;}
   .th-ref:hover{border-color:var(--gold);}
@@ -2514,6 +2518,7 @@
   </div>
   <div class="th-conv" id="th-conv"></div>
   <div class="th-acts" id="th-acts"></div>
+  <p class="th-progress" id="th-progress"></p>
   <div id="th-takes"></div>
   <details class="th-ledger" id="th-ledger">
     <summary id="th-sum">the ledger</summary>
@@ -11033,7 +11038,7 @@ async function openShare(token){
 // The against side is never rendered quieter than the for side. It is why the mode exists.
 // ===================================================================================================
 (function(){
-  const STATE = { id: "", doc: null, busy: false, labels: null, answers: {} };
+  const STATE = { id: "", doc: null, busy: false, labels: null, answers: {}, progress: null };
   const conv = () => document.getElementById("th-conv");
   const acts = () => document.getElementById("th-acts");
   const claims = () => document.getElementById("th-claims");
@@ -11052,7 +11057,7 @@ async function openShare(token){
     if(takes()) takes().innerHTML = "";
   }
 
-  function reset(){ STATE.id = ""; STATE.doc = null; STATE.answers = {}; enter(); }
+  function reset(){ STATE.id = ""; STATE.doc = null; STATE.answers = {}; STATE.progress = null; enter(); }
 
   async function loadLabels(){
     try{ const r = await fetch("/thesis/labels"); if(r.ok) STATE.labels = await r.json(); }
@@ -11097,9 +11102,9 @@ async function openShare(token){
   async function post(path, body){
     if(STATE.busy) return;
     STATE.busy = true;
-    note().innerHTML = '<span class="su-spin"></span> ' + (path.endsWith("attack")
-      ? "reading our corpus, then the open web where it is silent, then the red team against each take…"
-      : "thinking…");
+    // The sign of life goes where the action was, not into a note below the ledger.
+    const prog = document.getElementById("th-progress");
+    if(prog) prog.innerHTML = '<span class="su-spin"></span> <span>thinking…</span>';
     try{
       const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + path,
                             {method:"POST", headers: hdrs(), body: JSON.stringify(body || {})});
@@ -11108,10 +11113,60 @@ async function openShare(token){
       if(d.thesis) STATE.doc = d.thesis;
       render();
     }catch(e){ note().textContent = e.message || String(e); }
-    finally{ STATE.busy = false; }
+    finally{ STATE.busy = false; if(prog) prog.innerHTML = ""; }
   }
 
-  const attack = () => post("/attack", {max_usd: 0.30});
+  // ONE CLAIM AT A TIME, so the reader can see it working. The whole thesis in one request took
+  // minutes, showed its only spinner in a note at the bottom of the section — below the ledger,
+  // usually off screen — and left the button looking untouched. Clicking it appeared to do nothing.
+  async function attack(){
+    if(STATE.busy) return;
+    const d = STATE.doc; if(!d) return;
+    const todo = (d.claims || []).filter(c => c.settleable !== "call_only" && !c.attacked);
+    if(!todo.length) return turn();
+    STATE.busy = true;
+    const btn = document.getElementById("th-attack");
+    const tick = (msg) => { if(btn) btn.textContent = msg; };
+    if(btn) btn.disabled = true;
+    let done = 0;
+    tick("Working \u2014 0 of " + todo.length);
+    try{
+      for(const c of todo){
+        STATE.progress = {rung: c.rung, done: done, total: todo.length};
+        renderProgress();
+        const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/attack",
+                              {method: "POST", headers: hdrs(),
+                               body: JSON.stringify({rung: c.rung, argue: false, max_usd: 0.30})});
+        const j = await r.json();
+        if(j.status === "refused"){ note().textContent = j.reason || "refused"; break; }
+        // The table updates as each take lands, or the progress count is a lie too.
+        if(j.thesis){ STATE.doc = j.thesis; takes().innerHTML = takesHtml(STATE.doc); wireTakes(); }
+        done++;
+        tick("Working \u2014 " + done + " of " + todo.length);
+      }
+      STATE.progress = {rung: "", done: todo.length, total: todo.length, arguing: true};
+      renderProgress();
+      tick("Writing the cases\u2026");
+      const r2 = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/argue",
+                             {method: "POST", headers: hdrs(), body: "{}"});
+      const j2 = await r2.json();
+      if(j2.thesis) STATE.doc = j2.thesis;
+    }catch(e){ note().textContent = "that run failed: " + (e.message || e); }
+    finally{ STATE.busy = false; STATE.progress = null; render(); }
+  }
+
+  // A live line where the action is, not in a note under the fold.
+  function renderProgress(){
+    const p = STATE.progress;
+    const el = document.getElementById("th-progress");
+    if(!el) return;
+    if(!p){ el.innerHTML = ""; return; }
+    const label = p.arguing
+      ? "building the case for and against each take"
+      : "take " + (p.done + 1) + " of " + p.total + " \u00b7 " + p.rung.replace(/_/g, " ");
+    el.innerHTML = '<span class="su-spin"></span> <span>' + esc2(label)
+      + " \u2014 our corpus, then the open web where it is silent, then the red team</span>";
+  }
   const turn = () => post("/turn", {});
   const say = (text) => post("/turn", {text: text});
 

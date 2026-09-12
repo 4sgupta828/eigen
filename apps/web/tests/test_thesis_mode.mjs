@@ -121,3 +121,28 @@ test("the collective take sits under the table and tallies the verdicts", () => 
   assert.match(SRC, /if\(!d\.overall\) return "";/,
     "no integrated reading means no box, rather than an empty one");
 });
+
+test("the attack shows it is working, where the button is", () => {
+  // One request for the whole thesis took minutes, put its only spinner in a note at the bottom of
+  // the section — below the ledger, usually off screen — and left the button untouched. Clicking it
+  // looked like nothing happened.
+  assert.match(SRC, /<p class="th-progress" id="th-progress">/,
+    "the sign of life must sit with the action, not under the fold");
+  assert.match(SRC, /function renderProgress\(\)/);
+  assert.match(SRC, /btn\.disabled = true/, "a button that still looks clickable is a lie");
+  assert.match(SRC, /tick\("Working \\u2014 0 of " \+ todo\.length\)/,
+    "the button itself has to report progress");
+});
+
+test("claims are attacked one at a time so progress is real", () => {
+  const fn = SRC.slice(SRC.indexOf("async function attack()"), SRC.indexOf("function renderProgress"));
+  assert.match(fn, /for\(const c of todo\)/, "one request per claim, not one for the lot");
+  assert.match(fn, /argue: false/, "arguing per claim re-argues the whole thesis every time");
+  assert.match(fn, /takes\(\)\.innerHTML = takesHtml\(STATE\.doc\)/,
+    "the table has to update as each take lands, or the progress is a lie too");
+});
+
+test("the cases are written once, at the end, over everything gathered", () => {
+  const fn = SRC.slice(SRC.indexOf("async function attack()"), SRC.indexOf("function renderProgress"));
+  assert.match(fn, /\/argue"/);
+});

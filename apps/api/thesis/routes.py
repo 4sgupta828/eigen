@@ -47,6 +47,10 @@ class AttackIn(BaseModel):
     # the corpus is thin on and the open web is not.
     web: bool = True
     max_usd: float = 0.25
+    # Writing the cases re-argues the WHOLE thesis, so doing it inside a per-claim attack costs one
+    # full call per claim and argues most of them against evidence that has not been gathered yet.
+    # The client attacks claim by claim (so it can show real progress) and then calls /argue once.
+    argue: bool = True
 
 
 class CallIn(BaseModel):
@@ -158,20 +162,39 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             if c["settleable"] == CALL_ONLY and c["verdict"] == OPEN:
                 await tstore.set_verdict(pool, thesis_id, c["rung"], UNSETTLEABLE,
                                          "No document can settle this. It needs a person.")
-        # Now WRITE BOTH CASES. One call for the whole thesis, after every claim has its evidence —
-        # ten separate calls cost ten times as much and argue each claim without knowing the others.
-        fresh = await tstore.get(pool, thesis_id=thesis_id, owner_id=await _owner(authorization))
+        if body.argue:
+            await _write_cases(pool, thesis_id, await _owner(authorization))
+        return {"status": "ok", "attacked": done,
+                "thesis": await tstore.get(pool, thesis_id=thesis_id,
+                                           owner_id=await _owner(authorization))}
+
+    async def _write_cases(pool, thesis_id: str, oid: str) -> bool:
+        """Both cases per claim plus the integrated reading. One call for the whole thesis, after
+        every claim has its evidence — ten separate calls cost ten times as much and argue each claim
+        without knowing the others."""
+        fresh = await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)
+        if not fresh:
+            return False
         try:
             cases, overall = await arg.cases_for(_llm_json(), thesis=fresh["thesis"],
                                                  claims=fresh["claims"])
             await tstore.set_cases(pool, thesis_id, cases)
             if overall:
                 await tstore.set_overall(pool, thesis_id, overall)
+            return bool(cases or overall)
         except Exception:      # noqa: BLE001 — a table without written cases still shows its evidence
-            pass
-        return {"status": "ok", "attacked": done,
-                "thesis": await tstore.get(pool, thesis_id=thesis_id,
-                                           owner_id=await _owner(authorization))}
+            return False
+
+    @r.post("/thesis/{thesis_id}/argue")
+    async def tl_argue(thesis_id: str, authorization: str = Header(default="")):
+        """Write the cases and the collective take over whatever evidence exists now."""
+        oid = await _owner(authorization)
+        pool = await pool_of()
+        if not await tstore.get(pool, thesis_id=thesis_id, owner_id=oid):
+            raise HTTPException(status_code=404, detail="no such thesis")
+        wrote = await _write_cases(pool, thesis_id, oid)
+        return {"status": "ok", "wrote": wrote,
+                "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)}
 
     @r.post("/thesis/{thesis_id}/call")
     async def tl_call(thesis_id: str, body: CallIn, authorization: str = Header(default="")):
