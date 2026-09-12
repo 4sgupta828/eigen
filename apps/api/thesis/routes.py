@@ -630,10 +630,49 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         by_inq: dict[str, list] = {}
         for q in qs:
             by_inq.setdefault(q["inquiry_key"], []).append(q)
-        out = [{"key": inq.key, "name": inq.name, "framing": inq.framing,
-                "aspect_keys": list(inq.aspect_keys), "questions": by_inq.get(inq.key, [])}
-               for inq in profile.inquiries()]
+        out = []
+        for inq in profile.inquiries():
+            iqs = by_inq.get(inq.key, [])
+            # Per-aspect verdict is DERIVED (never a second decision path): resolve each answered
+            # question to an aspect signal, aggregate via the profile.
+            aspects = []
+            for akey in inq.aspect_keys:
+                aspect = _aspect_by_key(profile, akey)
+                group = [q for q in iqs if q["aspect_key"] == akey]
+                answered = [q for q in group if q.get("target_status")]
+                if aspect is not None and answered:
+                    statuses = [_dec.QuestionStatus(
+                        _dec.Question(kind=_dec.QuestionKind(q["kind"]), text=q["text"],
+                                      target=q["target"], polarity=int(q["polarity"])),
+                        q["target_status"]) for q in answered]
+                    verdict = _dec.aggregate_aspect(profile, statuses, critical=bool(aspect.critical))
+                else:
+                    verdict = "open"
+                aspects.append({"key": akey, "prompt": getattr(aspect, "prompt", ""),
+                                "critical": bool(getattr(aspect, "critical", False)), "verdict": verdict})
+            out.append({"key": inq.key, "name": inq.name, "framing": inq.framing,
+                        "aspects": aspects, "questions": iqs})
         return {"status": "ok", "inquiries": out}
+
+    @r.get("/thesis/{thesis_id}/inquiry/status")
+    async def tl_inquiry_status(thesis_id: str, run: str = "",
+                                authorization: str = Header(default=""),
+                                x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Poll a running line of inquiry. Progress is derived from questions actually answered by the
+        run (real state), not a hand-managed flag; a stalled run is failed so it can be resumed."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner)
+        record = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run) if run else None
+        if record and _is_stale(record):
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run, stage="stalled",
+                                  error={"reason": "run stalled (likely an API restart); resume"})
+            record = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run)
+        want = list((record or {}).get("metadata", {}).get("questions") or [])
+        qs = await tstore.list_questions(pool, thesis_id)
+        by_id = {q["id"]: q for q in qs}
+        done = sum(1 for qid in want if by_id.get(qid, {}).get("run_id") == run and by_id[qid].get("target_status"))
+        return {"status": "ok", "run_id": run, "state": (record or {}).get("state", "none"),
+                "stage": (record or {}).get("stage", ""), "error": (record or {}).get("error") or {},
+                "done": done, "total": len(want)}
 
     @r.post("/thesis/{thesis_id}/inquiries/generate")
     async def tl_generate(thesis_id: str, authorization: str = Header(default=""),
