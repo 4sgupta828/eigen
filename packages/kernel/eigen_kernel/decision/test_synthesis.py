@@ -1,0 +1,42 @@
+"""The answer gate is string-level and fail-safe — the panel's grounding fix."""
+from __future__ import annotations
+
+from eigen_kernel.decision import sanitize_answer, NOT_ESTABLISHED
+
+
+def test_a_cited_sentence_survives_with_stable_markers():
+    out = sanitize_answer([{"text": "The record shows churn is high.", "evidence_ids": ["e1", "e2"]}],
+                          ["e1", "e2", "e3"])
+    assert "The record shows churn is high." in out
+    assert "[[e:e1]]" in out and "[[e:e2]]" in out
+
+
+def test_a_sentence_citing_an_invented_id_is_dropped_whole():
+    # the intra-sentence hallucination the panel flagged: a false clause ending in a valid id must NOT
+    # launder in — the WHOLE sentence is dropped because it also cites an invalid id
+    out = sanitize_answer([{"text": "They have 100% market share.", "evidence_ids": ["made_up", "e1"]}],
+                          ["e1"])
+    assert out == NOT_ESTABLISHED
+
+
+def test_uncited_prose_is_dropped():
+    out = sanitize_answer([{"text": "This looks strong.", "evidence_ids": []}], ["e1"])
+    assert out == NOT_ESTABLISHED
+
+
+def test_no_regex_splitting_abbreviations_survive_intact():
+    # "Inc." would have broken the old regex splitter; the sentence-array gate keeps it whole
+    out = sanitize_answer([{"text": "Acme Inc. filed a Form D in 2026.", "evidence_ids": ["e9"]}], ["e9"])
+    assert "Acme Inc. filed a Form D in 2026." in out
+    assert "[[e:e9]]" in out
+
+
+def test_mixed_kept_and_dropped():
+    out = sanitize_answer([
+        {"text": "Good, cited.", "evidence_ids": ["ok"]},
+        {"text": "Bad, invented cite.", "evidence_ids": ["nope"]},
+        {"text": "Uncited.", "evidence_ids": []},
+    ], ["ok"])
+    assert "Good, cited." in out
+    assert "Bad, invented cite." not in out
+    assert "Uncited." not in out
