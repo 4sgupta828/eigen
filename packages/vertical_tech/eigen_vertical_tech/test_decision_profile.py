@@ -59,7 +59,7 @@ async def test_engine_drives_the_tech_profile_end_to_end_without_a_model():
     aspect = P.aspects()[0]
     qs = await generate_questions(None, aspect=aspect, decision="A concrete thesis.",
                                   directive=P.question_directive(aspect, "A concrete thesis."))
-    assert required_kinds_covered(qs)
+    assert qs and qs[0].kind == QuestionKind.SEEK_SUPPORT   # honest degraded mode with no model
     # a seek_support question whose target the record confirms → the aspect is supported
     statuses = []
     for q in qs:

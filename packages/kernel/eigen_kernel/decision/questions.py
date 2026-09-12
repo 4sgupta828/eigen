@@ -25,13 +25,12 @@ def required_kinds_covered(questions: list[Question]) -> bool:
 
 
 def _fallback(aspect: Aspect) -> list[Question]:
-    """No model, or nothing usable: interrogate the aspect through the two required lenses using its own
-    canonical prompt as the declarative target. Never leaves an aspect with no questions."""
-    return [
-        Question(kind=QuestionKind.SEEK_SUPPORT, text=aspect.prompt, target=aspect.prompt, polarity=1),
-        Question(kind=QuestionKind.SEEK_CONTRADICTION,
-                 text="Is there evidence against this?", target=aspect.prompt, polarity=-1),
-    ]
+    """No model, or nothing usable: the honest degraded mode is ONE seek-support question on the aspect's
+    canonical proposition. We do NOT fabricate a red-team question — a seek_contradiction needs its own
+    distinct declarative target (a proposition whose truth would UNDERMINE the aspect); inventing one as
+    the aspect prompt with a flipped polarity double-counts the same evidence and would turn a
+    well-supported aspect into a contradicted one. Thin coverage, reported honestly, beats a false one."""
+    return [Question(kind=QuestionKind.SEEK_SUPPORT, text=aspect.prompt, target=aspect.prompt, polarity=1)]
 
 
 def _coerce(raw: dict, aspect: Aspect) -> list[Question]:
@@ -72,16 +71,12 @@ async def generate_questions(llm_json, *, aspect: Aspect, decision: str, directi
         got = []
     if not got:
         return _fallback(aspect)
-    # Coverage gate: ensure the required lenses are present, appending a fallback for any missing one.
-    have = {q.kind for q in got}
-    fb = {q.kind: q for q in _fallback(aspect)}
-    for k in REQUIRED_KINDS:
-        if k not in have and k in fb:
-            got.append(fb[k])
+    # We do NOT fabricate a missing lens (a red-team question needs a real, distinct target the model
+    # must author — see _fallback). `required_kinds_covered` lets the caller detect and re-ask an
+    # under-covered aspect; the generator returns the model's own, valid, capped questions.
     if len(got) <= MAX_QUESTIONS_PER_ASPECT:
         return got
-    # Over the cap: keep every REQUIRED-lens question, then fill with the rest, so trimming never
-    # breaks the coverage gate.
+    # Over the cap: keep the required lenses first so trimming can't drop the disconfirming question.
     kept = [q for q in got if q.kind in REQUIRED_KINDS][:MAX_QUESTIONS_PER_ASPECT]
     for q in got:
         if len(kept) >= MAX_QUESTIONS_PER_ASPECT:

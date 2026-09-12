@@ -47,10 +47,12 @@ def test_toy_profile_satisfies_the_protocol():
 
 
 @pytest.mark.asyncio
-async def test_generation_falls_open_and_covers_required_lenses_with_no_model():
+async def test_generation_falls_open_to_a_single_seek_support_with_no_model():
     a = ToyProfile().aspects()[0]
     qs = await generate_questions(None, aspect=a, decision="coastal vs inland", directive="x")
-    assert required_kinds_covered(qs)                  # seek_support + seek_contradiction present
+    # honest degraded mode: one seek-support on the canonical proposition — NOT a fabricated red-team
+    assert len(qs) == 1 and qs[0].kind == QuestionKind.SEEK_SUPPORT
+    assert not required_kinds_covered(qs)              # thin coverage, reported honestly
     assert all(q.target for q in qs)
 
 
@@ -66,8 +68,9 @@ async def test_model_questions_are_coverage_gated_and_capped():
         ]}
     a = ToyProfile().aspects()[0]
     qs = await generate_questions(llm, aspect=a, decision="d", directive="x")
-    assert required_kinds_covered(qs)                  # seek_contradiction was missing → fallback appended
-    assert len(qs) <= 4
+    # the model omitted seek_contradiction; we do NOT fabricate one — the gate reports under-coverage
+    assert not required_kinds_covered(qs)
+    assert len(qs) <= 4 and len(qs) >= 2               # the two valid model questions survived, junk dropped
     assert all(isinstance(q.kind, QuestionKind) for q in qs)
 
 
