@@ -109,3 +109,48 @@ test("phone layout has touch targets and a single-column decision brief", () => 
 test("recent theses have a dedicated visible panel", () => {
   assert.match(MARKUP, /id="th-recents"/);
 });
+
+test("conversation text is formatted into paragraphs, not a run-on blob", () => {
+  const {api} = loadThesisModule();
+  const html = api.fmtBody("First point about the buyer.\n\nSecond point, a different concern.");
+  assert.match(html, /<p>First point about the buyer\.<\/p>/);
+  assert.match(html, /<p>Second point, a different concern\.<\/p>/);
+  // a single turn renders inside a formatted body block, escaped
+  const turn = api.turnHtml("agent", "attacked", "The record says <b>otherwise</b>.");
+  assert.match(turn, /class="th-body"/);
+  assert.match(turn, /&lt;b&gt;otherwise&lt;\/b&gt;/);
+  assert.doesNotMatch(turn, /<b>otherwise<\/b>/);
+});
+
+test("a payload rides with its turn rather than being dumped into a panel", () => {
+  const {api} = loadThesisModule();
+  const withPay = api.turnHtml("agent", "settled", "Done here.", "<div class=\"th-sides\">EV</div>");
+  assert.ok(withPay.indexOf("th-body") < withPay.indexOf("th-sides"));
+  assert.ok(withPay.trim().endsWith("</div>"));
+});
+
+test("an answer to a claim question renders inline on that claim", () => {
+  const {api} = loadThesisModule();
+  const claim = {rung: "buyer_nameable", claim: "A buyer owns this budget.", evidence: []};
+  const html = api.claimHtml(claim, false, true, {buyer_nameable: "Procurement owns it, not ops."});
+  assert.match(html, /class="th-answer"/);
+  assert.match(html, /Procurement owns it, not ops\./);
+  // no answer for a rung that was not asked
+  const blank = api.claimHtml(claim, false, true, {});
+  assert.doesNotMatch(blank, /class="th-answer"/);
+});
+
+test("the empty state explains the flow instead of showing an empty brief", () => {
+  const {api} = loadThesisModule();
+  const html = api.introHtml();
+  assert.match(html, /Test a startup thesis/);
+  assert.match(html, /Fund \/ Pass \/ Continue/);
+  assert.match(html, /State it/);
+  assert.match(html, /Type your thesis in the box below/);
+});
+
+test("the discussion thread is a visible surface, not folded into a collapsed details", () => {
+  // the conversation container must live in an always-visible section, not a <details> summary
+  assert.match(MARKUP, /<section class="th-thread"[^>]*id="th-thread"[\s\S]*?id="th-conv"/);
+  assert.doesNotMatch(MARKUP, /<summary>Research conversation<\/summary>/);
+});

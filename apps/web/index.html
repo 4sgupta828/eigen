@@ -434,8 +434,32 @@
     border-radius:999px;color:var(--dim);}
   .th-recents{margin:.55rem 0 1rem;border:1px solid var(--hair);border-radius:12px;padding:.75rem;}
   .th-recents[hidden]{display:none;}
-  .th-answer{margin-top:.5rem;padding-left:.6rem;border-left:2px solid var(--gold);font-size:.82rem;
-    line-height:1.6;color:var(--ink);}
+  .th-answer{margin-top:.5rem;padding:.5rem .7rem;border-left:2px solid var(--gold);font-size:.82rem;
+    line-height:1.6;color:var(--ink);background:color-mix(in srgb,var(--gold) 6%,transparent);
+    border-radius:0 8px 8px 0;}
+  .th-answer p{margin:.2rem 0;}
+  .th-answer .th-answer-k{font:600 .58rem/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--gold);display:block;margin-bottom:.25rem;}
+  /* Empty-state explainer — tell the reader what the mode does and the steps, before an empty brief. */
+  #th-intro:empty{display:none;}
+  .th-intro-card{border:1px solid var(--hair);border-radius:16px;padding:1.1rem 1.15rem;margin:.55rem 0 1rem;
+    background:linear-gradient(145deg,color-mix(in srgb,var(--gold) 7%,var(--panel)),var(--panel));}
+  .th-intro-card h2{font:600 1.35rem/1.15 var(--serif);margin:0 0 .4rem;}
+  .th-intro-lead{margin:0 0 .7rem;line-height:1.6;color:var(--ink);}
+  .th-steps{margin:.2rem 0 .2rem;padding-left:1.2rem;display:grid;gap:.4rem;}
+  .th-steps li{line-height:1.5;}
+  .th-steps li b{color:var(--ink);}
+  .th-intro-cta{margin:.8rem 0 0;font-family:var(--mono);font-size:.72rem;letter-spacing:.03em;color:var(--gold);}
+  /* The discussion thread is the interface — visible, not folded away. */
+  .th-thread{margin:.2rem 0 1rem;}
+  .th-thread[hidden]{display:none;}
+  .th-thread-h{font:600 .64rem/1.2 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+    margin:.2rem 0 .7rem;padding-bottom:.5rem;border-bottom:1px solid var(--hair);}
+  .th-hint{font-size:.76rem;color:var(--dim);line-height:1.55;margin:.15rem 0 .1rem;flex-basis:100%;}
+  .th-said .th-body{display:block;}
+  .th-said .th-body p{margin:.15rem 0;}
+  .th-said .th-body p:first-child{margin-top:0;}
+  .th-said .th-body p:last-child{margin-bottom:0;}
   .th-turn{display:flex;gap:.55rem;align-items:flex-start;font-size:.9rem;line-height:1.6;}
   .th-turn .th-who{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;
     padding:.18rem .45rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);
@@ -2511,15 +2535,16 @@
   <div class="th-recents" id="th-recents" hidden></div>
   <p class="dd-note" id="th-note" role="alert" aria-live="assertive"></p>
   <p class="th-progress" id="th-progress" role="status" aria-live="polite"></p>
+  <div id="th-intro"></div>
   <div id="th-takes"></div>
   <div class="th-acts" id="th-acts"></div>
-  <details class="th-ledger" id="th-ledger">
+  <section class="th-thread" id="th-thread" hidden aria-label="Discussion">
+    <div class="th-thread-h">Discussion — push back, ask about any claim, or add what you know</div>
+    <div class="th-conv" id="th-conv"></div>
+  </section>
+  <details class="th-ledger" id="th-ledger" hidden>
     <summary id="th-sum">Claims and evidence</summary>
     <div class="th-claims" id="th-claims"></div>
-  </details>
-  <details class="th-ledger">
-    <summary>Research conversation</summary>
-    <div class="th-conv" id="th-conv"></div>
   </details>
 </section>
 
@@ -11072,12 +11097,12 @@ async function openShare(token){
   function enter(params){
     if(!STATE.labels) loadLabels();
     if(STATE.doc) return render();
-    conv().innerHTML = '<div class="th-turn" data-role="agent"><span class="th-who">agent</span>'
-      + '<span class="th-said">Give me the thesis in one sentence — the product, who buys it, and '
-      + 'what they do today instead. I will break it into the claims it rests on and go after the '
-      + 'weakest one.</span></div>';
+    const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = introHtml();
+    conv().innerHTML = "";
+    const thread = document.getElementById("th-thread"); if(thread) thread.hidden = true;
+    const ledger = document.getElementById("th-ledger"); if(ledger) ledger.hidden = true;
     acts().innerHTML = ""; claims().innerHTML = ""; note().textContent = "";
-    if(takes()) takes().innerHTML = decisionHtml({is_owner:true, claims:[]});
+    if(takes()) takes().innerHTML = "";   // no empty decision brief on the landing — the intro guides instead
   }
 
   function reset(){
@@ -11098,11 +11123,15 @@ async function openShare(token){
     if(!t || STATE.busy) return;
     // Once a thesis exists the composer IS the conversation: what you type is answered, not filed.
     if(STATE.id){
+      const thread = document.getElementById("th-thread"); if(thread) thread.hidden = false;
       conv().insertAdjacentHTML("beforeend", turnHtml("user", "", t));
+      conv().lastElementChild.scrollIntoView({block: "nearest"});
       return say(t);
     }
     STATE.busy = true;
-    conv().insertAdjacentHTML("beforeend", turnHtml("user", "", t));
+    const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = "";
+    const thread = document.getElementById("th-thread"); if(thread) thread.hidden = false;
+    conv().innerHTML = turnHtml("user", "", t);
     note().textContent = "";
     renderProgressText("Projecting the claim decomposition cost…");
     try{
@@ -11111,7 +11140,11 @@ async function openShare(token){
       const projected = await projectedResponse.json();
       const max = Number((projected.projection || {}).projected_usd || 0);
       if(!projectedResponse.ok) throw new Error(projected.detail || "could not project this thesis");
-      if(!window.confirm("Build the claim ladder?\n\nProjected maximum: $" + max.toFixed(3))) return;
+      if(!window.confirm("Break this thesis into a falsifiable claim ladder?\n\n"
+          + "This one step only decomposes the thesis into claims — no evidence is gathered yet, and "
+          + "you approve that separately.\n\nProjected maximum: $" + max.toFixed(3))){
+        STATE.busy = false; renderProgressText(""); enter(); return;   // restore the guide, drop the orphan message
+      }
       renderProgressText("Building a small, falsifiable claim ladder…");
       const r = await fetch("/thesis", {method:"POST", headers: hdrs(),
                                         body: JSON.stringify({thesis: t, max_usd: max})});
@@ -11250,12 +11283,40 @@ async function openShare(token){
 
   function esc2(x){ return esc(String(x == null ? "" : x)); }
 
-  function turnHtml(role, move, text){
+  // Readable prose, not a run-on escaped blob: blank lines become paragraphs, single breaks stay.
+  function fmtBody(text){
+    const t = String(text == null ? "" : text).trim();
+    if(!t) return "";
+    return t.split(/\n{2,}/).map(p => "<p>" + esc2(p).replace(/\n/g, "<br>") + "</p>").join("");
+  }
+
+  function turnHtml(role, move, text, payHtml){
     return '<div class="th-turn" data-role="' + esc2(role) + '"><span class="th-who">'
       + esc2(role === "agent" ? "agent" : "you") + "</span>"
       + '<span class="th-said">'
       + (move ? '<span class="th-move" data-m="' + esc2(move) + '">' + esc2(move.replace("_", " ")) + "</span> " : "")
-      + esc2(text) + "</span></div>";
+      + '<span class="th-body">' + fmtBody(text) + "</span></span>"
+      + (payHtml || "") + "</div>";
+  }
+
+  // The empty-state guide: what this mode does and the four steps, so the reader knows what is coming
+  // before they type — rather than meeting an empty decision brief that says "Ready to test".
+  function introHtml(){
+    return '<div class="th-intro-card">'
+      + "<h2>Test a startup thesis</h2>"
+      + '<p class="th-intro-lead">State a thesis in one sentence. I break it into the handful of claims '
+      + "it rests on, then hunt our corpus and the open web for evidence <b>for and against</b> each, run "
+      + "a red team on the weakest, and give you a <b>Fund / Pass / Continue&nbsp;diligence</b> read you "
+      + "can trace to a source.</p>"
+      + '<ol class="th-steps">'
+      + "<li><b>State it</b> — one sentence: the product, who buys it, and what they do today instead.</li>"
+      + "<li><b>I break it into claims</b> — a small, falsifiable ladder. You can edit any of them first.</li>"
+      + "<li><b>Test against evidence</b> — corpus, then the open web where it is silent, then the red team. "
+      + "You approve the cost before anything runs.</li>"
+      + "<li><b>Read the decision</b> — the case for, the case against, and the cruxes still open.</li>"
+      + "</ol>"
+      + '<p class="th-intro-cta">↓ Type your thesis in the box below to begin.</p>'
+      + "</div>";
   }
 
   function evHtml(e){
@@ -11296,6 +11357,9 @@ async function openShare(token){
         + (c.settleable === "call_only" ? '<button type="button" class="th-note-btn" data-call="'
             + esc2(c.rung) + '">Add interview note</button>' : "")
       : "";
+    const answer = (STATE.answers && STATE.answers[c.rung])
+      ? '<div class="th-answer"><span class="th-answer-k">agent</span>'
+        + fmtBody(STATE.answers[c.rung]) + "</div>" : "";
     return '<div class="th-claim' + (focused ? " th-focus" : "") + '"><h4>'
       + esc2(c.claim) + "</h4>"
       + '<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">'
@@ -11307,6 +11371,7 @@ async function openShare(token){
       + ask
       + (sides ? '<div class="th-sides">' + sides + "</div>" : "")
       + ownerTools
+      + answer
       + "</div>";
   }
 
@@ -11449,7 +11514,12 @@ async function openShare(token){
     if(STATE.busy) return;
     STATE.busy = true;
     STATE.answers[rung] = "\u2026";
-    takes().innerHTML = takesHtml(STATE.doc); wireTakes();
+    // Make the answer land where the question was asked: open the ledger and show a live status.
+    const ledger = document.getElementById("th-ledger"); if(ledger){ ledger.hidden = false; ledger.open = true; }
+    const prog = document.getElementById("th-progress");
+    if(prog) prog.innerHTML = '<span class="su-spin"></span> <span>thinking about \u201c'
+      + esc2(rung.replace(/_/g, " ")) + "\u201d\u2026</span>";
+    render();
     try{
       const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/turn",
                             {method: "POST", headers: hdrs(),
@@ -11458,8 +11528,10 @@ async function openShare(token){
       STATE.answers[rung] = (d.move && d.move.text) || "no answer came back";
       if(d.thesis) STATE.doc = d.thesis;
       render();
+      const card = claims().querySelector('[data-ask="' + CSS.escape(rung) + '"]');
+      if(card) card.closest(".th-claim").scrollIntoView({block: "nearest", behavior: "smooth"});
     }catch(e){ STATE.answers[rung] = "that question failed to send"; render(); }
-    finally{ STATE.busy = false; }
+    finally{ STATE.busy = false; if(prog) prog.textContent = ""; }
   }
 
   async function shareThesis(button){
@@ -11476,21 +11548,31 @@ async function openShare(token){
   function render(){
     const d = STATE.doc;
     if(!d) return;
+    const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = "";
     const turns = d.turns || [];
-    conv().innerHTML = turns.map((t, i) => {
-      const body = turnHtml(t.role, t.move, t.text);
-      const pay = (i === turns.length - 1) ? payloadHtml(t.payload) : "";
-      return pay ? body.replace("</span></div>", "</span>" + pay + "</div>") : body;
-    }).join("");
+    conv().innerHTML = turns.map((t, i) =>
+      turnHtml(t.role, t.move, t.text, (i === turns.length - 1) ? payloadHtml(t.payload) : "")).join("");
+    const thread = document.getElementById("th-thread"); if(thread) thread.hidden = !turns.length;
 
+    const tested = (d.claims || []).some(c => (c.research_status || c.verdict) !== "open");
     const unattacked = (d.claims || []).filter(c => c.settleable !== "call_only" && !c.attacked);
+    // Tell the reader what the next action does, not just its name.
+    const hint = !canMutate(d) ? ""
+      : (unattacked.length
+          ? '<p class="th-hint">Next: test these claims against our corpus, the open web, and a red team — '
+            + "you approve the cost first. Or discuss any claim below to sharpen it.</p>"
+          : tested
+            ? '<p class="th-hint">The decision brief above reflects the evidence found. Keep the discussion '
+              + "going, add an interview note, or revise a claim in the ledger to re-test.</p>"
+            : "");
     acts().innerHTML = canMutate(d)
-      ? ((unattacked.length
+      ? (hint + (unattacked.length
           ? '<button type="button" id="th-attack">Test ' + unattacked.length
             + " claim" + (unattacked.length === 1 ? "" : "s") + " against evidence</button>"
           : '<button type="button" id="th-next">Discuss the weakest claim</button>')
         + '<button type="button" id="th-share">Copy read-only link</button>')
       : "";
+    const ledger = document.getElementById("th-ledger"); if(ledger) ledger.hidden = false;
     const a = document.getElementById("th-attack"); if(a) a.addEventListener("click", attack);
     const n = document.getElementById("th-next"); if(n) n.addEventListener("click", turn);
     const sh = document.getElementById("th-share");
@@ -11543,7 +11625,8 @@ async function openShare(token){
 
   window.TH = {submit, enter, reset, open, attack, turn, render,
     __test:{ownerHeaders, thesisUrl, parseThesisHash, canMutate, decisionHtml, linkEvidence,
-            newThesisHash}};
+            newThesisHash, fmtBody, turnHtml, introHtml,
+            claimHtml: (c, focused, owner, answers) => { STATE.answers = answers || {}; return claimHtml(c, focused, owner); }}};
 })();
 </script>
 </body>
