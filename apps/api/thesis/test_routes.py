@@ -216,3 +216,80 @@ async def test_author_statement_cannot_auto_settle_a_claim(monkeypatch) -> None:
 
     assert evidence[0]["relation"] == "context"
     assert verdicts[0][1] == "primary_research_needed"
+
+
+def test_follow_up_turn_is_read_only_never_grades(monkeypatch) -> None:
+    """The ship-gate integrity test: a tested-phase follow-up EXPLAINS; it writes no verdict, case,
+    decision, or claim revision. Grading happens only in the explicit Test step."""
+    writes: list[str] = []
+    turns: list[dict] = []
+
+    async def rec_turn(_pool, _tid, **kw):
+        turns.append(kw)
+
+    for name in ("set_verdict", "set_cases", "set_decision", "set_overall", "revise_claim",
+                 "add_evidence", "set_focus"):
+        async def _forbidden(*_a, _n=name, **_k):
+            writes.append(_n)
+        monkeypatch.setattr(routes.tstore, name, _forbidden, raising=False)
+    monkeypatch.setattr(routes.tstore, "add_turn", rec_turn)
+
+    c = _client(monkeypatch)
+    r = c.post("/thesis/t1/turn", json={"text": "why is the buyer claim under-tested?",
+                                        "rungs": ["problem_exists", "willingness_to_pay"]},
+               headers={"Authorization": "Bearer owner"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["move"]["move"] == "explained"
+    assert body["move"]["rungs"] == ["problem_exists", "willingness_to_pay"]
+    assert writes == []                       # NOTHING was graded — the integrity invariant
+    assert any(t.get("role") == "user" for t in turns)
+    assert any(t.get("role") == "agent" for t in turns)
+
+
+def test_follow_up_scopes_to_the_selected_claims(monkeypatch) -> None:
+    seen: dict = {}
+
+    async def spy_followup(_llm, *, thesis, claims, said, history):
+        seen["rungs"] = [c["rung"] for c in claims]
+        seen["said"] = said
+        return {"reply": "grounded answer"}
+
+    async def noop_turn(_pool, _tid, **kw):
+        pass
+
+    monkeypatch.setattr(routes.conv, "follow_up", spy_followup)
+    monkeypatch.setattr(routes.tstore, "add_turn", noop_turn)
+    c = _client(monkeypatch)
+    r = c.post("/thesis/t1/turn", json={"text": "explain these", "rungs": ["willingness_to_pay"]},
+               headers={"Authorization": "Bearer owner"})
+    assert r.status_code == 200
+    assert seen["rungs"] == ["willingness_to_pay"]     # scoped to exactly the selected claim
+    assert seen["said"] == "explain these"
+
+
+def test_draft_creates_a_genesis_thesis_without_decomposing(monkeypatch) -> None:
+    created: dict = {}
+
+    async def fake_create(_pool, *, thesis, claims, subject, owner_id="", title=""):
+        created["claims"] = claims
+        created["thesis"] = thesis
+        return {"id": "t1", "owner_token": None}
+
+    async def noop(*_a, **_k):
+        pass
+
+    monkeypatch.setattr(routes.tstore, "create", fake_create)
+    monkeypatch.setattr(routes.tstore, "set_proposed_thesis", noop)
+    monkeypatch.setattr(routes.tstore, "add_turn", noop)
+
+    def boom_decompose(*_a, **_k):
+        raise AssertionError("draft must NOT decompose")
+    monkeypatch.setattr(routes.dec, "decompose", boom_decompose)
+
+    c = _client(monkeypatch)
+    r = c.post("/thesis", json={"thesis": "something for logistics", "draft": True},
+               headers={"Authorization": "Bearer owner"})
+    assert r.status_code == 200
+    assert r.json()["status"] == "draft"
+    assert created["claims"] == []            # a draft has no claims — it is still in genesis

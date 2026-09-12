@@ -41,6 +41,9 @@ ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS overall text NOT NULL DEFAULT '';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS owner_token_hash text NOT NULL DEFAULT '';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS decision jsonb NOT NULL DEFAULT '{}';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS research_status text NOT NULL DEFAULT 'not_run';
+-- The genesis agent's current best one-sentence formalization, before the user confirms it. A thesis
+-- with zero claims is a DRAFT (still in genesis); this holds what "Use this thesis" would commit.
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS proposed_thesis text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS ts_claim (
     thesis_id   text NOT NULL REFERENCES ts_thesis(id) ON DELETE CASCADE,
@@ -61,6 +64,11 @@ ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS critical boolean NOT NULL DEFAULT 
 ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS falsifier text NOT NULL DEFAULT '';
 ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS what_would_change text NOT NULL DEFAULT '';
 ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS research_status text NOT NULL DEFAULT 'open';
+-- Which run last settled this claim. The async runner's resume signal is CLAIM-LEVEL: on resume it
+-- skips a claim already tested by the current run, and re-drives only the unfinished ones. (The
+-- evidence unique index is only a double-insert backstop; it is keyed on the full span tuple, not on
+-- the run, so it cannot answer "is this claim done for this run?".)
+ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS tested_run_id text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS ts_evidence (
     id          text PRIMARY KEY,
@@ -109,6 +117,9 @@ CREATE TABLE IF NOT EXISTS ts_turn (
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_ts_turn_thesis ON ts_turn (thesis_id, id);
+-- The claim set a follow-up turn was scoped to (one agent, N selected claims). Single `rung` is still
+-- written for back-compat; `rungs` is the multi-claim context the tested-phase agent reasons over.
+ALTER TABLE ts_turn ADD COLUMN IF NOT EXISTS rungs jsonb NOT NULL DEFAULT '[]';
 
 CREATE TABLE IF NOT EXISTS ts_run (
     id              text PRIMARY KEY,
@@ -227,6 +238,7 @@ async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str
                       "attacked": bool(c["attacked_at"]),
                       "evidence": by_rung.get(c["rung"], [])} for c in claims]
     out["turns"] = ([{"role": r["role"], "move": r["move"], "rung": r["rung"],
+                      "rungs": _j(r["rungs"]) if "rungs" in r else [],
                       "text": r["text"], "payload": _j(r["payload"])} for r in turns]
                     if is_owner else [])
     return out
@@ -260,15 +272,39 @@ async def add_evidence(pool, thesis_id: str, rung: str, rows: list[dict]) -> int
 
 
 async def set_verdict(pool, thesis_id: str, rung: str, verdict: str, note: str = "",
-                      *, attacked: bool = False) -> None:
+                      *, attacked: bool = False, run_id: str = "") -> None:
     await ensure_schema(pool)
     async with pool.acquire() as conn:
         await conn.execute(
             f"""UPDATE ts_claim SET verdict = $3, research_status = $3, note = $4
                    {", attacked_at = now()" if attacked else ""}
+                   {", tested_run_id = $5" if run_id else ""}
                  WHERE thesis_id = $1 AND rung = $2""",     # noqa: S608 — literal, not user input
-            thesis_id, rung, verdict, note[:400])
+            *( (thesis_id, rung, verdict, note[:400], run_id) if run_id
+               else (thesis_id, rung, verdict, note[:400]) ))
         await conn.execute("UPDATE ts_thesis SET updated_at = now() WHERE id = $1", thesis_id)
+
+
+async def set_proposed_thesis(pool, thesis_id: str, proposed: str) -> None:
+    """The genesis agent's current best one-sentence thesis. Draft-only; overwritten each turn."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE ts_thesis SET proposed_thesis = $2, updated_at = now() WHERE id = $1",
+            thesis_id, (proposed or "")[:600])
+
+
+async def claims_tested_by_run(pool, thesis_id: str, run_id: str) -> set[str]:
+    """The rungs already settled by THIS run — the claim-level resume signal. A resumed run re-drives
+    only the claims not in this set, so an interrupted run never re-attacks a completed claim."""
+    if not run_id:
+        return set()
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT rung FROM ts_claim WHERE thesis_id = $1 AND tested_run_id = $2",
+            thesis_id, run_id)
+    return {r["rung"] for r in rows}
 
 
 async def set_cases(pool, thesis_id: str, cases: dict[str, dict]) -> int:
@@ -298,6 +334,27 @@ async def set_focus(pool, thesis_id: str, rung: str) -> None:
         await conn.execute("UPDATE ts_thesis SET focus_rung = $2 WHERE id = $1", thesis_id, rung)
 
 
+async def commit_claims(pool, thesis_id: str, *, thesis: str, claims: list[dict],
+                        subject: dict) -> None:
+    """Confirm a draft: set its committed thesis text + subject and write the decomposed claims. Used
+    by genesis → confirm. Insert-only on claims (a re-confirm never clobbers an existing ladder)."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            """UPDATE ts_thesis SET thesis = $2, subject = $3::jsonb, proposed_thesis = '',
+                   updated_at = now() WHERE id = $1""",
+            thesis_id, thesis[:2000], json.dumps(subject or {}))
+        for c in claims:
+            await conn.execute(
+                """INSERT INTO ts_claim (thesis_id, rung, claim, settleable, verdict, critical,
+                                          falsifier, what_would_change, research_status)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                   ON CONFLICT (thesis_id, rung) DO NOTHING""",
+                thesis_id, c["rung"], c["claim"], c["settleable"], c.get("verdict") or OPEN,
+                bool(c.get("critical")), c.get("falsifier") or "",
+                c.get("what_would_change") or "", c.get("research_status") or OPEN)
+
+
 async def revise_claim(pool, thesis_id: str, rung: str, claim: str) -> None:
     """The author reworded the claim. Their wording wins — it is their thesis."""
     await ensure_schema(pool)
@@ -315,13 +372,15 @@ async def revise_claim(pool, thesis_id: str, rung: str, claim: str) -> None:
 
 
 async def add_turn(pool, thesis_id: str, *, role: str, move: str = "", rung: str = "",
-                   text: str = "", payload: dict | None = None) -> None:
+                   text: str = "", payload: dict | None = None,
+                   rungs: list[str] | None = None) -> None:
     await ensure_schema(pool)
     async with pool.acquire() as conn:
         await conn.execute(
-            """INSERT INTO ts_turn (thesis_id, role, move, rung, text, payload)
-               VALUES ($1,$2,$3,$4,$5,$6::jsonb)""",
-            thesis_id, role, move, rung, text[:4000], json.dumps(payload or {}))
+            """INSERT INTO ts_turn (thesis_id, role, move, rung, text, payload, rungs)
+               VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)""",
+            thesis_id, role, move, rung, text[:4000], json.dumps(payload or {}),
+            json.dumps(list(rungs or [])))
 
 
 async def recent(pool, *, owner_id: str = "", limit: int = 40) -> list[dict]:
@@ -332,7 +391,7 @@ async def recent(pool, *, owner_id: str = "", limit: int = 40) -> list[dict]:
         rows = await conn.fetch(
             """SELECT t.id, t.title, t.thesis, t.updated_at,
                       count(*) FILTER (WHERE c.verdict <> 'open') AS settled,
-                      count(*) AS claims
+                      count(c.rung) AS claims
                  FROM ts_thesis t LEFT JOIN ts_claim c ON c.thesis_id = t.id
                 WHERE t.owner_id = $1
                 GROUP BY t.id ORDER BY t.updated_at DESC LIMIT $2""", owner_id, limit)

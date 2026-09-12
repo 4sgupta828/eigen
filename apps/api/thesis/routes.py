@@ -13,7 +13,9 @@ The mode is flag-gated (EIGEN_THESIS). OFF is a true no-op: no routes, no tables
 """
 from __future__ import annotations
 
+import asyncio
 import os
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
@@ -22,6 +24,7 @@ from . import argue as arg
 from . import attack as atk
 from . import converse as conv
 from . import decompose as dec
+from . import genesis as gen
 from . import people as ppl
 from . import store as tstore
 from .schema import (
@@ -43,6 +46,17 @@ class NewThesis(BaseModel):
     title: str = ""
     project_only: bool = False
     max_usd: float = 0.0
+    draft: bool = False       # create a genesis draft (no decompose, no cost) and converse to a thesis
+
+
+class GenesisIn(BaseModel):
+    text: str = ""            # the author's latest message in the genesis conversation
+
+
+class ConfirmIn(BaseModel):
+    thesis: str = ""          # the sentence the USER accepted/edited — the only commit of the thesis
+    max_usd: float = 0.0
+    project_only: bool = False
 
 
 class AttackIn(BaseModel):
@@ -75,6 +89,9 @@ class TurnIn(BaseModel):
     # rung happened to be in focus, so an answer about who owns the budget was filed under "does the
     # problem exist".
     rung: str = ""
+    # The SET of claims the user selected as context for one follow-up agent. `rung` (single) is still
+    # accepted and folded in for back-compat; `rungs` is the multi-claim scope.
+    rungs: list[str] = []
 
 
 class ResearchStartIn(BaseModel):
@@ -140,19 +157,11 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         """The ladder ships to the client so the vocabulary is never hardcoded in the shell."""
         return labels()
 
-    @r.post("/thesis")
-    async def tl_new(body: NewThesis, authorization: str = Header(default="")):
-        t = (body.thesis or "").strip()
-        if len(t) < 12:
-            raise HTTPException(status_code=400, detail="give the thesis as a sentence")
-        if body.project_only:
-            return {"status": "projection", "projection": dec.project_cost()}
-        projection = dec.project_cost()
-        if float(projection["projected_usd"]) > max(0.0, body.max_usd):
-            return {"status": "refused", "projection": projection,
-                    "reason": "Approve the decomposition cost before creating this thesis."}
+    async def _decompose_claims(text: str) -> dict:
+        """Thesis text -> {subject, claims (with critical/research_status stamped)}. Raises 503 on a
+        degraded/failed decomposition. Shared by create-in-one-shot and genesis-confirm."""
         try:
-            out = await dec.decompose(_llm_json(), t)
+            out = await dec.decompose(_llm_json(), text)
         except Exception as exc:
             raise HTTPException(status_code=503, detail="Thesis decomposition failed; retry.") from exc
         if out.get("degraded"):
@@ -161,8 +170,33 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         for claim in out.get("claims") or []:
             claim["critical"] = bool(policy and policy.is_critical(claim["rung"]))
             claim["research_status"] = OPEN
+        return out
+
+    @r.post("/thesis")
+    async def tl_new(body: NewThesis, authorization: str = Header(default="")):
+        t = (body.thesis or "").strip()
         pool = await pool_of()
         oid = await _owner(authorization)
+        # Draft: create a genesis row with the raw idea and converse to a thesis. No decompose, no cost.
+        if body.draft:
+            if len(t) < 3:
+                raise HTTPException(status_code=400, detail="say a little about the idea")
+            meta = await tstore.create(pool, thesis=t, claims=[], subject={},
+                                       owner_id=oid, title=body.title or t)
+            await tstore.set_proposed_thesis(pool, meta["id"], t)
+            await tstore.add_turn(pool, meta["id"], role="user", text=t)
+            return {"status": "draft", **meta,
+                    "thesis": await tstore.get(pool, thesis_id=meta["id"], owner_id=oid,
+                                               owner_token=meta.get("owner_token") or "")}
+        if len(t) < 12:
+            raise HTTPException(status_code=400, detail="give the thesis as a sentence")
+        if body.project_only:
+            return {"status": "projection", "projection": dec.project_cost()}
+        projection = dec.project_cost()
+        if float(projection["projected_usd"]) > max(0.0, body.max_usd):
+            return {"status": "refused", "projection": projection,
+                    "reason": "Approve the decomposition cost before creating this thesis."}
+        out = await _decompose_claims(t)
         meta = await tstore.create(pool, thesis=t, claims=out["claims"], subject=out["subject"],
                                    owner_id=oid, title=body.title)
         await tstore.add_turn(pool, meta["id"], role="agent", move="asked",
@@ -171,6 +205,59 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 "thesis": await tstore.get(pool, thesis_id=meta["id"],
                                            owner_id=oid,
                                            owner_token=meta.get("owner_token") or "")}
+
+    @r.post("/thesis/{thesis_id}/genesis")
+    async def tl_genesis(thesis_id: str, body: GenesisIn, authorization: str = Header(default=""),
+                         x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """One genesis turn: sharpen the draft toward a concrete thesis. Draft-only (no claims yet)."""
+        oid = await _owner(authorization)
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if d.get("claims"):
+            raise HTTPException(status_code=409, detail="this thesis is already decomposed")
+        said = (body.text or "").strip()
+        if said:
+            await tstore.add_turn(pool, thesis_id, role="user", text=said)
+        turns = d.get("turns") or []
+        used = sum(1 for t in turns if t.get("role") == "agent" and t.get("move") == "genesis")
+        got = await gen.turn(_llm_json(), said=said, history=turns,
+                             budget_left=max(0, gen.GENESIS_BUDGET - used))
+        proposed = got.get("proposed_thesis") or d.get("proposed_thesis") or d.get("thesis") or ""
+        await tstore.set_proposed_thesis(pool, thesis_id, proposed)
+        reply = got.get("reply") or ("" if got.get("ready") else "Tell me a little more.")
+        if reply or got.get("questions"):
+            await tstore.add_turn(pool, thesis_id, role="agent", move="genesis", text=reply,
+                                  payload={"questions": got.get("questions") or [],
+                                           "proposed_thesis": proposed, "ready": bool(got.get("ready"))})
+        return {"status": "ok", "reply": reply, "proposed_thesis": proposed,
+                "questions": got.get("questions") or [], "ready": bool(got.get("ready")),
+                "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
+                                           owner_token=x_thesis_owner)}
+
+    @r.post("/thesis/{thesis_id}/confirm")
+    async def tl_confirm(thesis_id: str, body: ConfirmIn, authorization: str = Header(default=""),
+                         x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Commit the thesis the USER accepted, and decompose it into the ladder. The only commit."""
+        oid = await _owner(authorization)
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        t = (body.thesis or d.get("proposed_thesis") or d.get("thesis") or "").strip()
+        if len(t) < 12:
+            raise HTTPException(status_code=400, detail="give the thesis as a sentence")
+        if d.get("claims"):
+            raise HTTPException(status_code=409, detail="this thesis is already decomposed")
+        if body.project_only:
+            return {"status": "projection", "projection": dec.project_cost()}
+        projection = dec.project_cost()
+        if float(projection["projected_usd"]) > max(0.0, body.max_usd):
+            return {"status": "refused", "projection": projection,
+                    "reason": "Approve the decomposition cost before building the claim ladder."}
+        out = await _decompose_claims(t)
+        await tstore.commit_claims(pool, thesis_id, thesis=t, claims=out["claims"],
+                                   subject=out["subject"])
+        await tstore.add_turn(pool, thesis_id, role="agent", move="asked",
+                              text=_opening(out), payload={"subject": out["subject"]})
+        return {"status": "ok",
+                "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
+                                           owner_token=x_thesis_owner)}
 
     @r.get("/thesis/{thesis_id}")
     async def tl_get(thesis_id: str, share: str = "", authorization: str = Header(default=""),
@@ -349,57 +436,151 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     @r.post("/thesis/{thesis_id}/turn")
     async def tl_turn(thesis_id: str, body: TurnIn, authorization: str = Header(default=""),
                       x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
-        """One exchange. Always closes as exactly one of settled / attacked / needs_person.
-
-        When the author has said something, the agent REPLIES TO IT — and their answer is allowed to
-        change the ledger. The first version stored what they typed and never read it, which made
-        every turn a monologue on a timer: you push back with ten years of industry knowledge and get
-        the agent's pre-computed opinion about a different claim.
+        """One follow-up exchange, scoped to the claim(s) the user selected. READ-ONLY: it explains the
+        evidence and never re-grades a verdict, rewrites a case, or moves the recommendation — grading
+        is done once, by the explicit Test step. (This replaced the old ledger-mutating conversation:
+        testing is now explicit, so the conversation only reads.)
         """
         oid = await _owner(authorization)
         pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
         said = (body.text or "").strip()
 
-        if said:
-            await tstore.add_turn(pool, thesis_id, role="user", text=said)
-            # A question asked ON A ROW is about that row.
-            focus = _claim_by_rung(d, body.rung) or _focus_claim(d)
-            got = await conv.reply(_llm_json(), thesis=d["thesis"], claim=focus or {},
-                                   said=said, history=d.get("turns") or [])
-            if got and focus:
-                await _apply_effect(pool, thesis_id, focus, got, said)
-                nxt = got.get("next_rung") or ""
-                await tstore.set_focus(pool, thesis_id,
-                                       nxt if nxt in SETTLEABLE else focus["rung"])
-                await tstore.add_turn(pool, thesis_id, role="agent", move=got["move"],
-                                      rung=focus["rung"], text=got["reply"],
-                                      payload=_payload_for(focus, got))
-                return {"status": "ok", "move": {"move": got["move"], "rung": focus["rung"],
-                                                 "text": got["reply"]},
-                        "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
-                                                   owner_token=x_thesis_owner)}
-            # No model, or it gave us nothing usable. Advance — but SAY that we could not read the
-            # answer rather than replying with a confident non-sequitur.
-            d = await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
-                                 owner_token=x_thesis_owner)
-            move = next_move(d)
-            move["text"] = ("I could not read that answer just now, so I am carrying on from the "
-                            "ledger. " + move["text"])
-            await tstore.add_turn(pool, thesis_id, role="agent", move=move["move"],
-                                  rung=move["rung"], text=move["text"],
-                                  payload=move.get("payload") or {})
-            return {"status": "ok", "move": move,
-                    "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
-                                               owner_token=x_thesis_owner)}
+        # The selected context: the multi-select `rungs`, else the single `rung`, else the focus/weakest.
+        want = [x for x in (list(body.rungs) + ([body.rung] if body.rung else [])) if x]
+        by_rung = {c["rung"]: c for c in d.get("claims") or []}
+        selected = [by_rung[x] for x in dict.fromkeys(want) if x in by_rung]
+        if not selected:
+            fc = _focus_claim(d)
+            selected = [fc] if fc else []
+        scope = [c["rung"] for c in selected]
 
-        move = next_move(d)
-        if move.get("rung"):
-            await tstore.set_focus(pool, thesis_id, move["rung"])
-        await tstore.add_turn(pool, thesis_id, role="agent", move=move["move"],
-                              rung=move["rung"], text=move["text"], payload=move.get("payload") or {})
-        return {"status": "ok", "move": move,
+        if said:
+            await tstore.add_turn(pool, thesis_id, role="user", text=said, rungs=scope)
+        got = await conv.follow_up(_llm_json(), thesis=d.get("thesis") or "", claims=selected,
+                                   said=said, history=d.get("turns") or [])
+        reply = got.get("reply") or "The evidence for the selected claims is shown above."
+        await tstore.add_turn(pool, thesis_id, role="agent", move="explained", text=reply,
+                              rung=scope[0] if scope else "", rungs=scope,
+                              payload={"rungs": scope})
+        return {"status": "ok", "move": {"move": "explained", "rungs": scope, "text": reply},
                 "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
                                            owner_token=x_thesis_owner)}
+
+    # ---- async research run: the whole test, server-side, no partial ----------------------------
+    # The browser used to drive /attack claim by claim and paint each verdict as it landed. The owner
+    # wants ONE explicit "Test this thesis" that runs everything to completion with no half-painted
+    # brief. So the run executes here, in the background, over the ts_run state machine; the client
+    # polls status and renders only when it is done. A deploy can kill this in-process task — the run
+    # is therefore RESUMABLE at claim granularity (a claim already tested by this run is skipped) and
+    # the client silently re-POSTs /research/run to resume, which idempotency makes invisible.
+    STALE_SECONDS = 30
+
+    async def _run_research(thesis_id: str, run_id: str):
+        pool = await pool_of()
+        try:
+            d = await tstore.get(pool, thesis_id=thesis_id)
+            if not d:
+                return
+            done_rungs = await tstore.claims_tested_by_run(pool, thesis_id, run_id)
+            todo = [c for c in d["claims"]
+                    if c["settleable"] != CALL_ONLY and c["rung"] not in done_rungs]
+            run = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+            web = atk._web_client(manifest) if (run or {}).get("metadata", {}).get("web") else None
+            ctx = " ".join(str(v) for v in (d.get("subject") or {}).values())
+            for c in todo:
+                res = await atk.attack_claim(dsn, claim=c["claim"], settleable=c["settleable"],
+                                             judge_llm=judge_llm, ui=_ui(), extra_context=ctx,
+                                             web_client=web, relation_llm=_llm_json(),
+                                             evidence_policy=_policy(), tenant=tenant)
+                for row in res["evidence"]:
+                    row["run_id"] = run_id
+                await tstore.add_evidence(pool, thesis_id, c["rung"], res["evidence"])
+                await tstore.set_verdict(pool, thesis_id, c["rung"], res["verdict"], res["note"],
+                                         attacked=bool(res["attack_attempted"]), run_id=run_id)
+                await tstore.advance_run(
+                    pool, thesis_id=thesis_id, run_id=run_id, stage=f"claim:{c['rung']}",
+                    actual_delta=round(0.003 + res.get("web_queries", 0) * atk.WEB_USD_PER_QUERY, 4))
+            # Primary-research claims stay blockers until independently corroborated.
+            for c in d["claims"]:
+                if c["settleable"] == CALL_ONLY and c["verdict"] == OPEN:
+                    await tstore.set_verdict(pool, thesis_id, c["rung"], "primary_research_needed",
+                                             "This claim needs independent primary research.",
+                                             run_id=run_id)
+            fresh = await tstore.get(pool, thesis_id=thesis_id)
+            await _write_cases(pool, thesis_id, fresh)
+            policy = _policy()
+            decision = (policy.decide(fresh.get("claims") or []) if policy else
+                        {"recommendation": "continue_diligence", "decisive_claims": [],
+                         "reason": "No decision policy is configured."})
+            await tstore.set_decision(pool, thesis_id, decision, research_status="completed")
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
+                                     state="completed",
+                                     actual_delta=arg.project_cost(len(fresh.get("claims") or []))
+                                     ["projected_usd"])
+        except tstore.SpendCapError as exc:
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="cap",
+                                  error={"reason": "approved cost reached", "detail": str(exc)})
+        except Exception as exc:      # noqa: BLE001 — a failed run must never corrupt state; it fails closed
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                  error={"reason": "research run failed", "detail": str(exc)[:300]})
+
+    def _run_progress(d: dict, run_id: str) -> dict:
+        claims = [c for c in d.get("claims") or [] if c["settleable"] != CALL_ONLY]
+        done = sum(1 for c in claims if c.get("tested_run_id") == run_id)
+        return {"done": done, "total": len(claims)}
+
+    def _is_stale(run: dict) -> bool:
+        if not run or run.get("state") != "running":
+            return False
+        ts = run.get("updated_at") or ""
+        try:
+            when = datetime.fromisoformat(str(ts))
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return False
+        return (datetime.now(timezone.utc) - when).total_seconds() > STALE_SECONDS
+
+    @r.post("/thesis/{thesis_id}/research/run")
+    async def tl_research_run(thesis_id: str, body: RunIn, authorization: str = Header(default=""),
+                              x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Kick off (or resume) the whole test in the background. Returns immediately; poll status."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        run = await tstore.get_run(pool, thesis_id=thesis_id, run_id=body.run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="no such run")
+        if run.get("state") == "completed":
+            return {"status": "completed", "run": run}
+        # Already actively progressing (fresh heartbeat) → don't start a second task.
+        if run.get("state") == "running" and not _is_stale(run):
+            return {"status": "running", "run": run}
+        if run.get("state") not in ("approved", "running", "failed"):
+            raise HTTPException(status_code=409, detail="run is not resumable")
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=body.run_id, stage="running",
+                                 state="running")
+        asyncio.create_task(_run_research(thesis_id, body.run_id))
+        return {"status": "running",
+                "run": await tstore.get_run(pool, thesis_id=thesis_id, run_id=body.run_id)}
+
+    @r.get("/thesis/{thesis_id}/research/status")
+    async def tl_research_status(thesis_id: str, run: str = "",
+                                 authorization: str = Header(default=""),
+                                 x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Derived progress for the active/named run. Marks a stalled run failed so a resume can take
+        over — progress is read from real state (verdicts written), never a hand-managed flag."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner)
+        run_id = run or ((d.get("claims") or [{}])[0] or {}).get("tested_run_id", "")
+        record = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id) if run_id else None
+        if record and _is_stale(record):
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="stalled",
+                                  error={"reason": "run stalled (likely an API restart); resume"})
+            record = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+        prog = _run_progress(d, run_id) if run_id else {"done": 0, "total": 0}
+        return {"status": "ok", "run_id": run_id,
+                "state": (record or {}).get("state", "none"),
+                "stage": (record or {}).get("stage", ""),
+                "error": (record or {}).get("error") or {},
+                "actual_usd": (record or {}).get("actual_usd", 0.0), **prog}
 
     return r
 

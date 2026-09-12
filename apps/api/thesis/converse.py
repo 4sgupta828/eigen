@@ -95,6 +95,66 @@ def project_cost() -> dict:
     return {"calls": 1, "projected_usd": 0.002}
 
 
+# ---- follow-up over a SET of claims (the tested-phase agent) -------------------------------------
+# After the thesis is tested, the conversation is one agent the author asks about a claim OR a set of
+# claims they select. It EXPLAINS the evidence; it never re-grades a verdict, rewrites a case, or moves
+# the recommendation — that grading is done, once, by the explicit Test step. (Contrast `reply` above,
+# the older per-rung stress move that could mutate the ledger; the tested-phase path uses this instead.)
+_FOLLOWUP_SYSTEM = """\
+You are helping an investor read the evidence behind a startup thesis they have already tested. They
+have selected one or more CLAIMS and asked a question about them. Answer it.
+
+Rules:
+- Ground every statement in the evidence given for the selected claims, or in the thesis itself. If the
+  evidence does not answer the question, say so plainly and say what evidence would.
+- Two to four sentences. Plain speech. No headings, no lists, no flattery.
+- Report the evidence's register honestly: a filing is a fact, a press release or forum post is a
+  stated claim or a signal, never dressed up as more than it is.
+- You are explaining, not deciding. Do NOT announce a new verdict, a buy/pass call, or investment
+  advice. If they push on the recommendation, point them to the claims that drive it and what is still
+  open.
+- Do not invent sources, numbers, or quotes. If you don't have it, say you don't have it.
+
+Return ONE JSON object: {"reply": "..."}. Output ONLY the JSON object."""
+
+
+def _claims_block(claims: list[dict]) -> str:
+    out = []
+    for c in claims or []:
+        head = f"CLAIM [{c.get('rung', '')}] ({c.get('verdict', 'open')}): {c.get('claim', '')}"
+        out.append(head + "\n" + _ev_lines(c.get("evidence") or [], limit=6))
+    return "\n\n".join(out) or "(no claims selected)"
+
+
+def _followup_prompt(*, thesis: str, claims: list[dict], said: str, history: list[dict]) -> str:
+    convo = "\n".join(f"{t.get('role', 'user')}: {(t.get('text') or '')[:300]}"
+                      for t in (history or [])[-6:])
+    return (f"THESIS:\n{thesis}\n\nSELECTED CLAIMS AND THEIR EVIDENCE:\n{_claims_block(claims)}\n\n"
+            f"CONVERSATION SO FAR:\n{convo or '(this is the first question)'}\n\n"
+            f"THE AUTHOR ASKS:\n{said}\n\nReturn the JSON now.")
+
+
+async def follow_up(llm_json, *, thesis: str, claims: list[dict], said: str,
+                    history: list[dict]) -> dict:
+    """Explain the selected claims' evidence. READ-ONLY: returns only {reply}; never changes the
+    ledger. Never raises. With no model, points the reader at the evidence deterministically."""
+    said = (said or "").strip()
+    n = len([c for c in (claims or []) if c])
+    if llm_json is None or not said:
+        which = "these claims" if n != 1 else "this claim"
+        return {"reply": f"Here is the evidence gathered for {which}; I could not add a written read "
+                         "just now — the sources on each side are shown above."}
+    try:
+        raw = await llm_json(_FOLLOWUP_SYSTEM,
+                             _followup_prompt(thesis=thesis, claims=claims, said=said, history=history))
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+    except Exception:      # noqa: BLE001 — a follow-up never blocks or corrupts
+        return {"reply": "I couldn't read that just now. The evidence on each selected claim is shown "
+                         "above — try asking again, or narrow to one claim."}
+    txt = str(d.get("reply") or "").strip()
+    return {"reply": txt[:1200] or "I don't have evidence in the selected claims that answers that."}
+
+
 async def reply(llm_json, *, thesis: str, claim: dict, said: str, history: list[dict]) -> dict:
     """-> {reply, move, effect, revised_claim, next_rung}. Never raises.
 
