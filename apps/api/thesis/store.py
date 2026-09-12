@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS ts_thesis (
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_ts_thesis_owner ON ts_thesis (owner_id, updated_at DESC);
+-- Which claim the conversation is currently on. A stress test that jumps rung to rung every turn is
+-- a monologue on a timer; the agent stays on one thing until it is settled or set aside.
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS focus_rung text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS ts_claim (
     thesis_id   text NOT NULL REFERENCES ts_thesis(id) ON DELETE CASCADE,
@@ -169,6 +172,20 @@ async def set_verdict(pool, thesis_id: str, rung: str, verdict: str, note: str =
                  WHERE thesis_id = $1 AND rung = $2""",     # noqa: S608 — literal, not user input
             thesis_id, rung, verdict, note[:400])
         await conn.execute("UPDATE ts_thesis SET updated_at = now() WHERE id = $1", thesis_id)
+
+
+async def set_focus(pool, thesis_id: str, rung: str) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_thesis SET focus_rung = $2 WHERE id = $1", thesis_id, rung)
+
+
+async def revise_claim(pool, thesis_id: str, rung: str, claim: str) -> None:
+    """The author reworded the claim. Their wording wins — it is their thesis."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_claim SET claim = $3 WHERE thesis_id = $1 AND rung = $2",
+                           thesis_id, rung, claim[:600])
 
 
 async def add_turn(pool, thesis_id: str, *, role: str, move: str = "", rung: str = "",

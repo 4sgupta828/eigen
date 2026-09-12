@@ -71,9 +71,9 @@ ROLE_LABEL = {BUYER: "someone who buys this", OPERATOR: "someone who lives the s
 # for evidence AGAINST this and found none either way. It comes from the kernel's existing
 # disconfirming-search flag (research/react.py) — disconfirmation attempted is not disconfirmation
 # found, and a claim nobody could attack is not thereby proven.
-SUPPORTED, CONTRADICTED, UNDER_TESTED, OPEN, UNSETTLEABLE = (
-    "supported", "contradicted", "under_tested", "open", "unsettleable")
-VERDICTS = (SUPPORTED, CONTRADICTED, UNDER_TESTED, OPEN, UNSETTLEABLE)
+SUPPORTED, CONTRADICTED, UNDER_TESTED, OPEN, UNSETTLEABLE, SET_ASIDE = (
+    "supported", "contradicted", "under_tested", "open", "unsettleable", "set_aside")
+VERDICTS = (SUPPORTED, CONTRADICTED, UNDER_TESTED, OPEN, UNSETTLEABLE, SET_ASIDE)
 
 VERDICT_LABEL = {
     SUPPORTED: "the record supports this",
@@ -81,6 +81,7 @@ VERDICT_LABEL = {
     UNDER_TESTED: "we tried to break this and found nothing either way",
     OPEN: "not looked at yet",
     UNSETTLEABLE: "no document can settle this — it needs a person",
+    SET_ASIDE: "the author says this rung does not apply to their thesis",
 }
 
 # ---- evidence ---------------------------------------------------------------------------------

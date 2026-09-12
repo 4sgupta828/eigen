@@ -19,11 +19,12 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from . import attack as atk
+from . import converse as conv
 from . import decompose as dec
 from . import people as ppl
 from . import store as tstore
 from .schema import (
-    ASK_WHO, CALL_ONLY, OPEN, QUESTION, ROLE_LABEL, SETTLEABLE, STATED, UNSETTLEABLE,
+    ASK_WHO, CALL_ONLY, OPEN, QUESTION, ROLE_LABEL, SET_ASIDE, SETTLEABLE, STATED, UNSETTLEABLE,
     VERDICT_LABEL, labels,
 )
 
@@ -182,21 +183,116 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
 
     @r.post("/thesis/{thesis_id}/turn")
     async def tl_turn(thesis_id: str, body: TurnIn, authorization: str = Header(default="")):
-        """The agent's next move. Always exactly one of settled / attacked / needs_person."""
+        """One exchange. Always closes as exactly one of settled / attacked / needs_person.
+
+        When the author has said something, the agent REPLIES TO IT — and their answer is allowed to
+        change the ledger. The first version stored what they typed and never read it, which made
+        every turn a monologue on a timer: you push back with ten years of industry knowledge and get
+        the agent's pre-computed opinion about a different claim.
+        """
+        oid = await _owner(authorization)
         pool = await pool_of()
-        d = await tstore.get(pool, thesis_id=thesis_id, owner_id=await _owner(authorization))
+        d = await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)
         if not d:
             raise HTTPException(status_code=404, detail="no such thesis")
-        if (body.text or "").strip():
-            await tstore.add_turn(pool, thesis_id, role="user", text=body.text.strip())
+        said = (body.text or "").strip()
+
+        if said:
+            await tstore.add_turn(pool, thesis_id, role="user", text=said)
+            focus = _focus_claim(d)
+            got = await conv.reply(_llm_json(), thesis=d["thesis"], claim=focus or {},
+                                   said=said, history=d.get("turns") or [])
+            if got and focus:
+                await _apply_effect(pool, thesis_id, focus, got, said)
+                nxt = got.get("next_rung") or ""
+                await tstore.set_focus(pool, thesis_id,
+                                       nxt if nxt in SETTLEABLE else focus["rung"])
+                await tstore.add_turn(pool, thesis_id, role="agent", move=got["move"],
+                                      rung=focus["rung"], text=got["reply"],
+                                      payload=_payload_for(focus, got))
+                return {"status": "ok", "move": {"move": got["move"], "rung": focus["rung"],
+                                                 "text": got["reply"]},
+                        "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)}
+            # No model, or it gave us nothing usable. Advance — but SAY that we could not read the
+            # answer rather than replying with a confident non-sequitur.
+            d = await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)
+            move = next_move(d)
+            move["text"] = ("I could not read that answer just now, so I am carrying on from the "
+                            "ledger. " + move["text"])
+            await tstore.add_turn(pool, thesis_id, role="agent", move=move["move"],
+                                  rung=move["rung"], text=move["text"],
+                                  payload=move.get("payload") or {})
+            return {"status": "ok", "move": move,
+                    "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)}
+
         move = next_move(d)
+        if move.get("rung"):
+            await tstore.set_focus(pool, thesis_id, move["rung"])
         await tstore.add_turn(pool, thesis_id, role="agent", move=move["move"],
                               rung=move["rung"], text=move["text"], payload=move.get("payload") or {})
         return {"status": "ok", "move": move,
-                "thesis": await tstore.get(pool, thesis_id=thesis_id,
-                                           owner_id=await _owner(authorization))}
+                "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)}
 
     return r
+
+
+def _focus_claim(d: dict) -> dict | None:
+    """The claim the conversation is ON. Falls back to whatever `next_move` would raise next, so a
+    reply always has a subject even on the very first exchange."""
+    claims = d.get("claims") or []
+    if not claims:
+        return None
+    f = (d.get("focus_rung") or "").strip()
+    for c in claims:
+        if c["rung"] == f:
+            return c
+    m = next_move(d)
+    if m.get("rung"):
+        for c in claims:
+            if c["rung"] == m["rung"]:
+                return c
+    return claims[0]
+
+
+async def _apply_effect(pool, thesis_id: str, claim: dict, got: dict, said: str) -> None:
+    """What the author's answer DID to the claim. Without this the conversation is theatre — you can
+    settle a rung out of your own experience and the ledger will still say `open`."""
+    eff = got.get("effect") or "none"
+    rung = claim["rung"]
+    if eff == "revise" and got.get("revised_claim"):
+        # Their wording wins. It is their thesis.
+        await tstore.revise_claim(pool, thesis_id, rung, got["revised_claim"])
+        return
+    if eff in ("answered", "contradicted"):
+        # What they know is STATED evidence from them, attributed. It is never laundered into filed,
+        # and it is never silently merged with what the record says.
+        await tstore.add_evidence(pool, thesis_id, rung, [{
+            "side": "for" if eff == "answered" else "against", "register": STATED,
+            "source_key": "call", "signal_only": False, "title": "the author, in conversation",
+            "quote": said[:1200], "source_url": "", "basis": "said by the author, not a source",
+            "said_by": "the author", "said_role": "author"}])
+        await tstore.set_verdict(
+            pool, thesis_id, rung,
+            "supported" if eff == "answered" else "contradicted",
+            "The author answered this from their own knowledge — one account, not a source.")
+        return
+    if eff == "irrelevant":
+        await tstore.set_verdict(pool, thesis_id, rung, SET_ASIDE,
+                                 "The author says this rung does not apply to their thesis.")
+
+
+def _payload_for(claim: dict, got: dict) -> dict:
+    """What the reply needs to SHOW beside it: the evidence it is arguing from, and — when the move
+    is needs_person — who and what to ask."""
+    ev = claim.get("evidence") or []
+    if got["move"] == "needs_person":
+        return {"ask": list(ASK_WHO.get(claim["rung"], ())),
+                "question": _question_for(claim["rung"], claim,
+                                          [e for e in ev if e["side"] == "against"],
+                                          [e for e in ev if e["side"] == "for"]),
+                "people": ppl.from_evidence(ev)}
+    shown = [e for e in ev if not e.get("signal_only")][:3]
+    return {"evidence": shown} if shown else {}
 
 
 # ---- the agent's move ---------------------------------------------------------------------------

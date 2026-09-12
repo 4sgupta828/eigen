@@ -381,7 +381,23 @@
   #thesisbody{display:none;}
   body[data-mode="thesis"] #thesisbody{display:block;}
   body[data-mode="thesis"] #out, body[data-mode="thesis"] #effort{display:none !important;}
-  .th-conv{display:grid;gap:.6rem;margin:.2rem 0 1rem;}
+  .th-conv{display:grid;gap:1rem;margin:.2rem 0 1rem;}
+  /* The conversation IS the interface. The ledger is what it refers to, kept out of the way until
+     asked for — the first version dumped ten claims at the reader and called a button "chat". */
+  .th-ledger{border:1px solid var(--hair);border-radius:12px;padding:.5rem .7rem;margin:.4rem 0 0;}
+  .th-ledger > summary{cursor:pointer;font-family:var(--mono);font-size:.66rem;letter-spacing:.04em;
+    color:var(--dim);list-style:none;min-height:32px;display:flex;align-items:center;gap:.4rem;}
+  .th-ledger > summary::-webkit-details-marker{display:none;}
+  .th-ledger > summary::before{content:"\25b8";display:inline-block;transition:.15s;}
+  .th-ledger[open] > summary::before{transform:rotate(90deg);}
+  .th-ledger[open] > summary{margin-bottom:.6rem;}
+  .th-pip{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--hair);}
+  .th-pip[data-v="supported"]{background:var(--verified,#2f7d5b);}
+  .th-pip[data-v="contradicted"]{background:#b4544a;}
+  .th-pip[data-v="under_tested"]{background:#8a6d3b;}
+  .th-pip[data-v="unsettleable"]{background:#6b7fd7;}
+  .th-pip[data-v="set_aside"]{background:var(--hair);opacity:.45;}
+  .th-focus{border-left:2px solid var(--gold);padding-left:.7rem;}
   .th-turn{display:flex;gap:.55rem;align-items:flex-start;font-size:.9rem;line-height:1.6;}
   .th-turn .th-who{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;
     padding:.18rem .45rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);
@@ -2450,7 +2466,10 @@
   </div>
   <div class="th-conv" id="th-conv"></div>
   <div class="th-acts" id="th-acts"></div>
-  <div class="th-claims" id="th-claims"></div>
+  <details class="th-ledger" id="th-ledger">
+    <summary id="th-sum">the ledger</summary>
+    <div class="th-claims" id="th-claims"></div>
+  </details>
   <p class="dd-note" id="th-note"></p>
 </section>
 
@@ -10993,7 +11012,11 @@ async function openShare(token){
   async function submit(text){
     const t = (text || "").trim();
     if(!t || STATE.busy) return;
-    if(STATE.id) return say(t);                    // an existing thesis: this is the user pushing back
+    // Once a thesis exists the composer IS the conversation: what you type is answered, not filed.
+    if(STATE.id){
+      conv().insertAdjacentHTML("beforeend", turnHtml("user", "", t));
+      return say(t);
+    }
     STATE.busy = true;
     conv().insertAdjacentHTML("beforeend", turnHtml("user", "", t));
     note().innerHTML = '<span class="su-spin"></span> reading the thesis…';
@@ -11005,6 +11028,9 @@ async function openShare(token){
       STATE.id = d.id; STATE.doc = d.thesis;
       history.replaceState(null, "", "#thesis/" + encodeURIComponent(d.id));
       render();
+      // Open on ONE claim rather than presenting ten. A wall of claims is the dump this mode exists
+      // not to be; the ledger holds the whole set for anyone who wants it at once.
+      STATE.busy = false; await turn();
     }catch(e){ note().textContent = e.message || String(e); }
     finally{ STATE.busy = false; }
   }
@@ -11069,7 +11095,7 @@ async function openShare(token){
       + "</span>" + who + src + "</div>";
   }
 
-  function claimHtml(c){
+  function claimHtml(c, focused){
     const ev = c.evidence || [];
     const against = ev.filter(e => e.side === "against");
     const forr = ev.filter(e => e.side === "for");
@@ -11077,7 +11103,8 @@ async function openShare(token){
     const sides = against.concat(forr).map(evHtml).join("");
     const ask = (c.settleable === "call_only")
       ? '<div class="th-ask"><b>Only a person can answer this.</b></div>' : "";
-    return '<div class="th-claim"><h4>' + esc2(c.claim) + "</h4>"
+    return '<div class="th-claim' + (focused ? " th-focus" : "") + '"><h4>'
+      + esc2(c.claim) + "</h4>"
       + '<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">'
       + '<span class="th-rung">' + esc2(c.rung.replace(/_/g, " ")) + "</span>"
       + '<span class="th-v" data-v="' + esc2(c.verdict) + '">' + esc2(c.verdict.replace("_", " ")) + "</span>"
@@ -11088,32 +11115,44 @@ async function openShare(token){
       + "</div>";
   }
 
-  function render(){
-    const d = STATE.doc;
-    if(!d) return;
-    conv().innerHTML = (d.turns || []).map(t => turnHtml(t.role, t.move, t.text)).join("");
-    const last = (d.turns || []).slice(-1)[0] || {};
-    const pay = last.payload || {};
-    // The agent's move can carry a question to put to a person, and the people it found.
-    let extra = "";
+  // Everything a turn needs to SHOW beside what it said: the evidence it argues from, and — when the
+  // move is needs_person — who to ask and what. Attached to the TURN, not dumped into a panel, so the
+  // reader meets the argument and its grounds together.
+  function payloadHtml(pay){
+    if(!pay) return "";
+    let out = "";
+    if((pay.evidence || []).length)
+      out += '<div class="th-sides">' + pay.evidence.map(evHtml).join("") + "</div>";
     if(pay.question){
-      extra = '<div class="th-ask"><b>Ask them:</b> ' + esc2(pay.question)
-        + (pay.people && pay.people.length
+      out += '<div class="th-ask"><b>Ask them:</b> ' + esc2(pay.question)
+        + ((pay.people || []).length
             ? pay.people.map(p => '<div class="th-person"><b>' + esc2(p.name) + "</b> <span>"
                 + esc2(p.why) + "</span></div>").join("")
             : "")
         + (pay.guidance ? '<p class="th-note">' + esc2(pay.guidance) + "</p>" : "")
         + "</div>";
     }
-    if(extra) conv().insertAdjacentHTML("beforeend", extra);
+    return out;
+  }
+
+  function render(){
+    const d = STATE.doc;
+    if(!d) return;
+    const turns = d.turns || [];
+    conv().innerHTML = turns.map((t, i) => {
+      const body = turnHtml(t.role, t.move, t.text);
+      const pay = (i === turns.length - 1) ? payloadHtml(t.payload) : "";
+      return pay ? body.replace("</span></div>", "</span>" + pay + "</div>") : body;
+    }).join("");
 
     const unattacked = (d.claims || []).filter(c => c.settleable !== "call_only" && !c.attacked);
+    // One primary action, phrased as the next thing in the conversation rather than a command.
     acts().innerHTML =
       (unattacked.length
-        ? '<button type="button" id="th-attack">⚔ Attack ' + unattacked.length + ' untested claim'
-          + (unattacked.length === 1 ? "" : "s") + "</button>"
-        : '<button type="button" id="th-next">→ What is weakest now?</button>')
-      + '<button type="button" id="th-share">🔗 Copy link</button>';
+        ? '<button type="button" id="th-attack">Go and try to break ' + unattacked.length
+          + " claim" + (unattacked.length === 1 ? "" : "s") + "</button>"
+        : '<button type="button" id="th-next">What is weakest now?</button>')
+      + '<button type="button" id="th-share">Copy link</button>';
     const a = document.getElementById("th-attack"); if(a) a.addEventListener("click", attack);
     const n = document.getElementById("th-next"); if(n) n.addEventListener("click", turn);
     const sh = document.getElementById("th-share");
@@ -11122,11 +11161,15 @@ async function openShare(token){
            sh.textContent = "copied"; }catch(e){ /* clipboard is a nicety */ }
     });
 
-    claims().innerHTML = (d.claims || []).map(claimHtml).join("");
-    const open = (d.claims || []).filter(c => c.verdict === "open").length;
-    const callOnly = (d.claims || []).filter(c => c.settleable === "call_only").length;
-    note().textContent = (d.claims || []).length + " claims · " + open + " untested · "
-      + callOnly + " that no document can settle";
+    // The ledger: pips in the summary, the claims themselves only when it is opened.
+    const cs = d.claims || [];
+    const pips = cs.map(c => '<span class="th-pip" data-v="' + esc2(c.verdict) + '" title="'
+      + esc2(c.rung.replace(/_/g, " ") + " \u2014 " + c.verdict.replace("_", " ")) + '"></span>').join("");
+    const done = cs.filter(c => c.verdict !== "open").length;
+    const sum = document.getElementById("th-sum");
+    if(sum) sum.innerHTML = pips + " <span>" + done + " of " + cs.length + " claims tested</span>";
+    claims().innerHTML = cs.map(c => claimHtml(c, c.rung === d.focus_rung)).join("");
+    note().textContent = "";
   }
 
   async function recent(){

@@ -42,3 +42,31 @@ test("against-evidence renders before for-evidence", () => {
 test("sentiment is labelled on the row, not silently counted", () => {
   assert.match(SRC, /signal, not evidence/);
 });
+
+test("the composer is the conversation, not a one-shot input", () => {
+  // The first version took the thesis, dumped ten claims, and left buttons. What you typed after
+  // that was stored and never read.
+  const fn = SRC.slice(SRC.indexOf("async function submit(text)"), SRC.indexOf("async function open(id)"));
+  assert.match(fn, /if\(STATE\.id\)\{[\s\S]{0,300}return say\(t\)/,
+    "typing after the thesis exists must go to the agent as a reply");
+});
+
+test("the agent replies to what was said rather than walking the ledger", () => {
+  // Server-side guard mirrored here so the shell's contract is visible: /turn carries the text.
+  assert.match(SRC, /const say = \(text\) => post\("\/turn", \{text: text\}\)/);
+});
+
+test("it opens on one claim, not ten", () => {
+  const fn = SRC.slice(SRC.indexOf("async function submit(text)"), SRC.indexOf("async function open(id)"));
+  assert.match(fn, /await turn\(\)/, "the first exchange must start the conversation");
+});
+
+test("the ledger is collapsed behind a summary", () => {
+  assert.match(SRC, /<details class="th-ledger"/, "ten claims must not be the first thing shown");
+  assert.match(SRC, /claims tested<\/span>/, "the summary has to say what is in there");
+});
+
+test("evidence rides the turn that argues from it", () => {
+  assert.match(SRC, /function payloadHtml\(pay\)/);
+  assert.match(SRC, /i === turns\.length - 1/, "only the live turn carries its grounds");
+});
