@@ -244,7 +244,7 @@ async def add_evidence(pool, thesis_id: str, rung: str, rows: list[dict]) -> int
                        document_id, block_id, atom_id, relation, evidence_kind, source_subject,
                        period, span_hash, gate_results, facets, run_id, independence_key)
                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-                           $19,$20,$21,$22,$23,$24::jsonb,$25::jsonb,$26,$27)
+                           $19,$20,$21,$22,$23::jsonb,$24::jsonb,$25,$26)
                    ON CONFLICT DO NOTHING""",
                 r.get("id") or uuid.uuid4().hex[:16], thesis_id, rung, r["side"], r["register"],
                 r.get("source_key") or "", bool(r.get("signal_only")), (r.get("title") or "")[:300],

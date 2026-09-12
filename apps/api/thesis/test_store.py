@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 
 import pytest
 
@@ -195,6 +196,8 @@ async def test_evidence_write_keeps_stable_identity_and_is_idempotent() -> None:
     assert "document_id" in query and "gate_results" in query and "ON CONFLICT" in query
     assert args[0] == "ev-stable"
     assert "doc-1" in args and "block-2" in args and "run-1" in args
+    placeholders = [int(n) for n in re.findall(r"\$(\d+)", query)]
+    assert max(placeholders) == len(args)
 
 
 @pytest.mark.asyncio
