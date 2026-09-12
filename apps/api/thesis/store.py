@@ -44,6 +44,11 @@ CREATE TABLE IF NOT EXISTS ts_claim (
     attacked_at timestamptz,                -- when the refuter last went after it
     PRIMARY KEY (thesis_id, rung)
 );
+-- The written case on each side. Evidence rows are not an argument: a reader handed six quotes has
+-- to do the reasoning themselves, and the reasoning is the work.
+ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS case_for text NOT NULL DEFAULT '';
+ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS case_against text NOT NULL DEFAULT '';
+ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS leans text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS ts_evidence (
     id          text PRIMARY KEY,
@@ -172,6 +177,20 @@ async def set_verdict(pool, thesis_id: str, rung: str, verdict: str, note: str =
                  WHERE thesis_id = $1 AND rung = $2""",     # noqa: S608 — literal, not user input
             thesis_id, rung, verdict, note[:400])
         await conn.execute("UPDATE ts_thesis SET updated_at = now() WHERE id = $1", thesis_id)
+
+
+async def set_cases(pool, thesis_id: str, cases: dict[str, dict]) -> int:
+    if not cases:
+        return 0
+    await ensure_schema(pool)
+    async with pool.acquire() as conn, conn.transaction():
+        for rung, c in cases.items():
+            await conn.execute(
+                """UPDATE ts_claim SET case_for = $3, case_against = $4, leans = $5
+                    WHERE thesis_id = $1 AND rung = $2""",
+                thesis_id, rung, c.get("case_for") or "", c.get("case_against") or "",
+                c.get("leans") or "")
+    return len(cases)
 
 
 async def set_focus(pool, thesis_id: str, rung: str) -> None:

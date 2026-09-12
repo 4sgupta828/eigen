@@ -70,3 +70,34 @@ test("evidence rides the turn that argues from it", () => {
   assert.match(SRC, /function payloadHtml\(pay\)/);
   assert.match(SRC, /i === turns\.length - 1/, "only the live turn carries its grounds");
 });
+
+test("the takes render as a table with both cases side by side", () => {
+  assert.match(SRC, /function takesHtml\(d\)/);
+  assert.match(SRC, /<th>The take<\/th><th>The case for<\/th><th>The case against<\/th>/,
+    "a reader has to be able to compare the two cases without scrolling between them");
+});
+
+test("an empty side says so rather than being left blank", () => {
+  // "There is no case to make for this yet" is the most useful sentence this mode produces.
+  assert.match(SRC, /Nothing in the record speaks to this side yet/);
+});
+
+test("every row can be asked about, and the question carries its rung", () => {
+  assert.match(SRC, /async function askRow\(rung, text\)/);
+  assert.match(SRC, /body: JSON\.stringify\(\{text: text, rung: rung\}\)/,
+    "without the rung the answer lands on whatever claim was in focus, not the one asked about");
+  assert.match(SRC, /data-asked="/, "each row needs its own control");
+});
+
+test("the table stacks into cards on a phone", () => {
+  const css = SRC.slice(SRC.indexOf(".th-table{"), SRC.indexOf(".th-table{") + 2600);
+  assert.match(css, /@media \(max-width:760px\)/, "a side-by-side table is unreadable at 400px");
+  assert.match(css, /td\[data-col\]::before\{content:attr\(data-col\)/,
+    "stacked cells lose their column, so the label has to come back");
+});
+
+test("citations hang off the case they support", () => {
+  assert.match(SRC, /function citesHtml\(ev, side\)/);
+  assert.match(SRC, /e\.signal_only \? " \\u00b7 signal"/,
+    "sentiment stays labelled even when it is only a chip");
+});

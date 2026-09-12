@@ -18,6 +18,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
+from . import argue as arg
 from . import attack as atk
 from . import converse as conv
 from . import decompose as dec
@@ -55,6 +56,11 @@ class CallIn(BaseModel):
 
 class TurnIn(BaseModel):
     text: str = ""            # the user pushing back; blank asks the agent to open
+    # WHICH ROW this question is about. A follow-up hung off a table row carries its own subject, so
+    # the answer lands on the claim it actually bears on — the first version always credited whatever
+    # rung happened to be in focus, so an answer about who owns the budget was filed under "does the
+    # problem exist".
+    rung: str = ""
 
 
 def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge_llm=None,
@@ -142,6 +148,15 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             if c["settleable"] == CALL_ONLY and c["verdict"] == OPEN:
                 await tstore.set_verdict(pool, thesis_id, c["rung"], UNSETTLEABLE,
                                          "No document can settle this. It needs a person.")
+        # Now WRITE BOTH CASES. One call for the whole thesis, after every claim has its evidence —
+        # ten separate calls cost ten times as much and argue each claim without knowing the others.
+        fresh = await tstore.get(pool, thesis_id=thesis_id, owner_id=await _owner(authorization))
+        try:
+            cases = await arg.cases_for(_llm_json(), thesis=fresh["thesis"],
+                                        claims=fresh["claims"])
+            await tstore.set_cases(pool, thesis_id, cases)
+        except Exception:      # noqa: BLE001 — a table without written cases still shows its evidence
+            pass
         return {"status": "ok", "attacked": done,
                 "thesis": await tstore.get(pool, thesis_id=thesis_id,
                                            owner_id=await _owner(authorization))}
@@ -199,7 +214,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
 
         if said:
             await tstore.add_turn(pool, thesis_id, role="user", text=said)
-            focus = _focus_claim(d)
+            # A question asked ON A ROW is about that row.
+            focus = _claim_by_rung(d, body.rung) or _focus_claim(d)
             got = await conv.reply(_llm_json(), thesis=d["thesis"], claim=focus or {},
                                    said=said, history=d.get("turns") or [])
             if got and focus:
@@ -234,6 +250,16 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)}
 
     return r
+
+
+def _claim_by_rung(d: dict, rung: str) -> dict | None:
+    r = (rung or "").strip()
+    if not r:
+        return None
+    for c in d.get("claims") or []:
+        if c["rung"] == r:
+            return c
+    return None
 
 
 def _focus_claim(d: dict) -> dict | None:

@@ -398,6 +398,44 @@
   .th-pip[data-v="unsettleable"]{background:#6b7fd7;}
   .th-pip[data-v="set_aside"]{background:var(--hair);opacity:.45;}
   .th-focus{border-left:2px solid var(--gold);padding-left:.7rem;}
+
+  /* THE TABLE OF TAKES. One row per claim, the case for and the case against side by side, because
+     the whole point is that a reader can compare them without scrolling between them. Below 760px a
+     side-by-side table stops being readable, so each row becomes a card and the two cases stack —
+     still labelled, still in the same order, never hidden behind a toggle. */
+  .th-table{width:100%;border-collapse:collapse;font-size:.85rem;}
+  .th-table th{text-align:left;font-family:var(--mono);font-size:.6rem;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--dim);font-weight:500;padding:.4rem .6rem;
+    border-bottom:1px solid var(--hair);}
+  .th-table td{vertical-align:top;padding:.7rem .6rem;border-bottom:1px solid var(--hair);
+    line-height:1.55;}
+  .th-table tr[data-leans="for"] td:nth-child(2){background:color-mix(in srgb, var(--verified,#2f7d5b) 7%, transparent);}
+  .th-table tr[data-leans="against"] td:nth-child(3){background:color-mix(in srgb, #b4544a 8%, transparent);}
+  .th-take{font-weight:600;}
+  .th-case{color:var(--ink);}
+  .th-case.empty{color:var(--dim);font-style:italic;}
+  .th-cites{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.4rem;}
+  .th-cite{font-family:var(--mono);font-size:.6rem;color:var(--dim);text-decoration:none;
+    border:1px solid var(--hair);border-radius:7px;padding:.08rem .38rem;white-space:nowrap;
+    max-width:12rem;overflow:hidden;text-overflow:ellipsis;}
+  a.th-cite:hover{color:var(--gold);border-color:var(--gold);}
+  .th-ask-row{display:flex;gap:.4rem;margin-top:.5rem;}
+  .th-ask-row input{flex:1 1 8rem;min-width:0;font:inherit;font-size:.8rem;padding:.35rem .5rem;
+    border:1px solid var(--hair);border-radius:8px;background:var(--panel2);color:var(--ink);}
+  .th-ask-row button{font-family:var(--mono);font-size:.65rem;padding:.35rem .7rem;border-radius:8px;
+    border:1px solid var(--hair);background:var(--panel2);color:var(--ink);cursor:pointer;min-height:34px;}
+  .th-ask-row button:hover{border-color:var(--gold);color:var(--gold);}
+  .th-answer{margin-top:.5rem;padding-left:.6rem;border-left:2px solid var(--gold);font-size:.82rem;
+    line-height:1.6;color:var(--ink);}
+  @media (max-width:760px){
+    .th-table, .th-table tbody, .th-table tr, .th-table td{display:block;width:100%;}
+    .th-table thead{display:none;}
+    .th-table tr{border:1px solid var(--hair);border-radius:12px;padding:.6rem .7rem;margin:0 0 .6rem;}
+    .th-table td{border:0;padding:.35rem 0;}
+    .th-table td[data-col]::before{content:attr(data-col);display:block;font-family:var(--mono);
+      font-size:.58rem;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);margin-bottom:.2rem;}
+    .th-table tr[data-leans] td{background:none !important;}
+  }
   .th-turn{display:flex;gap:.55rem;align-items:flex-start;font-size:.9rem;line-height:1.6;}
   .th-turn .th-who{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;
     padding:.18rem .45rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);
@@ -2466,6 +2504,7 @@
   </div>
   <div class="th-conv" id="th-conv"></div>
   <div class="th-acts" id="th-acts"></div>
+  <div id="th-takes"></div>
   <details class="th-ledger" id="th-ledger">
     <summary id="th-sum">the ledger</summary>
     <div class="th-claims" id="th-claims"></div>
@@ -10984,7 +11023,7 @@ async function openShare(token){
 // The against side is never rendered quieter than the for side. It is why the mode exists.
 // ===================================================================================================
 (function(){
-  const STATE = { id: "", doc: null, busy: false, labels: null };
+  const STATE = { id: "", doc: null, busy: false, labels: null, answers: {} };
   const conv = () => document.getElementById("th-conv");
   const acts = () => document.getElementById("th-acts");
   const claims = () => document.getElementById("th-claims");
@@ -11000,9 +11039,10 @@ async function openShare(token){
       + 'what they do today instead. I will break it into the claims it rests on and go after the '
       + 'weakest one.</span></div>';
     acts().innerHTML = ""; claims().innerHTML = ""; note().textContent = "";
+    if(takes()) takes().innerHTML = "";
   }
 
-  function reset(){ STATE.id = ""; STATE.doc = null; enter(); }
+  function reset(){ STATE.id = ""; STATE.doc = null; STATE.answers = {}; enter(); }
 
   async function loadLabels(){
     try{ const r = await fetch("/thesis/labels"); if(r.ok) STATE.labels = await r.json(); }
@@ -11135,6 +11175,88 @@ async function openShare(token){
     return out;
   }
 
+  // THE TABLE OF TAKES. One row per claim: the take, the case for, the case against — and a place to
+  // ask about THAT row. The question carries its rung, so the answer lands on the claim it is about
+  // rather than on whatever the conversation happened to be looking at.
+  const takes = () => document.getElementById("th-takes");
+
+  function citesHtml(ev, side){
+    const rows = (ev || []).filter(e => e.side === side).slice(0, 4);
+    if(!rows.length) return "";
+    return '<div class="th-cites">' + rows.map(e => {
+      const label = (e.said_by || e.source_key || "source")
+        + (e.signal_only ? " \u00b7 signal" : "");
+      const t = esc2((e.quote || "").slice(0, 220));
+      return e.source_url
+        ? '<a class="th-cite" href="' + esc2(e.source_url) + '" target="_blank" rel="noopener" title="'
+          + t + '">' + esc2(label) + "</a>"
+        : '<span class="th-cite" title="' + t + '">' + esc2(label) + "</span>";
+    }).join("") + "</div>";
+  }
+
+  function caseCell(text, ev, side, col){
+    const missing = !text;
+    return '<td data-col="' + esc2(col) + '"><div class="th-case' + (missing ? " empty" : "")
+      + '">' + esc2(text || "Nothing in the record speaks to this side yet.") + "</div>"
+      + citesHtml(ev, side) + "</td>";
+  }
+
+  function takesHtml(d){
+    const cs = (d.claims || []).filter(c => c.verdict !== "set_aside");
+    if(!cs.length) return "";
+    return '<div style="overflow-x:auto"><table class="th-table"><thead><tr>'
+      + "<th>The take</th><th>The case for</th><th>The case against</th></tr></thead><tbody>"
+      + cs.map(c => {
+          const ev = c.evidence || [];
+          const ans = STATE.answers[c.rung];
+          return '<tr data-leans="' + esc2(c.leans || "") + '">'
+            + '<td data-col="The take"><div class="th-take">' + esc2(c.claim) + "</div>"
+            + '<div style="margin-top:.35rem"><span class="th-v" data-v="' + esc2(c.verdict) + '">'
+            + esc2(c.verdict.replace("_", " ")) + "</span></div>"
+            + '<div class="th-ask-row"><input type="text" data-ask="' + esc2(c.rung)
+            + '" placeholder="ask about this take\u2026" aria-label="ask about this take">'
+            + '<button type="button" data-asked="' + esc2(c.rung) + '">Ask</button></div>'
+            + (ans ? '<div class="th-answer">' + esc2(ans) + "</div>" : "")
+            + "</td>"
+            + caseCell(c.case_for, ev, "for", "The case for")
+            + caseCell(c.case_against, ev, "against", "The case against")
+            + "</tr>";
+        }).join("")
+      + "</tbody></table></div>";
+  }
+
+  function wireTakes(){
+    const host = takes(); if(!host) return;
+    const fire = (rung) => {
+      const inp = host.querySelector('[data-ask="' + CSS.escape(rung) + '"]');
+      const t = (inp && inp.value || "").trim();
+      if(!t) return;
+      inp.value = ""; inp.disabled = true;
+      askRow(rung, t).finally(() => { inp.disabled = false; });
+    };
+    host.querySelectorAll("[data-asked]").forEach(b =>
+      b.addEventListener("click", () => fire(b.dataset.asked)));
+    host.querySelectorAll("[data-ask]").forEach(i =>
+      i.addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); fire(i.dataset.ask); } }));
+  }
+
+  async function askRow(rung, text){
+    if(STATE.busy) return;
+    STATE.busy = true;
+    STATE.answers[rung] = "\u2026";
+    takes().innerHTML = takesHtml(STATE.doc); wireTakes();
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/turn",
+                            {method: "POST", headers: hdrs(),
+                             body: JSON.stringify({text: text, rung: rung})});
+      const d = await r.json();
+      STATE.answers[rung] = (d.move && d.move.text) || "no answer came back";
+      if(d.thesis) STATE.doc = d.thesis;
+      render();
+    }catch(e){ STATE.answers[rung] = "that question failed to send"; render(); }
+    finally{ STATE.busy = false; }
+  }
+
   function render(){
     const d = STATE.doc;
     if(!d) return;
@@ -11160,6 +11282,8 @@ async function openShare(token){
       try{ navigator.clipboard.writeText(location.origin + "/app#thesis/" + STATE.id);
            sh.textContent = "copied"; }catch(e){ /* clipboard is a nicety */ }
     });
+
+    takes().innerHTML = takesHtml(d); wireTakes();
 
     // The ledger: pips in the summary, the claims themselves only when it is opened.
     const cs = d.claims || [];
