@@ -49,3 +49,6 @@ pip-wheel-metadata/
 
 # Local session scratch notes (never part of the repo)
 claude_session.txt
+
+# Local isolated development worktrees
+.worktrees/
