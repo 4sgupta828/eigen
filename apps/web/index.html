@@ -399,32 +399,16 @@
   .th-pip[data-v="set_aside"]{background:var(--hair);opacity:.45;}
   .th-focus{border-left:2px solid var(--gold);padding-left:.7rem;}
 
-  /* THE TABLE OF TAKES. One row per claim, the case for and the case against side by side, because
-     the whole point is that a reader can compare them without scrolling between them. Below 760px a
-     side-by-side table stops being readable, so each row becomes a card and the two cases stack —
-     still labelled, still in the same order, never hidden behind a toggle. */
-  .th-table{width:100%;border-collapse:collapse;font-size:.85rem;}
-  .th-table th{text-align:left;font-family:var(--mono);font-size:.6rem;letter-spacing:.07em;
-    text-transform:uppercase;color:var(--dim);font-weight:500;padding:.4rem .6rem;
-    border-bottom:1px solid var(--hair);}
-  .th-table td{vertical-align:top;padding:.7rem .6rem;border-bottom:1px solid var(--hair);
-    line-height:1.55;}
-  .th-table tr[data-leans="for"] td:nth-child(2){background:color-mix(in srgb, var(--verified,#2f7d5b) 7%, transparent);}
-  .th-table tr[data-leans="against"] td:nth-child(3){background:color-mix(in srgb, #b4544a 8%, transparent);}
-  .th-take{font-weight:600;}
   .th-case{color:var(--ink);}
   .th-case.empty{color:var(--dim);font-style:italic;}
-  .th-cites{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.4rem;}
-  .th-cite{font-family:var(--mono);font-size:.6rem;color:var(--dim);text-decoration:none;
-    border:1px solid var(--hair);border-radius:7px;padding:.08rem .38rem;white-space:nowrap;
-    max-width:12rem;overflow:hidden;text-overflow:ellipsis;}
-  a.th-cite:hover{color:var(--gold);border-color:var(--gold);}
   .th-ask-row{display:flex;gap:.4rem;margin-top:.5rem;}
   .th-ask-row input{flex:1 1 8rem;min-width:0;font:inherit;font-size:.8rem;padding:.35rem .5rem;
     border:1px solid var(--hair);border-radius:8px;background:var(--panel2);color:var(--ink);}
   .th-ask-row button{font-family:var(--mono);font-size:.65rem;padding:.35rem .7rem;border-radius:8px;
-    border:1px solid var(--hair);background:var(--panel2);color:var(--ink);cursor:pointer;min-height:34px;}
+    border:1px solid var(--hair);background:var(--panel2);color:var(--ink);cursor:pointer;min-height:44px;}
   .th-ask-row button:hover{border-color:var(--gold);color:var(--gold);}
+  .th-note-btn{min-height:44px;margin-top:.45rem;padding:.35rem .7rem;border:1px solid var(--hair);
+    border-radius:8px;background:var(--panel2);color:var(--ink);font:.65rem var(--mono);cursor:pointer;}
   .th-progress{font-family:var(--mono);font-size:.68rem;color:var(--dim);margin:.1rem 0 .6rem;
     display:flex;align-items:center;gap:.45rem;min-height:1.1rem;line-height:1.5;}
   .th-progress:empty{display:none;}
@@ -434,22 +418,24 @@
   .th-ref:hover{border-color:var(--gold);}
   .th-flash{border-color:var(--gold) !important;color:var(--gold) !important;
     background:color-mix(in srgb, var(--gold) 12%, transparent);}
-  .th-overall{margin:1.1rem 0 0;padding:.9rem 1rem;border:1px solid var(--hair);border-radius:14px;
-    background:var(--panel);}
-  .th-overall > h4{margin:0 0 .5rem;font-size:.95rem;font-weight:650;}
-  .th-overall > p{margin:.5rem 0 0;font-size:.9rem;line-height:1.65;}
-  .th-tally{display:flex;flex-wrap:wrap;gap:.35rem;}
+  .th-decision{margin:.55rem 0 1rem;padding:1rem;border:1px solid var(--hair);border-radius:16px;
+    background:linear-gradient(145deg,color-mix(in srgb,var(--gold) 8%,var(--panel)),var(--panel));}
+  .th-decision-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem;flex-wrap:wrap;}
+  .th-decision-kicker{font:600 .62rem/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);}
+  .th-decision h2{font:600 1.5rem/1.15 var(--serif);margin:.22rem 0 .35rem;}
+  .th-decision p{margin:.25rem 0;line-height:1.6;}
+  .th-decision-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.85rem;}
+  .th-decision-card{border-top:1px solid var(--hair);padding-top:.65rem;min-width:0;overflow-wrap:anywhere;}
+  .th-decision-card h3{font:600 .65rem/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--dim);margin:0 0 .4rem;}
+  .th-decision-card ul{padding-left:1.1rem;margin:.25rem 0;}
+  .th-decision-card li{margin:.35rem 0;line-height:1.5;}
+  .th-readonly{font:.62rem/1.2 var(--mono);padding:.28rem .55rem;border:1px solid var(--hair);
+    border-radius:999px;color:var(--dim);}
+  .th-recents{margin:.55rem 0 1rem;border:1px solid var(--hair);border-radius:12px;padding:.75rem;}
+  .th-recents[hidden]{display:none;}
   .th-answer{margin-top:.5rem;padding-left:.6rem;border-left:2px solid var(--gold);font-size:.82rem;
     line-height:1.6;color:var(--ink);}
-  @media (max-width:760px){
-    .th-table, .th-table tbody, .th-table tr, .th-table td{display:block;width:100%;}
-    .th-table thead{display:none;}
-    .th-table tr{border:1px solid var(--hair);border-radius:12px;padding:.6rem .7rem;margin:0 0 .6rem;}
-    .th-table td{border:0;padding:.35rem 0;}
-    .th-table td[data-col]::before{content:attr(data-col);display:block;font-family:var(--mono);
-      font-size:.58rem;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);margin-bottom:.2rem;}
-    .th-table tr[data-leans] td{background:none !important;}
-  }
   .th-turn{display:flex;gap:.55rem;align-items:flex-start;font-size:.9rem;line-height:1.6;}
   .th-turn .th-who{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;
     padding:.18rem .45rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);
@@ -490,12 +476,18 @@
   .th-person{display:flex;gap:.4rem;align-items:baseline;font-size:.8rem;margin:.25rem 0;}
   .th-acts{display:flex;flex-wrap:wrap;gap:.4rem;margin:.6rem 0;}
   .th-acts button{font-family:var(--mono);font-size:.68rem;padding:.4rem .8rem;border-radius:999px;
-    border:1px solid var(--hair);background:var(--panel2);color:var(--ink);cursor:pointer;min-height:40px;}
+    border:1px solid var(--hair);background:var(--panel2);color:var(--ink);cursor:pointer;min-height:44px;}
   .th-acts button:hover{border-color:var(--gold);color:var(--gold);}
+  .th-acts button:focus-visible,.th-ask-row button:focus-visible,.th-ask-row input:focus-visible,
+  .th-ledger > summary:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
   @media (max-width:560px){
+    .th-decision-grid{grid-template-columns:1fr;}
     .th-turn .th-who{min-width:3.4rem;}
     .th-claim{padding:.6rem .65rem;}
     .th-ev{flex-wrap:wrap;}
+    .th-acts{display:grid;grid-template-columns:1fr;}
+    .th-acts button{width:100%;}
+    .th-q,.th-case{overflow-wrap:anywhere;word-break:break-word;}
   }
 
   /* ===== DeepDive — one company, read end to end (body[data-mode="deepdive"]) =====
@@ -2516,15 +2508,19 @@
     <button type="button" class="vo-chip" id="th-recent" title="Theses you have tested">🕘 Recent</button>
     <button type="button" class="vo-chip" id="th-reset" title="Start a new thesis">↻ New thesis</button>
   </div>
-  <div class="th-conv" id="th-conv"></div>
-  <div class="th-acts" id="th-acts"></div>
-  <p class="th-progress" id="th-progress"></p>
+  <div class="th-recents" id="th-recents" hidden></div>
+  <p class="dd-note" id="th-note" role="alert" aria-live="assertive"></p>
+  <p class="th-progress" id="th-progress" role="status" aria-live="polite"></p>
   <div id="th-takes"></div>
+  <div class="th-acts" id="th-acts"></div>
   <details class="th-ledger" id="th-ledger">
-    <summary id="th-sum">the ledger</summary>
+    <summary id="th-sum">Claims and evidence</summary>
     <div class="th-claims" id="th-claims"></div>
   </details>
-  <p class="dd-note" id="th-note"></p>
+  <details class="th-ledger">
+    <summary>Research conversation</summary>
+    <div class="th-conv" id="th-conv"></div>
+  </details>
 </section>
 
 <section id="investorsbody" aria-label="Investor search">
@@ -11038,11 +11034,38 @@ async function openShare(token){
 // The against side is never rendered quieter than the for side. It is why the mode exists.
 // ===================================================================================================
 (function(){
-  const STATE = { id: "", doc: null, busy: false, labels: null, answers: {}, progress: null };
+  const OWNER_KEY = "eigen.thesis.owners.v1";
+  function readOwners(){
+    try{ const v = JSON.parse(localStorage.getItem(OWNER_KEY) || "{}");
+         return v && typeof v === "object" ? v : {}; }catch(e){ return {}; }
+  }
+  function saveOwners(v){ try{ localStorage.setItem(OWNER_KEY, JSON.stringify(v || {})); }catch(e){} }
+  const STATE = { id: "", doc: null, busy: false, labels: null, answers: {}, progress: null,
+                  share: "", run: "", owners: readOwners() };
   const conv = () => document.getElementById("th-conv");
   const acts = () => document.getElementById("th-acts");
   const claims = () => document.getElementById("th-claims");
   const note = () => document.getElementById("th-note");
+
+  function ownerHeaders(id, owners, user){
+    const h = {"content-type": "application/json"};
+    if(user && user.token) h["authorization"] = user.token;
+    const capability = (owners || {})[id || ""];
+    if(capability) h["X-Thesis-Owner"] = capability;
+    return h;
+  }
+  function thesisUrl(id, share){
+    return location.origin + "/app#thesis/" + encodeURIComponent(id)
+      + (share ? "?share=" + encodeURIComponent(share) : "");
+  }
+  function parseThesisHash(hash){
+    const raw = String(hash || "").replace(/^#thesis\/?/, "");
+    const parts = raw.split("?");
+    return {id: decodeURIComponent(parts[0] || ""),
+            share: new URLSearchParams(parts[1] || "").get("share") || ""};
+  }
+  const canMutate = d => !!(d && d.is_owner);
+  const newThesisHash = () => "#thesis";
 
   const REG = {filed: "▣", stated: "▢", observed: "◈"};
 
@@ -11054,10 +11077,16 @@ async function openShare(token){
       + 'what they do today instead. I will break it into the claims it rests on and go after the '
       + 'weakest one.</span></div>';
     acts().innerHTML = ""; claims().innerHTML = ""; note().textContent = "";
-    if(takes()) takes().innerHTML = "";
+    if(takes()) takes().innerHTML = decisionHtml({is_owner:true, claims:[]});
   }
 
-  function reset(){ STATE.id = ""; STATE.doc = null; STATE.answers = {}; STATE.progress = null; enter(); }
+  function reset(){
+    STATE.id = ""; STATE.doc = null; STATE.answers = {}; STATE.progress = null;
+    STATE.share = ""; STATE.run = "";
+    try{ history.replaceState(null, "", newThesisHash()); }catch(e){}
+    const recentPanel = document.getElementById("th-recents"); if(recentPanel) recentPanel.hidden = true;
+    enter();
+  }
 
   async function loadLabels(){
     try{ const r = await fetch("/thesis/labels"); if(r.ok) STATE.labels = await r.json(); }
@@ -11074,29 +11103,44 @@ async function openShare(token){
     }
     STATE.busy = true;
     conv().insertAdjacentHTML("beforeend", turnHtml("user", "", t));
-    note().innerHTML = '<span class="su-spin"></span> reading the thesis…';
+    note().textContent = "";
+    renderProgressText("Projecting the claim decomposition cost…");
     try{
+      const projectedResponse = await fetch("/thesis", {method:"POST", headers: hdrs(),
+        body: JSON.stringify({thesis: t, project_only: true})});
+      const projected = await projectedResponse.json();
+      const max = Number((projected.projection || {}).projected_usd || 0);
+      if(!projectedResponse.ok) throw new Error(projected.detail || "could not project this thesis");
+      if(!window.confirm("Build the claim ladder?\n\nProjected maximum: $" + max.toFixed(3))) return;
+      renderProgressText("Building a small, falsifiable claim ladder…");
       const r = await fetch("/thesis", {method:"POST", headers: hdrs(),
-                                        body: JSON.stringify({thesis: t})});
+                                        body: JSON.stringify({thesis: t, max_usd: max})});
       const d = await r.json();
       if(!r.ok || !d.thesis) throw new Error(d.detail || "could not read that thesis");
       STATE.id = d.id; STATE.doc = d.thesis;
+      if(d.owner_token){ STATE.owners[d.id] = d.owner_token; saveOwners(STATE.owners); }
       history.replaceState(null, "", "#thesis/" + encodeURIComponent(d.id));
       render();
       // Open on ONE claim rather than presenting ten. A wall of claims is the dump this mode exists
       // not to be; the ledger holds the whole set for anyone who wants it at once.
       STATE.busy = false; await turn();
     }catch(e){ note().textContent = e.message || String(e); }
-    finally{ STATE.busy = false; }
+    finally{ STATE.busy = false; renderProgressText(""); }
   }
 
-  async function open(id){
-    if(!id) return;
+  async function open(id, share){
+    const parsed = parseThesisHash("#thesis/" + (id || "")
+                                  + (share ? "?share=" + encodeURIComponent(share) : ""));
+    if(!parsed.id) return;
+    STATE.share = parsed.share;
     try{
-      const r = await fetch("/thesis/" + encodeURIComponent(id), {headers: hdrs()});
+      const r = await fetch("/thesis/" + encodeURIComponent(parsed.id)
+                            + (parsed.share ? "?share=" + encodeURIComponent(parsed.share) : ""),
+                            {headers: hdrs(parsed.id)});
       const d = await r.json();
-      if(r.ok && d.thesis){ STATE.id = id; STATE.doc = d.thesis; render(); }
-    }catch(e){ note().textContent = "could not open that thesis"; }
+      if(!r.ok || !d.thesis) throw new Error(d.detail || "could not open that thesis");
+      STATE.id = parsed.id; STATE.doc = d.thesis; render();
+    }catch(e){ note().textContent = e.message || "could not open that thesis"; }
   }
 
   async function post(path, body){
@@ -11110,20 +11154,21 @@ async function openShare(token){
                             {method:"POST", headers: hdrs(), body: JSON.stringify(body || {})});
       const d = await r.json();
       if(d.status === "refused"){ note().textContent = d.reason || "refused"; return; }
+      if(!r.ok) throw new Error(d.detail || "request failed");
       if(d.thesis) STATE.doc = d.thesis;
       render();
     }catch(e){ note().textContent = e.message || String(e); }
-    finally{ STATE.busy = false; if(prog) prog.innerHTML = ""; }
+    finally{ STATE.busy = false; if(prog) prog.textContent = ""; }
   }
 
   // ONE CLAIM AT A TIME, so the reader can see it working. The whole thesis in one request took
   // minutes, showed its only spinner in a note at the bottom of the section — below the ledger,
   // usually off screen — and left the button looking untouched. Clicking it appeared to do nothing.
   async function attack(){
-    if(STATE.busy) return;
+    if(STATE.busy || !canMutate(STATE.doc)) return;
     const d = STATE.doc; if(!d) return;
     const todo = (d.claims || []).filter(c => c.settleable !== "call_only" && !c.attacked);
-    if(!todo.length) return turn();
+    if(!todo.length) return;
     STATE.busy = true;
     const btn = document.getElementById("th-attack");
     const tick = (msg) => { if(btn) btn.textContent = msg; };
@@ -11131,14 +11176,37 @@ async function openShare(token){
     let done = 0;
     tick("Working \u2014 0 of " + todo.length);
     try{
+      note().textContent = "";
+      const key = "research-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+      const projectionResponse = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/research/start",
+        {method: "POST", headers: hdrs(),
+         body: JSON.stringify({max_usd: 0, idempotency_key: key, web: true})});
+      const projectionBody = await projectionResponse.json();
+      if(!projectionResponse.ok && projectionResponse.status !== 409)
+        throw new Error(projectionBody.detail || "could not project research");
+      const projection = projectionBody.projection || {};
+      const max = Number(projection.projected_usd || 0);
+      const parts = projection.components || {};
+      const detail = ["refutation $" + Number(parts.refutation || 0).toFixed(3),
+                      "evidence checks $" + Number(parts.relationship_judgment || 0).toFixed(3),
+                      "web ceiling $" + Number(parts.web_ceiling || 0).toFixed(3),
+                      "decision brief $" + Number(parts.case_synthesis || 0).toFixed(3)].join(" · ");
+      if(!window.confirm("Test this thesis against the evidence?\n\nProjected maximum: $"
+                         + max.toFixed(3) + "\n" + detail)) return;
+      const startResponse = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/research/start",
+        {method: "POST", headers: hdrs(),
+         body: JSON.stringify({max_usd: max, idempotency_key: key, web: true})});
+      const started = await startResponse.json();
+      if(!startResponse.ok || !started.run) throw new Error(started.detail || "could not start research");
+      STATE.run = started.run.id;
       for(const c of todo){
         STATE.progress = {rung: c.rung, done: done, total: todo.length};
         renderProgress();
         const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/attack",
                               {method: "POST", headers: hdrs(),
-                               body: JSON.stringify({rung: c.rung, argue: false, max_usd: 0.30})});
+                               body: JSON.stringify({rung: c.rung, argue: false, run_id: STATE.run})});
         const j = await r.json();
-        if(j.status === "refused"){ note().textContent = j.reason || "refused"; break; }
+        if(!r.ok) throw new Error(j.detail || "research failed on " + c.rung.replace(/_/g, " "));
         // The table updates as each take lands, or the progress count is a lie too.
         if(j.thesis){ STATE.doc = j.thesis; takes().innerHTML = takesHtml(STATE.doc); wireTakes(); }
         done++;
@@ -11148,9 +11216,12 @@ async function openShare(token){
       renderProgress();
       tick("Writing the cases\u2026");
       const r2 = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/argue",
-                             {method: "POST", headers: hdrs(), body: "{}"});
+                             {method: "POST", headers: hdrs(), body: JSON.stringify({run_id: STATE.run})});
       const j2 = await r2.json();
+      if(!r2.ok) throw new Error(j2.detail || "decision brief failed");
       if(j2.thesis) STATE.doc = j2.thesis;
+      if(j2.synthesis_status === "failed")
+        note().textContent = "The evidence is intact, but the written cases could not be generated.";
     }catch(e){ note().textContent = "that run failed: " + (e.message || e); }
     finally{ STATE.busy = false; STATE.progress = null; render(); }
   }
@@ -11170,10 +11241,11 @@ async function openShare(token){
   const turn = () => post("/turn", {});
   const say = (text) => post("/turn", {text: text});
 
-  function hdrs(){
-    const h = {"content-type": "application/json"};
-    if(window.USER && USER.token) h["authorization"] = USER.token;
-    return h;
+  function hdrs(id){ return ownerHeaders(id || STATE.id, STATE.owners, window.USER || null); }
+
+  function renderProgressText(text){
+    const el = document.getElementById("th-progress");
+    if(el) el.textContent = text || "";
   }
 
   function esc2(x){ return esc(String(x == null ? "" : x)); }
@@ -11194,14 +11266,17 @@ async function openShare(token){
     // A call carries WHO said it. That is what stops one person's account reading like a filing.
     const who = e.said_by ? '<span class="th-src">' + esc2(e.said_by)
       + (e.said_role ? " · " + esc2(e.said_role) : "") + "</span>" : "";
-    return '<div class="th-ev" data-side="' + esc2(e.side) + '">'
+    const meta = [e.source_subject, e.evidence_kind, e.period || e.as_of].filter(Boolean).join(" · ");
+    const relation = e.relation || (e.signal_only ? "signal" : "context");
+    return '<div class="th-ev" id="evidence-' + esc2(e.id || "") + '" data-side="' + esc2(e.side) + '">'
       + '<span title="' + esc2(e.register) + '">' + (REG[e.register] || "▢") + "</span>"
       + '<span class="th-q">' + esc2((e.quote || "").slice(0, 300))
-      + (e.signal_only ? ' <span class="th-signal">signal, not evidence</span>' : "")
+      + ' <span class="th-signal">' + esc2(relation.replace(/_/g, " ")) + "</span>"
+      + (meta ? '<small class="th-note">' + esc2(meta) + "</small>" : "")
       + "</span>" + who + src + "</div>";
   }
 
-  function claimHtml(c, focused){
+  function claimHtml(c, focused, owner){
     const ev = c.evidence || [];
     const against = ev.filter(e => e.side === "against");
     const forr = ev.filter(e => e.side === "for");
@@ -11209,15 +11284,29 @@ async function openShare(token){
     const sides = against.concat(forr).map(evHtml).join("");
     const ask = (c.settleable === "call_only")
       ? '<div class="th-ask"><b>Only a person can answer this.</b></div>' : "";
+    const status = c.research_status || c.verdict || "open";
+    const ownerTools = owner
+      ? '<div class="th-ask-row"><input type="text" data-edit="' + esc2(c.rung)
+        + '" value="' + esc2(c.claim) + '" aria-label="Edit ' + esc2(c.rung.replace(/_/g, " "))
+        + ' claim"><button type="button" data-save="' + esc2(c.rung) + '">Save claim</button></div>'
+        + '<div class="th-ask-row"><input type="text" data-ask="' + esc2(c.rung)
+        + '" placeholder="Ask about this claim…" aria-label="Ask about '
+        + esc2(c.rung.replace(/_/g, " ")) + '"><button type="button" data-asked="'
+        + esc2(c.rung) + '">Ask</button></div>'
+        + (c.settleable === "call_only" ? '<button type="button" class="th-note-btn" data-call="'
+            + esc2(c.rung) + '">Add interview note</button>' : "")
+      : "";
     return '<div class="th-claim' + (focused ? " th-focus" : "") + '"><h4>'
       + esc2(c.claim) + "</h4>"
       + '<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">'
       + '<span class="th-rung">' + esc2(c.rung.replace(/_/g, " ")) + "</span>"
-      + '<span class="th-v" data-v="' + esc2(c.verdict) + '">' + esc2(c.verdict.replace("_", " ")) + "</span>"
+      + (c.critical ? '<span class="th-v">critical</span>' : "")
+      + '<span class="th-v" data-v="' + esc2(status) + '">' + esc2(status.replace(/_/g, " ")) + "</span>"
       + "</div>"
       + (c.note ? '<p class="th-note">' + esc2(c.note) + "</p>" : "")
       + ask
       + (sides ? '<div class="th-sides">' + sides + "</div>" : "")
+      + ownerTools
       + "</div>";
   }
 
@@ -11246,96 +11335,56 @@ async function openShare(token){
   // rather than on whatever the conversation happened to be looking at.
   const takes = () => document.getElementById("th-takes");
 
-  function citesHtml(ev, side, rows, rung){
-    const mine = (rows || []).map((e, i) => [e, i + 1]).filter(([e]) => e.side === side);
-    if(!mine.length) return "";
-    return '<div class="th-cites">' + mine.map(([e, n]) => {
-      const label = n + ". " + (e.said_by || e.source_key || "source")
-        + (e.signal_only ? " \u00b7 signal" : "");
-      const t = esc2((e.quote || "").slice(0, 300));
-      const id = esc2(rung + ":" + n);
-      return e.source_url
-        ? '<a class="th-cite" id="cite-' + id + '" href="' + esc2(e.source_url)
-          + '" target="_blank" rel="noopener" title="' + t + '">' + esc2(label) + " \u2197</a>"
-        : '<span class="th-cite" id="cite-' + id + '" title="' + t + '">' + esc2(label) + "</span>";
-    }).join("") + "</div>";
-  }
-
-  // Rows are numbered ACROSS both sides, exactly as the arguer numbered them, so a [3] in the case
-  // text points at the same row the reader can click. Numbering per-side would silently renumber the
-  // against rows and every citation on that side would point at the wrong source.
-  function numberedEv(ev){
-    const out = [];
-    for(const side of ["for", "against"]){
-      let n = 0;
-      for(const e of (ev || [])){
-        if(e.side !== side) continue;
-        out.push(e); if(++n >= 4) break;
-      }
-    }
-    return out;
-  }
-
-  // [1] and [1][3] become superscript markers that scroll to — and flash — the chip they cite.
-  function linkCites(text, rows, key){
-    return esc2(text).replace(/\[(\d{1,2})\]/g, (m, n) => {
-      const e = rows[Number(n) - 1];
-      if(!e) return "";                       // a citation to a row that does not exist is not shown
-      return '<a class="th-ref" href="#" data-cite="' + esc2(key + ":" + n) + '" title="'
-        + esc2((e.quote || "").slice(0, 200)) + '">' + esc2(n) + "</a>";
+  function linkEvidence(text, evidence){
+    const byId = {};
+    (evidence || []).forEach(e => { if(e && e.id) byId[e.id] = e; });
+    return esc2(text).replace(/\[\[e:([A-Za-z0-9_-]{1,80})\]\]/g, (_marker, id) => {
+      const e = byId[id]; if(!e) return "";
+      return '<a class="th-ref" href="#" data-evidence="' + esc2(id) + '" title="'
+        + esc2((e.quote || "").slice(0, 200)) + '">source</a>';
     });
   }
 
-  function caseCell(text, ev, side, col, rung){
-    const rows = numberedEv(ev);
-    const missing = !text;
-    const body = missing
-      ? esc2("Nothing in the record speaks to this side yet.")
-      : linkCites(text, rows, rung);
-    return '<td data-col="' + esc2(col) + '"><div class="th-case' + (missing ? " empty" : "")
-      + '">' + body + "</div>" + citesHtml(ev, side, rows, rung) + "</td>";
+  function decisionHtml(d){
+    d = d || {};
+    const cs = d.claims || [];
+    const evidence = cs.flatMap(c => c.evidence || []);
+    const decision = d.decision || {};
+    const labels = {fund: "Fund", pass: "Pass", continue_diligence: "Continue diligence"};
+    const recommendation = labels[decision.recommendation] || "Ready to test";
+    const reason = decision.reason || "Edit the critical claims, then approve one evidence run.";
+    const decisive = new Set(decision.decisive_claims || []);
+    const reasons = cs.filter(c => decisive.has(c.rung));
+    const forCases = cs.filter(c => c.case_for).map(c => linkEvidence(c.case_for, evidence));
+    const againstCases = cs.filter(c => c.case_against).map(c => linkEvidence(c.case_against, evidence));
+    const unresolved = cs.filter(c => c.critical && !["supported", "contradicted"].includes(
+      c.research_status || c.verdict));
+    const list = (rows, empty) => rows.length
+      ? "<ul>" + rows.map(x => "<li>" + x + "</li>").join("") + "</ul>"
+      : '<p class="th-note">' + esc2(empty) + "</p>";
+    return '<section class="th-decision" aria-label="Investment decision brief">'
+      + '<div class="th-decision-head"><div><div class="th-decision-kicker">Current recommendation</div>'
+      + "<h2>" + esc2(recommendation) + "</h2><p>" + esc2(reason) + "</p></div>"
+      + (!canMutate(d) ? '<span class="th-readonly">Read-only shared view</span>' : "") + "</div>"
+      + (reasons.length ? '<div class="th-decision-card"><h3>Decisive claims</h3>'
+          + list(reasons.map(c => esc2(c.claim)), "No decisive claims yet.") + "</div>" : "")
+      + '<div class="th-decision-grid">'
+      + '<div class="th-decision-card"><h3>Case for</h3>'
+      + list(forCases, "No qualified supporting case yet.") + "</div>"
+      + '<div class="th-decision-card"><h3>Case against</h3>'
+      + list(againstCases, "No qualified contradictory case yet.") + "</div>"
+      + '<div class="th-decision-card"><h3>Unresolved cruxes</h3>'
+      + list(unresolved.map(c => esc2(c.claim)), "No unresolved critical claims.") + "</div>"
+      + '<div class="th-decision-card"><h3>What would change this</h3>'
+      + list(unresolved.map(c => esc2(c.what_would_change || c.falsifier
+          || "Find qualified evidence that directly tests this claim.")),
+             cs.length ? "No additional decision-changing evidence is required by the current claim set."
+                       : "State a thesis to identify what evidence would change the decision.") + "</div>"
+      + "</div></section>";
   }
 
   function takesHtml(d){
-    const cs = (d.claims || []).filter(c => c.verdict !== "set_aside");
-    if(!cs.length) return "";
-    return '<div style="overflow-x:auto"><table class="th-table"><thead><tr>'
-      + "<th>The take</th><th>The case for</th><th>The case against</th></tr></thead><tbody>"
-      + cs.map(c => {
-          const ev = c.evidence || [];
-          const ans = STATE.answers[c.rung];
-          return '<tr data-leans="' + esc2(c.leans || "") + '">'
-            + '<td data-col="The take"><div class="th-take">' + esc2(c.claim) + "</div>"
-            + '<div style="margin-top:.35rem"><span class="th-v" data-v="' + esc2(c.verdict) + '">'
-            + esc2(c.verdict.replace("_", " ")) + "</span></div>"
-            + '<div class="th-ask-row"><input type="text" data-ask="' + esc2(c.rung)
-            + '" placeholder="ask about this take\u2026" aria-label="ask about this take">'
-            + '<button type="button" data-asked="' + esc2(c.rung) + '">Ask</button></div>'
-            + (ans ? '<div class="th-answer">' + esc2(ans) + "</div>" : "")
-            + "</td>"
-            + caseCell(c.case_for, ev, "for", "The case for", c.rung)
-            + caseCell(c.case_against, ev, "against", "The case against", c.rung)
-            + "</tr>";
-        }).join("")
-      + "</tbody></table></div>"
-      + overallHtml(d);
-  }
-
-  // THE COLLECTIVE TAKE. Ten rows are ten judgements the reader still has to add up; this is the
-  // addition, and it is the part they act on. It sits under the table because it has no standing
-  // without it.
-  function overallHtml(d){
-    if(!d.overall) return "";
-    const cs = d.claims || [];
-    const n = (v) => cs.filter(c => c.verdict === v).length;
-    const tally = [["contradicted", n("contradicted")], ["under_tested", n("under_tested")],
-                   ["supported", n("supported")], ["unsettleable", n("unsettleable")]]
-      .filter(([, k]) => k)
-      .map(([v, k]) => '<span class="th-v" data-v="' + esc2(v) + '">' + k + " "
-           + esc2(v.replace("_", " ")) + "</span>").join(" ");
-    return '<div class="th-overall"><h4>Taking every take together</h4>'
-      + '<div class="th-tally">' + tally + "</div>"
-      + "<p>" + esc2(d.overall) + "</p></div>";
+    return decisionHtml(d);
   }
 
   function wireTakes(){
@@ -11351,13 +11400,49 @@ async function openShare(token){
       b.addEventListener("click", () => fire(b.dataset.asked)));
     host.querySelectorAll("[data-ask]").forEach(i =>
       i.addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); fire(i.dataset.ask); } }));
-    host.querySelectorAll("[data-cite]").forEach(a => a.addEventListener("click", e => {
+    host.querySelectorAll("[data-evidence]").forEach(a => a.addEventListener("click", e => {
       e.preventDefault();
-      const el = document.getElementById("cite-" + a.dataset.cite);
-      if(!el) return;
+      const el = document.getElementById("evidence-" + a.dataset.evidence); if(!el) return;
+      const ledger = document.getElementById("th-ledger"); if(ledger) ledger.open = true;
       el.scrollIntoView({block: "nearest", behavior: "smooth"});
       el.classList.add("th-flash"); setTimeout(() => el.classList.remove("th-flash"), 1200);
     }));
+  }
+
+  async function saveClaim(rung){
+    const input = claims().querySelector('[data-edit="' + CSS.escape(rung) + '"]');
+    const value = (input && input.value || "").trim(); if(value.length < 8) return;
+    STATE.busy = true; renderProgressText("Saving the revised claim…");
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/claim/"
+                            + encodeURIComponent(rung), {method:"PATCH", headers:hdrs(),
+                              body:JSON.stringify({claim:value})});
+      const body = await r.json(); if(!r.ok) throw new Error(body.detail || "claim update failed");
+      await open(STATE.id);
+    }catch(e){ note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; renderProgressText(""); }
+  }
+
+  async function addInterview(rung){
+    const who = (window.prompt("Who did you speak with?") || "").trim(); if(!who) return;
+    const quote = (window.prompt("What did they say, in their words?") || "").trim(); if(!quote) return;
+    await post("/call", {rung:rung, said_by:who, said_role:"buyer", quote:quote, supports:true});
+  }
+
+  function wireClaims(){
+    const host = claims(); if(!host) return;
+    const ask = rung => {
+      const input = host.querySelector('[data-ask="' + CSS.escape(rung) + '"]');
+      const text = (input && input.value || "").trim(); if(text) askRow(rung, text);
+    };
+    host.querySelectorAll("[data-save]").forEach(b =>
+      b.addEventListener("click", () => saveClaim(b.dataset.save)));
+    host.querySelectorAll("[data-call]").forEach(b =>
+      b.addEventListener("click", () => addInterview(b.dataset.call)));
+    host.querySelectorAll("[data-asked]").forEach(b =>
+      b.addEventListener("click", () => ask(b.dataset.asked)));
+    host.querySelectorAll("[data-ask]").forEach(input =>
+      input.addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); ask(input.dataset.ask); } }));
   }
 
   async function askRow(rung, text){
@@ -11377,6 +11462,17 @@ async function openShare(token){
     finally{ STATE.busy = false; }
   }
 
+  async function shareThesis(button){
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/share",
+                            {method:"POST", headers:hdrs(), body:"{}"});
+      const body = await r.json(); if(!r.ok || !body.share_token)
+        throw new Error(body.detail || "could not create a share link");
+      await navigator.clipboard.writeText(thesisUrl(STATE.id, body.share_token));
+      button.textContent = "Read-only link copied";
+    }catch(e){ note().textContent = e.message || String(e); }
+  }
+
   function render(){
     const d = STATE.doc;
     if(!d) return;
@@ -11388,45 +11484,56 @@ async function openShare(token){
     }).join("");
 
     const unattacked = (d.claims || []).filter(c => c.settleable !== "call_only" && !c.attacked);
-    // One primary action, phrased as the next thing in the conversation rather than a command.
-    acts().innerHTML =
-      (unattacked.length
-        ? '<button type="button" id="th-attack">Go and try to break ' + unattacked.length
-          + " claim" + (unattacked.length === 1 ? "" : "s") + "</button>"
-        : '<button type="button" id="th-next">What is weakest now?</button>')
-      + '<button type="button" id="th-share">Copy link</button>';
+    acts().innerHTML = canMutate(d)
+      ? ((unattacked.length
+          ? '<button type="button" id="th-attack">Test ' + unattacked.length
+            + " claim" + (unattacked.length === 1 ? "" : "s") + " against evidence</button>"
+          : '<button type="button" id="th-next">Discuss the weakest claim</button>')
+        + '<button type="button" id="th-share">Copy read-only link</button>')
+      : "";
     const a = document.getElementById("th-attack"); if(a) a.addEventListener("click", attack);
     const n = document.getElementById("th-next"); if(n) n.addEventListener("click", turn);
     const sh = document.getElementById("th-share");
-    if(sh) sh.addEventListener("click", () => {
-      try{ navigator.clipboard.writeText(location.origin + "/app#thesis/" + STATE.id);
-           sh.textContent = "copied"; }catch(e){ /* clipboard is a nicety */ }
-    });
+    if(sh) sh.addEventListener("click", () => shareThesis(sh));
 
     takes().innerHTML = takesHtml(d); wireTakes();
 
     // The ledger: pips in the summary, the claims themselves only when it is opened.
-    const cs = d.claims || [];
+    const cs = [...(d.claims || [])].sort((a, b) => Number(!!b.critical) - Number(!!a.critical));
     const pips = cs.map(c => '<span class="th-pip" data-v="' + esc2(c.verdict) + '" title="'
       + esc2(c.rung.replace(/_/g, " ") + " \u2014 " + c.verdict.replace("_", " ")) + '"></span>').join("");
-    const done = cs.filter(c => c.verdict !== "open").length;
+    const done = cs.filter(c => (c.research_status || c.verdict) !== "open").length;
     const sum = document.getElementById("th-sum");
     if(sum) sum.innerHTML = pips + " <span>" + done + " of " + cs.length + " claims tested</span>";
-    claims().innerHTML = cs.map(c => claimHtml(c, c.rung === d.focus_rung)).join("");
-    note().textContent = "";
+    claims().innerHTML = cs.map(c => claimHtml(c, c.rung === d.focus_rung, canMutate(d))).join("");
+    wireClaims();
   }
 
   async function recent(){
+    const panel = document.getElementById("th-recents"); if(!panel) return;
+    panel.hidden = false; panel.textContent = "Loading your theses…";
     try{
-      const r = await fetch("/theses?limit=30", {headers: hdrs()});
-      const d = await r.json();
-      const rows = (d.theses || []);
-      if(!rows.length){ note().textContent = "no theses yet"; return; }
-      claims().innerHTML = rows.map(t =>
+      let rows = [];
+      if(window.USER && USER.token){
+        const r = await fetch("/theses?limit=30", {headers: hdrs()});
+        const body = await r.json(); if(!r.ok) throw new Error(body.detail || "could not load theses");
+        rows = body.theses || [];
+      }else{
+        const ids = Object.keys(STATE.owners).slice(-30).reverse();
+        const loaded = await Promise.all(ids.map(async id => {
+          try{ const r = await fetch("/thesis/" + encodeURIComponent(id), {headers:hdrs(id)});
+               const body = await r.json(); return r.ok ? body.thesis : null; }catch(e){ return null; }
+        }));
+        rows = loaded.filter(Boolean).map(t => ({id:t.id, thesis:t.thesis,
+          settled:(t.claims || []).filter(c => (c.research_status || c.verdict) !== "open").length,
+          claims:(t.claims || []).length, updated_at:t.updated_at || ""}));
+      }
+      panel.innerHTML = rows.length ? rows.map(t =>
         '<div class="th-claim"><h4><a href="#thesis/' + esc2(t.id) + '">' + esc2(t.thesis) + "</a></h4>"
-        + '<span class="th-rung">' + t.settled + " of " + t.claims + " tested · "
-        + esc2((t.updated_at || "").slice(0, 10)) + "</span></div>").join("");
-    }catch(e){ note().textContent = "could not load your theses"; }
+        + '<span class="th-rung">' + Number(t.settled || 0) + " of " + Number(t.claims || 0)
+        + " tested" + (t.updated_at ? " · " + esc2(t.updated_at.slice(0, 10)) : "")
+        + "</span></div>").join("") : '<p class="th-note">No theses on this device yet.</p>';
+    }catch(e){ panel.textContent = e.message || "could not load your theses"; }
   }
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -11434,7 +11541,9 @@ async function openShare(token){
     const rs = document.getElementById("th-reset"); if(rs) rs.addEventListener("click", reset);
   });
 
-  window.TH = {submit, enter, reset, open, attack, turn, render};
+  window.TH = {submit, enter, reset, open, attack, turn, render,
+    __test:{ownerHeaders, thesisUrl, parseThesisHash, canMutate, decisionHtml, linkEvidence,
+            newThesisHash}};
 })();
 </script>
 </body>

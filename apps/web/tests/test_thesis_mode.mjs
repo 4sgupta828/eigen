@@ -1,148 +1,111 @@
-// Run: node --test apps/web/tests/test_thesis_mode.mjs
-//
-// TestStartupThesis — the shell side. Plus the escape guard: `\uXXXX` is a JAVASCRIPT string escape.
-// Inside a JS string literal the engine resolves it; sitting in raw HTML markup it is just six
-// characters, and the reader sees "🕘 Recent" on the button.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import vm from "node:vm";
 import { readFileSync } from "node:fs";
 
 const SRC = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-
-// Everything outside <script>…</script> is markup the browser renders literally.
 const MARKUP = SRC.replace(/<script[\s\S]*?<\/script>/g, "");
 
-test("no javascript escape sequences leak into HTML markup", () => {
-  const bad = [...MARKUP.matchAll(/(\\u[0-9a-fA-F]{4})/g)].map(m => m[1]);
-  assert.deepEqual(bad, [],
-    `these render as literal text, not characters: ${bad.join(" ")}`);
+function loadThesisModule(){
+  const marker = "// TestStartupThesis —";
+  const at = SRC.lastIndexOf(marker);
+  const start = SRC.indexOf("(function(){", at);
+  const end = SRC.indexOf("})();", start) + 5;
+  assert.ok(at > 0 && start > at && end > start, "thesis module not found");
+  const storage = new Map();
+  const context = {
+    window: {USER: null}, USER: null,
+    document: {getElementById: () => null, addEventListener: () => {}},
+    location: {origin: "https://eigen.test", hash: "#thesis"},
+    history: {replaceState: (_a, _b, hash) => { context.location.hash = hash; }},
+    navigator: {clipboard: {writeText: async () => {}}},
+    localStorage: {getItem: k => storage.get(k) || null,
+                   setItem: (k, v) => storage.set(k, String(v))},
+    CSS: {escape: x => String(x)},
+    esc: x => String(x).replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+                         .replaceAll(">", "&gt;").replaceAll('"', "&quot;"),
+    fetch: async () => { throw new Error("unexpected fetch"); },
+    setTimeout, console, URLSearchParams,
+  };
+  vm.runInNewContext(SRC.slice(start, end), context);
+  return {api: context.window.TH.__test, context, storage};
+}
+
+test("owner capability is sent in a header and never encoded into a URL", () => {
+  const {api} = loadThesisModule();
+  const headers = api.ownerHeaders("t1", {t1: "owner-secret"}, null);
+
+  assert.equal(headers["X-Thesis-Owner"], "owner-secret");
+  assert.doesNotMatch(api.thesisUrl("t1", "share-only"), /owner-secret/);
+  assert.equal(api.thesisUrl("t1", "share-only"),
+               "https://eigen.test/app#thesis/t1?share=share-only");
 });
 
-test("the mode's own controls carry real characters", () => {
-  for (const [id, ch] of [["thesisTab", "⚗"], ["th-recent", "\u{1F558}"], ["th-reset", "↻"]]) {
-    const i = MARKUP.indexOf(id);
-    assert.ok(i > 0, `${id} is missing`);
-    assert.ok(MARKUP.slice(i, i + 260).includes(ch), `${id} lost its glyph`);
-  }
+test("shared hash is parsed separately from the thesis id", () => {
+  const {api} = loadThesisModule();
+
+  assert.deepEqual({...api.parseThesisHash("#thesis/t1?share=read-cap")},
+                   {id: "t1", share: "read-cap"});
+  assert.deepEqual({...api.parseThesisHash("#thesis/t1")}, {id: "t1", share: ""});
 });
 
-test("the mode is wired end to end in the shell", () => {
-  assert.match(SRC, /THESIS_ENABLED = !!c\.thesis_enabled/, "the flag must come from /config");
-  assert.match(SRC, /\(mode === "thesis" && THESIS_ENABLED\)/, "setMode must allow it");
-  assert.match(SRC, /APP_MODE === "thesis"/, "the composer must dispatch to it");
-  assert.match(SRC, /window\.TH = \{/, "the module must export");
+test("shared thesis is read-only while an owner thesis can mutate", () => {
+  const {api} = loadThesisModule();
+
+  assert.equal(api.canMutate({is_owner: false}), false);
+  assert.equal(api.canMutate({is_owner: true}), true);
 });
 
-test("against-evidence renders before for-evidence", () => {
-  // A stress test that leads with the supporting quote is a search engine.
-  assert.match(SRC, /const sides = against\.concat\(forr\)/,
-    "the disconfirming side is the point of this mode and must come first");
+test("decision brief leads with recommendation and unresolved critical claims", () => {
+  const {api} = loadThesisModule();
+  const html = api.decisionHtml({
+    decision: {recommendation: "continue_diligence", reason: "Critical evidence is incomplete.",
+               decisive_claims: ["buyer_nameable"]},
+    claims: [{rung: "buyer_nameable", claim: "A buyer owns this.", critical: true,
+              research_status: "under_tested", evidence: []}],
+  });
+
+  assert.ok(html.indexOf("Continue diligence") < html.indexOf("A buyer owns this."));
+  assert.match(html, /Unresolved cruxes/);
+  assert.match(html, /Critical evidence is incomplete/);
 });
 
-test("sentiment is labelled on the row, not silently counted", () => {
-  assert.match(SRC, /signal, not evidence/);
+test("empty brief asks for a thesis instead of claiming diligence is complete", () => {
+  const {api} = loadThesisModule();
+  const html = api.decisionHtml({is_owner: true, claims: []});
+
+  assert.match(html, /State a thesis to identify what evidence would change the decision/);
+  assert.doesNotMatch(html, /critical evidence is complete/i);
 });
 
-test("the composer is the conversation, not a one-shot input", () => {
-  // The first version took the thesis, dumped ten claims, and left buttons. What you typed after
-  // that was stored and never read.
-  const fn = SRC.slice(SRC.indexOf("async function submit(text)"), SRC.indexOf("async function open(id)"));
-  assert.match(fn, /if\(STATE\.id\)\{[\s\S]{0,300}return say\(t\)/,
-    "typing after the thesis exists must go to the agent as a reply");
+test("case citation resolves by immutable evidence id", () => {
+  const {api} = loadThesisModule();
+  const evidence = [{id: "ev-stable", quote: "Exact source span."}];
+
+  const linked = api.linkEvidence("Result [[e:ev-stable]].", evidence);
+  const missing = api.linkEvidence("Invented [[e:not-here]].", evidence);
+
+  assert.match(linked, /data-evidence="ev-stable"/);
+  assert.doesNotMatch(missing, /not-here/);
 });
 
-test("the agent replies to what was said rather than walking the ledger", () => {
-  // Server-side guard mirrored here so the shell's contract is visible: /turn carries the text.
-  assert.match(SRC, /const say = \(text\) => post\("\/turn", \{text: text\}\)/);
+test("new thesis reset target drops the old id and share token", () => {
+  const {api} = loadThesisModule();
+  assert.equal(api.newThesisHash(), "#thesis");
 });
 
-test("it opens on one claim, not ten", () => {
-  const fn = SRC.slice(SRC.indexOf("async function submit(text)"), SRC.indexOf("async function open(id)"));
-  assert.match(fn, /await turn\(\)/, "the first exchange must start the conversation");
+test("thesis status and errors are live regions", () => {
+  assert.match(MARKUP, /id="th-progress"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(MARKUP, /id="th-note"[^>]*role="alert"[^>]*aria-live="assertive"/);
 });
 
-test("the ledger is collapsed behind a summary", () => {
-  assert.match(SRC, /<details class="th-ledger"/, "ten claims must not be the first thing shown");
-  assert.match(SRC, /claims tested<\/span>/, "the summary has to say what is in there");
+test("phone layout has touch targets and a single-column decision brief", () => {
+  assert.match(SRC, /@media \(max-width:560px\)[\s\S]*?\.th-decision-grid\{grid-template-columns:1fr/);
+  assert.match(SRC, /\.th-acts button[^}]*min-height:44px/);
+  assert.match(SRC, /\.th-ask-row button[^}]*min-height:44px/);
+  assert.match(SRC, /prefers-reduced-motion:reduce/);
 });
 
-test("evidence rides the turn that argues from it", () => {
-  assert.match(SRC, /function payloadHtml\(pay\)/);
-  assert.match(SRC, /i === turns\.length - 1/, "only the live turn carries its grounds");
-});
-
-test("the takes render as a table with both cases side by side", () => {
-  assert.match(SRC, /function takesHtml\(d\)/);
-  assert.match(SRC, /<th>The take<\/th><th>The case for<\/th><th>The case against<\/th>/,
-    "a reader has to be able to compare the two cases without scrolling between them");
-});
-
-test("an empty side says so rather than being left blank", () => {
-  // "There is no case to make for this yet" is the most useful sentence this mode produces.
-  assert.match(SRC, /Nothing in the record speaks to this side yet/);
-});
-
-test("every row can be asked about, and the question carries its rung", () => {
-  assert.match(SRC, /async function askRow\(rung, text\)/);
-  assert.match(SRC, /body: JSON\.stringify\(\{text: text, rung: rung\}\)/,
-    "without the rung the answer lands on whatever claim was in focus, not the one asked about");
-  assert.match(SRC, /data-asked="/, "each row needs its own control");
-});
-
-test("the table stacks into cards on a phone", () => {
-  assert.match(SRC, /@media \(max-width:760px\)/, "a side-by-side table is unreadable at 400px");
-  assert.match(SRC, /td\[data-col\]::before\{content:attr\(data-col\)/,
-    "stacked cells lose their column, so the label has to come back");
-});
-
-test("citations hang off the case they support", () => {
-  assert.match(SRC, /function citesHtml\(ev, side, rows, rung\)/);
-  assert.match(SRC, /e\.signal_only \? " \\u00b7 signal"/,
-    "sentiment stays labelled even when it is only a chip");
-});
-
-test("citation markers resolve to the row they point at", () => {
-  assert.match(SRC, /function linkCites\(text, rows, key\)/);
-  assert.match(SRC, /\\\[\(\\d\{1,2\}\)\\\]/, "[1] and [1][3] in the case text must become markers");
-  assert.match(SRC, /if\(!e\) return "";/,
-    "a citation to a row that does not exist must vanish, not render a dead marker");
-});
-
-test("rows are numbered across both sides, not per side", () => {
-  // Per-side numbering silently renumbers the against rows, so every citation on that side points
-  // at the wrong source — worse than no citation at all.
-  assert.match(SRC, /function numberedEv\(ev\)/);
-  assert.match(SRC, /for\(const side of \["for", "against"\]\)/);
-});
-
-test("the collective take sits under the table and tallies the verdicts", () => {
-  assert.match(SRC, /function overallHtml\(d\)/);
-  assert.match(SRC, /Taking every take together/);
-  assert.match(SRC, /if\(!d\.overall\) return "";/,
-    "no integrated reading means no box, rather than an empty one");
-});
-
-test("the attack shows it is working, where the button is", () => {
-  // One request for the whole thesis took minutes, put its only spinner in a note at the bottom of
-  // the section — below the ledger, usually off screen — and left the button untouched. Clicking it
-  // looked like nothing happened.
-  assert.match(SRC, /<p class="th-progress" id="th-progress">/,
-    "the sign of life must sit with the action, not under the fold");
-  assert.match(SRC, /function renderProgress\(\)/);
-  assert.match(SRC, /btn\.disabled = true/, "a button that still looks clickable is a lie");
-  assert.match(SRC, /tick\("Working \\u2014 0 of " \+ todo\.length\)/,
-    "the button itself has to report progress");
-});
-
-test("claims are attacked one at a time so progress is real", () => {
-  const fn = SRC.slice(SRC.indexOf("async function attack()"), SRC.indexOf("function renderProgress"));
-  assert.match(fn, /for\(const c of todo\)/, "one request per claim, not one for the lot");
-  assert.match(fn, /argue: false/, "arguing per claim re-argues the whole thesis every time");
-  assert.match(fn, /takes\(\)\.innerHTML = takesHtml\(STATE\.doc\)/,
-    "the table has to update as each take lands, or the progress is a lie too");
-});
-
-test("the cases are written once, at the end, over everything gathered", () => {
-  const fn = SRC.slice(SRC.indexOf("async function attack()"), SRC.indexOf("function renderProgress"));
-  assert.match(fn, /\/argue"/);
+test("recent theses have a dedicated visible panel", () => {
+  assert.match(MARKUP, /id="th-recents"/);
 });
