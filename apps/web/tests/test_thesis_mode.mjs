@@ -154,3 +154,50 @@ test("the discussion thread is a visible surface, not folded into a collapsed de
   assert.match(MARKUP, /<section class="th-thread"[^>]*id="th-thread"[\s\S]*?id="th-conv"/);
   assert.doesNotMatch(MARKUP, /<summary>Research conversation<\/summary>/);
 });
+
+test("phase is derived from the doc: draft → ready → tested", () => {
+  const {api} = loadThesisModule();
+  assert.equal(api.phaseOf(null), "empty");
+  assert.equal(api.phaseOf({claims: []}), "draft");                       // no claims → still in genesis
+  assert.equal(api.phaseOf({claims: [{rung: "problem_exists"}]}), "ready");
+  assert.equal(api.phaseOf({claims: [{rung: "x"}], research_status: "completed"}), "tested");
+});
+
+test("genesis shows an editable proposed thesis with a Use button", () => {
+  const {api} = loadThesisModule();
+  const html = api.genesisHtml({proposed_thesis: "Mid-market firms will pay for X.",
+                                turns: [{role: "agent", payload: {questions: ["Who buys it?"], ready: false}}]});
+  assert.match(html, /id="th-proposed"/);
+  assert.match(html, /Mid-market firms will pay for X\./);
+  assert.match(html, /id="th-use"/);
+  assert.match(html, /Who buys it\?/);            // the clarifying question is surfaced as a chip
+});
+
+test("the pre-test brief shows the thesis, not an empty 'Ready to test' decision", () => {
+  const {api} = loadThesisModule();
+  const html = api.pretestHtml({thesis: "A concrete thesis.", is_owner: true,
+                                claims: [{rung: "a", critical: true}, {rung: "b"}]});
+  assert.match(html, /A concrete thesis\./);
+  assert.match(html, /2 claims, 1 critical/);
+  assert.doesNotMatch(html, /Ready to test/);
+});
+
+test("the follow-up context selector defaults to the decisive and critical claims", () => {
+  const {api} = loadThesisModule();
+  const html = api.contextHtml({
+    decision: {decisive_claims: ["buyer_nameable"]},
+    claims: [{rung: "buyer_nameable", critical: true}, {rung: "problem_exists", critical: false},
+             {rung: "catalyst", critical: true}]});
+  // decisive + critical are pre-pressed; a non-critical, non-decisive claim is not
+  assert.match(html, /data-rung="buyer_nameable" aria-pressed="true"/);
+  assert.match(html, /data-rung="catalyst" aria-pressed="true"/);
+  assert.match(html, /data-rung="problem_exists" aria-pressed="false"/);
+});
+
+test("no partial: the testing progress carries no verdict, case, or recommendation", () => {
+  // the testing surface is progress-only — asserted structurally on the CSS/markup contract
+  assert.match(SRC, /class="th-testing"/);
+  assert.match(SRC, /Testing this thesis against the evidence/);
+  // the render() switches to renderTesting() in the testing phase and returns before takesHtml
+  assert.match(SRC, /if\(phase === "testing"\)\{\s*renderTesting\(\);/);
+});

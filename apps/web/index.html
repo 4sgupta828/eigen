@@ -456,6 +456,43 @@
   .th-thread-h{font:600 .64rem/1.2 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
     margin:.2rem 0 .7rem;padding-bottom:.5rem;border-bottom:1px solid var(--hair);}
   .th-hint{font-size:.76rem;color:var(--dim);line-height:1.55;margin:.15rem 0 .1rem;flex-basis:100%;}
+  /* Genesis: the proposed thesis the user confirms before anything is decomposed. */
+  .th-propose{margin:.55rem 0 1rem;border:1px solid var(--hair);border-radius:16px;padding:1rem;
+    background:linear-gradient(145deg,color-mix(in srgb,var(--gold) 7%,var(--panel)),var(--panel));}
+  .th-propose h3{font:600 .62rem/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--dim);margin:0 0 .5rem;}
+  .th-propose textarea{width:100%;box-sizing:border-box;font:inherit;font-size:.98rem;line-height:1.5;
+    padding:.6rem .7rem;border:1px solid var(--hair);border-radius:10px;background:var(--panel2);
+    color:var(--ink);resize:vertical;min-height:3.4rem;}
+  .th-propose textarea:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  .th-propose .th-propose-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;align-items:center;}
+  .th-propose .th-use{font-family:var(--mono);font-size:.72rem;padding:.5rem 1rem;border-radius:999px;
+    border:1px solid var(--gold);background:var(--gold);color:#fff;cursor:pointer;min-height:44px;font-weight:600;}
+  .th-propose .th-use:hover{filter:brightness(1.06);}
+  .th-propose .th-qs{margin:.6rem 0 0;display:flex;flex-wrap:wrap;gap:.4rem;}
+  .th-propose .th-q-chip{font-size:.78rem;color:var(--ink);background:var(--panel2);border:1px solid var(--hair);
+    border-radius:999px;padding:.3rem .7rem;cursor:pointer;min-height:36px;}
+  .th-propose .th-q-chip:hover{border-color:var(--gold);color:var(--gold);}
+  .th-propose .th-ready{font-size:.76rem;color:var(--dim);margin:.5rem 0 0;line-height:1.5;}
+  /* Testing phase: progress only, no half-painted brief. */
+  .th-testing{margin:.6rem 0 1rem;border:1px solid var(--hair);border-radius:16px;padding:1.1rem;
+    background:var(--panel);text-align:center;}
+  .th-testing .th-testing-h{font:600 1.05rem/1.3 var(--serif);margin:0 0 .5rem;}
+  .th-testing .th-bar{height:8px;border-radius:999px;background:var(--panel2);overflow:hidden;margin:.6rem 0;}
+  .th-testing .th-bar > span{display:block;height:100%;background:var(--gold);transition:width .4s ease;}
+  .th-testing .th-testing-sub{font-family:var(--mono);font-size:.72rem;color:var(--dim);}
+  .th-testing button{margin-top:.7rem;font-family:var(--mono);font-size:.68rem;padding:.4rem .9rem;
+    border-radius:999px;border:1px solid var(--hair);background:var(--panel2);color:var(--ink);cursor:pointer;min-height:40px;}
+  @media (prefers-reduced-motion:reduce){.th-testing .th-bar > span{transition:none;}}
+  /* Follow-up: pick the claims to ask about — one agent, N-claim context. */
+  .th-ctx{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 .6rem;align-items:center;}
+  .th-ctx .th-ctx-lbl{font:600 .6rem/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim);
+    margin-right:.15rem;}
+  .th-ctx .th-ctx-chip{font-size:.74rem;color:var(--dim);background:var(--panel2);border:1px solid var(--hair);
+    border-radius:999px;padding:.25rem .6rem;cursor:pointer;min-height:34px;}
+  .th-ctx .th-ctx-chip[aria-pressed="true"]{color:var(--gold);border-color:var(--gold);
+    background:color-mix(in srgb,var(--gold) 10%,transparent);}
+  .th-ctx .th-ctx-chip:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
   .th-said .th-body{display:block;}
   .th-said .th-body p{margin:.15rem 0;}
   .th-said .th-body p:first-child{margin-top:0;}
@@ -11066,7 +11103,8 @@ async function openShare(token){
   }
   function saveOwners(v){ try{ localStorage.setItem(OWNER_KEY, JSON.stringify(v || {})); }catch(e){} }
   const STATE = { id: "", doc: null, busy: false, labels: null, answers: {}, progress: null,
-                  share: "", run: "", owners: readOwners() };
+                  share: "", run: "", owners: readOwners(),
+                  proposed: "", testing: false, selected: null, poll: null };
   const conv = () => document.getElementById("th-conv");
   const acts = () => document.getElementById("th-acts");
   const claims = () => document.getElementById("th-claims");
@@ -11092,6 +11130,16 @@ async function openShare(token){
   const canMutate = d => !!(d && d.is_owner);
   const newThesisHash = () => "#thesis";
 
+  // The lifecycle is DERIVED, not a stored enum: no claims → still in genesis (draft); a completed
+  // research_status → tested; an active client-driven run → testing; otherwise ready-to-test.
+  function phaseOf(d){
+    if(!d) return "empty";
+    if(!(d.claims || []).length) return "draft";
+    if(STATE.testing) return "testing";
+    if(d.research_status === "completed") return "tested";
+    return "ready";
+  }
+
   const REG = {filed: "▣", stated: "▢", observed: "◈"};
 
   function enter(params){
@@ -11106,8 +11154,10 @@ async function openShare(token){
   }
 
   function reset(){
+    if(STATE.poll) clearTimeout(STATE.poll);
     STATE.id = ""; STATE.doc = null; STATE.answers = {}; STATE.progress = null;
-    STATE.share = ""; STATE.run = "";
+    STATE.share = ""; STATE.run = ""; STATE.proposed = ""; STATE.testing = false;
+    STATE.selected = null; STATE.poll = null;
     try{ history.replaceState(null, "", newThesisHash()); }catch(e){}
     const recentPanel = document.getElementById("th-recents"); if(recentPanel) recentPanel.hidden = true;
     enter();
@@ -11118,45 +11168,78 @@ async function openShare(token){
     catch(e){ /* the ladder is cosmetic here; the server owns it */ }
   }
 
+  function showThread(){ const th = document.getElementById("th-thread"); if(th) th.hidden = false;
+    const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = ""; }
+
+  // The composer is phase-aware. In genesis it converses toward a concrete thesis; once decomposed it
+  // is the follow-up agent over the claims you have selected. It never decomposes on its own — that is
+  // the explicit "Use this thesis" confirmation.
   async function submit(text){
     const t = (text || "").trim();
     if(!t || STATE.busy) return;
-    // Once a thesis exists the composer IS the conversation: what you type is answered, not filed.
-    if(STATE.id){
-      const thread = document.getElementById("th-thread"); if(thread) thread.hidden = false;
+    const phase = phaseOf(STATE.doc);
+    if(STATE.id && (phase === "ready" || phase === "tested")){
+      showThread();
       conv().insertAdjacentHTML("beforeend", turnHtml("user", "", t));
       conv().lastElementChild.scrollIntoView({block: "nearest"});
-      return say(t);
+      return sayFollow(t);
     }
-    STATE.busy = true;
-    const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = "";
-    const thread = document.getElementById("th-thread"); if(thread) thread.hidden = false;
-    conv().innerHTML = turnHtml("user", "", t);
-    note().textContent = "";
+    // Genesis: create the draft on the first message, then converse.
+    STATE.busy = true; showThread(); note().textContent = "";
+    conv().insertAdjacentHTML("beforeend", turnHtml("user", "", t));
+    renderProgressText("Reading your idea…");
+    try{
+      if(!STATE.id){
+        const r = await fetch("/thesis", {method:"POST", headers: hdrs(),
+          body: JSON.stringify({thesis: t, draft: true})});
+        const d = await r.json();
+        if(!r.ok || !d.id) throw new Error(d.detail || "could not start this thesis");
+        STATE.id = d.id; STATE.doc = d.thesis;
+        if(d.owner_token){ STATE.owners[d.id] = d.owner_token; saveOwners(STATE.owners); }
+        history.replaceState(null, "", "#thesis/" + encodeURIComponent(d.id));
+      }
+      await genesisTurn(t);
+    }catch(e){ note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; renderProgressText(""); }
+  }
+
+  // One genesis turn: sharpen toward a concrete thesis. Never decomposes — that is `confirm`.
+  async function genesisTurn(text){
+    const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/genesis",
+                          {method:"POST", headers: hdrs(), body: JSON.stringify({text: text || ""})});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || "could not read that");
+    if(d.thesis) STATE.doc = d.thesis;
+    STATE.proposed = d.proposed_thesis || STATE.proposed;
+    render();
+  }
+
+  // Commit the thesis the USER accepted — the only decomposition. Projects + approves the cost first.
+  async function confirmThesis(){
+    if(STATE.busy) return;
+    const box = document.getElementById("th-proposed");
+    const chosen = ((box && box.value) || STATE.proposed || "").trim();
+    if(chosen.length < 12){ note().textContent = "State the thesis as a full sentence first."; return; }
+    STATE.busy = true; note().textContent = "";
     renderProgressText("Projecting the claim decomposition cost…");
     try{
-      const projectedResponse = await fetch("/thesis", {method:"POST", headers: hdrs(),
-        body: JSON.stringify({thesis: t, project_only: true})});
-      const projected = await projectedResponse.json();
-      const max = Number((projected.projection || {}).projected_usd || 0);
-      if(!projectedResponse.ok) throw new Error(projected.detail || "could not project this thesis");
-      if(!window.confirm("Break this thesis into a falsifiable claim ladder?\n\n"
-          + "This one step only decomposes the thesis into claims — no evidence is gathered yet, and "
-          + "you approve that separately.\n\nProjected maximum: $" + max.toFixed(3))){
-        STATE.busy = false; renderProgressText(""); enter(); return;   // restore the guide, drop the orphan message
+      const pr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/confirm",
+        {method:"POST", headers: hdrs(), body: JSON.stringify({thesis: chosen, project_only: true})});
+      const pj = await pr.json();
+      if(!pr.ok) throw new Error(pj.detail || "could not project this thesis");
+      const max = Number((pj.projection || {}).projected_usd || 0);
+      if(!window.confirm("Build a falsifiable claim ladder from this thesis?\n\n"
+          + "This only decomposes it into the claims it rests on — no evidence is gathered yet, and you "
+          + "approve that test separately.\n\nProjected maximum: $" + max.toFixed(3))){
+        STATE.busy = false; renderProgressText(""); return;
       }
       renderProgressText("Building a small, falsifiable claim ladder…");
-      const r = await fetch("/thesis", {method:"POST", headers: hdrs(),
-                                        body: JSON.stringify({thesis: t, max_usd: max})});
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/confirm",
+        {method:"POST", headers: hdrs(), body: JSON.stringify({thesis: chosen, max_usd: max})});
       const d = await r.json();
-      if(!r.ok || !d.thesis) throw new Error(d.detail || "could not read that thesis");
-      STATE.id = d.id; STATE.doc = d.thesis;
-      if(d.owner_token){ STATE.owners[d.id] = d.owner_token; saveOwners(STATE.owners); }
-      history.replaceState(null, "", "#thesis/" + encodeURIComponent(d.id));
+      if(!r.ok || !d.thesis) throw new Error(d.detail || "could not build the claim ladder");
+      STATE.doc = d.thesis; STATE.proposed = "";
       render();
-      // Open on ONE claim rather than presenting ten. A wall of claims is the dump this mode exists
-      // not to be; the ledger holds the whole set for anyone who wants it at once.
-      STATE.busy = false; await turn();
     }catch(e){ note().textContent = e.message || String(e); }
     finally{ STATE.busy = false; renderProgressText(""); }
   }
@@ -11172,7 +11255,10 @@ async function openShare(token){
                             {headers: hdrs(parsed.id)});
       const d = await r.json();
       if(!r.ok || !d.thesis) throw new Error(d.detail || "could not open that thesis");
-      STATE.id = parsed.id; STATE.doc = d.thesis; render();
+      STATE.id = parsed.id; STATE.doc = d.thesis;
+      STATE.testing = false; STATE.selected = null; STATE.proposed = "";
+      if(STATE.poll){ clearTimeout(STATE.poll); STATE.poll = null; }
+      render();
     }catch(e){ note().textContent = e.message || "could not open that thesis"; }
   }
 
@@ -11194,85 +11280,91 @@ async function openShare(token){
     finally{ STATE.busy = false; if(prog) prog.textContent = ""; }
   }
 
-  // ONE CLAIM AT A TIME, so the reader can see it working. The whole thesis in one request took
-  // minutes, showed its only spinner in a note at the bottom of the section — below the ledger,
-  // usually off screen — and left the button looking untouched. Clicking it appeared to do nothing.
-  async function attack(){
-    if(STATE.busy || !canMutate(STATE.doc)) return;
+  // ONE explicit test, run to completion server-side — NO partial. The browser used to drive the run
+  // claim by claim and paint each verdict as it landed; the owner wanted a single "Test this thesis"
+  // that shows progress but never a half-built brief. So we approve the cost once, POST /research/run,
+  // and poll — rendering only progress until it is done, then the whole result at once.
+  async function startTest(){
+    if(STATE.busy || STATE.testing || !canMutate(STATE.doc)) return;
     const d = STATE.doc; if(!d) return;
-    const todo = (d.claims || []).filter(c => c.settleable !== "call_only" && !c.attacked);
-    if(!todo.length) return;
-    STATE.busy = true;
-    const btn = document.getElementById("th-attack");
-    const tick = (msg) => { if(btn) btn.textContent = msg; };
-    if(btn) btn.disabled = true;
-    let done = 0;
-    tick("Working \u2014 0 of " + todo.length);
+    STATE.busy = true; note().textContent = "";
     try{
-      note().textContent = "";
       const key = "research-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
-      const projectionResponse = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/research/start",
-        {method: "POST", headers: hdrs(),
-         body: JSON.stringify({max_usd: 0, idempotency_key: key, web: true})});
-      const projectionBody = await projectionResponse.json();
-      if(!projectionResponse.ok && projectionResponse.status !== 409)
-        throw new Error(projectionBody.detail || "could not project research");
-      const projection = projectionBody.projection || {};
+      const pr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/research/start",
+        {method:"POST", headers: hdrs(), body: JSON.stringify({max_usd: 0, idempotency_key: key, web: true})});
+      const pj = await pr.json();
+      if(!pr.ok && pr.status !== 409) throw new Error(pj.detail || "could not project research");
+      const projection = pj.projection || {};
       const max = Number(projection.projected_usd || 0);
       const parts = projection.components || {};
       const detail = ["refutation $" + Number(parts.refutation || 0).toFixed(3),
                       "evidence checks $" + Number(parts.relationship_judgment || 0).toFixed(3),
                       "web ceiling $" + Number(parts.web_ceiling || 0).toFixed(3),
                       "decision brief $" + Number(parts.case_synthesis || 0).toFixed(3)].join(" · ");
-      if(!window.confirm("Test this thesis against the evidence?\n\nProjected maximum: $"
-                         + max.toFixed(3) + "\n" + detail)) return;
-      const startResponse = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/research/start",
-        {method: "POST", headers: hdrs(),
-         body: JSON.stringify({max_usd: max, idempotency_key: key, web: true})});
-      const started = await startResponse.json();
-      if(!startResponse.ok || !started.run) throw new Error(started.detail || "could not start research");
-      STATE.run = started.run.id;
-      for(const c of todo){
-        STATE.progress = {rung: c.rung, done: done, total: todo.length};
-        renderProgress();
-        const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/attack",
-                              {method: "POST", headers: hdrs(),
-                               body: JSON.stringify({rung: c.rung, argue: false, run_id: STATE.run})});
-        const j = await r.json();
-        if(!r.ok) throw new Error(j.detail || "research failed on " + c.rung.replace(/_/g, " "));
-        // The table updates as each take lands, or the progress count is a lie too.
-        if(j.thesis){ STATE.doc = j.thesis; takes().innerHTML = takesHtml(STATE.doc); wireTakes(); }
-        done++;
-        tick("Working \u2014 " + done + " of " + todo.length);
+      if(!window.confirm("Test this thesis against the evidence?\n\nThe whole run happens at once and "
+          + "the result appears when it is done.\n\nProjected maximum: $" + max.toFixed(3) + "\n" + detail)){
+        STATE.busy = false; return;
       }
-      STATE.progress = {rung: "", done: todo.length, total: todo.length, arguing: true};
-      renderProgress();
-      tick("Writing the cases\u2026");
-      const r2 = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/argue",
-                             {method: "POST", headers: hdrs(), body: JSON.stringify({run_id: STATE.run})});
-      const j2 = await r2.json();
-      if(!r2.ok) throw new Error(j2.detail || "decision brief failed");
-      if(j2.thesis) STATE.doc = j2.thesis;
-      if(j2.synthesis_status === "failed")
-        note().textContent = "The evidence is intact, but the written cases could not be generated.";
-    }catch(e){ note().textContent = "that run failed: " + (e.message || e); }
-    finally{ STATE.busy = false; STATE.progress = null; render(); }
+      const sr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/research/start",
+        {method:"POST", headers: hdrs(), body: JSON.stringify({max_usd: max, idempotency_key: key, web: true})});
+      const started = await sr.json();
+      if(!sr.ok || !started.run) throw new Error(started.detail || "could not start research");
+      STATE.run = started.run.id; STATE.testing = true;
+      await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/research/run",
+        {method:"POST", headers: hdrs(), body: JSON.stringify({run_id: STATE.run})});
+      render();
+      pollStatus(0);
+    }catch(e){ STATE.testing = false; note().textContent = "that run failed to start: " + (e.message || e); }
+    finally{ STATE.busy = false; }
   }
 
-  // A live line where the action is, not in a note under the fold.
-  function renderProgress(){
-    const p = STATE.progress;
-    const el = document.getElementById("th-progress");
-    if(!el) return;
-    if(!p){ el.innerHTML = ""; return; }
-    const label = p.arguing
-      ? "building the case for and against each take"
-      : "take " + (p.done + 1) + " of " + p.total + " \u00b7 " + p.rung.replace(/_/g, " ");
-    el.innerHTML = '<span class="su-spin"></span> <span>' + esc2(label)
-      + " \u2014 our corpus, then the open web where it is silent, then the red team</span>";
+  // Poll the run. Progress is read from real state (verdicts written). On a stall or a 502/503 —
+  // which a deploy causes — silently re-POST /research/run to resume; idempotency makes it invisible.
+  let _testProg = {done: 0, total: 0};
+  async function pollStatus(resumes){
+    if(!STATE.testing || !STATE.run) return;
+    let stalled = false;
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/research/status?run="
+                            + encodeURIComponent(STATE.run), {headers: hdrs()});
+      if(r.status === 502 || r.status === 503){ stalled = true; }
+      else {
+        const s = await r.json();
+        _testProg = {done: Number(s.done || 0), total: Number(s.total || 0)};
+        renderTesting();
+        if(s.state === "completed"){ STATE.testing = false; STATE.run = ""; await open(STATE.id); return; }
+        if(s.state === "failed" || s.stage === "stalled"){ stalled = true; }
+      }
+    }catch(e){ stalled = true; }
+    if(stalled){
+      if(resumes > 8){ STATE.testing = false; note().textContent =
+        "The test kept stopping before it finished. Nothing was lost — reopen this thesis to resume."; render(); return; }
+      try{ await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/research/run",
+             {method:"POST", headers: hdrs(), body: JSON.stringify({run_id: STATE.run})}); }catch(e){}
+      resumes++;
+    }
+    STATE.poll = setTimeout(() => pollStatus(resumes), 2500);
   }
-  const turn = () => post("/turn", {});
+
+  function renderTesting(){
+    const host = takes(); if(!host) return;
+    const p = _testProg, pct = p.total ? Math.round((p.done / p.total) * 100) : 5;
+    host.innerHTML = '<section class="th-testing" aria-live="polite">'
+      + '<div class="th-testing-h">Testing this thesis against the evidence</div>'
+      + '<div class="th-bar"><span style="width:' + Math.max(5, pct) + '%"></span></div>'
+      + '<div class="th-testing-sub">' + (p.total ? "claim " + Math.min(p.done + 1, p.total)
+          + " of " + p.total : "starting…")
+      + " · our corpus, then the open web where it is silent, then the red team</div>"
+      + '<button type="button" id="th-stop">Stop</button></section>';
+    const stop = document.getElementById("th-stop");
+    if(stop) stop.addEventListener("click", () => {
+      STATE.testing = false; if(STATE.poll) clearTimeout(STATE.poll);
+      note().textContent = "Stopped. The test can be resumed by reopening this thesis."; render();
+    });
+  }
+
   const say = (text) => post("/turn", {text: text});
+  const sayFollow = (text) => post("/turn", {text: text, rungs: [...(STATE.selected || [])]});
 
   function hdrs(id){ return ownerHeaders(id || STATE.id, STATE.owners, window.USER || null); }
 
@@ -11549,46 +11641,135 @@ async function openShare(token){
     const d = STATE.doc;
     if(!d) return;
     const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = "";
+    const phase = phaseOf(d);
     const turns = d.turns || [];
     conv().innerHTML = turns.map((t, i) =>
       turnHtml(t.role, t.move, t.text, (i === turns.length - 1) ? payloadHtml(t.payload) : "")).join("");
     const thread = document.getElementById("th-thread"); if(thread) thread.hidden = !turns.length;
+    const threadH = document.querySelector(".th-thread-h");
+    if(threadH) threadH.textContent = phase === "draft"
+      ? "Shaping the thesis — answer or refine until it is concrete"
+      : "Discussion — pick claims below, then ask about them";
 
-    const tested = (d.claims || []).some(c => (c.research_status || c.verdict) !== "open");
-    const unattacked = (d.claims || []).filter(c => c.settleable !== "call_only" && !c.attacked);
-    // Tell the reader what the next action does, not just its name.
+    const ledger = document.getElementById("th-ledger");
+
+    // DRAFT (genesis): the proposed thesis to confirm + the conversation. No claims, no brief yet.
+    if(phase === "draft"){
+      takes().innerHTML = genesisHtml(d);
+      wireGenesis();
+      acts().innerHTML = "";
+      if(ledger) ledger.hidden = true;
+      return;
+    }
+
+    // TESTING: progress only, no half-painted brief.
+    if(phase === "testing"){
+      renderTesting();
+      acts().innerHTML = "";
+      if(ledger) ledger.hidden = true;
+      return;
+    }
+
+    // READY / TESTED: the brief (or the pre-test prompt) + actions + ledger + follow-up.
+    if(ledger) ledger.hidden = false;
+    const untested = (d.claims || []).filter(c => c.settleable !== "call_only" && !c.attacked);
+    const canTest = canMutate(d) && phase === "ready" && untested.length;
     const hint = !canMutate(d) ? ""
-      : (unattacked.length
-          ? '<p class="th-hint">Next: test these claims against our corpus, the open web, and a red team — '
-            + "you approve the cost first. Or discuss any claim below to sharpen it.</p>"
-          : tested
-            ? '<p class="th-hint">The decision brief above reflects the evidence found. Keep the discussion '
-              + "going, add an interview note, or revise a claim in the ledger to re-test.</p>"
-            : "");
+      : (canTest
+          ? '<p class="th-hint">Next: test every claim at once against our corpus, the open web, and a '
+            + "red team — you approve the cost first. The result appears when the whole run is done.</p>"
+          : phase === "tested"
+            ? '<p class="th-hint">Tested. Pick one or more claims below and ask the agent about them, add '
+              + "an interview note, or revise a claim to re-test.</p>" : "");
     acts().innerHTML = canMutate(d)
-      ? (hint + (unattacked.length
-          ? '<button type="button" id="th-attack">Test ' + unattacked.length
-            + " claim" + (unattacked.length === 1 ? "" : "s") + " against evidence</button>"
-          : '<button type="button" id="th-next">Discuss the weakest claim</button>')
+      ? (hint + (canTest
+          ? '<button type="button" id="th-test">Test this thesis</button>'
+          : "")
         + '<button type="button" id="th-share">Copy read-only link</button>')
       : "";
-    const ledger = document.getElementById("th-ledger"); if(ledger) ledger.hidden = false;
-    const a = document.getElementById("th-attack"); if(a) a.addEventListener("click", attack);
-    const n = document.getElementById("th-next"); if(n) n.addEventListener("click", turn);
+    const tb = document.getElementById("th-test"); if(tb) tb.addEventListener("click", startTest);
     const sh = document.getElementById("th-share");
     if(sh) sh.addEventListener("click", () => shareThesis(sh));
 
-    takes().innerHTML = takesHtml(d); wireTakes();
+    // The decision brief (or, before testing, the pre-test brief) + the claim context selector.
+    takes().innerHTML = (phase === "tested" ? takesHtml(d) : pretestHtml(d))
+      + (phase === "tested" && canMutate(d) ? contextHtml(d) : "");
+    wireTakes(); wireContext();
 
     // The ledger: pips in the summary, the claims themselves only when it is opened.
     const cs = [...(d.claims || [])].sort((a, b) => Number(!!b.critical) - Number(!!a.critical));
     const pips = cs.map(c => '<span class="th-pip" data-v="' + esc2(c.verdict) + '" title="'
-      + esc2(c.rung.replace(/_/g, " ") + " \u2014 " + c.verdict.replace("_", " ")) + '"></span>').join("");
+      + esc2(c.rung.replace(/_/g, " ") + " — " + c.verdict.replace("_", " ")) + '"></span>').join("");
     const done = cs.filter(c => (c.research_status || c.verdict) !== "open").length;
     const sum = document.getElementById("th-sum");
     if(sum) sum.innerHTML = pips + " <span>" + done + " of " + cs.length + " claims tested</span>";
     claims().innerHTML = cs.map(c => claimHtml(c, c.rung === d.focus_rung, canMutate(d))).join("");
     wireClaims();
+  }
+
+  // The proposed thesis, editable, with "Use this thesis" (the only decomposition) + any clarifiers.
+  function genesisHtml(d){
+    const proposed = STATE.proposed || d.proposed_thesis || d.thesis || "";
+    const lastAgent = [...(d.turns || [])].reverse().find(t => t.role === "agent");
+    const qs = (lastAgent && lastAgent.payload && lastAgent.payload.questions) || [];
+    const ready = !(lastAgent && lastAgent.payload) || lastAgent.payload.ready !== false;
+    return '<section class="th-propose" aria-label="Proposed thesis">'
+      + "<h3>Proposed thesis — edit it, then use it</h3>"
+      + '<textarea id="th-proposed" rows="2" aria-label="Proposed thesis">' + esc2(proposed) + "</textarea>"
+      + (qs.length ? '<div class="th-qs">' + qs.map(qq =>
+          '<button type="button" class="th-q-chip" data-q="' + esc2(qq) + '">' + esc2(qq) + "</button>").join("") + "</div>" : "")
+      + '<div class="th-propose-row"><button type="button" class="th-use" id="th-use">Use this thesis →</button>'
+      + '<span class="th-ready">' + (ready
+          ? "Looks concrete. Use it to build the claim ladder, or keep refining."
+          : "Add the missing piece above, or answer a question — then use it.") + "</span></div>"
+      + "</section>";
+  }
+
+  function wireGenesis(){
+    const use = document.getElementById("th-use");
+    if(use) use.addEventListener("click", confirmThesis);
+    // Clicking a clarifying question focuses the composer so the user can answer it in their own words.
+    takes().querySelectorAll(".th-q-chip").forEach(b => b.addEventListener("click", () => {
+      const composer = document.getElementById("q");
+      if(composer){ composer.focus(); }
+    }));
+  }
+
+  // Before a test: show the thesis + the claim ladder framing, not an empty "Ready to test" brief.
+  function pretestHtml(d){
+    const cs = d.claims || [];
+    const crit = cs.filter(c => c.critical).length;
+    return '<section class="th-decision" aria-label="Thesis, ready to test">'
+      + '<div class="th-decision-head"><div><div class="th-decision-kicker">Thesis</div>'
+      + "<h2>" + esc2(d.thesis || "") + "</h2>"
+      + "<p>" + cs.length + " claims" + (crit ? ", " + crit + " critical" : "")
+      + " — test them against the evidence to get a Fund / Pass / Continue read.</p></div>"
+      + (!canMutate(d) ? '<span class="th-readonly">Read-only shared view</span>' : "") + "</div></section>";
+  }
+
+  // The follow-up context selector: pick the claim(s) the one agent reasons over. Defaults to the
+  // decisive/critical claims so a first question already has the load-bearing context.
+  function contextHtml(d){
+    const cs = d.claims || [];
+    if(STATE.selected === null){
+      const decisive = new Set((d.decision || {}).decisive_claims || []);
+      const pick = cs.filter(c => decisive.has(c.rung) || c.critical).map(c => c.rung);
+      STATE.selected = new Set(pick.length ? pick : cs.slice(0, 1).map(c => c.rung));
+    }
+    return '<div class="th-ctx" role="group" aria-label="Claims to ask about">'
+      + '<span class="th-ctx-lbl">Ask about</span>'
+      + cs.map(c => '<button type="button" class="th-ctx-chip" data-rung="' + esc2(c.rung)
+          + '" aria-pressed="' + (STATE.selected.has(c.rung) ? "true" : "false") + '">'
+          + esc2(c.rung.replace(/_/g, " ")) + "</button>").join("") + "</div>";
+  }
+
+  function wireContext(){
+    takes().querySelectorAll(".th-ctx-chip").forEach(b => b.addEventListener("click", () => {
+      const rung = b.dataset.rung;
+      if(!STATE.selected) STATE.selected = new Set();
+      if(STATE.selected.has(rung)) STATE.selected.delete(rung); else STATE.selected.add(rung);
+      b.setAttribute("aria-pressed", STATE.selected.has(rung) ? "true" : "false");
+    }));
   }
 
   async function recent(){
@@ -11623,9 +11804,10 @@ async function openShare(token){
     const rs = document.getElementById("th-reset"); if(rs) rs.addEventListener("click", reset);
   });
 
-  window.TH = {submit, enter, reset, open, attack, turn, render,
+  window.TH = {submit, enter, reset, open, startTest, render, confirmThesis,
     __test:{ownerHeaders, thesisUrl, parseThesisHash, canMutate, decisionHtml, linkEvidence,
-            newThesisHash, fmtBody, turnHtml, introHtml,
+            newThesisHash, fmtBody, turnHtml, introHtml, phaseOf, genesisHtml, pretestHtml,
+            contextHtml,
             claimHtml: (c, focused, owner, answers) => { STATE.answers = answers || {}; return claimHtml(c, focused, owner); }}};
 })();
 </script>

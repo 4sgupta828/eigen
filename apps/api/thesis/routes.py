@@ -184,7 +184,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             meta = await tstore.create(pool, thesis=t, claims=[], subject={},
                                        owner_id=oid, title=body.title or t)
             await tstore.set_proposed_thesis(pool, meta["id"], t)
-            await tstore.add_turn(pool, meta["id"], role="user", text=t)
+            # The client drives the first genesis turn with this same text, which stores the user turn;
+            # storing it here too would double it. The draft row + proposed_thesis are enough.
             return {"status": "draft", **meta,
                     "thesis": await tstore.get(pool, thesis_id=meta["id"], owner_id=oid,
                                                owner_token=meta.get("owner_token") or "")}
