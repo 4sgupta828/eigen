@@ -12,6 +12,8 @@ ownership on a resolved user id instead of a raw bearer token.
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 import secrets
 import uuid
 
@@ -36,6 +38,9 @@ ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS focus_rung text NOT NULL DEFAULT 
 -- The integrated reading of every claim at once. A table of ten takes is ten judgements the reader
 -- still has to add up; this is the addition, and it is the part they act on.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS overall text NOT NULL DEFAULT '';
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS owner_token_hash text NOT NULL DEFAULT '';
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS decision jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS research_status text NOT NULL DEFAULT 'not_run';
 
 CREATE TABLE IF NOT EXISTS ts_claim (
     thesis_id   text NOT NULL REFERENCES ts_thesis(id) ON DELETE CASCADE,
@@ -52,6 +57,10 @@ CREATE TABLE IF NOT EXISTS ts_claim (
 ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS case_for text NOT NULL DEFAULT '';
 ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS case_against text NOT NULL DEFAULT '';
 ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS leans text NOT NULL DEFAULT '';
+ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS critical boolean NOT NULL DEFAULT false;
+ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS falsifier text NOT NULL DEFAULT '';
+ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS what_would_change text NOT NULL DEFAULT '';
+ALTER TABLE ts_claim ADD COLUMN IF NOT EXISTS research_status text NOT NULL DEFAULT 'open';
 
 CREATE TABLE IF NOT EXISTS ts_evidence (
     id          text PRIMARY KEY,
@@ -73,6 +82,21 @@ CREATE TABLE IF NOT EXISTS ts_evidence (
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_ts_evidence_claim ON ts_evidence (thesis_id, rung, side);
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS document_id text NOT NULL DEFAULT '';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS block_id text NOT NULL DEFAULT '';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS atom_id text NOT NULL DEFAULT '';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS relation text NOT NULL DEFAULT 'context';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS evidence_kind text NOT NULL DEFAULT '';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS source_subject text NOT NULL DEFAULT '';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS period text NOT NULL DEFAULT '';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS span_hash text NOT NULL DEFAULT '';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS gate_results jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS facets jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS run_id text NOT NULL DEFAULT '';
+ALTER TABLE ts_evidence ADD COLUMN IF NOT EXISTS independence_key text NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS ux_ts_evidence_run_span
+    ON ts_evidence (thesis_id, rung, run_id, span_hash, relation)
+    WHERE run_id <> '' AND span_hash <> '';
 
 CREATE TABLE IF NOT EXISTS ts_turn (
     id          bigserial PRIMARY KEY,
@@ -85,7 +109,33 @@ CREATE TABLE IF NOT EXISTS ts_turn (
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_ts_turn_thesis ON ts_turn (thesis_id, id);
+
+CREATE TABLE IF NOT EXISTS ts_run (
+    id              text PRIMARY KEY,
+    thesis_id       text NOT NULL REFERENCES ts_thesis(id) ON DELETE CASCADE,
+    idempotency_key text NOT NULL,
+    state           text NOT NULL DEFAULT 'approved',
+    stage           text NOT NULL DEFAULT 'approved',
+    projected_usd   numeric NOT NULL DEFAULT 0,
+    approved_usd    numeric NOT NULL DEFAULT 0,
+    actual_usd      numeric NOT NULL DEFAULT 0,
+    metadata        jsonb NOT NULL DEFAULT '{}',
+    error           jsonb NOT NULL DEFAULT '{}',
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (thesis_id, idempotency_key)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_ts_run_one_active
+    ON ts_run (thesis_id) WHERE state IN ('approved', 'running');
 """
+
+
+class ActiveRunError(RuntimeError):
+    pass
+
+
+class SpendCapError(RuntimeError):
+    pass
 
 
 async def ensure_schema(pool) -> None:
@@ -97,27 +147,39 @@ def _j(v):
     return json.loads(v) if isinstance(v, str) else v
 
 
+def hash_owner_token(token: str) -> str:
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
 async def create(pool, *, thesis: str, claims: list[dict], subject: dict,
                  owner_id: str = "", title: str = "") -> dict:
     await ensure_schema(pool)
     tid = uuid.uuid4().hex[:16]
-    tok = secrets.token_urlsafe(18)
+    share_token = secrets.token_urlsafe(24)
+    owner_token = "" if owner_id else secrets.token_urlsafe(32)
+    owner_hash = hash_owner_token(owner_token) if owner_token else ""
     async with pool.acquire() as conn, conn.transaction():
         await conn.execute(
-            """INSERT INTO ts_thesis (id, owner_id, title, thesis, subject, share_token)
-               VALUES ($1,$2,$3,$4,$5::jsonb,$6)""",
-            tid, owner_id, (title or thesis)[:160], thesis, json.dumps(subject or {}), tok)
+            """INSERT INTO ts_thesis (id, owner_id, title, thesis, subject, share_token,
+                                      owner_token_hash)
+               VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7)""",
+            tid, owner_id, (title or thesis)[:160], thesis, json.dumps(subject or {}),
+            share_token, owner_hash)
         for c in claims:
             await conn.execute(
-                """INSERT INTO ts_claim (thesis_id, rung, claim, settleable, verdict)
-                   VALUES ($1,$2,$3,$4,$5) ON CONFLICT (thesis_id, rung) DO NOTHING""",
-                tid, c["rung"], c["claim"], c["settleable"], c.get("verdict") or OPEN)
-    return {"id": tid, "share_token": tok}
+                """INSERT INTO ts_claim (thesis_id, rung, claim, settleable, verdict, critical,
+                                          falsifier, what_would_change, research_status)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                   ON CONFLICT (thesis_id, rung) DO NOTHING""",
+                tid, c["rung"], c["claim"], c["settleable"], c.get("verdict") or OPEN,
+                bool(c.get("critical")), c.get("falsifier") or "",
+                c.get("what_would_change") or "", c.get("research_status") or OPEN)
+    return {"id": tid, "owner_token": owner_token or None}
 
 
-async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str = "") -> dict | None:
-    """The whole ledger. The share token is popped for anyone who is not the owner — the bug
-    `iv_map.get_map` still has."""
+async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str = "",
+              owner_token: str = "") -> dict | None:
+    """Return the ledger only for its owner or an explicit read-only share capability."""
     await ensure_schema(pool)
     async with pool.acquire() as conn:
         if thesis_id:
@@ -125,6 +187,17 @@ async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str
         else:
             t = await conn.fetchrow("SELECT * FROM ts_thesis WHERE share_token = $1", share_token)
         if not t:
+            return None
+        stored_owner = str(t.get("owner_id") or "")
+        stored_hash = str(t.get("owner_token_hash") or "")
+        stored_share = str(t.get("share_token") or "")
+        authenticated_owner = bool(owner_id) and bool(stored_owner) and stored_owner == owner_id
+        capability_owner = (not stored_owner and bool(owner_token) and bool(stored_hash)
+                            and hmac.compare_digest(hash_owner_token(owner_token), stored_hash))
+        shared = bool(share_token) and bool(stored_share) and hmac.compare_digest(
+            share_token, stored_share)
+        is_owner = authenticated_owner or capability_owner
+        if not is_owner and not shared:
             return None
         claims = await conn.fetch(
             "SELECT * FROM ts_claim WHERE thesis_id = $1", t["id"])
@@ -135,21 +208,27 @@ async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str
             "SELECT * FROM ts_turn WHERE thesis_id = $1 ORDER BY id", t["id"])
     out = {k: t[k] for k in t.keys()}
     out["subject"] = _j(out["subject"])
+    out["decision"] = _j(out.get("decision") or {})
     for k in ("created_at", "updated_at"):
         out[k] = out[k].isoformat()
-    is_owner = bool(owner_id) and out["owner_id"] == owner_id
     out["is_owner"] = is_owner
-    if not is_owner:
-        out.pop("share_token", None)
+    out.pop("share_token", None)
+    out.pop("owner_token_hash", None)
     by_rung: dict[str, list] = {}
     for e in ev:
+        if not is_owner and e.get("source_key") == "call":
+            continue
         row = {k: e[k] for k in e.keys() if k not in ("created_at",)}
+        for key in ("gate_results", "facets"):
+            if key in row:
+                row[key] = _j(row[key]) or {}
         by_rung.setdefault(e["rung"], []).append(row)
     out["claims"] = [{**{k: c[k] for k in c.keys() if k != "attacked_at"},
                       "attacked": bool(c["attacked_at"]),
                       "evidence": by_rung.get(c["rung"], [])} for c in claims]
-    out["turns"] = [{"role": r["role"], "move": r["move"], "rung": r["rung"],
-                     "text": r["text"], "payload": _j(r["payload"])} for r in turns]
+    out["turns"] = ([{"role": r["role"], "move": r["move"], "rung": r["rung"],
+                      "text": r["text"], "payload": _j(r["payload"])} for r in turns]
+                    if is_owner else [])
     return out
 
 
@@ -161,12 +240,22 @@ async def add_evidence(pool, thesis_id: str, rung: str, rows: list[dict]) -> int
         for r in rows:
             await conn.execute(
                 """INSERT INTO ts_evidence (id, thesis_id, rung, side, register, source_key,
-                       signal_only, title, quote, source_url, as_of, basis, said_by, said_role)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)""",
-                uuid.uuid4().hex[:16], thesis_id, rung, r["side"], r["register"],
+                       signal_only, title, quote, source_url, as_of, basis, said_by, said_role,
+                       document_id, block_id, atom_id, relation, evidence_kind, source_subject,
+                       period, span_hash, gate_results, facets, run_id, independence_key)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+                           $19,$20,$21,$22,$23,$24::jsonb,$25::jsonb,$26,$27)
+                   ON CONFLICT DO NOTHING""",
+                r.get("id") or uuid.uuid4().hex[:16], thesis_id, rung, r["side"], r["register"],
                 r.get("source_key") or "", bool(r.get("signal_only")), (r.get("title") or "")[:300],
                 (r.get("quote") or "")[:1200], r.get("source_url") or "", r.get("as_of") or "",
-                r.get("basis") or "", r.get("said_by") or "", r.get("said_role") or "")
+                r.get("basis") or "", r.get("said_by") or "", r.get("said_role") or "",
+                r.get("document_id") or "", r.get("block_id") or "", r.get("atom_id") or "",
+                r.get("relation") or "context", r.get("evidence_kind") or "",
+                r.get("source_subject") or "", r.get("period") or r.get("as_of") or "",
+                r.get("span_hash") or "", json.dumps(r.get("gate_results") or {}),
+                json.dumps(r.get("facets") or {}), r.get("run_id") or "",
+                r.get("independence_key") or "")
     return len(rows)
 
 
@@ -175,7 +264,7 @@ async def set_verdict(pool, thesis_id: str, rung: str, verdict: str, note: str =
     await ensure_schema(pool)
     async with pool.acquire() as conn:
         await conn.execute(
-            f"""UPDATE ts_claim SET verdict = $3, note = $4
+            f"""UPDATE ts_claim SET verdict = $3, research_status = $3, note = $4
                    {", attacked_at = now()" if attacked else ""}
                  WHERE thesis_id = $1 AND rung = $2""",     # noqa: S608 — literal, not user input
             thesis_id, rung, verdict, note[:400])
@@ -229,14 +318,98 @@ async def add_turn(pool, thesis_id: str, *, role: str, move: str = "", rung: str
 
 async def recent(pool, *, owner_id: str = "", limit: int = 40) -> list[dict]:
     await ensure_schema(pool)
+    if not owner_id:
+        return []
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT t.id, t.title, t.thesis, t.updated_at,
                       count(*) FILTER (WHERE c.verdict <> 'open') AS settled,
                       count(*) AS claims
                  FROM ts_thesis t LEFT JOIN ts_claim c ON c.thesis_id = t.id
-                WHERE ($1 = '' OR t.owner_id = $1)
+                WHERE t.owner_id = $1
                 GROUP BY t.id ORDER BY t.updated_at DESC LIMIT $2""", owner_id, limit)
     return [{"id": r["id"], "title": r["title"], "thesis": r["thesis"],
              "settled": int(r["settled"] or 0), "claims": int(r["claims"] or 0),
              "updated_at": r["updated_at"].isoformat()} for r in rows]
+
+
+def _run_out(row) -> dict | None:
+    if not row:
+        return None
+    out = {k: row[k] for k in row.keys()}
+    for key in ("metadata", "error"):
+        out[key] = _j(out.get(key) or {})
+    for key in ("projected_usd", "approved_usd", "actual_usd"):
+        out[key] = float(out.get(key) or 0)
+    for key in ("created_at", "updated_at"):
+        if key in out and hasattr(out[key], "isoformat"):
+            out[key] = out[key].isoformat()
+    return out
+
+
+async def create_run(pool, *, thesis_id: str, idempotency_key: str, projected_usd: float,
+                     approved_usd: float, metadata: dict) -> dict:
+    await ensure_schema(pool)
+    key = (idempotency_key or "").strip()
+    if not key:
+        raise ValueError("idempotency_key is required")
+    async with pool.acquire() as conn, conn.transaction():
+        existing = await conn.fetchrow(
+            "SELECT * FROM ts_run WHERE thesis_id = $1 AND idempotency_key = $2",
+            thesis_id, key)
+        if existing:
+            return _run_out(existing)
+        active = await conn.fetchrow(
+            "SELECT * FROM ts_run WHERE thesis_id = $1 AND state IN ('approved','running')",
+            thesis_id)
+        if active:
+            raise ActiveRunError("a research run is already active")
+        run_id = uuid.uuid4().hex[:20]
+        row = await conn.fetchrow(
+            """INSERT INTO ts_run (id, thesis_id, idempotency_key, projected_usd,
+                                    approved_usd, metadata)
+               VALUES ($1,$2,$3,$4,$5,$6::jsonb) RETURNING *""",
+            run_id, thesis_id, key, float(projected_usd), float(approved_usd),
+            json.dumps(metadata or {}))
+    return _run_out(row)
+
+
+async def get_run(pool, *, thesis_id: str, run_id: str) -> dict | None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM ts_run WHERE thesis_id = $1 AND id = $2", thesis_id, run_id)
+    return _run_out(row)
+
+
+async def advance_run(pool, *, thesis_id: str, run_id: str, stage: str,
+                      state: str = "running", actual_delta: float = 0.0) -> dict:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """UPDATE ts_run
+                  SET stage=$3, state=$4, actual_usd=actual_usd+$5, updated_at=now()
+                WHERE thesis_id=$1 AND id=$2 AND actual_usd+$5 <= approved_usd
+                RETURNING *""",
+            thesis_id, run_id, stage, state, float(actual_delta))
+    if not row:
+        raise SpendCapError("research run is missing or would exceed its approved cost")
+    return _run_out(row)
+
+
+async def fail_run(pool, *, thesis_id: str, run_id: str, stage: str, error: dict) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE ts_run SET state='failed', stage=$3, error=$4::jsonb, updated_at=now()
+                 WHERE thesis_id=$1 AND id=$2""",
+            thesis_id, run_id, stage, json.dumps(error or {}))
+
+
+async def set_decision(pool, thesis_id: str, decision: dict, *, research_status: str) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE ts_thesis SET decision=$2::jsonb, research_status=$3, updated_at=now()
+                 WHERE id=$1""",
+            thesis_id, json.dumps(decision or {}), research_status)
