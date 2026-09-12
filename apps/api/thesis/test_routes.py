@@ -293,3 +293,67 @@ def test_draft_creates_a_genesis_thesis_without_decomposing(monkeypatch) -> None
     assert r.status_code == 200
     assert r.json()["status"] == "draft"
     assert created["claims"] == []            # a draft has no claims — it is still in genesis
+
+
+def test_inquiries_and_generate_drive_the_decision_engine(monkeypatch):
+    from types import SimpleNamespace
+    from eigen_vertical_tech.decision import TECH_DECISION_PROFILE
+    saved = {}
+
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {"id": "user-1"} if token == "Bearer owner" else {}
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token=""):
+        return _thesis(owner=True) if thesis_id == "t1" and (owner_id == "user-1" or owner_token == "owner-cap") else None
+    async def fake_set_questions(_pool, tid, inq, rows):
+        saved.setdefault(inq, []).extend(rows)
+    async def fake_list_questions(_pool, tid, inq=""):
+        return [q for k, rows in saved.items() if (not inq or k == inq) for q in
+                ({"inquiry_key": k, **r, "id": f"{k}{i}"} for i, r in enumerate(rows))]
+
+    monkeypatch.setattr(routes.tstore, "get", fake_get)
+    monkeypatch.setattr(routes.tstore, "set_questions", fake_set_questions)
+    monkeypatch.setattr(routes.tstore, "list_questions", fake_list_questions)
+    # no LLM → generation falls open to one seek-support question per aspect (free, deterministic)
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=None,
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=TECH_DECISION_PROFILE,
+                                 web_domains=(), retrieval_sources={}),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+
+    # before generation: the 4 lines of inquiry exist, no questions
+    r0 = c.get("/thesis/t1/inquiries", headers={"Authorization": "Bearer owner"})
+    assert r0.status_code == 200
+    assert [i["key"] for i in r0.json()["inquiries"]] == ["problem", "buyer", "timing", "market"]
+    assert all(not i["questions"] for i in r0.json()["inquiries"])
+
+    # generate → each aspect gets a question; every inquiry now carries questions
+    r1 = c.post("/thesis/t1/inquiries/generate", headers={"Authorization": "Bearer owner"})
+    assert r1.status_code == 200
+    inqs = {i["key"]: i for i in r1.json()["inquiries"]}
+    assert all(inqs[k]["questions"] for k in ("problem", "buyer", "timing", "market"))
+    # a question carries its lens, reader text, and the declarative target the run will test
+    q = inqs["market"]["questions"][0]
+    assert q["kind"] == "seek_support" and q["text"] and q["target"]
+
+
+def test_generate_requires_owner_and_a_profile(monkeypatch):
+    from types import SimpleNamespace
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {"id": "user-1"} if token == "Bearer owner" else {}
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token=""):
+        return _thesis(owner=True) if thesis_id == "t1" and owner_id == "user-1" else None
+    monkeypatch.setattr(routes.tstore, "get", fake_get)
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=None,
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=None),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+    # no profile configured → 409, not a crash
+    assert c.post("/thesis/t1/inquiries/generate", headers={"Authorization": "Bearer owner"}).status_code == 409
