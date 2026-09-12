@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
+
+from eigen_kernel.research.evidence_binding import EvidenceCandidate, bind_candidates
 
 from .schema import (
     CALL_ONLY, CONTRADICTED, OPEN, SIDE_AGAINST, SIDE_FOR, STATED, SUPPORTED, UNDER_TESTED,
@@ -89,10 +92,25 @@ def _row(r, side: str, ui=None) -> dict:
         except Exception:      # noqa: BLE001
             url = ""
     url = url or facets.get("url") or facets.get("source_url") or facets.get("link") or ""
-    return {"side": side, "register": register_of(sk), "source_key": sk,
+    quote = (r["text"] or "").strip()[:MAX_QUOTE]
+    document_id = str(r["document_id"] or "")
+    block_id = str(r["block_id"] or "")
+    candidate_id = hashlib.sha256(
+        f"{document_id}\0{block_id}\0{quote}".encode("utf-8")
+    ).hexdigest()[:24]
+    subject = next((str(facets.get(k) or "").strip() for k in
+                    ("subject", "subject_id", "entity_name", "entity_id", "issuer")
+                    if facets.get(k)), "")
+    period = (r["published_at"] or "")[:10]
+    return {"id": candidate_id, "side": side, "discovery_side": side,
+            "register": register_of(sk), "source_key": sk,
             "signal_only": is_signal_only(sk), "title": (r["document_title"] or "")[:300],
-            "quote": (r["text"] or "").strip()[:MAX_QUOTE], "source_url": url,
-            "as_of": (r["published_at"] or "")[:10], "basis": "corpus"}
+            "quote": quote, "block_text": r["text"] or "", "source_url": url,
+            "as_of": period, "period": period, "basis": "corpus",
+            "document_id": document_id, "block_id": block_id,
+            "source_subject": subject,
+            "evidence_kind": str(facets.get("evidence_kind") or facets.get("source_kind") or ""),
+            "independence_key": document_id or f"{sk}:{subject}", "facets": facets}
 
 
 def _dedupe(rows: list[dict], cap: int) -> list[dict]:
@@ -176,12 +194,19 @@ async def _web(client, query: str, side: str, terms: list[str]) -> list[dict]:
                     "signal_only": True,            # coverage, never a fact
                     "title": (getattr(r, "title", "") or host or "web")[:300],
                     "quote": text[:MAX_QUOTE], "source_url": r.url or "",
-                    "as_of": (getattr(r, "published", "") or "")[:10], "basis": "web coverage"})
+                    "block_text": text, "document_id": "", "block_id": "",
+                    "source_subject": "", "evidence_kind": "coverage",
+                    "period": (getattr(r, "published", "") or "")[:10],
+                    "as_of": (getattr(r, "published", "") or "")[:10], "basis": "web coverage",
+                    "discovery_side": side, "facets": {},
+                    "id": hashlib.sha256(f"{r.url}\0{text[:MAX_QUOTE]}".encode()).hexdigest()[:24],
+                    "independence_key": host or (r.url or "")})
     return out
 
 
 async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None, ui=None,
-                       tenant: str = "demo", extra_context: str = "", web_client=None) -> dict:
+                       tenant: str = "demo", extra_context: str = "", web_client=None,
+                       relation_llm=None, evidence_policy=None) -> dict:
     """-> {evidence: [...], verdict, note, against_queries, searched}.
 
     Never raises: a corpus we cannot reach yields an honest `under_tested`, reported as an attempt.
@@ -196,9 +221,11 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     except Exception:      # noqa: BLE001
         against_qs = []
 
+    attack_attempted = bool(against_qs)
     ev_for: list[dict] = []
     ev_against: list[dict] = []
     searched = 0
+    corpus_failed = False
     if dsn and settleable != CALL_ONLY:
         try:
             import asyncpg
@@ -215,8 +242,8 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
                     searched += 1
             finally:
                 await conn.close()
-        except Exception:      # noqa: BLE001 — a corpus we cannot read is under-tested, not supported
-            pass
+        except Exception:      # noqa: BLE001 — surfaced below; never mislabeled as completed research
+            corpus_failed = True
 
     # CORPUS FIRST, WEB WHERE IT IS SILENT — the standing directive, and also the cheap order. Our
     # own Postgres costs nothing and is tier-classified; a paid web query is worth spending only on a
@@ -235,14 +262,45 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
 
     ev_for = _dedupe(ev_for, MAX_PER_SIDE)
     ev_against = _dedupe(ev_against, MAX_PER_SIDE)
-    # SENTIMENT IS NOT SUPPORT. An enthusiastic forum thread reads exactly like demand and is not, so
-    # it is carried, labelled, and excluded from the count that decides the verdict.
-    n_for = sum(1 for e in ev_for if not e["signal_only"])
-    n_against = sum(1 for e in ev_against if not e["signal_only"])
-    v, note = verdict_for(settleable=settleable, n_for=n_for, n_against=n_against)
-    if not against_qs and settleable != CALL_ONLY:
-        note += " (No red-team model was available, so the attack was not run.)"
-    return {"evidence": ev_for + ev_against, "verdict": v, "note": note,
+    raw = ev_for + ev_against
+    candidates = [EvidenceCandidate(
+        id=e["id"], quote=e["quote"], block_text=e.get("block_text") or e["quote"],
+        document_id=e.get("document_id") or "", block_id=e.get("block_id") or "",
+        source_subject=e.get("source_subject") or "", evidence_kind=e.get("evidence_kind") or "",
+        period=e.get("period") or "", facets=e.get("facets") or {},
+        signal_only=bool(e.get("signal_only")), discovery_side=e.get("discovery_side") or e["side"],
+    ) for e in raw]
+    bound = await bind_candidates(claim, candidates, relation_llm)
+    original = {e["id"]: e for e in raw}
+    evidence = []
+    for row in bound:
+        merged = {**original[row["id"]], **row}
+        merged.pop("block_text", None)
+        # `side` remains a display grouping only. Relationship is the semantic judgment.
+        if row["relation"] == "supports":
+            merged["side"] = SIDE_FOR
+        elif row["relation"] == "contradicts":
+            merged["side"] = SIDE_AGAINST
+        evidence.append(merged)
+
+    counts = {k: sum(1 for e in evidence if e.get("relation") == k)
+              for k in ("supports", "contradicts", "context", "signal")}
+    if settleable == CALL_ONLY:
+        research_status, note = UNSETTLEABLE, "No document can settle this. It needs a person."
+    elif not attack_attempted:
+        research_status, note = ("attack_unavailable",
+                                 "No red-team model was available, so the attack was not run.")
+    elif corpus_failed:
+        research_status, note = "failed", "The corpus search failed; retry before drawing a conclusion."
+    elif evidence_policy is not None:
+        research_status, note = evidence_policy.qualify(evidence, settleable=settleable)
+    else:
+        # Safe fallback for a vertical without a decision policy: only the absence of decisive rows
+        # can be stated; no application-level threshold is invented here.
+        research_status, note = UNDER_TESTED, "The attack completed without a configured evidence policy."
+
+    return {"evidence": evidence, "verdict": research_status, "research_status": research_status,
+            "attack_attempted": attack_attempted, "note": note,
             "against_queries": against_qs, "searched": searched, "web_queries": web_qs,
-            "counts": {"for": n_for, "against": n_against,
-                       "signal": len(ev_for) + len(ev_against) - n_for - n_against}}
+            "counts": {"for": counts["supports"], "against": counts["contradicts"],
+                       "context": counts["context"], "signal": counts["signal"]}}

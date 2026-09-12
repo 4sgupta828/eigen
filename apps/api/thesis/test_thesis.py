@@ -250,3 +250,31 @@ def test_signal_rows_never_move_a_verdict():
     """Web coverage is all we have on a thin claim — and a verdict built on it would say `supported`
     off the back of sentiment. The counts that decide exclude signal rows."""
     assert verdict_for(settleable="corpus", n_for=0, n_against=0)[0] == "under_tested"
+
+
+def test_corpus_row_keeps_stable_source_and_evidence_identity():
+    row = atk._row({
+        "document_id": "doc-7", "block_id": "block-9",
+        "text": "Regional operators report a repeated measurable workflow failure every week.",
+        "document_title": "Operating report", "source_key": "edgar",
+        "published_at": "2026-04-01T00:00:00Z",
+        "facets": {"issuer": "Entity A", "evidence_kind": "operating_metric",
+                   "url": "https://example.test/report"},
+    }, "for")
+
+    assert row["document_id"] == "doc-7"
+    assert row["block_id"] == "block-9"
+    assert row["source_subject"] == "Entity A"
+    assert row["evidence_kind"] == "operating_metric"
+    assert row["period"] == "2026-04-01"
+    assert row["facets"]["issuer"] == "Entity A"
+
+
+@pytest.mark.asyncio
+async def test_missing_refuter_is_attack_unavailable_not_under_tested():
+    got = await atk.attack_claim("", claim="Entity A has a repeated workflow failure",
+                                 settleable="corpus", judge_llm=None)
+
+    assert got["research_status"] == "attack_unavailable"
+    assert got["attack_attempted"] is False
+    assert got["verdict"] != "under_tested"
