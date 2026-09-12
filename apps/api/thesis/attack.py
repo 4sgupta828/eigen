@@ -10,11 +10,12 @@ is not disconfirmation found. That distinction is the whole reason this is a str
 """
 from __future__ import annotations
 
+import os
 import re
 
 from .schema import (
-    CALL_ONLY, CONTRADICTED, OPEN, SIDE_AGAINST, SIDE_FOR, SUPPORTED, UNDER_TESTED, UNSETTLEABLE,
-    is_signal_only, register_of,
+    CALL_ONLY, CONTRADICTED, OPEN, SIDE_AGAINST, SIDE_FOR, STATED, SUPPORTED, UNDER_TESTED,
+    UNSETTLEABLE, is_signal_only, register_of,
 )
 
 MAX_PER_SIDE = 6
@@ -131,8 +132,56 @@ def verdict_for(*, settleable: str, n_for: int, n_against: int) -> tuple[str, st
                           "counter-evidence; neither returned anything congruent.")
 
 
+WEB_USD_PER_QUERY = float(os.environ.get("EIGEN_THESIS_WEB_USD", "0.006"))
+WEB_MAX_RESULTS = 6
+WEB_MIN_CHARS = 80
+
+
+def _web_client(manifest=None):
+    """The kernel's web leg, unscoped. Never raises — no keys means no web, reported as such."""
+    try:
+        from eigen_kernel.runtime.build import build_web
+        return build_web(mode=os.environ.get("EIGEN_PROVIDER_MODE") or "live",
+                         domains=getattr(manifest, "web_domains", ()), recent=False)
+    except Exception:      # noqa: BLE001
+        return None
+
+
+async def _web(client, query: str, side: str, terms: list[str]) -> list[dict]:
+    """Web rows for one query, bound to the claim the same way corpus rows are.
+
+    Everything from here is `stated` and SIGNAL — an article is somebody writing, never a filed
+    number. The standing directive holds: coverage can colour a case and can never carry it.
+    """
+    if client is None or not query.strip():
+        return []
+    try:
+        res = await client.search(query, max_results=WEB_MAX_RESULTS, open_web=True)
+    except Exception:      # noqa: BLE001 — a web leg we cannot reach thins the table, never fails it
+        return []
+    out = []
+    for r in res or []:
+        text = " ".join(filter(None, [*(getattr(r, "highlights", ()) or ()),
+                                      getattr(r, "snippet", "") or "",
+                                      (getattr(r, "body", "") or "")[:1200]])).strip()
+        if len(text) < WEB_MIN_CHARS or not binds(text, terms):
+            continue
+        host = ""
+        try:
+            from urllib.parse import urlparse
+            host = (urlparse(r.url).hostname or "").replace("www.", "")
+        except Exception:      # noqa: BLE001
+            pass
+        out.append({"side": side, "register": STATED, "source_key": "web",
+                    "signal_only": True,            # coverage, never a fact
+                    "title": (getattr(r, "title", "") or host or "web")[:300],
+                    "quote": text[:MAX_QUOTE], "source_url": r.url or "",
+                    "as_of": (getattr(r, "published", "") or "")[:10], "basis": "web coverage"})
+    return out
+
+
 async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None, ui=None,
-                       tenant: str = "demo", extra_context: str = "") -> dict:
+                       tenant: str = "demo", extra_context: str = "", web_client=None) -> dict:
     """-> {evidence: [...], verdict, note, against_queries, searched}.
 
     Never raises: a corpus we cannot reach yields an honest `under_tested`, reported as an attempt.
@@ -169,6 +218,21 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
         except Exception:      # noqa: BLE001 — a corpus we cannot read is under-tested, not supported
             pass
 
+    # CORPUS FIRST, WEB WHERE IT IS SILENT — the standing directive, and also the cheap order. Our
+    # own Postgres costs nothing and is tier-classified; a paid web query is worth spending only on a
+    # claim the record could not speak to at all. A demand thesis about a market segment is exactly
+    # the case the corpus is thin on and the open web is not.
+    web_qs = 0
+    if web_client is not None and settleable != CALL_ONLY:
+        if not ev_for:
+            got = await _web(web_client, claim, SIDE_FOR, terms)
+            web_qs += 1
+            ev_for.extend(got)
+        if not ev_against and against_qs:
+            got = await _web(web_client, against_qs[0], SIDE_AGAINST, terms)
+            web_qs += 1
+            ev_against.extend(got)
+
     ev_for = _dedupe(ev_for, MAX_PER_SIDE)
     ev_against = _dedupe(ev_against, MAX_PER_SIDE)
     # SENTIMENT IS NOT SUPPORT. An enthusiastic forum thread reads exactly like demand and is not, so
@@ -179,6 +243,6 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     if not against_qs and settleable != CALL_ONLY:
         note += " (No red-team model was available, so the attack was not run.)"
     return {"evidence": ev_for + ev_against, "verdict": v, "note": note,
-            "against_queries": against_qs, "searched": searched,
+            "against_queries": against_qs, "searched": searched, "web_queries": web_qs,
             "counts": {"for": n_for, "against": n_against,
                        "signal": len(ev_for) + len(ev_against) - n_for - n_against}}

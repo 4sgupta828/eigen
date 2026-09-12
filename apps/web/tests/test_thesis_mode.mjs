@@ -90,14 +90,34 @@ test("every row can be asked about, and the question carries its rung", () => {
 });
 
 test("the table stacks into cards on a phone", () => {
-  const css = SRC.slice(SRC.indexOf(".th-table{"), SRC.indexOf(".th-table{") + 2600);
-  assert.match(css, /@media \(max-width:760px\)/, "a side-by-side table is unreadable at 400px");
-  assert.match(css, /td\[data-col\]::before\{content:attr\(data-col\)/,
+  assert.match(SRC, /@media \(max-width:760px\)/, "a side-by-side table is unreadable at 400px");
+  assert.match(SRC, /td\[data-col\]::before\{content:attr\(data-col\)/,
     "stacked cells lose their column, so the label has to come back");
 });
 
 test("citations hang off the case they support", () => {
-  assert.match(SRC, /function citesHtml\(ev, side\)/);
+  assert.match(SRC, /function citesHtml\(ev, side, rows, rung\)/);
   assert.match(SRC, /e\.signal_only \? " \\u00b7 signal"/,
     "sentiment stays labelled even when it is only a chip");
+});
+
+test("citation markers resolve to the row they point at", () => {
+  assert.match(SRC, /function linkCites\(text, rows, key\)/);
+  assert.match(SRC, /\\\[\(\\d\{1,2\}\)\\\]/, "[1] and [1][3] in the case text must become markers");
+  assert.match(SRC, /if\(!e\) return "";/,
+    "a citation to a row that does not exist must vanish, not render a dead marker");
+});
+
+test("rows are numbered across both sides, not per side", () => {
+  // Per-side numbering silently renumbers the against rows, so every citation on that side points
+  // at the wrong source — worse than no citation at all.
+  assert.match(SRC, /function numberedEv\(ev\)/);
+  assert.match(SRC, /for\(const side of \["for", "against"\]\)/);
+});
+
+test("the collective take sits under the table and tallies the verdicts", () => {
+  assert.match(SRC, /function overallHtml\(d\)/);
+  assert.match(SRC, /Taking every take together/);
+  assert.match(SRC, /if\(!d\.overall\) return "";/,
+    "no integrated reading means no box, rather than an empty one");
 });

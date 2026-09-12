@@ -42,7 +42,11 @@ class NewThesis(BaseModel):
 
 class AttackIn(BaseModel):
     rung: str = ""            # one rung, or blank for every rung the record could speak to
-    max_usd: float = 0.10
+    # The web leg, used ONLY where our own corpus said nothing — corpus-first is the standing
+    # directive and also the cheap order. A demand thesis about a market segment is exactly the case
+    # the corpus is thin on and the open web is not.
+    web: bool = True
+    max_usd: float = 0.25
 
 
 class CallIn(BaseModel):
@@ -127,7 +131,11 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             raise HTTPException(status_code=404, detail="no such thesis")
         todo = [c for c in d["claims"]
                 if (not body.rung or c["rung"] == body.rung) and c["settleable"] != CALL_ONLY]
-        projected = round(0.0015 * len(todo), 4)
+        # One refuter call per claim, plus AT MOST two web queries per claim — and only on the
+        # claims our own corpus could not speak to at all. Priced at the ceiling so the number a
+        # reader approves never turns out to have been optimistic.
+        web = atk._web_client(manifest) if body.web else None
+        projected = round(len(todo) * (0.0015 + (2 * atk.WEB_USD_PER_QUERY if web else 0.0)), 4)
         if projected > body.max_usd:
             return {"status": "refused", "projection": {"claims": len(todo),
                                                         "projected_usd": projected},
@@ -137,12 +145,14 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         done = []
         for c in todo:
             res = await atk.attack_claim(dsn, claim=c["claim"], settleable=c["settleable"],
-                                         judge_llm=judge_llm, ui=_ui(), extra_context=ctx)
+                                         judge_llm=judge_llm, ui=_ui(), extra_context=ctx,
+                                         web_client=web)
             await tstore.add_evidence(pool, thesis_id, c["rung"], res["evidence"])
             await tstore.set_verdict(pool, thesis_id, c["rung"], res["verdict"], res["note"],
                                      attacked=True)
             done.append({"rung": c["rung"], "verdict": res["verdict"], "counts": res["counts"],
-                         "against_queries": res["against_queries"]})
+                         "against_queries": res["against_queries"],
+                         "web_queries": res.get("web_queries", 0)})
         # Every call-only rung is stamped once, so the ledger never shows them as merely unexamined.
         for c in d["claims"]:
             if c["settleable"] == CALL_ONLY and c["verdict"] == OPEN:
@@ -152,9 +162,11 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         # ten separate calls cost ten times as much and argue each claim without knowing the others.
         fresh = await tstore.get(pool, thesis_id=thesis_id, owner_id=await _owner(authorization))
         try:
-            cases = await arg.cases_for(_llm_json(), thesis=fresh["thesis"],
-                                        claims=fresh["claims"])
+            cases, overall = await arg.cases_for(_llm_json(), thesis=fresh["thesis"],
+                                                 claims=fresh["claims"])
             await tstore.set_cases(pool, thesis_id, cases)
+            if overall:
+                await tstore.set_overall(pool, thesis_id, overall)
         except Exception:      # noqa: BLE001 — a table without written cases still shows its evidence
             pass
         return {"status": "ok", "attacked": done,

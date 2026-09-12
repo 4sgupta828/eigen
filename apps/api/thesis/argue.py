@@ -28,10 +28,19 @@ register: `filed` (regulatory or audited), `stated` (somebody asserting it), `ob
 that exists). Some rows are tagged `signal` — forum or news sentiment, which is how people feel and
 never what is true.
 
-Write two short cases per claim, two or three sentences each:
+Write two cases per claim, three or four sentences each — an ARGUMENT, not a summary of the rows:
 
 - `case_for`: the strongest honest argument that the claim holds, from the FOR rows.
 - `case_against`: the strongest honest argument that it does not, from the AGAINST rows.
+
+CITE. Every sentence that rests on a row ends with its number in square brackets — [1], [2], or [1][3]
+where two rows carry it. A sentence with no bracket is a sentence you are asserting without support,
+and there should be almost none of those. Cite the row numbers exactly as given; never invent one.
+
+REASON, do not paraphrase. Say what the rows IMPLY for this claim and why: what follows from them,
+what the reader should conclude, and how far it generalises beyond the specific case the row
+describes. "A source says X" is not an argument. "X means the buyer already has a workaround they are
+used to, so the gain has to clear their switching cost, not zero [2]" is.
 
 Rules, in order of importance:
 1. ARGUE ONLY FROM THE ROWS GIVEN. Never introduce a fact, a number, a company or a trend that is not
@@ -47,24 +56,52 @@ Rules, in order of importance:
 
 Then say which side the evidence currently favours: "for", "against", or "neither".
 
+FINALLY, one `overall` reading of the WHOLE thesis that integrates every claim — four to six
+sentences. This is the part the reader acts on, so:
+- Say where the thesis is strongest and where it is weakest, naming the claims.
+- Weigh them: a thesis can survive a weak claim low on the ladder and cannot survive a broken one at
+  its centre. Say which kind this is.
+- Name what would change your reading — the single piece of evidence that would move it most.
+- Be explicit that willingness to pay and switching cost are NOT settled here by anything, because no
+  document can settle them. A thesis whose remaining risk is entirely in those two is in a different
+  position from one contradicted on the record, and the reader must not confuse them.
+- Do not issue a verdict on whether to build it. Say what is known, what is not, and what it costs to
+  find out.
+
 Return ONE JSON object exactly matching this schema:
 
 {"cases": [{"rung": "<rung key>", "case_for": "...", "case_against": "...",
-            "leans": "for|against|neither"}]}
+            "leans": "for|against|neither"}],
+ "overall": "..."}
 
 Output ONLY the JSON object."""
 
 
+def numbered(evidence: list[dict]) -> list[dict]:
+    """Every row a case may argue from, numbered once across BOTH sides so a citation [3] is
+    unambiguous. Without stable numbers a case cannot point at anything and the reader is back to
+    taking the reasoning on faith."""
+    out = []
+    for side in ("for", "against"):
+        n = 0
+        for e in (evidence or []):
+            if e.get("side") != side:
+                continue
+            out.append(e)
+            n += 1
+            if n >= MAX_EV_PER_SIDE:
+                break
+    return out
+
+
 def _rows(evidence: list[dict], side: str) -> str:
     out = []
-    for e in (evidence or []):
+    for i, e in enumerate(numbered(evidence), start=1):
         if e.get("side") != side:
             continue
         tag = "signal" if e.get("signal_only") else (e.get("register") or "stated")
         who = e.get("said_by") or e.get("source_key") or "source"
-        out.append(f"  - [{tag} · {who}] {(e.get('quote') or '')[:MAX_QUOTE]}")
-        if len(out) >= MAX_EV_PER_SIDE:
-            break
+        out.append(f"  [{i}] ({tag} · {who}) {(e.get('quote') or '')[:MAX_QUOTE]}")
     return "\n".join(out) or "  (no rows)"
 
 
@@ -81,16 +118,16 @@ def project_cost(n_claims: int) -> dict:
     return {"calls": 1, "claims": n_claims, "projected_usd": 0.004}
 
 
-async def cases_for(llm_json, *, thesis: str, claims: list[dict]) -> dict[str, dict]:
-    """-> {rung: {case_for, case_against, leans}}. Never raises; an empty map means the table shows
-    its evidence without a written case, which is thinner but never wrong."""
+async def cases_for(llm_json, *, thesis: str, claims: list[dict]) -> tuple[dict[str, dict], str]:
+    """-> ({rung: {case_for, case_against, leans}}, overall). Never raises; empties mean the table
+    shows its evidence without a written case, which is thinner but never wrong."""
     if llm_json is None or not claims:
-        return {}
+        return {}, ""
     try:
         raw = await llm_json(_SYSTEM, _prompt(thesis, claims))
         d = raw if isinstance(raw, dict) else json.loads(raw)
     except Exception:      # noqa: BLE001
-        return {}
+        return {}, ""
     out: dict[str, dict] = {}
     known = {c["rung"] for c in claims}
     for row in (d.get("cases") or []):
@@ -101,4 +138,4 @@ async def cases_for(llm_json, *, thesis: str, claims: list[dict]) -> dict[str, d
         out[k] = {"case_for": str(row.get("case_for") or "").strip()[:900],
                   "case_against": str(row.get("case_against") or "").strip()[:900],
                   "leans": leans if leans in ("for", "against", "neither") else "neither"}
-    return out
+    return out, str(d.get("overall") or "").strip()[:2000]

@@ -33,6 +33,9 @@ CREATE INDEX IF NOT EXISTS ix_ts_thesis_owner ON ts_thesis (owner_id, updated_at
 -- Which claim the conversation is currently on. A stress test that jumps rung to rung every turn is
 -- a monologue on a timer; the agent stays on one thing until it is settled or set aside.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS focus_rung text NOT NULL DEFAULT '';
+-- The integrated reading of every claim at once. A table of ten takes is ten judgements the reader
+-- still has to add up; this is the addition, and it is the part they act on.
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS overall text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS ts_claim (
     thesis_id   text NOT NULL REFERENCES ts_thesis(id) ON DELETE CASCADE,
@@ -191,6 +194,13 @@ async def set_cases(pool, thesis_id: str, cases: dict[str, dict]) -> int:
                 thesis_id, rung, c.get("case_for") or "", c.get("case_against") or "",
                 c.get("leans") or "")
     return len(cases)
+
+
+async def set_overall(pool, thesis_id: str, overall: str) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_thesis SET overall = $2, updated_at = now() WHERE id = $1",
+                           thesis_id, (overall or "")[:2000])
 
 
 async def set_focus(pool, thesis_id: str, rung: str) -> None:

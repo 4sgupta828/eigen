@@ -4,6 +4,7 @@ Free: no database, no model. Every case here is one designed to pass a gate whil
 """
 import pytest
 
+from api.thesis import attack as atk
 from api.thesis import decompose as dec
 from api.thesis import people as ppl
 from api.thesis.attack import _terms, binds, verdict_for
@@ -204,3 +205,48 @@ async def test_the_decomposer_calls_the_json_seam_the_way_the_app_defines_it():
     assert out["claims"][0]["claim"] == "a real claim"
     # …and the model still does not get to say what is settleable.
     assert out["claims"][0]["settleable"] == SETTLEABLE["problem_exists"]
+
+
+# ── the web leg ───────────────────────────────────────────────────────────────────────────────────
+
+def test_web_rows_are_signal_never_fact():
+    """An article is somebody writing. It can colour a case and can never carry it — the standing
+    directive, and here also the difference between a stress test and a hype machine."""
+    import asyncio
+
+    class _R:
+        url, title, snippet, body, published, highlights = (
+            "https://x.com/a", "Route chaos at mid-market carriers",
+            "mid-market logistics firms still re-plan their delivery routes by hand every single "
+            "morning, on a whiteboard", "", "", ())
+
+    class _C:
+        async def search(self, q, **kw):
+            return [_R()]
+
+    rows = asyncio.run(atk._web(_C(), "q", "for", ["logistics", "delivery", "routes"]))
+    assert rows and rows[0]["signal_only"] is True
+    assert rows[0]["register"] == "stated"
+    assert rows[0]["source_url"] == "https://x.com/a", "a web row the reader cannot open is worthless"
+
+
+def test_a_web_row_must_bind_the_claim_like_any_other():
+    import asyncio
+
+    class _R:
+        url, title, snippet, body, published, highlights = (
+            "https://x.com/b", "Something else", "a long enough passage about entirely other matters "
+            "that shares no terms with the claim at all", "", "", ())
+
+    class _C:
+        async def search(self, q, **kw):
+            return [_R()]
+
+    rows = asyncio.run(atk._web(_C(), "q", "for", ["logistics", "delivery", "routes"]))
+    assert rows == []
+
+
+def test_signal_rows_never_move_a_verdict():
+    """Web coverage is all we have on a thin claim — and a verdict built on it would say `supported`
+    off the back of sentiment. The counts that decide exclude signal rows."""
+    assert verdict_for(settleable="corpus", n_for=0, n_against=0)[0] == "under_tested"

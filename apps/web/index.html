@@ -425,6 +425,16 @@
   .th-ask-row button{font-family:var(--mono);font-size:.65rem;padding:.35rem .7rem;border-radius:8px;
     border:1px solid var(--hair);background:var(--panel2);color:var(--ink);cursor:pointer;min-height:34px;}
   .th-ask-row button:hover{border-color:var(--gold);color:var(--gold);}
+  .th-ref{font-size:.62em;vertical-align:super;line-height:0;text-decoration:none;color:var(--gold);
+    border:1px solid var(--hair);border-radius:4px;padding:0 .22em;margin-left:.12em;}
+  .th-ref:hover{border-color:var(--gold);}
+  .th-flash{border-color:var(--gold) !important;color:var(--gold) !important;
+    background:color-mix(in srgb, var(--gold) 12%, transparent);}
+  .th-overall{margin:1.1rem 0 0;padding:.9rem 1rem;border:1px solid var(--hair);border-radius:14px;
+    background:var(--panel);}
+  .th-overall > h4{margin:0 0 .5rem;font-size:.95rem;font-weight:650;}
+  .th-overall > p{margin:.5rem 0 0;font-size:.9rem;line-height:1.65;}
+  .th-tally{display:flex;flex-wrap:wrap;gap:.35rem;}
   .th-answer{margin-top:.5rem;padding-left:.6rem;border-left:2px solid var(--gold);font-size:.82rem;
     line-height:1.6;color:var(--ink);}
   @media (max-width:760px){
@@ -11088,7 +11098,8 @@ async function openShare(token){
     if(STATE.busy) return;
     STATE.busy = true;
     note().innerHTML = '<span class="su-spin"></span> ' + (path.endsWith("attack")
-      ? "searching for support, then running the red team against it…" : "thinking…");
+      ? "reading our corpus, then the open web where it is silent, then the red team against each take…"
+      : "thinking…");
     try{
       const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + path,
                             {method:"POST", headers: hdrs(), body: JSON.stringify(body || {})});
@@ -11100,7 +11111,7 @@ async function openShare(token){
     finally{ STATE.busy = false; }
   }
 
-  const attack = () => post("/attack", {max_usd: 0.10});
+  const attack = () => post("/attack", {max_usd: 0.30});
   const turn = () => post("/turn", {});
   const say = (text) => post("/turn", {text: text});
 
@@ -11180,25 +11191,54 @@ async function openShare(token){
   // rather than on whatever the conversation happened to be looking at.
   const takes = () => document.getElementById("th-takes");
 
-  function citesHtml(ev, side){
-    const rows = (ev || []).filter(e => e.side === side).slice(0, 4);
-    if(!rows.length) return "";
-    return '<div class="th-cites">' + rows.map(e => {
-      const label = (e.said_by || e.source_key || "source")
+  function citesHtml(ev, side, rows, rung){
+    const mine = (rows || []).map((e, i) => [e, i + 1]).filter(([e]) => e.side === side);
+    if(!mine.length) return "";
+    return '<div class="th-cites">' + mine.map(([e, n]) => {
+      const label = n + ". " + (e.said_by || e.source_key || "source")
         + (e.signal_only ? " \u00b7 signal" : "");
-      const t = esc2((e.quote || "").slice(0, 220));
+      const t = esc2((e.quote || "").slice(0, 300));
+      const id = esc2(rung + ":" + n);
       return e.source_url
-        ? '<a class="th-cite" href="' + esc2(e.source_url) + '" target="_blank" rel="noopener" title="'
-          + t + '">' + esc2(label) + "</a>"
-        : '<span class="th-cite" title="' + t + '">' + esc2(label) + "</span>";
+        ? '<a class="th-cite" id="cite-' + id + '" href="' + esc2(e.source_url)
+          + '" target="_blank" rel="noopener" title="' + t + '">' + esc2(label) + " \u2197</a>"
+        : '<span class="th-cite" id="cite-' + id + '" title="' + t + '">' + esc2(label) + "</span>";
     }).join("") + "</div>";
   }
 
-  function caseCell(text, ev, side, col){
+  // Rows are numbered ACROSS both sides, exactly as the arguer numbered them, so a [3] in the case
+  // text points at the same row the reader can click. Numbering per-side would silently renumber the
+  // against rows and every citation on that side would point at the wrong source.
+  function numberedEv(ev){
+    const out = [];
+    for(const side of ["for", "against"]){
+      let n = 0;
+      for(const e of (ev || [])){
+        if(e.side !== side) continue;
+        out.push(e); if(++n >= 4) break;
+      }
+    }
+    return out;
+  }
+
+  // [1] and [1][3] become superscript markers that scroll to — and flash — the chip they cite.
+  function linkCites(text, rows, key){
+    return esc2(text).replace(/\[(\d{1,2})\]/g, (m, n) => {
+      const e = rows[Number(n) - 1];
+      if(!e) return "";                       // a citation to a row that does not exist is not shown
+      return '<a class="th-ref" href="#" data-cite="' + esc2(key + ":" + n) + '" title="'
+        + esc2((e.quote || "").slice(0, 200)) + '">' + esc2(n) + "</a>";
+    });
+  }
+
+  function caseCell(text, ev, side, col, rung){
+    const rows = numberedEv(ev);
     const missing = !text;
+    const body = missing
+      ? esc2("Nothing in the record speaks to this side yet.")
+      : linkCites(text, rows, rung);
     return '<td data-col="' + esc2(col) + '"><div class="th-case' + (missing ? " empty" : "")
-      + '">' + esc2(text || "Nothing in the record speaks to this side yet.") + "</div>"
-      + citesHtml(ev, side) + "</td>";
+      + '">' + body + "</div>" + citesHtml(ev, side, rows, rung) + "</td>";
   }
 
   function takesHtml(d){
@@ -11218,11 +11258,29 @@ async function openShare(token){
             + '<button type="button" data-asked="' + esc2(c.rung) + '">Ask</button></div>'
             + (ans ? '<div class="th-answer">' + esc2(ans) + "</div>" : "")
             + "</td>"
-            + caseCell(c.case_for, ev, "for", "The case for")
-            + caseCell(c.case_against, ev, "against", "The case against")
+            + caseCell(c.case_for, ev, "for", "The case for", c.rung)
+            + caseCell(c.case_against, ev, "against", "The case against", c.rung)
             + "</tr>";
         }).join("")
-      + "</tbody></table></div>";
+      + "</tbody></table></div>"
+      + overallHtml(d);
+  }
+
+  // THE COLLECTIVE TAKE. Ten rows are ten judgements the reader still has to add up; this is the
+  // addition, and it is the part they act on. It sits under the table because it has no standing
+  // without it.
+  function overallHtml(d){
+    if(!d.overall) return "";
+    const cs = d.claims || [];
+    const n = (v) => cs.filter(c => c.verdict === v).length;
+    const tally = [["contradicted", n("contradicted")], ["under_tested", n("under_tested")],
+                   ["supported", n("supported")], ["unsettleable", n("unsettleable")]]
+      .filter(([, k]) => k)
+      .map(([v, k]) => '<span class="th-v" data-v="' + esc2(v) + '">' + k + " "
+           + esc2(v.replace("_", " ")) + "</span>").join(" ");
+    return '<div class="th-overall"><h4>Taking every take together</h4>'
+      + '<div class="th-tally">' + tally + "</div>"
+      + "<p>" + esc2(d.overall) + "</p></div>";
   }
 
   function wireTakes(){
@@ -11238,6 +11296,13 @@ async function openShare(token){
       b.addEventListener("click", () => fire(b.dataset.asked)));
     host.querySelectorAll("[data-ask]").forEach(i =>
       i.addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); fire(i.dataset.ask); } }));
+    host.querySelectorAll("[data-cite]").forEach(a => a.addEventListener("click", e => {
+      e.preventDefault();
+      const el = document.getElementById("cite-" + a.dataset.cite);
+      if(!el) return;
+      el.scrollIntoView({block: "nearest", behavior: "smooth"});
+      el.classList.add("th-flash"); setTimeout(() => el.classList.remove("th-flash"), 1200);
+    }));
   }
 
   async function askRow(rung, text){
