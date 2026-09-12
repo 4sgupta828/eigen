@@ -262,3 +262,15 @@ async def test_revising_claim_invalidates_old_evidence_and_decision_state() -> N
     assert len(updates) == 1 and "research_status = 'open'" in updates[0][0]
     assert len(deletes) == 1
     assert updates[0][1][:2] == ("t1", "problem_exists")
+
+
+def test_active_question_hash_is_order_invariant_and_edit_sensitive():
+    from api.thesis import store
+    a = store.active_question_hash([{"id": "q1", "target": "A"}, {"id": "q2", "target": "B"}])
+    b = store.active_question_hash([{"id": "q2", "target": "B"}, {"id": "q1", "target": "A"}])
+    c = store.active_question_hash([{"id": "q1", "target": "A edited"}, {"id": "q2", "target": "B"}])
+    d = store.active_question_hash([{"id": "q1", "target": "A"}])         # a removed question
+    assert a == b                    # re-running the same set is idempotent (same key)
+    assert a != c                    # editing a target is a new run
+    assert a != d                    # removing a question is a new run
+    assert len(a) == 24

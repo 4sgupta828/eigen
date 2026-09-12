@@ -121,6 +121,31 @@ CREATE INDEX IF NOT EXISTS ix_ts_turn_thesis ON ts_turn (thesis_id, id);
 -- written for back-compat; `rungs` is the multi-claim context the tested-phase agent reasons over.
 ALTER TABLE ts_turn ADD COLUMN IF NOT EXISTS rungs jsonb NOT NULL DEFAULT '[]';
 
+-- Lines of inquiry / Socratic questions (the decision-engine surface). A question is TYPED (its lens),
+-- carries the reader-facing text plus the declarative `target` the evidence run tests, and — once
+-- answered — its target_status, grounded answer, and the run that produced them. Editing an ANSWERED
+-- question supersedes it (a new row, the old marked superseded) so prior answers stay traceable; an
+-- unrun question is edited in place. Status: active | superseded | removed.
+CREATE TABLE IF NOT EXISTS ts_question (
+    id            text PRIMARY KEY,
+    thesis_id     text NOT NULL REFERENCES ts_thesis(id) ON DELETE CASCADE,
+    inquiry_key   text NOT NULL,
+    aspect_key    text NOT NULL,
+    kind          text NOT NULL,
+    text          text NOT NULL,
+    target        text NOT NULL,
+    polarity      int  NOT NULL DEFAULT 1,
+    sort_order    int  NOT NULL DEFAULT 0,
+    status        text NOT NULL DEFAULT 'active',       -- active | superseded | removed
+    target_status text NOT NULL DEFAULT '',             -- decision.TARGET_* once answered
+    answer        text NOT NULL DEFAULT '',             -- grounded, [[e:id]]-cited prose
+    evidence_ids  jsonb NOT NULL DEFAULT '[]',
+    run_id        text NOT NULL DEFAULT '',             -- the run that last answered it ('' = never run)
+    superseded_by text NOT NULL DEFAULT '',
+    created_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_ts_question_inq ON ts_question (thesis_id, inquiry_key, sort_order);
+
 CREATE TABLE IF NOT EXISTS ts_run (
     id              text PRIMARY KEY,
     thesis_id       text NOT NULL REFERENCES ts_thesis(id) ON DELETE CASCADE,
@@ -495,3 +520,113 @@ async def issue_share(pool, thesis_id: str) -> str:
 async def revoke_share(pool, thesis_id: str) -> None:
     # Rotation invalidates every previously copied read-only URL without creating a nullable state.
     await issue_share(pool, thesis_id)
+
+
+# ---- lines of inquiry: Socratic questions ------------------------------------------------------
+import hashlib as _hashlib
+
+
+def _q_out(row) -> dict:
+    out = {k: row[k] for k in row.keys() if k != "created_at"}
+    out["evidence_ids"] = _j(out.get("evidence_ids") or [])
+    return out
+
+
+async def set_questions(pool, thesis_id: str, inquiry_key: str, questions: list[dict]) -> None:
+    """Replace the UNRUN active questions of one inquiry with a freshly generated set. Answered
+    questions (run_id != '') are left untouched — regenerating never discards work the user paid for."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            """UPDATE ts_question SET status='removed'
+                 WHERE thesis_id=$1 AND inquiry_key=$2 AND status='active' AND run_id=''""",
+            thesis_id, inquiry_key)
+        for i, q in enumerate(questions):
+            await conn.execute(
+                """INSERT INTO ts_question (id, thesis_id, inquiry_key, aspect_key, kind, text, target,
+                                            polarity, sort_order)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)""",
+                uuid.uuid4().hex[:16], thesis_id, inquiry_key, q["aspect_key"], q["kind"],
+                q["text"][:400], q["target"][:400], int(q.get("polarity", 1)), i)
+
+
+async def list_questions(pool, thesis_id: str, inquiry_key: str = "") -> list[dict]:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT * FROM ts_question WHERE thesis_id=$1 AND status='active'
+                 AND ($2='' OR inquiry_key=$2) ORDER BY inquiry_key, sort_order""",
+            thesis_id, inquiry_key)
+    return [_q_out(r) for r in rows]
+
+
+async def add_question(pool, thesis_id: str, inquiry_key: str, aspect_key: str, *, kind: str,
+                       text: str, target: str, polarity: int = 1) -> str:
+    await ensure_schema(pool)
+    qid = uuid.uuid4().hex[:16]
+    async with pool.acquire() as conn:
+        nxt = await conn.fetchval(
+            "SELECT coalesce(max(sort_order),0)+1 FROM ts_question WHERE thesis_id=$1 AND inquiry_key=$2",
+            thesis_id, inquiry_key)
+        await conn.execute(
+            """INSERT INTO ts_question (id, thesis_id, inquiry_key, aspect_key, kind, text, target,
+                                        polarity, sort_order)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)""",
+            qid, thesis_id, inquiry_key, aspect_key, kind, text[:400], target[:400],
+            int(polarity), int(nxt or 0))
+    return qid
+
+
+async def edit_question(pool, thesis_id: str, qid: str, *, text: str = "", target: str = "") -> str:
+    """Mutable-until-run: an unrun question is edited in place. An ANSWERED question is superseded — a
+    new row inherits its slot, the old is marked superseded — so prior answers stay traceable and a
+    re-run is required. Returns the id now in effect."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            "SELECT * FROM ts_question WHERE thesis_id=$1 AND id=$2 AND status='active'", thesis_id, qid)
+        if not row:
+            return ""
+        new_text = (text or row["text"])[:400]
+        new_target = (target or row["target"])[:400]
+        if row["run_id"] == "":
+            await conn.execute(
+                "UPDATE ts_question SET text=$3, target=$4 WHERE thesis_id=$1 AND id=$2",
+                thesis_id, qid, new_text, new_target)
+            return qid
+        nid = uuid.uuid4().hex[:16]
+        await conn.execute(
+            """INSERT INTO ts_question (id, thesis_id, inquiry_key, aspect_key, kind, text, target,
+                                        polarity, sort_order)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)""",
+            nid, thesis_id, row["inquiry_key"], row["aspect_key"], row["kind"], new_text, new_target,
+            int(row["polarity"]), int(row["sort_order"]))
+        await conn.execute(
+            "UPDATE ts_question SET status='superseded', superseded_by=$3 WHERE thesis_id=$1 AND id=$2",
+            thesis_id, qid, nid)
+        return nid
+
+
+async def remove_question(pool, thesis_id: str, qid: str) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE ts_question SET status='removed' WHERE thesis_id=$1 AND id=$2", thesis_id, qid)
+
+
+async def answer_question(pool, thesis_id: str, qid: str, *, target_status: str, answer: str,
+                          evidence_ids: list[str], run_id: str) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE ts_question SET target_status=$3, answer=$4, evidence_ids=$5::jsonb, run_id=$6
+                 WHERE thesis_id=$1 AND id=$2""",
+            thesis_id, qid, target_status, answer[:4000], json.dumps(list(evidence_ids or [])), run_id)
+
+
+def active_question_hash(questions: list[dict]) -> str:
+    """The run's idempotency signature — a hash of the active question set (id + target). Re-running the
+    SAME set is a no-op (create_run dedups on it); editing any question changes the hash, so it becomes a
+    new run while the superseded answers stay put."""
+    parts = sorted(f"{q.get('id','')}:{q.get('target','')}" for q in (questions or []))
+    return _hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:24]
