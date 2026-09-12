@@ -41,6 +41,8 @@ async def test_a_thesis_with_no_model_still_gets_the_whole_ladder():
     out = await dec.decompose(None, "Mid-market logistics firms will pay for route re-planning.")
     assert [c["rung"] for c in out["claims"]] == list(SETTLEABLE.keys())
     assert all(c["claim"] for c in out["claims"])
+    assert out["degraded"] is True
+    assert out["error"] == "decomposer_unavailable"
 
 
 # ── the verdicts ───────────────────────────────────────────────────────────────────────────────────

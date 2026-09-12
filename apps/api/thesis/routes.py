@@ -34,13 +34,19 @@ def thesis_enabled() -> bool:
     return os.environ.get("EIGEN_THESIS", "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def resolve_tenant(value: str = "") -> str:
+    return (value or os.environ.get("EIGEN_TENANT_ID") or "demo").strip()
+
+
 class NewThesis(BaseModel):
     thesis: str = ""
     title: str = ""
     project_only: bool = False
+    max_usd: float = 0.0
 
 
 class AttackIn(BaseModel):
+    run_id: str = ""
     rung: str = ""            # one rung, or blank for every rung the record could speak to
     # The web leg, used ONLY where our own corpus said nothing — corpus-first is the standing
     # directive and also the cheap order. A demand thesis about a market segment is exactly the case
@@ -71,9 +77,37 @@ class TurnIn(BaseModel):
     rung: str = ""
 
 
+class ResearchStartIn(BaseModel):
+    max_usd: float = 0.0
+    idempotency_key: str = ""
+    web: bool = True
+
+
+class RunIn(BaseModel):
+    run_id: str = ""
+
+
+class ClaimPatch(BaseModel):
+    claim: str = ""
+    falsifier: str = ""
+
+
+def project_research_cost(n_claims: int, *, web: bool, web_available: bool) -> dict:
+    n = max(0, int(n_claims))
+    components = {
+        "refutation": round(n * 0.0015, 4),
+        "relationship_judgment": round(n * 0.0015, 4),
+        "web_ceiling": round(n * 2 * atk.WEB_USD_PER_QUERY, 4) if web and web_available else 0.0,
+        "case_synthesis": float(arg.project_cost(n)["projected_usd"]),
+    }
+    return {"claims": n, "components": components,
+            "projected_usd": round(sum(components.values()), 4)}
+
+
 def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge_llm=None,
-                 user_of=None) -> APIRouter:
+                 user_of=None, tenant: str = "") -> APIRouter:
     r = APIRouter()
+    tenant = resolve_tenant(tenant)
 
     async def _owner(token: str) -> str:
         if not user_of:
@@ -87,6 +121,20 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     def _ui():
         return getattr(manifest, "ui", None)
 
+    def _policy():
+        return getattr(manifest, "thesis_policy", None)
+
+    async def _read(thesis_id: str, authorization: str, owner_token: str = "",
+                    share_token: str = "", *, owner_only: bool = False) -> tuple[object, dict]:
+        pool = await pool_of()
+        d = await tstore.get(pool, thesis_id=thesis_id, owner_id=await _owner(authorization),
+                             owner_token=owner_token, share_token=share_token)
+        if not d:
+            raise HTTPException(status_code=404, detail="no such thesis")
+        if owner_only and not d.get("is_owner"):
+            raise HTTPException(status_code=403, detail="owner access required")
+        return pool, d
+
     @r.get("/thesis/labels")
     async def tl_labels():
         """The ladder ships to the client so the vocabulary is never hardcoded in the shell."""
@@ -99,22 +147,35 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             raise HTTPException(status_code=400, detail="give the thesis as a sentence")
         if body.project_only:
             return {"status": "projection", "projection": dec.project_cost()}
-        out = await dec.decompose(_llm_json(), t)
+        projection = dec.project_cost()
+        if float(projection["projected_usd"]) > max(0.0, body.max_usd):
+            return {"status": "refused", "projection": projection,
+                    "reason": "Approve the decomposition cost before creating this thesis."}
+        try:
+            out = await dec.decompose(_llm_json(), t)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Thesis decomposition failed; retry.") from exc
+        if out.get("degraded"):
+            raise HTTPException(status_code=503, detail="Thesis decomposition failed; retry.")
+        policy = _policy()
+        for claim in out.get("claims") or []:
+            claim["critical"] = bool(policy and policy.is_critical(claim["rung"]))
+            claim["research_status"] = OPEN
         pool = await pool_of()
+        oid = await _owner(authorization)
         meta = await tstore.create(pool, thesis=t, claims=out["claims"], subject=out["subject"],
-                                   owner_id=await _owner(authorization), title=body.title)
+                                   owner_id=oid, title=body.title)
         await tstore.add_turn(pool, meta["id"], role="agent", move="asked",
                               text=_opening(out), payload={"subject": out["subject"]})
         return {"status": "ok", **meta,
                 "thesis": await tstore.get(pool, thesis_id=meta["id"],
-                                           owner_id=await _owner(authorization))}
+                                           owner_id=oid,
+                                           owner_token=meta.get("owner_token") or "")}
 
     @r.get("/thesis/{thesis_id}")
-    async def tl_get(thesis_id: str, authorization: str = Header(default="")):
-        d = await tstore.get(await pool_of(), thesis_id=thesis_id,
-                             owner_id=await _owner(authorization))
-        if not d:
-            raise HTTPException(status_code=404, detail="no such thesis")
+    async def tl_get(thesis_id: str, share: str = "", authorization: str = Header(default=""),
+                     x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        _pool, d = await _read(thesis_id, authorization, x_thesis_owner, share)
         return {"status": "ok", "thesis": d}
 
     @r.get("/theses")
@@ -122,59 +183,89 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         return {"theses": await tstore.recent(await pool_of(), owner_id=await _owner(authorization),
                                               limit=min(100, max(1, limit)))}
 
+    @r.post("/thesis/{thesis_id}/share")
+    async def tl_share(thesis_id: str, authorization: str = Header(default=""),
+                       x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        return {"status": "ok", "share_token": await tstore.issue_share(pool, thesis_id)}
+
+    @r.delete("/thesis/{thesis_id}/share")
+    async def tl_unshare(thesis_id: str, authorization: str = Header(default=""),
+                         x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        await tstore.revoke_share(pool, thesis_id)
+        return {"status": "ok"}
+
+    @r.post("/thesis/{thesis_id}/research/start")
+    async def tl_research_start(thesis_id: str, body: ResearchStartIn,
+                                authorization: str = Header(default=""),
+                                x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        web_available = bool(body.web and atk._web_client(manifest))
+        projection = project_research_cost(len(d.get("claims") or []), web=body.web,
+                                           web_available=web_available)
+        if projection["projected_usd"] > max(0.0, body.max_usd):
+            return {"status": "refused", "projection": projection,
+                    "reason": "Projected research cost exceeds the approved maximum."}
+        try:
+            run = await tstore.create_run(
+                pool, thesis_id=thesis_id, idempotency_key=body.idempotency_key,
+                projected_usd=projection["projected_usd"], approved_usd=body.max_usd,
+                metadata={"claims": len(d.get("claims") or []), "web": body.web,
+                          "web_available": web_available, "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"status": "approved", "projection": projection, "run": run}
+
     @r.post("/thesis/{thesis_id}/attack")
-    async def tl_attack(thesis_id: str, body: AttackIn, authorization: str = Header(default="")):
+    async def tl_attack(thesis_id: str, body: AttackIn, authorization: str = Header(default=""),
+                        x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
         """Run the FOR search and the red-team AGAINST search over one rung or all of them.
 
         Corpus reads are free; the refuter is one small cross-family call per claim. The cap is the
         gate, as everywhere else in this app.
         """
-        pool = await pool_of()
-        d = await tstore.get(pool, thesis_id=thesis_id, owner_id=await _owner(authorization))
-        if not d:
-            raise HTTPException(status_code=404, detail="no such thesis")
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        run = await tstore.get_run(pool, thesis_id=thesis_id, run_id=body.run_id)
+        if not run or run.get("state") not in ("approved", "running"):
+            raise HTTPException(status_code=409, detail="an approved research run is required")
         todo = [c for c in d["claims"]
                 if (not body.rung or c["rung"] == body.rung) and c["settleable"] != CALL_ONLY]
-        # One refuter call per claim, plus AT MOST two web queries per claim — and only on the
-        # claims our own corpus could not speak to at all. Priced at the ceiling so the number a
-        # reader approves never turns out to have been optimistic.
         web = atk._web_client(manifest) if body.web else None
-        projected = round(len(todo) * (0.0015 + (2 * atk.WEB_USD_PER_QUERY if web else 0.0)), 4)
-        if projected > body.max_usd:
-            return {"status": "refused", "projection": {"claims": len(todo),
-                                                        "projected_usd": projected},
-                    "reason": f"attacking {len(todo)} claims projects ${projected:.3f}, "
-                              f"over the ${body.max_usd:.2f} cap"}
         ctx = " ".join(str(v) for v in (d.get("subject") or {}).values())
         done = []
         for c in todo:
             res = await atk.attack_claim(dsn, claim=c["claim"], settleable=c["settleable"],
                                          judge_llm=judge_llm, ui=_ui(), extra_context=ctx,
-                                         web_client=web)
+                                         web_client=web, relation_llm=_llm_json(),
+                                         evidence_policy=_policy(), tenant=tenant)
+            for row in res["evidence"]:
+                row["run_id"] = body.run_id
             await tstore.add_evidence(pool, thesis_id, c["rung"], res["evidence"])
             await tstore.set_verdict(pool, thesis_id, c["rung"], res["verdict"], res["note"],
-                                     attacked=True)
+                                     attacked=bool(res["attack_attempted"]))
+            await tstore.advance_run(
+                pool, thesis_id=thesis_id, run_id=body.run_id, stage=f"claim:{c['rung']}",
+                actual_delta=round(0.003 + res.get("web_queries", 0) * atk.WEB_USD_PER_QUERY, 4))
             done.append({"rung": c["rung"], "verdict": res["verdict"], "counts": res["counts"],
                          "against_queries": res["against_queries"],
                          "web_queries": res.get("web_queries", 0)})
-        # Every call-only rung is stamped once, so the ledger never shows them as merely unexamined.
+        # Primary research remains a blocker until independently corroborated.
         for c in d["claims"]:
             if c["settleable"] == CALL_ONLY and c["verdict"] == OPEN:
-                await tstore.set_verdict(pool, thesis_id, c["rung"], UNSETTLEABLE,
-                                         "No document can settle this. It needs a person.")
+                await tstore.set_verdict(pool, thesis_id, c["rung"], "primary_research_needed",
+                                         "This claim needs independent primary research.")
         if body.argue:
-            await _write_cases(pool, thesis_id, await _owner(authorization))
+            await _write_cases(pool, thesis_id, d)
         return {"status": "ok", "attacked": done,
                 "thesis": await tstore.get(pool, thesis_id=thesis_id,
-                                           owner_id=await _owner(authorization))}
+                                           owner_id=await _owner(authorization),
+                                           owner_token=x_thesis_owner)}
 
-    async def _write_cases(pool, thesis_id: str, oid: str) -> bool:
+    async def _write_cases(pool, thesis_id: str, fresh: dict) -> bool:
         """Both cases per claim plus the integrated reading. One call for the whole thesis, after
         every claim has its evidence — ten separate calls cost ten times as much and argue each claim
         without knowing the others."""
-        fresh = await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)
-        if not fresh:
-            return False
         try:
             cases, overall = await arg.cases_for(_llm_json(), thesis=fresh["thesis"],
                                                  claims=fresh["claims"])
@@ -186,53 +277,78 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             return False
 
     @r.post("/thesis/{thesis_id}/argue")
-    async def tl_argue(thesis_id: str, authorization: str = Header(default="")):
+    async def tl_argue(thesis_id: str, body: RunIn, authorization: str = Header(default=""),
+                       x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
         """Write the cases and the collective take over whatever evidence exists now."""
-        oid = await _owner(authorization)
-        pool = await pool_of()
-        if not await tstore.get(pool, thesis_id=thesis_id, owner_id=oid):
-            raise HTTPException(status_code=404, detail="no such thesis")
-        wrote = await _write_cases(pool, thesis_id, oid)
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        run = await tstore.get_run(pool, thesis_id=thesis_id, run_id=body.run_id)
+        if not run or run.get("state") not in ("approved", "running"):
+            raise HTTPException(status_code=409, detail="an approved research run is required")
+        wrote = await _write_cases(pool, thesis_id, d)
+        policy = _policy()
+        decision = (policy.decide(d.get("claims") or []) if policy else
+                    {"recommendation": "continue_diligence", "decisive_claims": [],
+                     "reason": "No decision policy is configured."})
+        await tstore.set_decision(pool, thesis_id, decision, research_status="completed")
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=body.run_id,
+                                 stage="completed", state="completed",
+                                 actual_delta=arg.project_cost(len(d.get("claims") or []))["projected_usd"])
         return {"status": "ok", "wrote": wrote,
-                "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)}
+                "synthesis_status": "completed" if wrote else "failed", "decision": decision,
+                "thesis": await tstore.get(pool, thesis_id=thesis_id,
+                                           owner_id=await _owner(authorization),
+                                           owner_token=x_thesis_owner)}
 
     @r.post("/thesis/{thesis_id}/call")
-    async def tl_call(thesis_id: str, body: CallIn, authorization: str = Header(default="")):
+    async def tl_call(thesis_id: str, body: CallIn, authorization: str = Header(default=""),
+                      x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
         """What a named person told you, typed as evidence on the claim it bears on.
 
         `stated`, always — a first-hand account is strong evidence for exactly the rungs documents
         cannot reach, and it is never laundered into `filed`.
         """
-        pool = await pool_of()
-        d = await tstore.get(pool, thesis_id=thesis_id, owner_id=await _owner(authorization))
-        if not d:
-            raise HTTPException(status_code=404, detail="no such thesis")
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
         if body.rung not in SETTLEABLE:
             raise HTTPException(status_code=400, detail="unknown rung")
         if not (body.quote or "").strip():
             raise HTTPException(status_code=400, detail="nothing was said")
         who = (body.said_by or "an unnamed source").strip()
         await tstore.add_evidence(pool, thesis_id, body.rung, [{
-            "side": "for" if body.supports else "against", "register": STATED,
+            "side": "for" if body.supports else "against", "relation": "context",
+            "register": STATED,
             "source_key": "call", "signal_only": False,
             "title": f"{who}" + (f" ({body.said_role})" if body.said_role else ""),
             "quote": body.quote.strip(), "source_url": "",
             "basis": "first-hand, on a call", "said_by": who, "said_role": body.said_role or "",
         }])
         cur = next((c for c in d["claims"] if c["rung"] == body.rung), None)
-        # A call is the ONLY thing that can move a call-only rung off unsettleable.
         if cur is not None:
-            v = "supported" if body.supports else "contradicted"
-            await tstore.set_verdict(pool, thesis_id, body.rung, v,
-                                     f"{who} said so on a call — one account, not a filing.")
+            await tstore.set_verdict(
+                pool, thesis_id, body.rung, "primary_research_needed",
+                f"{who} provided one account; seek an independent account or corroboration.")
         await tstore.add_turn(pool, thesis_id, role="user", move="", rung=body.rung,
                               text=body.quote.strip()[:400])
         return {"status": "ok",
                 "thesis": await tstore.get(pool, thesis_id=thesis_id,
-                                           owner_id=await _owner(authorization))}
+                                           owner_id=await _owner(authorization),
+                                           owner_token=x_thesis_owner)}
+
+    @r.patch("/thesis/{thesis_id}/claim/{rung}")
+    async def tl_claim(thesis_id: str, rung: str, body: ClaimPatch,
+                       authorization: str = Header(default=""),
+                       x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if rung not in SETTLEABLE:
+            raise HTTPException(status_code=400, detail="unknown rung")
+        claim = (body.claim or "").strip()
+        if len(claim) < 8:
+            raise HTTPException(status_code=400, detail="claim is too short")
+        await tstore.revise_claim(pool, thesis_id, rung, claim)
+        return {"status": "ok"}
 
     @r.post("/thesis/{thesis_id}/turn")
-    async def tl_turn(thesis_id: str, body: TurnIn, authorization: str = Header(default="")):
+    async def tl_turn(thesis_id: str, body: TurnIn, authorization: str = Header(default=""),
+                      x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
         """One exchange. Always closes as exactly one of settled / attacked / needs_person.
 
         When the author has said something, the agent REPLIES TO IT — and their answer is allowed to
@@ -241,10 +357,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         the agent's pre-computed opinion about a different claim.
         """
         oid = await _owner(authorization)
-        pool = await pool_of()
-        d = await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)
-        if not d:
-            raise HTTPException(status_code=404, detail="no such thesis")
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
         said = (body.text or "").strip()
 
         if said:
@@ -263,10 +376,12 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                                       payload=_payload_for(focus, got))
                 return {"status": "ok", "move": {"move": got["move"], "rung": focus["rung"],
                                                  "text": got["reply"]},
-                        "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)}
+                        "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
+                                                   owner_token=x_thesis_owner)}
             # No model, or it gave us nothing usable. Advance — but SAY that we could not read the
             # answer rather than replying with a confident non-sequitur.
-            d = await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)
+            d = await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
+                                 owner_token=x_thesis_owner)
             move = next_move(d)
             move["text"] = ("I could not read that answer just now, so I am carrying on from the "
                             "ledger. " + move["text"])
@@ -274,7 +389,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                                   rung=move["rung"], text=move["text"],
                                   payload=move.get("payload") or {})
             return {"status": "ok", "move": move,
-                    "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)}
+                    "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
+                                               owner_token=x_thesis_owner)}
 
         move = next_move(d)
         if move.get("rung"):
@@ -282,7 +398,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         await tstore.add_turn(pool, thesis_id, role="agent", move=move["move"],
                               rung=move["rung"], text=move["text"], payload=move.get("payload") or {})
         return {"status": "ok", "move": move,
-                "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid)}
+                "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
+                                           owner_token=x_thesis_owner)}
 
     return r
 
@@ -316,8 +433,7 @@ def _focus_claim(d: dict) -> dict | None:
 
 
 async def _apply_effect(pool, thesis_id: str, claim: dict, got: dict, said: str) -> None:
-    """What the author's answer DID to the claim. Without this the conversation is theatre — you can
-    settle a rung out of your own experience and the ledger will still say `open`."""
+    """Persist author input without allowing one account to settle an evidence claim."""
     eff = got.get("effect") or "none"
     rung = claim["rung"]
     if eff == "revise" and got.get("revised_claim"):
@@ -328,18 +444,15 @@ async def _apply_effect(pool, thesis_id: str, claim: dict, got: dict, said: str)
         # What they know is STATED evidence from them, attributed. It is never laundered into filed,
         # and it is never silently merged with what the record says.
         await tstore.add_evidence(pool, thesis_id, rung, [{
-            "side": "for" if eff == "answered" else "against", "register": STATED,
+            "side": "for" if eff == "answered" else "against", "relation": "context",
+            "register": STATED,
             "source_key": "call", "signal_only": False, "title": "the author, in conversation",
             "quote": said[:1200], "source_url": "", "basis": "said by the author, not a source",
             "said_by": "the author", "said_role": "author"}])
         await tstore.set_verdict(
-            pool, thesis_id, rung,
-            "supported" if eff == "answered" else "contradicted",
-            "The author answered this from their own knowledge — one account, not a source.")
+            pool, thesis_id, rung, "primary_research_needed",
+            "The author provided one account; seek an independent account or corroboration.")
         return
-    if eff == "irrelevant":
-        await tstore.set_verdict(pool, thesis_id, rung, SET_ASIDE,
-                                 "The author says this rung does not apply to their thesis.")
 
 
 def _payload_for(claim: dict, got: dict) -> dict:

@@ -62,6 +62,11 @@ class FakeConn:
             row.update({"stage": args[2], "state": args[3],
                         "actual_usd": row["actual_usd"] + args[4]})
             return row
+        if "UPDATE ts_thesis SET share_token=$2" in query:
+            if self.thesis and self.thesis["id"] == args[0]:
+                self.thesis["share_token"] = args[1]
+                return {"share_token": args[1]}
+            return None
         return None
 
     async def fetch(self, query: str, *args):
@@ -230,3 +235,27 @@ async def test_decision_write_keeps_research_state_separate() -> None:
     query, args = next((q, a) for q, a in pool.conn.queries if "UPDATE ts_thesis SET decision" in q)
     assert "research_status=$3" in query
     assert args[2] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_share_issue_and_revoke_rotate_the_read_only_capability() -> None:
+    pool = FakePool(_thesis())
+
+    issued = await store.issue_share(pool, "t1")
+    assert issued and issued != "share-secret"
+    await store.revoke_share(pool, "t1")
+
+    assert pool.conn.thesis["share_token"] != issued
+
+
+@pytest.mark.asyncio
+async def test_revising_claim_invalidates_old_evidence_and_decision_state() -> None:
+    pool = FakePool()
+
+    await store.revise_claim(pool, "t1", "problem_exists", "A materially revised claim.")
+
+    updates = [(q, a) for q, a in pool.conn.queries if "UPDATE ts_claim" in q]
+    deletes = [(q, a) for q, a in pool.conn.queries if "DELETE FROM ts_evidence" in q]
+    assert len(updates) == 1 and "research_status = 'open'" in updates[0][0]
+    assert len(deletes) == 1
+    assert updates[0][1][:2] == ("t1", "problem_exists")

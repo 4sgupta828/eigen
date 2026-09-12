@@ -301,9 +301,17 @@ async def set_focus(pool, thesis_id: str, rung: str) -> None:
 async def revise_claim(pool, thesis_id: str, rung: str, claim: str) -> None:
     """The author reworded the claim. Their wording wins — it is their thesis."""
     await ensure_schema(pool)
-    async with pool.acquire() as conn:
-        await conn.execute("UPDATE ts_claim SET claim = $3 WHERE thesis_id = $1 AND rung = $2",
-                           thesis_id, rung, claim[:600])
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            """UPDATE ts_claim
+                  SET claim=$3, verdict='open', research_status = 'open', note='', attacked_at=NULL,
+                      case_for='', case_against='', leans=''
+                WHERE thesis_id=$1 AND rung=$2""",
+            thesis_id, rung, claim[:600])
+        await conn.execute("DELETE FROM ts_evidence WHERE thesis_id=$1 AND rung=$2", thesis_id, rung)
+        await conn.execute(
+            """UPDATE ts_thesis SET decision='{}'::jsonb, research_status='not_run',
+                                    overall='', updated_at=now() WHERE id=$1""", thesis_id)
 
 
 async def add_turn(pool, thesis_id: str, *, role: str, move: str = "", rung: str = "",
@@ -413,3 +421,18 @@ async def set_decision(pool, thesis_id: str, decision: dict, *, research_status:
             """UPDATE ts_thesis SET decision=$2::jsonb, research_status=$3, updated_at=now()
                  WHERE id=$1""",
             thesis_id, json.dumps(decision or {}), research_status)
+
+
+async def issue_share(pool, thesis_id: str) -> str:
+    await ensure_schema(pool)
+    token = secrets.token_urlsafe(24)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "UPDATE ts_thesis SET share_token=$2, updated_at=now() WHERE id=$1 RETURNING share_token",
+            thesis_id, token)
+    return str(row["share_token"] if row else "")
+
+
+async def revoke_share(pool, thesis_id: str) -> None:
+    # Rotation invalidates every previously copied read-only URL without creating a nullable state.
+    await issue_share(pool, thesis_id)

@@ -63,6 +63,7 @@ async def decompose(llm_json, thesis: str) -> dict:
         return {"subject": {}, "claims": []}
 
     data: dict = {}
+    error = ""
     if llm_json is not None:
         try:
             # The app's JSON seam is POSITIONAL — `llm_json(system, user) -> dict` (startups/
@@ -70,8 +71,11 @@ async def decompose(llm_json, thesis: str) -> dict:
             # comes back generic with nothing to say that it failed. Matched deliberately.
             raw = await llm_json(_SYSTEM, _prompt(t))
             data = raw if isinstance(raw, dict) else json.loads(raw)
-        except Exception:      # noqa: BLE001 — a decomposer we cannot reach is a generic ladder
+        except Exception:      # noqa: BLE001 — keep the editable scaffold but surface degradation
             data = {}
+            error = "decomposition_failed"
+    else:
+        error = "decomposer_unavailable"
 
     by_rung = {}
     for c in (data.get("claims") or []):
@@ -89,4 +93,7 @@ async def decompose(llm_json, thesis: str) -> dict:
             "settleable": SETTLEABLE[k],
         })
     subject = data.get("subject") if isinstance(data.get("subject"), dict) else {}
-    return {"subject": {k: str(v)[:200] for k, v in (subject or {}).items() if v}, "claims": claims}
+    if not error and len(by_rung) != len(LADDER):
+        error = "incomplete_decomposition"
+    return {"subject": {k: str(v)[:200] for k, v in (subject or {}).items() if v},
+            "claims": claims, "degraded": bool(error), "error": error}
