@@ -64,6 +64,7 @@ from .ui import TechUI
 from .web_domains import TRUSTED_WEB_DOMAINS, WEB_DOMAIN_FACETS
 from .web_quality import WEB_QUALITY_PROMPT
 from .thesis_policy import THESIS_POLICY
+from .decision import TECH_DECISION_PROFILE
 
 
 def web_entity_open_on() -> bool:
@@ -146,6 +147,7 @@ def build_manifest() -> VerticalManifest:
         persona=TechPersona(),
         authority_policy=TechAuthorityPolicy(),
         thesis_policy=THESIS_POLICY,
+        decision_profile=TECH_DECISION_PROFILE,
         evidence_classifier=evidence_kind.classify,   # structural facets → evidence tier (Rule 18)
         discovery_entity_of=discovery.entity_of,       # "who is working on X" scouting (M&A/corp-dev)
         # Analytical modes / USE-CASE LENSES: acquirer (M&A) + the deep-tech-intelligence lenses
