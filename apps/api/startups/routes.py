@@ -52,6 +52,13 @@ class CompileIn(BaseModel):
 class EvaluateIn(BaseModel):
     contract: dict
     sort: str = "relevance"     # see ranking.SORTS — relevance, funding, hiring, youngest, …
+    # The map path (`/startups/maps/{id}/navigate`) reads these three. They were never declared, so
+    # every Apply on a SAVED MAP raised AttributeError before it could answer — a 500 the shell
+    # reported as "evaluate failed". The plain evaluate path never touched them, which is why only
+    # maps were broken. Declared with defaults so the attribute access cannot explode again.
+    intent: bool = False
+    query: str = ""
+    history: list = []
 
 
 class ListIn(BaseModel):
@@ -328,12 +335,17 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
         # THE INTENT DEBUGGER. `directions` filters what came back; this asks whether the question was
         # understood at all — a reading, not a count. One model call, gated by `worth_asking` and cached
         # on the query, the contract and the conversation so far.
+        # The shell sends `query` and `history` INSIDE the contract (runEvaluate builds one payload
+        # and posts it as `contract`), so read them from there first and fall back to the top level.
+        _q = body.query or str(body.contract.get("query") or "") or c.text or ""
+        _hist = body.history or (body.contract.get("history") if isinstance(
+            body.contract.get("history"), list) else []) or []
         if body.intent and providers.llm_json:
             from api import intent_check as intent_mod
             got = await intent_mod.check(llm_json=providers.llm_json, kind=KIND,
-                                         query=body.query or c.text or "", contract=c, out=out,
+                                         query=_q, contract=c, out=out,
                                          rows=out.get("rows") or [], schema=SCHEMA, prompt=intent_prompt,
-                                         cache=_intent_cache, history=body.history)
+                                         cache=_intent_cache, history=_hist)
             if got:
                 out["intent"] = got
         out["map"] = {"id": m["id"], "title": m["title"], "revision": m["revision"], "owner": m["owner"]}
