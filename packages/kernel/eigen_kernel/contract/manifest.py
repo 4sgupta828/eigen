@@ -54,6 +54,9 @@ class VerticalManifest:
     authority_policy: object | None = None      # typed in P3 (authority contract)
     structured_tools: dict[str, object] = field(default_factory=dict)
     extraction_schema: object | None = None
+    # Optional vertical judgment used by a decision-testing surface. The kernel never calls or
+    # interprets it; app mechanics pass evidence-shaped dictionaries through this opaque seam.
+    thesis_policy: object | None = None
 
     # Presentation (P4)
     ui: UIContract | None = None

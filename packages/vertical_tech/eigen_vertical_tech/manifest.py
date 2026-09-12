@@ -63,6 +63,7 @@ from .suggest import tech_suggest_prompt
 from .ui import TechUI
 from .web_domains import TRUSTED_WEB_DOMAINS, WEB_DOMAIN_FACETS
 from .web_quality import WEB_QUALITY_PROMPT
+from .thesis_policy import THESIS_POLICY
 
 
 def web_entity_open_on() -> bool:
@@ -144,6 +145,7 @@ def build_manifest() -> VerticalManifest:
         citation_verifier=None,       # block_span handled by the kernel
         persona=TechPersona(),
         authority_policy=TechAuthorityPolicy(),
+        thesis_policy=THESIS_POLICY,
         evidence_classifier=evidence_kind.classify,   # structural facets → evidence tier (Rule 18)
         discovery_entity_of=discovery.entity_of,       # "who is working on X" scouting (M&A/corp-dev)
         # Analytical modes / USE-CASE LENSES: acquirer (M&A) + the deep-tech-intelligence lenses
