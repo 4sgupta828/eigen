@@ -22,6 +22,7 @@ from .types import (
 from .profile import DecisionProfile
 from .questions import generate_questions, required_kinds_covered
 from .aggregate import resolve_signal, aggregate_aspect
+from .run import run_question, run_aspect, run_inquiry
 
 __all__ = [
     "QuestionKind", "Question", "QuestionStatus", "Aspect", "Inquiry",
@@ -30,4 +31,5 @@ __all__ = [
     "ASPECT_SUPPORT", "ASPECT_CONTRADICTION", "ASPECT_NONE",
     "DecisionProfile", "generate_questions", "required_kinds_covered",
     "resolve_signal", "aggregate_aspect",
+    "run_question", "run_aspect", "run_inquiry",
 ]
