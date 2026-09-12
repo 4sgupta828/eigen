@@ -28,6 +28,7 @@ from eigen_kernel.runtime.ingest import ingest_connector_to_postgres
 from api.voices.routes import voices_enabled as _voices_enabled
 from api.deepdive.routes import deepdive_enabled as _deepdive_on
 from api.investors.routes import investor_search_enabled as _investors_on
+from api.thesis.routes import thesis_enabled as _thesis_flag
 from eigen_kernel.runtime.research import ResearchService
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -1938,6 +1939,40 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             except Exception:   # noqa: BLE001 — never block startup
                 pass
 
+    # TestStartupThesis — the conversational stress tester (apps/api/thesis/). A MODE over the
+    # existing corpus plus its own small ledger (ts_*): a thesis is a set of claims that could be
+    # false, and evidence accrues to each claim from the record and from calls. The disconfirming
+    # leg is authored by the kernel's red-team refuter, which needs a DIFFERENT-family model — so the
+    # cross-family judge is passed in, and with none available the mode says the attack did not run
+    # rather than quietly grading its own homework. OFF is a true no-op. docs/specs/thesis-stress-test.md.
+    from api.thesis.routes import build_router as _ts_router
+    from api.thesis.routes import thesis_enabled as _thesis_on
+    _ts_dsn = os.environ.get("EIGEN_CORPUS_DSN")
+    if _thesis_on() and _ts_dsn:
+        _ts_state: dict = {}
+
+        async def _ts_pool():
+            if "pool" not in _ts_state:
+                import asyncpg
+                _ts_state["pool"] = await asyncpg.create_pool(_ts_dsn, min_size=1, max_size=3)
+            return _ts_state["pool"]
+
+        try:
+            from api.startups.pipeline import Providers as _TsProviders
+            _ts_providers = _TsProviders.from_env()
+        except Exception:      # noqa: BLE001 — no model is a thinner decomposition, never a failed boot
+            _ts_providers = None
+        _ts_judge = None
+        try:
+            if os.environ.get("OPENAI_API_KEY"):
+                from eigen_kernel.providers.openai_client import OpenAILLMClient
+                _ts_judge = OpenAILLMClient()
+        except Exception:      # noqa: BLE001 — the refuter fails closed and says so
+            _ts_judge = None
+        app.include_router(_ts_router(_ts_pool, dsn=_ts_dsn, providers=_ts_providers,
+                                      manifest=load_active_vertical(), judge_llm=_ts_judge,
+                                      user_of=_shell_user))
+
     # Voices — first-person startup content (founder/investor essays + podcast chapter pointers).
     # A MODE over the existing kernel corpus, not a new store: its rows are ordinary rs_block rows
     # written by the show_notes / founder_essay connectors. Flag-gated; OFF is a true no-op.
@@ -1997,6 +2032,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             "voices_enabled": _voices_enabled() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "deepdive_enabled": _deepdive_on() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "investor_search_enabled": _investors_on() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
+            "thesis_enabled": _thesis_flag() and bool(os.environ.get("EIGEN_CORPUS_DSN")),
             "structured_answers": structured_answers(),
             "clinical_synthesis": clinical_synthesis() and structured_answers(),
             "evidence_select": bool(getattr(svc, "evidence_select", False)),

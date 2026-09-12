@@ -374,6 +374,62 @@
   @media (prefers-reduced-motion:reduce){ .work-bar i{animation:none;width:100%;opacity:.5;} }
   @media (max-width:560px){ .work{gap:.45rem;padding:.5rem .6rem;} .work-bar{flex-basis:52px;} }
 
+  /* ===== TestStartupThesis — the conversational stress tester (body[data-mode="thesis"]) =====
+     A ledger, not a report: claims down the page, each carrying what argues FOR and AGAINST it. The
+     against side is not a footnote — it is why the mode exists — so it is never visually quieter
+     than the for side. */
+  #thesisbody{display:none;}
+  body[data-mode="thesis"] #thesisbody{display:block;}
+  body[data-mode="thesis"] #out, body[data-mode="thesis"] #effort{display:none !important;}
+  .th-conv{display:grid;gap:.6rem;margin:.2rem 0 1rem;}
+  .th-turn{display:flex;gap:.55rem;align-items:flex-start;font-size:.9rem;line-height:1.6;}
+  .th-turn .th-who{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;
+    padding:.18rem .45rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);
+    flex:none;margin-top:.15rem;min-width:4.2rem;text-align:center;}
+  .th-turn[data-role="agent"] .th-who{color:var(--gold);border-color:currentColor;}
+  .th-turn .th-said{flex:1 1 12rem;min-width:0;overflow-wrap:anywhere;}
+  .th-move{font-family:var(--mono);font-size:.58rem;letter-spacing:.07em;text-transform:uppercase;
+    padding:.12rem .4rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);}
+  .th-move[data-m="attacked"]{color:#b4544a;border-color:currentColor;}
+  .th-move[data-m="needs_person"]{color:#6b7fd7;border-color:currentColor;}
+  .th-move[data-m="settled"]{color:var(--verified,#2f7d5b);border-color:currentColor;}
+  .th-claims{display:grid;gap:.55rem;}
+  .th-claim{border:1px solid var(--hair);border-radius:12px;padding:.7rem .85rem;background:var(--panel);}
+  .th-claim > h4{margin:0 0 .35rem;font-size:.92rem;font-weight:600;line-height:1.45;}
+  .th-rung{font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;color:var(--dim);
+    text-transform:uppercase;}
+  .th-v{font-family:var(--mono);font-size:.58rem;letter-spacing:.06em;text-transform:uppercase;
+    padding:.12rem .45rem;border-radius:999px;border:1px solid currentColor;flex:none;}
+  .th-v[data-v="supported"]{color:var(--verified,#2f7d5b);}
+  .th-v[data-v="contradicted"]{color:#b4544a;}
+  .th-v[data-v="under_tested"]{color:#8a6d3b;}
+  .th-v[data-v="unsettleable"]{color:#6b7fd7;}
+  .th-v[data-v="open"]{color:var(--dim);}
+  .th-note{font-size:.78rem;color:var(--dim);line-height:1.55;margin:.25rem 0 .4rem;}
+  .th-sides{display:grid;gap:.4rem;margin-top:.5rem;}
+  .th-ev{display:flex;gap:.45rem;align-items:flex-start;font-size:.8rem;line-height:1.55;
+    border-left:2px solid var(--hair);padding-left:.6rem;}
+  .th-ev[data-side="against"]{border-left-color:#b4544a;}
+  .th-ev[data-side="for"]{border-left-color:var(--verified,#2f7d5b);}
+  .th-ev .th-q{flex:1 1 10rem;min-width:0;color:var(--dim);overflow-wrap:anywhere;}
+  .th-ev .th-src{font-family:var(--mono);font-size:.62rem;color:var(--dim);text-decoration:none;
+    border:1px solid var(--hair);border-radius:8px;padding:.1rem .4rem;white-space:nowrap;}
+  .th-ev .th-src:hover{color:var(--gold);border-color:var(--gold);}
+  .th-signal{font-family:var(--mono);font-size:.56rem;letter-spacing:.06em;text-transform:uppercase;
+    color:#8a6d3b;border:1px dashed currentColor;border-radius:999px;padding:.08rem .35rem;}
+  .th-ask{margin-top:.5rem;border-top:1px dashed var(--hair);padding-top:.5rem;}
+  .th-ask b{font-size:.82rem;}
+  .th-person{display:flex;gap:.4rem;align-items:baseline;font-size:.8rem;margin:.25rem 0;}
+  .th-acts{display:flex;flex-wrap:wrap;gap:.4rem;margin:.6rem 0;}
+  .th-acts button{font-family:var(--mono);font-size:.68rem;padding:.4rem .8rem;border-radius:999px;
+    border:1px solid var(--hair);background:var(--panel2);color:var(--ink);cursor:pointer;min-height:40px;}
+  .th-acts button:hover{border-color:var(--gold);color:var(--gold);}
+  @media (max-width:560px){
+    .th-turn .th-who{min-width:3.4rem;}
+    .th-claim{padding:.6rem .65rem;}
+    .th-ev{flex-wrap:wrap;}
+  }
+
   /* ===== DeepDive — one company, read end to end (body[data-mode="deepdive"]) =====
      Three registers, three treatments, never blended: FILED is a number a filing states, STATED is a
      claim the company made, SIGNAL is how it is being covered. Each section carries a mark and an
@@ -2206,7 +2262,9 @@
       <button type="button" class="mbtn" id="startupsTab" role="tab" aria-selected="false" hidden title="Startup Search — cards over a grounded startup index">◆ Startups</button>
       <button type="button" class="mbtn" id="voicesTab" role="tab" aria-selected="false" hidden title="Voices — what founders and investors actually said">◇ Voices</button>
       <button type="button" class="mbtn" id="deepdiveTab" role="tab" aria-selected="false" hidden title="DeepDive — one company, read end to end">⌖ DeepDive</button>
-      <button type="button" class="mbtn" id="investorsTab" role="tab" aria-selected="false" hidden title="Investors — who funds what, from the public record">◈ Investors</button>
+      <button type="button" class="mbtn" id="thesisTab" role="tab" aria-selected="false" hidden
+            title="Test a startup thesis — the claims it rests on, attacked">\u2697 Test Thesis</button>
+    <button type="button" class="mbtn" id="investorsTab" role="tab" aria-selected="false" hidden title="Investors — who funds what, from the public record">◈ Investors</button>
     </div>
   </div>
   <form id="ask">
@@ -2383,6 +2441,17 @@
   <div id="su-rail"></div>
   <div id="su-results"></div>
   <div class="toast" id="su-toast"></div>
+</section>
+
+<section id="thesisbody" aria-label="Test a startup thesis">
+  <div class="vo-filters">
+    <button type="button" class="vo-chip" id="th-recent" title="Theses you have tested">\ud83d\udd58 Recent</button>
+    <button type="button" class="vo-chip" id="th-reset" title="Start a new thesis">\u21bb New thesis</button>
+  </div>
+  <div class="th-conv" id="th-conv"></div>
+  <div class="th-acts" id="th-acts"></div>
+  <div class="th-claims" id="th-claims"></div>
+  <p class="dd-note" id="th-note"></p>
 </section>
 
 <section id="investorsbody" aria-label="Investor search">
@@ -2598,7 +2667,8 @@ let REASONING_ENABLED = false;  // reasoning-read interpretation + confidence la
 let ASK_PANEL_ENABLED = false;  // AI expert panel (Alpha)
 let TRIAGE_ENABLED = false;     // guided-intake / triage mode (clarify → route)
 let STARTUPS_ENABLED = false;   // Startup Search — a separate page (/startups), shown as a tab when enabled
-let INVESTORS_ENABLED = false;  // Investor Search — an inline mode (body[data-mode="investors"])
+let INVESTORS_ENABLED = false;
+let THESIS_ENABLED = false;     // TestStartupThesis — the conversational stress tester  // Investor Search — an inline mode (body[data-mode="investors"])
 let VOICES_ENABLED = false;     // Voices — first-person founder/investor content, an inline mode
 let DEEPDIVE_ENABLED = false;   // DeepDive — one company read end to end, an inline mode
 let ACCOUNTS_ENABLED = false;   // accounts + per-answer feedback (W-taxonomy)
@@ -2677,6 +2747,7 @@ async function loadConfig(){
     TRIAGE_ENABLED = !!c.triage_enabled;
     STARTUPS_ENABLED = !!c.startup_search_enabled;
     INVESTORS_ENABLED = !!c.investor_search_enabled;
+    THESIS_ENABLED = !!c.thesis_enabled;
     VOICES_ENABLED = !!c.voices_enabled;
     DEEPDIVE_ENABLED = !!c.deepdive_enabled;
     ACCOUNTS_ENABLED = !!c.accounts_enabled;
@@ -2698,7 +2769,7 @@ async function loadConfig(){
     }
     PANEL_SPECIALISTS = c.panel_specialists || [];
     PANEL_EXAMPLES = c.panel_examples || [];
-    if(ASK_PANEL_ENABLED || TRIAGE_ENABLED || STARTUPS_ENABLED || VOICES_ENABLED || DEEPDIVE_ENABLED || INVESTORS_ENABLED){
+    if(ASK_PANEL_ENABLED || TRIAGE_ENABLED || STARTUPS_ENABLED || VOICES_ENABLED || DEEPDIVE_ENABLED || INVESTORS_ENABLED || THESIS_ENABLED){
       // One shell, up to three modes (Guided intake ⇄ Quick Q&A ⇄ Expert Panel), switched in the same
       // place under the heading. Only the enabled modes' buttons show; the shared box carries across them.
       $("#modeswitch").classList.add("on");
@@ -2710,6 +2781,7 @@ async function loadConfig(){
       const vbtn = $("#voicesTab"); if(vbtn){ vbtn.hidden = !VOICES_ENABLED; vbtn.dataset.mode = "voices"; }
       const dbtn = $("#deepdiveTab"); if(dbtn){ dbtn.hidden = !DEEPDIVE_ENABLED; dbtn.dataset.mode = "deepdive"; }
       const ibtn = $("#investorsTab"); if(ibtn){ ibtn.hidden = !INVESTORS_ENABLED; ibtn.dataset.mode = "investors"; }
+      const thbtn = $("#thesisTab"); if(thbtn){ thbtn.hidden = !THESIS_ENABLED; thbtn.dataset.mode = "thesis"; }
       wireModeSwitch($("#modeswitch"));
     }
     VISION_ENABLED = !!c.vision_enabled;
@@ -4570,6 +4642,7 @@ $("#ask").addEventListener("submit", e=>{
     return;
   }
   if(APP_MODE === "voices"){ if(window.VO) VO.search(question); return; }                 // voices → keyword search over first-person content
+  if(APP_MODE === "thesis"){ if(window.TH) TH.submit(question); return; }                 // thesis → decompose, then attack
   if(APP_MODE === "deepdive"){ if(window.DD) DD.search(question); return; }             // deepdive → resolve one company, then read it
   if(APP_MODE === "guided"){ if(window.SG) SG.send(question); return; }                      // guided → one intake turn
   if(CURRENT_ABORT) return;               // a question is in flight — Enter/submit is a no-op (use Stop)
@@ -4755,6 +4828,7 @@ function setMode(mode, opts){
   opts = opts || {};
   mode = (mode === "panel" || mode === "triage" || (mode === "voices" && VOICES_ENABLED)
           || (mode === "deepdive" && DEEPDIVE_ENABLED)
+          || (mode === "thesis" && THESIS_ENABLED)
           || (mode === "investors" && INVESTORS_ENABLED)
           || ((mode === "startups" || mode === "guided") && STARTUPS_ENABLED)) ? mode : "qa";
   // Capture the mode we are LEAVING before overwriting it. The deepdive branch used to guard its
@@ -4779,7 +4853,7 @@ function setMode(mode, opts){
   const _sel = $("#modeswitch").querySelector('.mbtn[aria-selected="true"]:not([hidden])');
   if(_sel && _sel.scrollIntoView) try{ _sel.scrollIntoView({block: "nearest", inline: "nearest"}); }catch(e){}
   ATTN_BOX = "#attns"; renderAttachments();   // one intake box → one attachment surface
-  const clearModeHash = () => { if(/^#(panel|triage|startups|guided|voices|deepdive|investors)/.test(location.hash) || location.hash.indexOf("#p/") === 0)
+  const clearModeHash = () => { if(/^#(panel|triage|startups|guided|voices|deepdive|investors|thesis)/.test(location.hash) || location.hash.indexOf("#p/") === 0)
     history.replaceState(null, "", location.pathname + location.search); };
   if(mode === "panel"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -4811,6 +4885,12 @@ function setMode(mode, opts){
     q.setAttribute("placeholder", "e.g. seed funds that lead in AI infra, US or Europe, $50–250M latest fund, still deploying");
     if(location.hash.indexOf("#investors") !== 0) history.pushState(null, "", "#investors");
     if(window.IV) IV.enter(opts.params);
+    q.focus();
+  } else if(mode === "thesis"){
+    heading.textContent = "What has to be true for this to work?";
+    q.placeholder = "State the thesis in a sentence \u2014 e.g. mid-market logistics firms will pay for automated route re-planning";
+    if(location.hash.indexOf("#thesis") !== 0) history.pushState(null, "", "#thesis");
+    if(window.TH) TH.enter(opts.params);
     q.focus();
   } else if(mode === "deepdive"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -6366,6 +6446,11 @@ function newConversation(){
     try{ history.replaceState(null, "", "#guided"); }catch(e){}
     window.scrollTo({top:0}); q.focus(); return;
   }
+  if(APP_MODE === "thesis"){                            // a fresh thesis, still in Test Thesis
+    if(window.TH) TH.reset();
+    try{ history.replaceState(null, "", "#thesis"); }catch(e){}
+    return;
+  }
   if(APP_MODE === "deepdive"){                          // a fresh dive, still in Deep Dive
     if(window.DD) DD.enter(true);
     try{ history.replaceState(null, "", "#deepdive"); }catch(e){}
@@ -7277,6 +7362,11 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel �
     if(window.DD) DD.dive(Object.assign({company_id: cid}, depth ? {depth: depth} : {}));
   }
   else if(location.hash === "#deepdive" && DEEPDIVE_ENABLED){ setMode("deepdive"); }
+  else if(location.hash.indexOf("#thesis/") === 0 && THESIS_ENABLED){
+    const id = decodeURIComponent(location.hash.slice(8));
+    setMode("thesis"); if(window.TH) TH.open(id);
+  }
+  else if(location.hash === "#thesis" && THESIS_ENABLED){ setMode("thesis"); }
   else if(location.hash.indexOf("#investors") === 0 && INVESTORS_ENABLED){
     const m = location.hash.match(/[?&]b=([^&]*)/);
     setMode("investors", {params: m ? {brief: decodeURIComponent(m[1])} : null});
@@ -10862,6 +10952,202 @@ async function openShare(token){
   window.IV = {search, enter, reset, runContract, advise, adviseFromText, showTab, expandFirm, firmDetailHtml, profileHtml, readStartup,
                // the composer's Go in advisor mode is a deck paste, not a query
                isAdvising: () => { const d = $("#iv-raise"); return !!(d && d.open); }};
+})();
+
+// ===================================================================================================
+// TestStartupThesis — the conversational stress tester (docs/specs/thesis-stress-test.md).
+//
+// Not a form that returns a report. An agent that argues with the thesis and closes every exchange as
+// exactly one of three moves: settled (the record answers it), attacked (here is the disconfirming
+// evidence a red-team model went looking for), or needs_person (no document can settle this — here is
+// who could, and what to ask).
+//
+// The against side is never rendered quieter than the for side. It is why the mode exists.
+// ===================================================================================================
+(function(){
+  const STATE = { id: "", doc: null, busy: false, labels: null };
+  const conv = () => document.getElementById("th-conv");
+  const acts = () => document.getElementById("th-acts");
+  const claims = () => document.getElementById("th-claims");
+  const note = () => document.getElementById("th-note");
+
+  const REG = {filed: "▣", stated: "▢", observed: "◈"};
+
+  function enter(params){
+    if(!STATE.labels) loadLabels();
+    if(STATE.doc) return render();
+    conv().innerHTML = '<div class="th-turn" data-role="agent"><span class="th-who">agent</span>'
+      + '<span class="th-said">Give me the thesis in one sentence — the product, who buys it, and '
+      + 'what they do today instead. I will break it into the claims it rests on and go after the '
+      + 'weakest one.</span></div>';
+    acts().innerHTML = ""; claims().innerHTML = ""; note().textContent = "";
+  }
+
+  function reset(){ STATE.id = ""; STATE.doc = null; enter(); }
+
+  async function loadLabels(){
+    try{ const r = await fetch("/thesis/labels"); if(r.ok) STATE.labels = await r.json(); }
+    catch(e){ /* the ladder is cosmetic here; the server owns it */ }
+  }
+
+  async function submit(text){
+    const t = (text || "").trim();
+    if(!t || STATE.busy) return;
+    if(STATE.id) return say(t);                    // an existing thesis: this is the user pushing back
+    STATE.busy = true;
+    conv().insertAdjacentHTML("beforeend", turnHtml("user", "", t));
+    note().innerHTML = '<span class="su-spin"></span> reading the thesis…';
+    try{
+      const r = await fetch("/thesis", {method:"POST", headers: hdrs(),
+                                        body: JSON.stringify({thesis: t})});
+      const d = await r.json();
+      if(!r.ok || !d.thesis) throw new Error(d.detail || "could not read that thesis");
+      STATE.id = d.id; STATE.doc = d.thesis;
+      history.replaceState(null, "", "#thesis/" + encodeURIComponent(d.id));
+      render();
+    }catch(e){ note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; }
+  }
+
+  async function open(id){
+    if(!id) return;
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(id), {headers: hdrs()});
+      const d = await r.json();
+      if(r.ok && d.thesis){ STATE.id = id; STATE.doc = d.thesis; render(); }
+    }catch(e){ note().textContent = "could not open that thesis"; }
+  }
+
+  async function post(path, body){
+    if(STATE.busy) return;
+    STATE.busy = true;
+    note().innerHTML = '<span class="su-spin"></span> ' + (path.endsWith("attack")
+      ? "searching for support, then running the red team against it…" : "thinking…");
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + path,
+                            {method:"POST", headers: hdrs(), body: JSON.stringify(body || {})});
+      const d = await r.json();
+      if(d.status === "refused"){ note().textContent = d.reason || "refused"; return; }
+      if(d.thesis) STATE.doc = d.thesis;
+      render();
+    }catch(e){ note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; }
+  }
+
+  const attack = () => post("/attack", {max_usd: 0.10});
+  const turn = () => post("/turn", {});
+  const say = (text) => post("/turn", {text: text});
+
+  function hdrs(){
+    const h = {"content-type": "application/json"};
+    if(window.USER && USER.token) h["authorization"] = USER.token;
+    return h;
+  }
+
+  function esc2(x){ return esc(String(x == null ? "" : x)); }
+
+  function turnHtml(role, move, text){
+    return '<div class="th-turn" data-role="' + esc2(role) + '"><span class="th-who">'
+      + esc2(role === "agent" ? "agent" : "you") + "</span>"
+      + '<span class="th-said">'
+      + (move ? '<span class="th-move" data-m="' + esc2(move) + '">' + esc2(move.replace("_", " ")) + "</span> " : "")
+      + esc2(text) + "</span></div>";
+  }
+
+  function evHtml(e){
+    const src = e.source_url
+      ? '<a class="th-src" href="' + esc2(e.source_url) + '" target="_blank" rel="noopener">'
+        + esc2(e.source_key || "source") + " ↗</a>"
+      : '<span class="th-src">' + esc2(e.source_key || (e.said_by ? "call" : "source")) + "</span>";
+    // A call carries WHO said it. That is what stops one person's account reading like a filing.
+    const who = e.said_by ? '<span class="th-src">' + esc2(e.said_by)
+      + (e.said_role ? " · " + esc2(e.said_role) : "") + "</span>" : "";
+    return '<div class="th-ev" data-side="' + esc2(e.side) + '">'
+      + '<span title="' + esc2(e.register) + '">' + (REG[e.register] || "▢") + "</span>"
+      + '<span class="th-q">' + esc2((e.quote || "").slice(0, 300))
+      + (e.signal_only ? ' <span class="th-signal">signal, not evidence</span>' : "")
+      + "</span>" + who + src + "</div>";
+  }
+
+  function claimHtml(c){
+    const ev = c.evidence || [];
+    const against = ev.filter(e => e.side === "against");
+    const forr = ev.filter(e => e.side === "for");
+    // AGAINST FIRST, always. A stress test that leads with the supporting quote is a search engine.
+    const sides = against.concat(forr).map(evHtml).join("");
+    const ask = (c.settleable === "call_only")
+      ? '<div class="th-ask"><b>Only a person can answer this.</b></div>' : "";
+    return '<div class="th-claim"><h4>' + esc2(c.claim) + "</h4>"
+      + '<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">'
+      + '<span class="th-rung">' + esc2(c.rung.replace(/_/g, " ")) + "</span>"
+      + '<span class="th-v" data-v="' + esc2(c.verdict) + '">' + esc2(c.verdict.replace("_", " ")) + "</span>"
+      + "</div>"
+      + (c.note ? '<p class="th-note">' + esc2(c.note) + "</p>" : "")
+      + ask
+      + (sides ? '<div class="th-sides">' + sides + "</div>" : "")
+      + "</div>";
+  }
+
+  function render(){
+    const d = STATE.doc;
+    if(!d) return;
+    conv().innerHTML = (d.turns || []).map(t => turnHtml(t.role, t.move, t.text)).join("");
+    const last = (d.turns || []).slice(-1)[0] || {};
+    const pay = last.payload || {};
+    // The agent's move can carry a question to put to a person, and the people it found.
+    let extra = "";
+    if(pay.question){
+      extra = '<div class="th-ask"><b>Ask them:</b> ' + esc2(pay.question)
+        + (pay.people && pay.people.length
+            ? pay.people.map(p => '<div class="th-person"><b>' + esc2(p.name) + "</b> <span>"
+                + esc2(p.why) + "</span></div>").join("")
+            : "")
+        + (pay.guidance ? '<p class="th-note">' + esc2(pay.guidance) + "</p>" : "")
+        + "</div>";
+    }
+    if(extra) conv().insertAdjacentHTML("beforeend", extra);
+
+    const unattacked = (d.claims || []).filter(c => c.settleable !== "call_only" && !c.attacked);
+    acts().innerHTML =
+      (unattacked.length
+        ? '<button type="button" id="th-attack">⚔ Attack ' + unattacked.length + ' untested claim'
+          + (unattacked.length === 1 ? "" : "s") + "</button>"
+        : '<button type="button" id="th-next">→ What is weakest now?</button>')
+      + '<button type="button" id="th-share">🔗 Copy link</button>';
+    const a = document.getElementById("th-attack"); if(a) a.addEventListener("click", attack);
+    const n = document.getElementById("th-next"); if(n) n.addEventListener("click", turn);
+    const sh = document.getElementById("th-share");
+    if(sh) sh.addEventListener("click", () => {
+      try{ navigator.clipboard.writeText(location.origin + "/app#thesis/" + STATE.id);
+           sh.textContent = "copied"; }catch(e){ /* clipboard is a nicety */ }
+    });
+
+    claims().innerHTML = (d.claims || []).map(claimHtml).join("");
+    const open = (d.claims || []).filter(c => c.verdict === "open").length;
+    const callOnly = (d.claims || []).filter(c => c.settleable === "call_only").length;
+    note().textContent = (d.claims || []).length + " claims · " + open + " untested · "
+      + callOnly + " that no document can settle";
+  }
+
+  async function recent(){
+    try{
+      const r = await fetch("/theses?limit=30", {headers: hdrs()});
+      const d = await r.json();
+      const rows = (d.theses || []);
+      if(!rows.length){ note().textContent = "no theses yet"; return; }
+      claims().innerHTML = rows.map(t =>
+        '<div class="th-claim"><h4><a href="#thesis/' + esc2(t.id) + '">' + esc2(t.thesis) + "</a></h4>"
+        + '<span class="th-rung">' + t.settled + " of " + t.claims + " tested · "
+        + esc2((t.updated_at || "").slice(0, 10)) + "</span></div>").join("");
+    }catch(e){ note().textContent = "could not load your theses"; }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const rc = document.getElementById("th-recent"); if(rc) rc.addEventListener("click", recent);
+    const rs = document.getElementById("th-reset"); if(rs) rs.addEventListener("click", reset);
+  });
+
+  window.TH = {submit, enter, reset, open, attack, turn, render};
 })();
 </script>
 </body>

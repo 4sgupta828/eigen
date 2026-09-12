@@ -39,7 +39,7 @@ test("New chat resets only the mode you are in", () => {
   const body = fn("newConversation", 2600);
   const wipe = body.indexOf("THREAD = {session_id:null, turns:[]}");
   assert.ok(wipe > 0, "Q&A still needs its thread cleared");
-  for(const mode of ["panel","triage","startups","investors","guided","deepdive","voices"]){
+  for(const mode of ["panel","triage","startups","investors","guided","deepdive","voices","thesis"]){
     const at = body.indexOf(`APP_MODE === "${mode}"`);
     assert.ok(at > 0, `New chat must handle ${mode}`);
     assert.ok(at < wipe,
@@ -50,7 +50,7 @@ test("New chat resets only the mode you are in", () => {
 
 test("every mode states its own placeholder", () => {
   const body = fn("setMode", 9000);
-  for(const mode of ["panel","guided","startups","investors","deepdive","voices","triage"]){
+  for(const mode of ["panel","guided","startups","investors","deepdive","voices","triage","thesis"]){
     // match the BRANCH (`if(mode === "x"){`), not the mode-validation expression at the top
     const m = body.match(new RegExp(`(?:\\}\\s*else\\s*)?if\\(mode === "${mode}"\\)\\s*\\{`));
     assert.ok(m, `no branch for ${mode}`);
