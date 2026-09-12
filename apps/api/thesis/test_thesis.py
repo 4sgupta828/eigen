@@ -5,6 +5,7 @@ Free: no database, no model. Every case here is one designed to pass a gate whil
 import pytest
 
 from api.thesis import attack as atk
+from api.thesis import argue as arg
 from api.thesis import decompose as dec
 from api.thesis import people as ppl
 from api.thesis.attack import _terms, binds, verdict_for
@@ -252,6 +253,55 @@ def test_signal_rows_never_move_a_verdict():
     """Web coverage is all we have on a thin claim — and a verdict built on it would say `supported`
     off the back of sentiment. The counts that decide exclude signal rows."""
     assert verdict_for(settleable="corpus", n_for=0, n_against=0)[0] == "under_tested"
+
+
+# ── stable case citations ─────────────────────────────────────────────────────────────────────────
+
+def _case_evidence(evidence_id: str, *, quote: str = "A measured result.") -> dict:
+    return {"id": evidence_id, "side": "for", "signal_only": False, "register": "filed",
+            "source_key": "edgar", "source_subject": "Entity A",
+            "evidence_kind": "operating_metric", "period": "2026-Q2", "quote": quote,
+            "gate_results": {"span_ok": True, "entailed": True, "on_subject": True,
+                             "kind_ok": True, "period_ok": True}}
+
+
+def test_case_rows_use_stable_evidence_ids_and_keep_identity_metadata() -> None:
+    rendered = arg._rows([_case_evidence("ev-abc")], "for")
+
+    assert "[[e:ev-abc]]" in rendered
+    assert "Entity A" in rendered
+    assert "operating_metric" in rendered
+    assert "2026-Q2" in rendered
+    assert "on_subject=true" in rendered
+
+
+def test_reordering_evidence_does_not_retarget_case_citation() -> None:
+    first = _case_evidence("ev-first", quote="First result.")
+    second = _case_evidence("ev-second", quote="Second result.")
+
+    assert "[[e:ev-first]]" in arg._rows([second, first], "for")
+    assert "[[e:ev-first]]" in arg._rows([first, second], "for")
+
+
+def test_sentence_with_invented_evidence_id_fails_closed() -> None:
+    text = "Supported result [[e:ev-real]]. Invented assertion [[e:ev-fake]]."
+
+    assert arg.sanitize_case(text, {"ev-real"}) == "Supported result [[e:ev-real]]."
+
+
+@pytest.mark.asyncio
+async def test_case_model_output_is_validated_against_claim_evidence() -> None:
+    async def seam(_system, _user):
+        return {"cases": [{"rung": "problem_exists",
+                            "case_for": "Real [[e:ev-real]]. Fake [[e:ev-fake]].",
+                            "case_against": "Nothing in the record speaks to this side yet.",
+                            "leans": "for"}], "overall": "The claim has support."}
+
+    cases, _overall = await arg.cases_for(seam, thesis="A thesis", claims=[{
+        "rung": "problem_exists", "claim": "A claim", "evidence": [_case_evidence("ev-real")],
+    }])
+
+    assert cases["problem_exists"]["case_for"] == "Real [[e:ev-real]]."
 
 
 def test_corpus_row_keeps_stable_source_and_evidence_identity():

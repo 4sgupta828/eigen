@@ -16,6 +16,7 @@ the case for rung 5.
 from __future__ import annotations
 
 import json
+import re
 
 MAX_EV_PER_SIDE = 4
 MAX_QUOTE = 260
@@ -33,9 +34,9 @@ Write two cases per claim, three or four sentences each — an ARGUMENT, not a s
 - `case_for`: the strongest honest argument that the claim holds, from the FOR rows.
 - `case_against`: the strongest honest argument that it does not, from the AGAINST rows.
 
-CITE. Every sentence that rests on a row ends with its number in square brackets — [1], [2], or [1][3]
-where two rows carry it. A sentence with no bracket is a sentence you are asserting without support,
-and there should be almost none of those. Cite the row numbers exactly as given; never invent one.
+CITE. Every sentence that rests on a row ends with its immutable evidence marker exactly as given —
+`[[e:abc123]]`, or two markers when two rows carry it. A sentence with no marker is unsupported.
+Never invent or alter an evidence ID.
 
 REASON, do not paraphrase. Say what the rows IMPLY for this claim and why: what follows from them,
 what the reader should conclude, and how far it generalises beyond the specific case the row
@@ -78,9 +79,7 @@ Output ONLY the JSON object."""
 
 
 def numbered(evidence: list[dict]) -> list[dict]:
-    """Every row a case may argue from, numbered once across BOTH sides so a citation [3] is
-    unambiguous. Without stable numbers a case cannot point at anything and the reader is back to
-    taking the reasoning on faith."""
+    """Keep the bounded, side-balanced evidence selection used by the prompt."""
     out = []
     for side in ("for", "against"):
         n = 0
@@ -96,13 +95,41 @@ def numbered(evidence: list[dict]) -> list[dict]:
 
 def _rows(evidence: list[dict], side: str) -> str:
     out = []
-    for i, e in enumerate(numbered(evidence), start=1):
+    for e in numbered(evidence):
         if e.get("side") != side:
             continue
         tag = "signal" if e.get("signal_only") else (e.get("register") or "stated")
         who = e.get("said_by") or e.get("source_key") or "source"
-        out.append(f"  [{i}] ({tag} · {who}) {(e.get('quote') or '')[:MAX_QUOTE]}")
+        evidence_id = str(e.get("id") or "")
+        gates = e.get("gate_results") or {}
+        gate_text = ",".join(f"{key}={'true' if gates.get(key) is True else 'false'}" for key in
+                             ("span_ok", "entailed", "on_subject", "kind_ok", "period_ok"))
+        identity = " · ".join(filter(None, [str(e.get("source_subject") or ""),
+                                             str(e.get("evidence_kind") or ""),
+                                             str(e.get("period") or e.get("as_of") or "")]))
+        out.append(f"  [[e:{evidence_id}]] ({tag} · {who}"
+                   f"{(' · ' + identity) if identity else ''} · {gate_text}) "
+                   f"{(e.get('quote') or '')[:MAX_QUOTE]}")
     return "\n".join(out) or "  (no rows)"
+
+
+_CITE_RE = re.compile(r"\[\[e:([A-Za-z0-9_-]{1,80})\]\]")
+
+
+def sanitize_case(text: str, allowed_ids: set[str]) -> str:
+    """Drop any sentence whose cited source is absent; uncited prose is limited to empty-side copy."""
+    kept = []
+    for sentence in re.split(r"(?<=[.!?])\s+", (text or "").strip()):
+        if not sentence:
+            continue
+        cited = set(_CITE_RE.findall(sentence))
+        if cited:
+            if cited <= allowed_ids:
+                kept.append(sentence)
+            continue
+        if sentence.lower().startswith("nothing in the record speaks to this"):
+            kept.append(sentence)
+    return " ".join(kept)[:900]
 
 
 def _prompt(thesis: str, claims: list[dict]) -> str:
@@ -129,13 +156,16 @@ async def cases_for(llm_json, *, thesis: str, claims: list[dict]) -> tuple[dict[
     except Exception:      # noqa: BLE001
         return {}, ""
     out: dict[str, dict] = {}
-    known = {c["rung"] for c in claims}
+    by_rung = {c["rung"]: c for c in claims}
+    known = set(by_rung)
     for row in (d.get("cases") or []):
         k = str((row or {}).get("rung") or "").strip()
         if k not in known:
             continue
         leans = str(row.get("leans") or "neither").strip().lower()
-        out[k] = {"case_for": str(row.get("case_for") or "").strip()[:900],
-                  "case_against": str(row.get("case_against") or "").strip()[:900],
+        allowed = {str(e.get("id") or "") for e in numbered(by_rung[k].get("evidence") or [])
+                   if e.get("id")}
+        out[k] = {"case_for": sanitize_case(str(row.get("case_for") or ""), allowed),
+                  "case_against": sanitize_case(str(row.get("case_against") or ""), allowed),
                   "leans": leans if leans in ("for", "against", "neither") else "neither"}
     return out, str(d.get("overall") or "").strip()[:2000]
