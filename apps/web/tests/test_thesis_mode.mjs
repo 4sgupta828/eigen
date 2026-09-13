@@ -144,7 +144,8 @@ test("the empty state explains the flow instead of showing an empty brief", () =
   const {api} = loadThesisModule();
   const html = api.introHtml();
   assert.match(html, /Test a startup thesis/);
-  assert.match(html, /Fund \/ Pass \/ Continue/);
+  assert.match(html, /lines of inquiry/);                          // the new model, not a claim ladder
+  assert.doesNotMatch(html, /Fund \/ Pass \/ Continue/);           // retired claims-model framing is gone
   assert.match(html, /State it/);
   assert.match(html, /Type your thesis in the box below/);
 });
@@ -178,7 +179,9 @@ test("the pre-test brief shows the thesis, not an empty 'Ready to test' decision
   const html = api.pretestHtml({thesis: "A concrete thesis.", is_owner: true,
                                 claims: [{rung: "a", critical: true}, {rung: "b"}]});
   assert.match(html, /A concrete thesis\./);
-  assert.match(html, /2 claims, 1 critical/);
+  assert.match(html, /lines of inquiry/);                          // the new model framing
+  assert.doesNotMatch(html, /claims,.*critical/);                  // no retired claims count
+  assert.doesNotMatch(html, /Fund \/ Pass \/ Continue/);
   assert.doesNotMatch(html, /Ready to test/);
 });
 

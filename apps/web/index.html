@@ -11374,23 +11374,14 @@ async function openShare(token){
     const chosen = ((box && box.value) || STATE.proposed || "").trim();
     if(chosen.length < 12){ note().textContent = "State the thesis as a full sentence first."; return; }
     STATE.busy = true; note().textContent = "";
-    renderProgressText("Projecting the claim decomposition cost…");
+    // Committing the thesis is free and instant — no cost prompt. (It seeds the fixed aspect ladder used
+    // as evidence buckets; the only priced step is running a line of inquiry, gated there.)
+    renderProgressText("Setting up your thesis…");
     try{
-      const pr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/confirm",
-        {method:"POST", headers: hdrs(), body: JSON.stringify({thesis: chosen, project_only: true})});
-      const pj = await pr.json();
-      if(!pr.ok) throw new Error(pj.detail || "could not project this thesis");
-      const max = Number((pj.projection || {}).projected_usd || 0);
-      if(!window.confirm("Build a falsifiable claim ladder from this thesis?\n\n"
-          + "This only decomposes it into the claims it rests on — no evidence is gathered yet, and you "
-          + "approve that test separately.\n\nProjected maximum: $" + max.toFixed(3))){
-        STATE.busy = false; renderProgressText(""); return;
-      }
-      renderProgressText("Building a small, falsifiable claim ladder…");
       const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/confirm",
-        {method:"POST", headers: hdrs(), body: JSON.stringify({thesis: chosen, max_usd: max})});
-      const d = await r.json();
-      if(!r.ok || !d.thesis) throw new Error(d.detail || "could not build the claim ladder");
+        {method:"POST", headers: hdrs(), body: JSON.stringify({thesis: chosen, max_usd: 5})});
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok || !d.thesis) throw new Error(d.detail || "could not set this thesis");
       STATE.doc = d.thesis; STATE.proposed = "";
       render();
     }catch(e){ note().textContent = e.message || String(e); }
@@ -11550,16 +11541,16 @@ async function openShare(token){
   function introHtml(){
     return '<div class="th-intro-card">'
       + "<h2>Test a startup thesis</h2>"
-      + '<p class="th-intro-lead">State a thesis in one sentence. I break it into the handful of claims '
-      + "it rests on, then hunt our corpus and the open web for evidence <b>for and against</b> each, run "
-      + "a red team on the weakest, and give you a <b>Fund / Pass / Continue&nbsp;diligence</b> read you "
-      + "can trace to a source.</p>"
+      + '<p class="th-intro-lead">State a thesis in one sentence. I help you sharpen it, then draft the '
+      + "<b>lines of inquiry</b> it rests on — pointed questions that seek support, seek disconfirmation, "
+      + "and test the assumptions built in. Run the ones you choose against our corpus and the open web, "
+      + "and read grounded, cited answers you can trace to a source.</p>"
       + '<ol class="th-steps">'
       + "<li><b>State it</b> — one sentence: the product, who buys it, and what they do today instead.</li>"
-      + "<li><b>I break it into claims</b> — a small, falsifiable ladder. You can edit any of them first.</li>"
-      + "<li><b>Test against evidence</b> — corpus, then the open web where it is silent, then the red team. "
-      + "You approve the cost before anything runs.</li>"
-      + "<li><b>Read the decision</b> — the case for, the case against, and the cruxes still open.</li>"
+      + "<li><b>Sharpen it together</b> — I ask what is missing until the thesis is concrete.</li>"
+      + "<li><b>Draft the questions</b> — thesis-native lines of inquiry, free to draft and edit. "
+      + "You run the ones you choose.</li>"
+      + "<li><b>Read the evidence</b> — comprehensive, cited answers and a verdict on each aspect.</li>"
       + "</ol>"
       + '<p class="th-intro-cta">↓ Type your thesis in the box below to begin.</p>'
       + "</div>";
@@ -11876,15 +11867,13 @@ async function openShare(token){
     }));
   }
 
-  // Before a test: show the thesis + the claim ladder framing, not an empty "Ready to test" brief.
+  // Before a test: show the thesis, then the lines of inquiry drafted below.
   function pretestHtml(d){
-    const cs = d.claims || [];
-    const crit = cs.filter(c => c.critical).length;
     return '<section class="th-decision" aria-label="Thesis, ready to test">'
       + '<div class="th-decision-head"><div><div class="th-decision-kicker">Thesis</div>'
       + "<h2>" + esc2(d.thesis || "") + "</h2>"
-      + "<p>" + cs.length + " claims" + (crit ? ", " + crit + " critical" : "")
-      + " — test them against the evidence to get a Fund / Pass / Continue read.</p></div>"
+      + "<p>Draft the lines of inquiry this thesis rests on below, edit them, then run the ones you "
+      + "choose to test it against the evidence.</p></div>"
       + (!canMutate(d) ? '<span class="th-readonly">Read-only shared view</span>' : "") + "</div></section>";
   }
 

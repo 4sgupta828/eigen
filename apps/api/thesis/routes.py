@@ -632,7 +632,10 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             wc = atk._web_client(manifest) if web else None
             return await atk.attack_claim(dsn, claim=target, settleable=settleable, judge_llm=judge_llm,
                                           ui=_ui(), extra_context=ctx, web_client=wc,
-                                          relation_llm=_llm_json(), evidence_policy=_policy(), tenant=tenant)
+                                          relation_llm=_llm_json(), evidence_policy=_policy(), tenant=tenant,
+                                          always_retrieve=True)   # the inquiry model runs the user's own
+            #  question — always show what the record says, even for a call_only aspect (authority policy
+            #  still keeps low-tier coverage from carrying it). Never a bare "nothing found".
         return go
 
     async def _run_question_rows(thesis_id: str, run_id: str, rows: list[dict], web: bool):

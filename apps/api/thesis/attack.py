@@ -210,11 +210,17 @@ async def _web(client, query: str, side: str, terms: list[str]) -> list[dict]:
 
 async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None, ui=None,
                        tenant: str = "demo", extra_context: str = "", web_client=None,
-                       relation_llm=None, evidence_policy=None) -> dict:
+                       relation_llm=None, evidence_policy=None, always_retrieve: bool = False) -> dict:
     """-> {evidence: [...], verdict, note, against_queries, searched}.
 
     Never raises: a corpus we cannot reach yields an honest `under_tested`, reported as an attempt.
+
+    `always_retrieve`: gather corpus + web even for a `call_only` aspect. The claims model skips
+    retrieval for call_only rungs (only a person can SETTLE them) — but the inquiry model runs the
+    user's OWN question and should always show what the record does say (as signal/proxy), never a bare
+    "nothing found". Authority policy still keeps low-tier coverage from CARRYING such an aspect.
     """
+    retrieve = always_retrieve or settleable != CALL_ONLY
     terms = _terms(claim + " " + extra_context)
     from eigen_kernel.research.refuter import refute_hypothesis
 
@@ -230,7 +236,7 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     ev_against: list[dict] = []
     searched = 0
     corpus_failed = False
-    if dsn and settleable != CALL_ONLY:
+    if dsn and retrieve:
         try:
             import asyncpg
             conn = await asyncpg.connect(dsn)
@@ -254,7 +260,7 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     # claim the record could not speak to at all. A demand thesis about a market segment is exactly
     # the case the corpus is thin on and the open web is not.
     web_qs = 0
-    if web_client is not None and settleable != CALL_ONLY:
+    if web_client is not None and retrieve:
         if not ev_for:
             got = await _web(web_client, claim, SIDE_FOR, terms)
             web_qs += 1
