@@ -48,3 +48,19 @@ def test_raw_ids_in_prose_are_stripped_keeping_only_clean_markers():
     assert "Revenue grew 20%." in out                    # the parenthesized raw id is gone
     assert "abc123def456ghi789" not in out.replace("[[e:abc123def456ghi789]]", "")  # no bare id leaks
     assert "[[e:abc123def456ghi789]]" in out             # only the clean marker remains
+
+
+def test_bracketed_ids_and_empty_brackets_are_scrubbed():
+    # the model often writes its cite inline as "[<id>]"; stripping the id must not leave a stray "[]"
+    out = sanitize_answer(
+        [{"text": "Five tools failed the causality test in May 2026 [abc123def456ghi789].",
+          "evidence_ids": ["abc123def456ghi789"]}], ["abc123def456ghi789"])
+    assert "May 2026." in out                            # no " []" and no double space before the period
+    assert "[]" not in out.replace("[[e:abc123def456ghi789]]", "")
+    assert "[[e:abc123def456ghi789]]" in out             # the clean marker is still appended
+
+
+def test_literal_empty_brackets_from_the_model_are_removed():
+    out = sanitize_answer([{"text": "The results were clear []. ", "evidence_ids": ["ok"]}], ["ok"])
+    assert "The results were clear." in out              # empty [] the model typed is gone
+    assert "[]" not in out.replace("[[e:ok]]", "")

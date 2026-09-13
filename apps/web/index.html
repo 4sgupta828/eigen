@@ -12050,7 +12050,11 @@ async function openShare(token){
   function groundedAnswer(q){
     const ev = evidenceFor(q);
     const nById = {}; ev.forEach((e, i) => { nById[e.id] = i + 1; });
-    const prose = String(q.answer || "").trim();
+    // Defensive scrub for answers already stored before the server-side fix: strip any empty "[]"/"()"
+    // (the model's inline cite after its id was removed) and tidy the space it leaves before a period.
+    // The [[e:id]] markers are safe — an empty-bracket pattern never matches them.
+    const prose = String(q.answer || "").trim()
+      .replace(/[([]\s*[)\]]/g, "").replace(/\s+([.,;])/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
     if(!prose)
       return '<div class="th-answer-note">Not established in the record.</div>';
     // A pure gap explanation carries no [[e:id]] markers — render it as a muted coverage note (what

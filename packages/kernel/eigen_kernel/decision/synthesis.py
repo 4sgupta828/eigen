@@ -30,12 +30,16 @@ def sanitize_answer(items: list[dict], allowed_ids) -> str:
             continue                      # uncited prose never enters a grounded answer
         if any(i not in allowed for i in ids):
             continue                      # one bad citation drops the whole sentence
-        # Strip any RAW evidence id the model wrote into the prose (e.g. "(9af40…)" or a bare id) — the
-        # only citation the reader should see is the clean [[e:id]] marker we append.
-        text = re.sub(r"\(\s*[A-Za-z0-9_-]{12,}\s*\)", "", text)
+        # Strip any RAW evidence id the model wrote into the prose (e.g. "(9af40…)", "[9af40…]", or a
+        # bare id) — the only citation the reader should see is the clean [[e:id]] marker we append. The
+        # model often wraps its inline cite in () OR [], so handle both, then collapse any empty wrapper
+        # it leaves behind (the "[]" bug): a bracket/paren with nothing but separators inside.
+        text = re.sub(r"[(\[]\s*[A-Za-z0-9_-]{12,}\s*[)\]]", "", text)   # (id) or [id]
         for i in ids:
             text = text.replace(i, "")
-        text = re.sub(r"\s{2,}", " ", text).replace(" .", ".").replace(" ,", ",").replace("()", "").strip()
+        text = re.sub(r"[(\[]\s*[,;\s]*[)\]]", "", text)                 # empty () or [] left behind
+        text = re.sub(r"\s+([.,;])", r"\1", text)                        # tidy space before punctuation
+        text = re.sub(r"\s{2,}", " ", text).strip()
         if not text:
             continue
         markers = "".join(f"[[e:{i}]]" for i in dict.fromkeys(ids))   # de-duped, order-stable
