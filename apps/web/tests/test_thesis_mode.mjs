@@ -106,8 +106,16 @@ test("phone layout has touch targets and a single-column decision brief", () => 
   assert.match(SRC, /prefers-reduced-motion:reduce/);
 });
 
-test("recent theses have a dedicated visible panel", () => {
-  assert.match(MARKUP, /id="th-recents"/);
+test("theses live in a persistent left rail beside the selected thesis (factra model)", () => {
+  // a two-panel Thesis Explorations layout: a left rail list + a main panel, not an inline growing list
+  assert.match(MARKUP, /<div class="th-explore">/);
+  assert.match(MARKUP, /<aside class="th-rail"[^>]*id="th-rail"/);
+  assert.match(MARKUP, /Thesis Explorations/);
+  assert.match(MARKUP, /id="th-rail-list"/);
+  assert.match(MARKUP, /<div class="th-main">/);
+  assert.match(MARKUP, /id="th-rail-toggle"/);            // a mobile drawer toggle
+  // the main panel still holds the thesis surfaces
+  assert.match(MARKUP, /<div class="th-main">[\s\S]*id="th-takes"[\s\S]*id="th-thread"/);
 });
 
 test("conversation text is formatted into paragraphs, not a run-on blob", () => {
