@@ -121,3 +121,67 @@ async def test_generate_inquiries_falls_open_to_full_coverage_with_no_model():
     inqs = await generate_inquiries(None, decision="d", aspects=aspects, directive="x")
     covered = {q["dimension"] for i in inqs for q in i["questions"]}
     assert covered == {a.key for a in aspects}        # every dimension present, honest degraded mode
+
+
+@pytest.mark.asyncio
+async def test_frame_decision_normalizes_and_tags_to_the_rubric():
+    # The UNDERSTANDING step reads the decision into a structured frame; dimension tags are kept only
+    # when they name a real aspect, and free-form (untagged) assumptions/risks survive.
+    from eigen_kernel.decision import frame_decision, is_substantive
+    aspects = ToyProfile().aspects()   # keys: faster, scenic
+    seen = {}
+    async def llm(system, user):
+        seen["system"] = system; seen["user"] = user
+        return {"reading": "The coastal route trades minutes for views.",
+                "assumptions": [{"text": "Traffic is light on the coast at dawn", "dimension": "faster"},
+                                {"text": "The driver values scenery", "dimension": "not_a_key"}],
+                "risks": [{"text": "A single landslide closes the only coastal lane"}],
+                "unknowns": ["Whether the tunnel reopens"], "anchors": ["Route 1"]}
+    frame = await frame_decision(llm, decision="coastal vs inland",
+                                 context="author: I care about the view", directive="D", aspects=aspects)
+    assert is_substantive(frame)
+    assert frame["reading"].startswith("The coastal route")
+    assert frame["assumptions"][0]["dimension"] == "faster"     # valid tag kept
+    assert frame["assumptions"][1]["dimension"] == ""           # bogus tag scrubbed, text kept
+    assert frame["risks"][0]["dimension"] == ""                 # untagged risk survives
+    assert "author: I care about the view" in seen["user"]      # the conversation is mined
+    assert seen["system"] == "D"                                # vertical directive drives it
+
+
+@pytest.mark.asyncio
+async def test_frame_decision_falls_open_to_empty_on_no_model_or_junk():
+    from eigen_kernel.decision import frame_decision, is_substantive
+    aspects = ToyProfile().aspects()
+    assert await frame_decision(None, decision="d", aspects=aspects) == {}
+    async def junk(_s, _u): raise ValueError("boom")
+    assert await frame_decision(junk, decision="d", aspects=aspects) == {}
+    async def empty(_s, _u): return {"reading": "just a restatement"}
+    fr = await frame_decision(empty, decision="d", aspects=aspects)
+    assert not is_substantive(fr)                               # no assumptions/risks → not worth using
+
+
+@pytest.mark.asyncio
+async def test_generation_interrogates_the_frame_when_one_is_supplied():
+    # With a frame, its specific assumptions/risks reach the question model as the substance to test,
+    # and the rubric is reframed from a hard contract to a coverage FLOOR.
+    from eigen_kernel.decision import generate_inquiries
+    aspects = ToyProfile().aspects()
+    frame = {"reading": "Trades minutes for views.",
+             "assumptions": [{"text": "Traffic is light at dawn", "dimension": "faster"}],
+             "risks": [{"text": "A landslide closes the coastal lane", "dimension": ""}],
+             "unknowns": [], "anchors": []}
+    captured = {}
+    async def llm(_sys, user):
+        captured["user"] = user
+        return {"inquiries": [
+            {"name": "Dawn traffic", "framing": "t",
+             "questions": [{"dimension": "faster", "kind": "seek_support",
+                            "text": "Is traffic light at dawn on Route 1?",
+                            "target": "Traffic is light at dawn on Route 1.", "polarity": 1}]}]}
+    inqs = await generate_inquiries(llm, decision="coastal vs inland", aspects=aspects,
+                                    directive="x", frame=frame)
+    assert "Traffic is light at dawn" in captured["user"]       # assumption handed to the question model
+    assert "A landslide closes the coastal lane" in captured["user"]   # risk too
+    assert "COVERAGE FLOOR" in captured["user"]                 # rubric demoted to a floor
+    covered = {q["dimension"] for i in inqs for q in i["questions"]}
+    assert covered == {"faster", "scenic"}                      # floor still enforced (scenic gap-filled)

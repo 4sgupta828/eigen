@@ -610,6 +610,18 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     def _profile():
         return getattr(manifest, "decision_profile", None)
 
+    def _genesis_transcript(doc: dict) -> str:
+        """Render the conversation that produced the thesis into plain text for the framing step — the
+        messy specifics the one-line thesis leaves out live here. Owner-only turns; capped for cost."""
+        lines = []
+        for t in (doc.get("turns") or []):
+            text = (t.get("text") or "").strip()
+            if not text:
+                continue
+            who = "author" if t.get("role") == "user" else "analyst"
+            lines.append(f"{who}: {text}")
+        return "\n".join(lines)[-6000:]
+
     def _aspect_by_key(profile, key: str):
         return next((a for a in profile.aspects() if a.key == key), None)
 
@@ -736,8 +748,18 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         decision = d.get("thesis") or ""
         directive = (profile.inquiry_directive(decision)
                      if hasattr(profile, "inquiry_directive") else "")
+        # UNDERSTAND before asking: read the thesis (and the conversation that produced it) into a frame
+        # — its mechanism, load-bearing assumptions, specific risks — so the questions test THIS thesis's
+        # substance, not a generic rubric. Falls open to rubric-only generation if framing yields nothing.
+        aspects = profile.aspects()
+        frame = {}
+        if hasattr(profile, "frame_directive"):
+            frame = await _dec.frame_decision(
+                _llm_json(), decision=decision, context=_genesis_transcript(d),
+                directive=profile.frame_directive(decision), aspects=aspects)
         inquiries = await _dec.generate_inquiries(
-            _llm_json(), decision=decision, aspects=profile.aspects(), directive=directive)
+            _llm_json(), decision=decision, aspects=aspects, directive=directive,
+            frame=(frame if _dec.is_substantive(frame) else None))
         await tstore.set_inquiries(pool, thesis_id, inquiries)
         return await tl_inquiries(thesis_id, authorization, x_thesis_owner)
 

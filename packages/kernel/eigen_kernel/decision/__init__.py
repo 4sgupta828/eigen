@@ -21,6 +21,7 @@ from .types import (
 )
 from .profile import DecisionProfile
 from .questions import generate_questions, required_kinds_covered
+from .frame import frame_decision, normalize_frame, is_substantive
 from .generate import generate_inquiries
 from .aggregate import resolve_signal, aggregate_aspect
 from .run import run_question, run_aspect, run_inquiry
@@ -32,6 +33,7 @@ __all__ = [
     "TARGET_SUPPORTED", "TARGET_CONTRADICTED", "TARGET_UNTESTED",
     "ASPECT_SUPPORT", "ASPECT_CONTRADICTION", "ASPECT_NONE",
     "DecisionProfile", "generate_questions", "required_kinds_covered",
+    "frame_decision", "normalize_frame", "is_substantive",
     "resolve_signal", "aggregate_aspect",
     "run_question", "run_aspect", "run_inquiry",
     "sanitize_answer", "NOT_ESTABLISHED",

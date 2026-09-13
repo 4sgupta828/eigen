@@ -23,6 +23,12 @@ class DecisionProfile(Protocol):
         """A partition of the aspects into inquiry cards. Every aspect in exactly one inquiry."""
 
     # ---- prompts the model is steered by (domain vocabulary as DATA, never in kernel code) ----
+    # OPTIONAL extension methods a profile MAY also expose (accessed via hasattr, kept off the required
+    # Protocol surface so a minimal profile still satisfies it, like `inquiry_directive`):
+    #   frame_directive(decision) -> str   guidance for the UNDERSTANDING step (frame.py): what a
+    #       load-bearing assumption, a real risk, and a meaningful anchor look like in THIS domain, so
+    #       the frame is deep and specific rather than a generic restatement.
+    #   inquiry_directive(decision) -> str system guidance for decision-level question generation.
     def question_directive(self, aspect: Aspect, decision: str) -> str:
         """System guidance for generating a balanced, typed Socratic question set for one aspect —
         including how to phrase each question's declarative `target` and its polarity, in this

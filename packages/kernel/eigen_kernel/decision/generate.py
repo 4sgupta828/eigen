@@ -44,19 +44,57 @@ def _coerce_question(item: dict, valid_dims: set) -> dict | None:
     return {"dimension": dim, "kind": kind.value, "text": text[:400], "target": target[:400], "polarity": pol}
 
 
+def _frame_block(frame: dict | None) -> str:
+    """Render the decision frame (from frame.py) as the SUBSTANCE the questions must interrogate. When a
+    frame is present, the rubric drops from generative-seed to coverage-floor: the model writes questions
+    that test THESE specific assumptions and probe THESE specific risks, not the generic rubric."""
+    if not frame:
+        return ""
+    parts = []
+    if frame.get("reading"):
+        parts.append("HOW THIS DECISION READS (the mechanism to interrogate):\n" + frame["reading"])
+    if frame.get("assumptions"):
+        parts.append("LOAD-BEARING ASSUMPTIONS — write the question(s) whose answer would CONFIRM or "
+                     "BREAK each one (tag with its dimension when given):\n"
+                     + "\n".join(f"- {a['text']}"
+                                 + (f"  [{a['dimension']}]" if a.get("dimension") else "")
+                                 for a in frame["assumptions"]))
+    if frame.get("risks"):
+        parts.append("SPECIFIC RISKS — write the DISCONFIRMING probe (a seek_contradiction or "
+                     "challenge_assumption question) for each:\n"
+                     + "\n".join(f"- {r['text']}"
+                                 + (f"  [{r['dimension']}]" if r.get("dimension") else "")
+                                 for r in frame["risks"]))
+    if frame.get("unknowns"):
+        parts.append("OPEN UNKNOWNS worth resolving:\n"
+                     + "\n".join(f"- {u}" for u in frame["unknowns"]))
+    return "\n\n".join(parts)
+
+
 async def generate_inquiries(llm_json, *, decision: str, aspects: tuple[Aspect, ...],
-                             directive: str) -> list[dict]:
+                             directive: str, frame: dict | None = None) -> list[dict]:
     """-> [{key, name, framing, questions:[{dimension,kind,text,target,polarity}]}]. Never raises.
-    Thesis-native questions + clusters from the model; code guarantees every aspect is covered."""
+    Thesis-native questions + clusters from the model; code guarantees every aspect is covered.
+
+    When `frame` (from frame.py) is supplied, its assumptions/risks become the SUBSTANCE the questions
+    interrogate — that is where depth comes from — while the aspect rubric drops to a coverage floor."""
     valid = {a.key for a in aspects}
     if llm_json is None:
         return _fallback(aspects)
     rubric = "\n".join(f"- {a.key}: {a.prompt}"
                        + (" [only a person can settle this]" if a.settleable == "call_only" else "")
                        + (" [critical]" if a.critical else "") for a in aspects)
+    frame_block = _frame_block(frame)
+    seed = ((frame_block + "\n\n") if frame_block else "")
+    contract_role = ("COVERAGE FLOOR — every dimension must still be addressed by at least one question "
+                     "(tag it in `dimension`), but let the assumptions and risks above drive WHAT you "
+                     "ask; do not reduce the set to one generic question per dimension:"
+                     if frame_block else
+                     "COVERAGE CONTRACT — every one of these dimensions must be addressed by at least "
+                     "one question, tagged with its key in `dimension`:")
     user = (f"DECISION (the thesis to test):\n{decision}\n\n"
-            f"COVERAGE CONTRACT — every one of these dimensions must be addressed by at least one "
-            f"question, tagged with its key in `dimension`:\n{rubric}\n\n"
+            f"{seed}"
+            f"{contract_role}\n{rubric}\n\n"
             'Return ONE JSON object: {"inquiries": [{"name": "...", "framing": "...", '
             '"questions": [{"dimension": "<key>", "kind": "seek_support|seek_contradiction|'
             'resolve_ambiguity|challenge_assumption", "text": "the question, in THIS thesis\'s own '

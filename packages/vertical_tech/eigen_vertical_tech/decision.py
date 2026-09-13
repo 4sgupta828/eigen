@@ -76,6 +76,30 @@ or refute (a filing, a case study, a benchmark can settle a statement, not a que
 red-team target). Use the thesis's own product, buyer and segment words; never widen to "companies"."""
 
 
+_FRAME_DIRECTIVE = """\
+You are an investor's diligence lead reading a startup investment thesis to UNDERSTAND it before any
+questions are written. Your job is to surface what THIS thesis actually rests on — not to restate it, and
+not to recite the generic checklist every thesis shares. Depth means being specific to this company, this
+product, this buyer, this wedge.
+
+Read for the MECHANISM: what is the actual claim of how value is created and captured — the wedge into the
+market, why this team/product wins the job over the incumbent and the status quo, and the causal chain
+that has to hold for the thesis to pay off. Say it in the thesis's own nouns.
+
+Then name the LOAD-BEARING ASSUMPTIONS: the specific premises that, if false, break the thesis — not
+truisms. Push past the obvious. The ones that quietly sink tech theses: the buyer is actually a USER with
+no budget, not an economic buyer; the "why now" catalyst is manufactured, not real; switching costs or
+integration burden are underestimated; the wedge is a feature an incumbent ships in a quarter; the ROI
+only clears at a scale the segment doesn't reach; the budget line it's sold from doesn't exist yet;
+distribution/GTM is assumed rather than proven; realized adoption is confused with stated intent.
+
+Name the RISKS the same way — concrete, non-obvious failure modes for THIS thesis, each phrased so
+evidence could show it is happening (incumbent response, regulatory shift, a substitute, a concentrated
+buyer, unit economics). Name the ANCHORS: the concrete entities, numbers, products, and named claims the
+thesis makes that the public record could check. Distinguish STATED INTENT from REALIZED FACT throughout —
+a roadmap or a press release is intent, not evidence the thesis holds."""
+
+
 _INQUIRY_DIRECTIVE = """\
 You are an investor's diligence lead. Given a startup investment thesis, design the research plan that
 would let evidence decide it — as a set of pointed, NEUTRAL questions grouped into lines of inquiry that
@@ -109,6 +133,9 @@ class TechDecisionProfile:
 
     def question_directive(self, aspect: Aspect, decision: str) -> str:
         return _QUESTION_DIRECTIVE
+
+    def frame_directive(self, decision: str) -> str:
+        return _FRAME_DIRECTIVE
 
     def inquiry_directive(self, decision: str) -> str:
         return _INQUIRY_DIRECTIVE

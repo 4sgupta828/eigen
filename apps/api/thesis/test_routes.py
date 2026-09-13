@@ -362,3 +362,72 @@ def test_generate_requires_owner_and_a_profile(monkeypatch):
     c = TestClient(app)
     # no profile configured → 409, not a crash
     assert c.post("/thesis/t1/inquiries/generate", headers={"Authorization": "Bearer owner"}).status_code == 409
+
+
+def test_generate_frames_the_thesis_then_asks_questions_of_the_frame(monkeypatch):
+    """The generate route runs the UNDERSTANDING step first (feeding it the genesis conversation) and
+    hands the frame's specific assumptions/risks to the question step — not just the fixed rubric."""
+    from types import SimpleNamespace
+    from eigen_vertical_tech.decision import TECH_DECISION_PROFILE
+    saw = {"frame_user": "", "gen_user": ""}
+    saved = {"rows": []}
+
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {"id": "user-1"} if token == "Bearer owner" else {}
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token="", trusted=False):
+        if thesis_id != "t1" or owner_id != "user-1":
+            return None
+        d = _thesis(owner=True)
+        d["turns"] = [{"role": "user", "move": "say", "rung": "", "rungs": [],
+                       "text": "We sell to hospital procurement, not to nurses.", "payload": {}}]
+        return d
+    async def fake_set_inquiries(_pool, tid, inquiries):
+        saved["rows"] = []
+        for order, inq in enumerate(inquiries):
+            for i, q in enumerate(inq.get("questions") or []):
+                saved["rows"].append({"inquiry_key": inq["key"], "inquiry_name": inq.get("name", ""),
+                    "inquiry_framing": inq.get("framing", ""), "inquiry_order": order,
+                    "aspect_key": q["dimension"], "kind": q["kind"], "text": q["text"],
+                    "target": q["target"], "polarity": q.get("polarity", 1), "id": f"{inq['key']}{i}",
+                    "target_status": "", "run_id": ""})
+    async def fake_list_questions(_pool, tid, inq=""):
+        return [r for r in saved["rows"] if not inq or r["inquiry_key"] == inq]
+
+    async def llm_json(system, user):
+        if "UNDERSTANDING" in user:                       # the frame step
+            saw["frame_user"] = user
+            return {"reading": "Sells to hospital procurement.",
+                    "assumptions": [{"text": "Procurement, not nurses, holds the budget",
+                                     "dimension": "buyer_nameable"}],
+                    "risks": [{"text": "Procurement cycles are 18 months", "dimension": "catalyst"}],
+                    "unknowns": [], "anchors": ["hospital procurement"]}
+        saw["gen_user"] = user                            # the question step
+        return {"inquiries": [{"name": "Who signs the check", "framing": "the buyer",
+            "questions": [{"dimension": "buyer_nameable", "kind": "seek_support",
+                           "text": "Does hospital procurement hold the budget line?",
+                           "target": "Hospital procurement owns the purchase.", "polarity": 1}]}]}
+
+    monkeypatch.setattr(routes.tstore, "get", fake_get)
+    monkeypatch.setattr(routes.tstore, "set_inquiries", fake_set_inquiries)
+    monkeypatch.setattr(routes.tstore, "list_questions", fake_list_questions)
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=SimpleNamespace(llm_json=llm_json),
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=TECH_DECISION_PROFILE,
+                                 web_domains=(), retrieval_sources={}),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+    r = c.post("/thesis/t1/inquiries/generate", headers={"Authorization": "Bearer owner"})
+    assert r.status_code == 200
+    # the conversation reached the framing step
+    assert "hospital procurement, not to nurses" in saw["frame_user"]
+    # the frame's specific assumption + risk reached the question step (depth, not the raw rubric)
+    assert "Procurement, not nurses, holds the budget" in saw["gen_user"]
+    assert "Procurement cycles are 18 months" in saw["gen_user"]
+    assert "COVERAGE FLOOR" in saw["gen_user"]
+    # coverage floor still enforced across the full rubric
+    inqs = r.json()["inquiries"]
+    covered = {a["key"] for i in inqs for a in i["aspects"]}
+    assert {a.key for a in TECH_DECISION_PROFILE.aspects()} <= covered
