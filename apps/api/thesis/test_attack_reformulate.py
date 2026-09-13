@@ -8,19 +8,40 @@ async def test_reformulate_adds_angles_and_keeps_the_claim_first():
     async def llm(system, user):
         return {"queries": ["Cerebras production inference customers 2025",
                             "Cerebras vs Nvidia enterprise deployment",
-                            "Cerebras revenue named customers", "Cerebras"]}  # dup of claim → deduped
-    qs = await atk.reformulate(llm, claim="Cerebras", context="thesis")
+                            "Cerebras revenue named customers", "Cerebras"],  # dup of claim → deduped
+                "research_relevant": False}
+    ref = await atk.reformulate(llm, claim="Cerebras", context="thesis")
+    qs = ref["queries"]
     assert qs[0] == "Cerebras"                              # literal claim always leads
     assert "Cerebras production inference customers 2025" in qs
     assert len(qs) == len(set(q.lower() for q in qs))       # de-duped
     assert len(qs) <= 5
+    assert ref["research_relevant"] is False               # the model's judgment is carried through
 
 
 @pytest.mark.asyncio
 async def test_reformulate_falls_back_to_the_literal_claim():
-    assert await atk.reformulate(None, claim="X") == ["X"]
+    assert (await atk.reformulate(None, claim="X"))["queries"] == ["X"]
     async def boom(s, u): raise ValueError("down")
-    assert await atk.reformulate(boom, claim="X") == ["X"]
+    assert (await atk.reformulate(boom, claim="X"))["queries"] == ["X"]
+
+
+@pytest.mark.asyncio
+async def test_reformulate_relevance_falls_back_to_heuristic_without_a_model():
+    # No LLM → the keyword heuristic decides: a technical claim is research-relevant, a market one is not
+    assert (await atk.reformulate(None, claim="A new transformer architecture improves inference latency"))[
+        "research_relevant"] is True
+    assert (await atk.reformulate(None, claim="Enterprises are adopting the product and pricing is rising"))[
+        "research_relevant"] is False
+
+
+@pytest.mark.asyncio
+async def test_reformulate_model_relevance_overrides_heuristic():
+    # A claim with no technical tokens (heuristic → False) that the model rules research-relevant
+    async def llm(system, user):
+        return {"queries": ["q1"], "research_relevant": True}
+    ref = await atk.reformulate(llm, claim="the approach generalizes across domains", context="")
+    assert ref["research_relevant"] is True
 
 
 def test_strong_json_absent_without_openai_key(monkeypatch):
@@ -91,3 +112,35 @@ async def test_corpus_hits_keyword_only_when_no_vector(monkeypatch):
 
     await atk._corpus_hits(FakeConn(), "demo", "Cerebras inference customers", vec=None)
     assert seen["keyword"] and not seen["semantic"]              # no embedding → keyword carries it
+
+
+def _row(tag, basis, host):
+    return {"quote": tag, "basis": basis, "independence_key": host, "source_key": basis}
+
+
+def test_merge_web_is_primary_papers_get_a_reserved_supplement():
+    from api.thesis.attack import _merge_evidence
+    web = [_row(f"w{i}", "web", f"site{i}.com") for i in range(8)]      # web can fill the whole side
+    papers = [_row(f"p{i}", "corpus", f"doc{i}") for i in range(6)]
+    merged = _merge_evidence(web, papers, cap=8, per_source_cap=2, papers_cap=3)
+    n_web = sum(1 for r in merged if r["basis"] == "web")
+    n_pap = sum(1 for r in merged if r["basis"] == "corpus")
+    assert len(merged) == 8
+    assert n_web == 5 and n_pap == 3          # web primary (5), papers a bounded supplement (3)
+
+
+def test_merge_papers_backfill_when_web_is_thin():
+    from api.thesis.attack import _merge_evidence
+    web = [_row("w0", "web", "site0.com")]                              # web nearly silent
+    papers = [_row(f"p{i}", "corpus", f"doc{i}") for i in range(6)]
+    merged = _merge_evidence(web, papers, cap=8, per_source_cap=2, papers_cap=3)
+    n_web = sum(1 for r in merged if r["basis"] == "web")
+    n_pap = sum(1 for r in merged if r["basis"] == "corpus")
+    assert n_web == 1 and n_pap == 6          # papers back-fill the empty slots, web still leads
+
+
+def test_merge_no_papers_is_web_only():
+    from api.thesis.attack import _merge_evidence
+    web = [_row(f"w{i}", "web", f"site{i}.com") for i in range(4)]
+    merged = _merge_evidence(web, [], cap=8, per_source_cap=2, papers_cap=3)
+    assert len(merged) == 4 and all(r["basis"] == "web" for r in merged)

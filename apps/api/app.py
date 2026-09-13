@@ -3912,16 +3912,23 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             raise HTTPException(status_code=400, detail="claim required")
         tenant = str(body.get("tenant") or os.environ.get("EIGEN_TENANT_ID") or "demo").strip()
         ctx = str(body.get("context") or "").strip()
+        # research_relevant: None → the heuristic decides (papers fire only for technical claims);
+        # pass true/false to force the papers supplement on/off for inspection. web_client stays None
+        # (this probe measures the CORPUS leg only — no paid web query).
+        rr = body.get("research_relevant")
+        rr = None if rr is None else bool(rr)
         from api.thesis import attack as atk
         res = await atk.attack_claim(dsn, claim=claim, settleable="corpus", judge_llm=None,
                                      extra_context=ctx, web_client=None, relation_llm=None,
                                      evidence_policy=None, tenant=tenant, always_retrieve=True,
-                                     reformulate_llm=None)
+                                     reformulate_llm=None, research_relevant=rr)
         ev = res.get("evidence") or []
         from collections import Counter
         srcmix = Counter((e.get("source_key") or "?") for e in ev)
+        rt = res.get("retrieval") or {}
         return {"claim": claim, "tenant": tenant, "sources_scope": atk._corpus_sources(),
-                "n_evidence": len(ev), "source_mix": dict(srcmix),
+                "research_relevant": rt.get("research_relevant"), "n_evidence": len(ev),
+                "source_mix": dict(srcmix),
                 "retrieval": res.get("retrieval") or {},
                 "sample": [{"source_key": e.get("source_key"), "basis": e.get("basis"),
                             "title": (e.get("title") or "")[:90], "quote": (e.get("quote") or "")[:160]}

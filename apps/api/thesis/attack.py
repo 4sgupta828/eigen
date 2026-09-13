@@ -79,6 +79,22 @@ def _src_filter(params: list) -> str:
     return f" AND lower(source_key) = ANY(${len(params)})"
 
 
+# The research-paper supplement is gated on this: a claim the LITERATURE settles (a technical, method,
+# or feasibility question) vs one the OPEN WEB settles (market, adoption, pricing, competition). These
+# tokens are the cheap fallback signal when no strong LLM is present to judge (probe/eval/no-key paths).
+_RESEARCH_HINTS = frozenset("""model models algorithm algorithms architecture benchmark benchmarks
+accuracy latency throughput training inference neural transformer transformers quantum qubit qubits
+protein genome dataset datasets parameters embedding embeddings diffusion reasoning scaling optimization
+gradient convergence sota fidelity electrolyte catalyst photonic superconducting fusion lidar sensor
+semiconductor lithography fabrication perovskite battery anode cathode simulation theorem proof
+entanglement kinetics thermodynamics generalization robustness quantization distillation""".split())
+
+
+def _research_heuristic(text: str) -> bool:
+    low = (text or "").lower()
+    return any(re.search(r"(?<![a-z])" + w + r"(?![a-z])", low) for w in _RESEARCH_HINTS)
+
+
 def _terms(claim: str) -> list[str]:
     """The words that actually pick this claim out. Deliberately narrow — the `Clay` lesson: matching
     on generic words binds half the corpus and calls it evidence."""
@@ -226,6 +242,17 @@ def _dedupe(rows: list[dict], cap: int, per_source_cap: int = 2) -> list[dict]:
     return out
 
 
+def _merge_evidence(ev_web: list, ev_papers: list, *, cap: int, per_source_cap: int,
+                    papers_cap: int) -> list:
+    """Web is PRIMARY and keeps priority; research papers are a SUPPLEMENT that fills a small reserved
+    number of slots (and back-fills when web is thin). Papers never crowd out web: at most `papers_cap`
+    of the `cap` slots go to papers when web can fill the rest."""
+    reserve = min(papers_cap, len(ev_papers)) if ev_papers else 0
+    web_kept = _dedupe(ev_web, max(0, cap - reserve), per_source_cap)
+    papers_kept = _dedupe(ev_papers, cap, per_source_cap)
+    return _dedupe(web_kept + papers_kept, cap, per_source_cap)
+
+
 def verdict_for(*, settleable: str, n_for: int, n_against: int) -> tuple[str, str]:
     """(verdict, note). The one place the outcome of a claim is decided.
 
@@ -308,16 +335,24 @@ tested (and the thesis context), write the SEARCH QUERIES you'd run to find the 
 — named companies/people, figures, dates, filings, case studies, benchmarks — not restatements of the
 claim. Vary the angle: the entity + the metric, the incumbent/alternative, the customer/segment, the
 filing/press term. Keep each query short and keyword-like (what you'd type into a search box), in the
-claim's own nouns. Return ONLY {"queries": ["...", "..."]} with 3-5 queries."""
+claim's own nouns.
+Also judge research_relevant: TRUE only when the claim is best SETTLED by peer-reviewed research /
+technical papers — a scientific, algorithmic, method, or feasibility question ("does this technique
+work / scale / outperform"). FALSE for market, adoption, pricing, competition, funding, or go-to-market
+claims, which the open web settles better and fresher.
+Return ONLY {"queries": ["...", "..."], "research_relevant": true|false} with 3-5 queries."""
 
 
-async def reformulate(llm_json, *, claim: str, context: str = "") -> list[str]:
-    """The literal claim plus 3-5 diligence-intent search angles. Never raises; returns [claim] on any
-    failure. De-duped, capped, each non-trivial — so retrieval casts a wider, specifics-seeking net."""
+async def reformulate(llm_json, *, claim: str, context: str = "") -> dict:
+    """-> {"queries": [claim, ...3-5 diligence angles...], "research_relevant": bool}. research_relevant
+    is whether the claim is best settled by the research literature (technical/method/feasibility) rather
+    than the open web (market/adoption) — it gates the papers SUPPLEMENT. Never raises; falls back to the
+    literal claim + a keyword heuristic on any failure."""
     import json as _json
     out = [claim]
+    relevant = _research_heuristic(claim + " " + context)   # cheap default when no strong LLM judges
     if llm_json is None or not (claim or "").strip():
-        return out
+        return {"queries": out, "research_relevant": relevant}
     try:
         raw = await llm_json(_REFORMULATE_SYSTEM,
                              f"CLAIM: {claim}\nCONTEXT: {context}\n\nReturn the JSON now.")
@@ -326,15 +361,17 @@ async def reformulate(llm_json, *, claim: str, context: str = "") -> list[str]:
             q = str(q or "").strip()
             if len(q) >= 4 and q.lower() not in {x.lower() for x in out}:
                 out.append(q[:200])
-    except Exception:      # noqa: BLE001 — reformulation is best-effort; the literal claim always stands
-        return [claim]
-    return out[:5]
+        if "research_relevant" in d:
+            relevant = bool(d.get("research_relevant"))
+    except Exception:      # noqa: BLE001 — best-effort; the literal claim + heuristic always stand
+        return {"queries": [claim], "research_relevant": relevant}
+    return {"queries": out[:5], "research_relevant": relevant}
 
 
 async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None, ui=None,
                        tenant: str = "demo", extra_context: str = "", web_client=None,
                        relation_llm=None, evidence_policy=None, always_retrieve: bool = False,
-                       reformulate_llm=None) -> dict:
+                       reformulate_llm=None, research_relevant: bool | None = None) -> dict:
     """-> {evidence: [...], verdict, note, against_queries, searched}.
 
     Never raises: a corpus we cannot reach yields an honest `under_tested`, reported as an attempt.
@@ -351,11 +388,17 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     # query misses — the eval's specificity/groundedness gap. Gated: only when a (strong) llm is passed;
     # otherwise the single claim query, unchanged.
     for_queries = [claim]
+    _relevant = _research_heuristic(claim + " " + extra_context)   # default when no strong LLM judges
     if reformulate_llm is not None:
         try:
-            for_queries = await reformulate(reformulate_llm, claim=claim, context=extra_context)
+            ref = await reformulate(reformulate_llm, claim=claim, context=extra_context)
+            for_queries = ref.get("queries") or [claim]
+            _relevant = bool(ref.get("research_relevant"))
         except Exception:      # noqa: BLE001 — reformulation never blocks; fall back to the literal claim
             for_queries = [claim]
+    # The papers SUPPLEMENT is gated on this: an explicit caller override wins, else the reformulator
+    # (or its heuristic fallback) decides. Web stays PRIMARY regardless.
+    papers_relevant = _relevant if research_relevant is None else bool(research_relevant)
     from eigen_kernel.research.refuter import refute_hypothesis
 
     # The red team writes the against-queries. A different family, and fail-closed: with no
@@ -387,7 +430,35 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
         retr["per_angle"].append({"q": (q or "")[:60], "leg": leg, "raw": raw, "bound": bound, "new": new})
         return bound
 
-    if dsn and retrieve:
+    # WEB IS PRIMARY. A diligence claim is mostly about the CURRENT market — adoption, pricing,
+    # competition, funding — which the open web settles better and fresher than any static corpus.
+    # RESEARCH PAPERS (arXiv/OpenAlex) are a SUPPLEMENT, pulled in only when the claim is one the
+    # literature actually settles (a technical/method/feasibility question) — never the primary leg.
+    cap = _int_env("EIGEN_THESIS_MAX_PER_SIDE", MAX_PER_SIDE)
+    per_source_cap = _int_env("EIGEN_THESIS_PER_SOURCE", 2)
+    papers_cap = _int_env("EIGEN_THESIS_PAPERS_SUPPLEMENT", 3)
+    retr["research_relevant"] = papers_relevant
+    ev_web: list[dict] = []
+    ev_papers: list[dict] = []
+    web_qs = 0
+
+    # --- PRIMARY: the open web ---
+    if web_client is not None and retrieve:
+        for fq in for_queries[:3]:
+            got = await _web(web_client, fq, SIDE_FOR, terms)
+            web_qs += 1
+            ev_web.extend(got)
+            retr["web_for_raw"] += len(got)
+            _note(fq, "web", got, got)
+            if len(ev_web) >= cap:
+                break
+        if against_qs:
+            got = await _web(web_client, against_qs[0], SIDE_AGAINST, terms)
+            web_qs += 1
+            ev_against.extend(got)
+
+    # --- SUPPLEMENT: research papers, ONLY when the claim is one the literature settles ---
+    if dsn and retrieve and papers_relevant:
         try:
             import asyncpg
             conn = await asyncpg.connect(dsn)
@@ -398,9 +469,9 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
                     hits = await _corpus_hits(conn, tenant, fq, qvecs.get(fq))
                     rows = [_row(r, SIDE_FOR, ui) for r in hits
                             if len((r["text"] or "")) >= MIN_CHARS and binds(r["text"], terms)]
-                    ev_for.extend(rows)
+                    ev_papers.extend(rows)
                     retr["corpus_for_raw"] += len(hits)
-                    _note(fq, "corpus", hits, rows)
+                    _note(fq, "papers", hits, rows)
                     searched += 1
                 for q in against_qs:
                     for r in await _corpus_hits(conn, tenant, q, qvecs.get(q)):
@@ -412,33 +483,15 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
         except Exception:      # noqa: BLE001 — surfaced below; never mislabeled as completed research
             corpus_failed = True
 
-    # CORPUS FIRST, WEB WHERE IT IS SILENT — the standing directive, and also the cheap order. Our
-    # own Postgres costs nothing and is tier-classified; a paid web query is worth spending only on a
-    # claim the record could not speak to at all. A demand thesis about a market segment is exactly
-    # the case the corpus is thin on and the open web is not.
-    cap = _int_env("EIGEN_THESIS_MAX_PER_SIDE", MAX_PER_SIDE)
-    per_source_cap = _int_env("EIGEN_THESIS_PER_SOURCE", 2)
-    web_qs = 0
-    if web_client is not None and retrieve:
-        if not ev_for:
-            for fq in for_queries[:3]:                     # a few angles on the open web when corpus is silent
-                got = await _web(web_client, fq, SIDE_FOR, terms)
-                web_qs += 1
-                ev_for.extend(got)
-                retr["web_for_raw"] += len(got)
-                _note(fq, "web", got, got)
-                if len(ev_for) >= cap:
-                    break
-        if not ev_against and against_qs:
-            got = await _web(web_client, against_qs[0], SIDE_AGAINST, terms)
-            web_qs += 1
-            ev_against.extend(got)
-
-    retr["for_bound_total"] = len(ev_for)          # bound rows before dedupe/cap
-    retr["for_unique"] = len(_seen_for)            # distinct bound rows across all angles
-    ev_for = _dedupe(ev_for, cap, per_source_cap)
+    # MERGE: web keeps priority; papers fill a small reserved supplement (and back-fill when web is thin).
+    retr["for_bound_total"] = len(ev_web) + len(ev_papers)   # bound rows before the final merge/cap
+    retr["for_unique"] = len(_seen_for)                      # distinct bound rows across all angles
+    ev_for = _merge_evidence(ev_web, ev_papers, cap=cap, per_source_cap=per_source_cap,
+                             papers_cap=papers_cap)
     ev_against = _dedupe(ev_against, cap, per_source_cap)
-    retr["for_kept"] = len(ev_for)                 # after dedupe + cap (what synthesis actually sees)
+    retr["for_kept"] = len(ev_for)                 # after merge + cap (what synthesis actually sees)
+    retr["web_for_kept"] = sum(1 for e in ev_for if e.get("basis") != "corpus")
+    retr["papers_for_kept"] = sum(1 for e in ev_for if e.get("basis") == "corpus")
     retr["cap"] = cap
     retr["per_source_cap"] = per_source_cap
     raw = ev_for + ev_against
