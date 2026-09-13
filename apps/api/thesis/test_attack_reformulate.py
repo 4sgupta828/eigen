@@ -37,3 +37,57 @@ def test_dedupe_caps_by_publisher_not_the_web_bucket():
     # two hits from the SAME host → per-host cap of 2 keeps both, a third is dropped
     same = [{"quote": f"a{i}", "source_key": "web", "independence_key": "one.com"} for i in range(3)]
     assert len(_dedupe(same, cap=8, per_source_cap=2)) == 2
+
+
+def test_corpus_sources_defaults_to_research_papers(monkeypatch):
+    monkeypatch.delenv("EIGEN_THESIS_CORPUS_SOURCES", raising=False)
+    assert atk._corpus_sources() == ["arxiv", "openalex"]
+    monkeypatch.setenv("EIGEN_THESIS_CORPUS_SOURCES", "arxiv, uspto ,")
+    assert atk._corpus_sources() == ["arxiv", "uspto"]
+    monkeypatch.setenv("EIGEN_THESIS_CORPUS_SOURCES", "")     # empty → whole corpus, no scope
+    assert atk._corpus_sources() == []
+
+
+def test_src_filter_scopes_when_sources_set_and_is_empty_when_not(monkeypatch):
+    monkeypatch.setenv("EIGEN_THESIS_CORPUS_SOURCES", "arxiv,openalex")
+    params = ["demo"]
+    clause = atk._src_filter(params)
+    assert "lower(source_key) = ANY($2)" in clause and params[-1] == ["arxiv", "openalex"]
+    monkeypatch.setenv("EIGEN_THESIS_CORPUS_SOURCES", "")
+    params2 = ["demo"]
+    assert atk._src_filter(params2) == "" and params2 == ["demo"]
+
+
+@pytest.mark.asyncio
+async def test_corpus_hits_unions_both_legs_and_dedupes_by_block(monkeypatch):
+    monkeypatch.setenv("EIGEN_THESIS_CORPUS_SOURCES", "arxiv")
+
+    class FakeConn:
+        async def fetch(self, sql, *params):
+            if "embedding <=>" in sql:                       # semantic leg
+                return [{"document_id": "d1", "block_id": "b1"},   # overlaps keyword
+                        {"document_id": "d2", "block_id": "b2"}]
+            return [{"document_id": "d1", "block_id": "b1"},        # dup of semantic
+                    {"document_id": "d3", "block_id": "b3"}]        # keyword leg
+
+    rows = await atk._corpus_hits(FakeConn(), "demo", "Cerebras wafer scale inference", vec=[0.1, 0.2])
+    keys = {(r["document_id"], r["block_id"]) for r in rows}
+    assert keys == {("d1", "b1"), ("d2", "b2"), ("d3", "b3")}     # union, block d1/b1 counted once
+    assert len(rows) == 3
+
+
+@pytest.mark.asyncio
+async def test_corpus_hits_keyword_only_when_no_vector(monkeypatch):
+    monkeypatch.setenv("EIGEN_THESIS_CORPUS_SOURCES", "arxiv")
+    seen = {"semantic": False, "keyword": False}
+
+    class FakeConn:
+        async def fetch(self, sql, *params):
+            if "embedding <=>" in sql:
+                seen["semantic"] = True
+            else:
+                seen["keyword"] = True
+            return []
+
+    await atk._corpus_hits(FakeConn(), "demo", "Cerebras inference customers", vec=None)
+    assert seen["keyword"] and not seen["semantic"]              # no embedding → keyword carries it

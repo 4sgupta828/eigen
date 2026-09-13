@@ -47,6 +47,38 @@ using used need needs needed want wants make makes made have has had them they t
 who what when where why how much many more most other another each both all any some""".split())
 
 
+# Corpus scope: retrieval draws only from these source_keys (comma-list env, lowercased). Deep-tech
+# theses are validated first against the research literature — arXiv preprints + OpenAlex papers —
+# whose claims are technical fact, not market signal. Empty → the whole corpus (no scope). Tunable so
+# we can widen to filings/patents once the papers leg is measured.
+def _corpus_sources() -> list[str]:
+    raw = os.environ.get("EIGEN_THESIS_CORPUS_SOURCES", "arxiv,openalex")
+    return [s.strip().lower() for s in raw.split(",") if s.strip()]
+
+
+_EMBEDDER = None
+
+
+def _embedder():
+    """The corpus's query embedder (same family that embedded the blocks: 1536-d OpenAI in prod, a
+    cassette/fake in replay). Lazy + cached; built only when we actually reach the corpus."""
+    global _EMBEDDER
+    if _EMBEDDER is None:
+        from eigen_kernel.providers.base import resolve_mode
+        from eigen_kernel.runtime.build import build_embedder
+        _EMBEDDER = build_embedder(mode=resolve_mode())
+    return _EMBEDDER
+
+
+def _src_filter(params: list) -> str:
+    """Append a source-key scope clause to `params`, or '' for the whole corpus."""
+    srcs = _corpus_sources()
+    if not srcs:
+        return ""
+    params.append(srcs)
+    return f" AND lower(source_key) = ANY(${len(params)})"
+
+
 def _terms(claim: str) -> list[str]:
     """The words that actually pick this claim out. Deliberately narrow — the `Clay` lesson: matching
     on generic words binds half the corpus and calls it evidence."""
@@ -76,10 +108,63 @@ def binds(text: str, terms: list[str], *, need: int = 2) -> bool:
 
 
 async def _search(conn, tenant: str, query: str, limit: int) -> list:
+    """Keyword (tsv) leg. `query` must be SALIENT TERMS, not a full sentence: websearch_to_tsquery
+    AND-joins every word, so a full claim over-constrains to zero hits (measured against prod)."""
+    params: list = [tenant, query]
+    src = _src_filter(params)
+    params.append(limit)
     return await conn.fetch(
-        _COLS + """ WHERE tenant_id = $1 AND tsv @@ websearch_to_tsquery('english', $2)
+        _COLS + f""" WHERE tenant_id = $1 AND tsv @@ websearch_to_tsquery('english', $2){src}
                  ORDER BY ts_rank(tsv, websearch_to_tsquery('english', $2), 1) DESC
-                    LIMIT $3""", tenant, query, limit)
+                    LIMIT ${len(params)}""", *params)
+
+
+async def _search_semantic(conn, tenant: str, vec: list, limit: int) -> list:
+    """Vector (pgvector) leg. Research papers don't use commercial vocabulary (a paper never says
+    "Pinecone"), so keyword misses them entirely — semantic recall + the binds() term gate downstream
+    gives recall without surrendering precision. Ordered by cosine distance."""
+    params: list = [tenant]
+    src = _src_filter(params)
+    params.append("[" + ",".join(f"{x:.6f}" for x in vec) + "]")
+    veci = len(params)
+    params.append(limit)
+    return await conn.fetch(
+        _COLS + f""" WHERE tenant_id = $1 AND embedding IS NOT NULL{src}
+                 ORDER BY embedding <=> ${veci}::vector LIMIT ${len(params)}""", *params)
+
+
+async def _embed_queries(queries: list) -> dict:
+    """Batch-embed the angles once (a single embeddings call) → {query: vector}. Never blocks the loop
+    and never raises: on any failure the vector leg is skipped and keyword carries retrieval."""
+    import asyncio
+    uniq = [q for q in dict.fromkeys(queries) if q]
+    if not uniq:
+        return {}
+    try:
+        emb = _embedder()
+        vecs = await asyncio.to_thread(lambda: emb.embed(list(uniq)))
+        return {q: v for q, v in zip(uniq, vecs)}
+    except Exception:      # noqa: BLE001 — vector leg is best-effort; keyword still runs
+        return {}
+
+
+async def _corpus_hits(conn, tenant: str, query: str, vec) -> list:
+    """Both corpus legs for one angle: vector recall (when we have an embedding) + keyword on the
+    salient terms. De-dup by (document_id, block_id) so a block found by both legs counts once."""
+    rows: list = []
+    if vec:
+        rows.extend(await _search_semantic(conn, tenant, vec, MAX_PER_QUERY))
+    kq = " ".join(_terms(query)[:4])
+    if kq:
+        rows.extend(await _search(conn, tenant, kq, MAX_PER_QUERY))
+    seen, out = set(), []
+    for r in rows:
+        k = (r["document_id"], r["block_id"])
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(r)
+    return out
 
 
 def _row(r, side: str, ui=None) -> dict:
@@ -307,8 +392,10 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
             import asyncpg
             conn = await asyncpg.connect(dsn)
             try:
+                # Embed every angle once (one call) for the vector leg; keyword uses salient terms.
+                qvecs = await _embed_queries(for_queries + against_qs)
                 for fq in for_queries:                    # each reformulated angle for the FOR side
-                    hits = await _search(conn, tenant, fq, MAX_PER_QUERY)
+                    hits = await _corpus_hits(conn, tenant, fq, qvecs.get(fq))
                     rows = [_row(r, SIDE_FOR, ui) for r in hits
                             if len((r["text"] or "")) >= MIN_CHARS and binds(r["text"], terms)]
                     ev_for.extend(rows)
@@ -316,7 +403,7 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
                     _note(fq, "corpus", hits, rows)
                     searched += 1
                 for q in against_qs:
-                    for r in await _search(conn, tenant, q, MAX_PER_QUERY):
+                    for r in await _corpus_hits(conn, tenant, q, qvecs.get(q)):
                         if len((r["text"] or "")) >= MIN_CHARS and binds(r["text"], terms):
                             ev_against.append(_row(r, SIDE_AGAINST, ui))
                     searched += 1
