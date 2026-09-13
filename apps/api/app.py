@@ -3896,6 +3896,37 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
             await conn.close()
         return {"tenant": tenant, "facets": out}
 
+    @app.post("/admin/thesis/attack_probe")
+    async def admin_thesis_attack_probe(body: dict, x_admin_token: str = Header(default="")) -> dict:
+        """Retrieval-only probe of the thesis attack path: runs attack_claim with NO LLMs (a single
+        query embedding is the only spend) so we can measure what the CORPUS contributes — the source
+        mix + the retr instrumentation — without paying for reformulation/synthesis. The diagnostic for
+        corpus-depth work: it exercises the real scoped two-leg retrieval in-container."""
+        if not _admin_ok(x_admin_token):
+            raise HTTPException(status_code=401, detail="admin token required")
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            raise HTTPException(status_code=404, detail="no corpus DSN")
+        claim = str(body.get("claim") or "").strip()
+        if not claim:
+            raise HTTPException(status_code=400, detail="claim required")
+        tenant = str(body.get("tenant") or os.environ.get("EIGEN_TENANT_ID") or "demo").strip()
+        ctx = str(body.get("context") or "").strip()
+        from api.thesis import attack as atk
+        res = await atk.attack_claim(dsn, claim=claim, settleable="corpus", judge_llm=None,
+                                     extra_context=ctx, web_client=None, relation_llm=None,
+                                     evidence_policy=None, tenant=tenant, always_retrieve=True,
+                                     reformulate_llm=None)
+        ev = res.get("evidence") or []
+        from collections import Counter
+        srcmix = Counter((e.get("source_key") or "?") for e in ev)
+        return {"claim": claim, "tenant": tenant, "sources_scope": atk._corpus_sources(),
+                "n_evidence": len(ev), "source_mix": dict(srcmix),
+                "retrieval": res.get("retrieval") or {},
+                "sample": [{"source_key": e.get("source_key"), "basis": e.get("basis"),
+                            "title": (e.get("title") or "")[:90], "quote": (e.get("quote") or "")[:160]}
+                           for e in ev[:8]]}
+
 
     @app.post("/admin/glossary/sanitize")
     async def admin_glossary_sanitize(x_admin_token: str = Header(default="")) -> dict:
