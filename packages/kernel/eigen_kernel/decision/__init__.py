@@ -21,6 +21,7 @@ from .types import (
 )
 from .profile import DecisionProfile
 from .questions import generate_questions, required_kinds_covered
+from .generate import generate_inquiries
 from .aggregate import resolve_signal, aggregate_aspect
 from .run import run_question, run_aspect, run_inquiry
 from .synthesis import sanitize_answer, NOT_ESTABLISHED

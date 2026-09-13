@@ -667,40 +667,41 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id,
                                          stage=f"q:{row['id']}", actual_delta=0.01)
 
+    def _aspect_verdict(profile, group: list[dict]) -> str:
+        """Derive a dimension's verdict from its answered questions (never a second decision path)."""
+        answered = [q for q in group if q.get("target_status")]
+        if not answered:
+            return "open"
+        aspect = _aspect_by_key(profile, group[0]["aspect_key"])
+        statuses = [_dec.QuestionStatus(
+            _dec.Question(kind=_dec.QuestionKind(q["kind"]), text=q["text"], target=q["target"],
+                          polarity=int(q["polarity"])), q["target_status"]) for q in answered]
+        return _dec.aggregate_aspect(profile, statuses, critical=bool(getattr(aspect, "critical", False)))
+
     @r.get("/thesis/{thesis_id}/inquiries")
     async def tl_inquiries(thesis_id: str, authorization: str = Header(default=""),
                            x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
-        """The lines of inquiry (from the profile) with their questions (from the store)."""
+        """The lines of inquiry — now GENERATED per thesis and read back from the store (grouped by the
+        cluster each question was assigned), with a per-dimension verdict derived from the answers."""
         pool, _d = await _read(thesis_id, authorization, x_thesis_owner)
         profile = _profile()
-        if profile is None:
-            return {"status": "ok", "inquiries": []}
         qs = await tstore.list_questions(pool, thesis_id)
         by_inq: dict[str, list] = {}
         for q in qs:
             by_inq.setdefault(q["inquiry_key"], []).append(q)
+        # Order the clusters by the generation order stored on their questions.
+        order = {k: min(int(q.get("inquiry_order") or 0) for q in g) for k, g in by_inq.items()}
         out = []
-        for inq in profile.inquiries():
-            iqs = by_inq.get(inq.key, [])
-            # Per-aspect verdict is DERIVED (never a second decision path): resolve each answered
-            # question to an aspect signal, aggregate via the profile.
-            aspects = []
-            for akey in inq.aspect_keys:
-                aspect = _aspect_by_key(profile, akey)
-                group = [q for q in iqs if q["aspect_key"] == akey]
-                answered = [q for q in group if q.get("target_status")]
-                if aspect is not None and answered:
-                    statuses = [_dec.QuestionStatus(
-                        _dec.Question(kind=_dec.QuestionKind(q["kind"]), text=q["text"],
-                                      target=q["target"], polarity=int(q["polarity"])),
-                        q["target_status"]) for q in answered]
-                    verdict = _dec.aggregate_aspect(profile, statuses, critical=bool(aspect.critical))
-                else:
-                    verdict = "open"
-                aspects.append({"key": akey, "prompt": getattr(aspect, "prompt", ""),
-                                "critical": bool(getattr(aspect, "critical", False)), "verdict": verdict})
-            out.append({"key": inq.key, "name": inq.name, "framing": inq.framing,
-                        "aspects": aspects, "questions": iqs})
+        for key in sorted(by_inq, key=lambda k: order.get(k, 0)):
+            iqs = by_inq[key]
+            by_dim: dict[str, list] = {}
+            for q in iqs:
+                by_dim.setdefault(q["aspect_key"], []).append(q)
+            aspects = [{"key": dk, "prompt": getattr(_aspect_by_key(profile, dk), "prompt", dk),
+                        "critical": bool(getattr(_aspect_by_key(profile, dk), "critical", False)),
+                        "verdict": _aspect_verdict(profile, g)} for dk, g in by_dim.items()]
+            out.append({"key": key, "name": iqs[0].get("inquiry_name") or "Line of inquiry",
+                        "framing": iqs[0].get("inquiry_framing") or "", "aspects": aspects, "questions": iqs})
         return {"status": "ok", "inquiries": out}
 
     @r.get("/thesis/{thesis_id}/inquiry/status")
@@ -726,24 +727,18 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     @r.post("/thesis/{thesis_id}/inquiries/generate")
     async def tl_generate(thesis_id: str, authorization: str = Header(default=""),
                           x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
-        """Generate a typed Socratic question set per aspect (unrun questions only are replaced)."""
+        """Design the research plan for THIS thesis: one decision-level agent generates thesis-native
+        questions covering every rubric dimension, clustered into named lines of inquiry."""
         pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
         profile = _profile()
         if profile is None:
             raise HTTPException(status_code=409, detail="no decision profile is configured")
         decision = d.get("thesis") or ""
-        for inq in profile.inquiries():
-            rows: list[dict] = []
-            for key in inq.aspect_keys:
-                aspect = _aspect_by_key(profile, key)
-                if aspect is None:
-                    continue
-                questions = await _dec.generate_questions(
-                    _llm_json(), aspect=aspect, decision=decision,
-                    directive=profile.question_directive(aspect, decision))
-                rows.extend({"aspect_key": key, "kind": q.kind.value, "text": q.text,
-                             "target": q.target, "polarity": q.polarity} for q in questions)
-            await tstore.set_questions(pool, thesis_id, inq.key, rows)
+        directive = (profile.inquiry_directive(decision)
+                     if hasattr(profile, "inquiry_directive") else "")
+        inquiries = await _dec.generate_inquiries(
+            _llm_json(), decision=decision, aspects=profile.aspects(), directive=directive)
+        await tstore.set_inquiries(pool, thesis_id, inquiries)
         return await tl_inquiries(thesis_id, authorization, x_thesis_owner)
 
     @r.patch("/thesis/{thesis_id}/question/{qid}")

@@ -94,3 +94,30 @@ def test_aggregate_delegates_thresholds_to_the_profile():
     assert aggregate_aspect(p, [qsup], critical=True) == SUPPORTED
     assert aggregate_aspect(p, [qsup, qcon], critical=True) == CONTRADICTED   # a contradiction dominates
     assert aggregate_aspect(p, [], critical=True) == UNDER_TESTED
+
+
+@pytest.mark.asyncio
+async def test_generate_inquiries_is_thesis_native_clustered_and_coverage_gated():
+    from eigen_kernel.decision import generate_inquiries
+    aspects = ToyProfile().aspects()   # keys: faster, scenic
+    async def llm(_sys, user):
+        # model clusters thesis-native questions but COVERS ONLY 'faster' — 'scenic' is missing
+        return {"inquiries": [
+            {"name": "Speed of the coastal route", "framing": "time",
+             "questions": [{"dimension": "faster", "kind": "seek_support",
+                            "text": "Is the coastal route faster on weekday mornings?",
+                            "target": "The coastal route is faster on weekday mornings.", "polarity": 1}]}]}
+    inqs = await generate_inquiries(llm, decision="coastal vs inland", aspects=aspects, directive="x")
+    covered = {q["dimension"] for i in inqs for q in i["questions"]}
+    assert covered == {"faster", "scenic"}            # 'scenic' gap-filled by the coverage gate
+    assert any(i["name"] == "Speed of the coastal route" for i in inqs)   # thesis-native cluster kept
+    assert any("Further checks" in i["name"] for i in inqs)               # the gap-fill cluster
+
+
+@pytest.mark.asyncio
+async def test_generate_inquiries_falls_open_to_full_coverage_with_no_model():
+    from eigen_kernel.decision import generate_inquiries
+    aspects = ToyProfile().aspects()
+    inqs = await generate_inquiries(None, decision="d", aspects=aspects, directive="x")
+    covered = {q["dimension"] for i in inqs for q in i["questions"]}
+    assert covered == {a.key for a in aspects}        # every dimension present, honest degraded mode

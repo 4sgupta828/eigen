@@ -33,6 +33,8 @@ class Question:
     text: str                    # the question, in the reader's frame
     target: str                  # the declarative sub-claim the evidence run is anchored on
     polarity: int = 1            # +1: confirming target supports the aspect; -1: confirming contradicts it
+    dimension: str = ""          # the coverage aspect (rubric key) this question addresses — ties a
+    #                              thesis-native question back to the fixed coverage contract for verdicts
 
 
 @dataclass

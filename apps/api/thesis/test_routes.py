@@ -298,24 +298,29 @@ def test_draft_creates_a_genesis_thesis_without_decomposing(monkeypatch) -> None
 def test_inquiries_and_generate_drive_the_decision_engine(monkeypatch):
     from types import SimpleNamespace
     from eigen_vertical_tech.decision import TECH_DECISION_PROFILE
-    saved = {}
+    saved = {"rows": []}
 
     async def pool_of():
         return object()
     async def user_of(token):
         return {"id": "user-1"} if token == "Bearer owner" else {}
-    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token=""):
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token="", trusted=False):
         return _thesis(owner=True) if thesis_id == "t1" and (owner_id == "user-1" or owner_token == "owner-cap") else None
-    async def fake_set_questions(_pool, tid, inq, rows):
-        saved.setdefault(inq, []).extend(rows)
+    async def fake_set_inquiries(_pool, tid, inquiries):
+        saved["rows"] = []
+        for order, inq in enumerate(inquiries):
+            for i, q in enumerate(inq.get("questions") or []):
+                saved["rows"].append({"inquiry_key": inq["key"], "inquiry_name": inq.get("name", ""),
+                    "inquiry_framing": inq.get("framing", ""), "inquiry_order": order,
+                    "aspect_key": q["dimension"], "kind": q["kind"], "text": q["text"],
+                    "target": q["target"], "polarity": q.get("polarity", 1), "id": f"{inq['key']}{i}",
+                    "target_status": "", "run_id": ""})
     async def fake_list_questions(_pool, tid, inq=""):
-        return [q for k, rows in saved.items() if (not inq or k == inq) for q in
-                ({"inquiry_key": k, **r, "id": f"{k}{i}"} for i, r in enumerate(rows))]
+        return [r for r in saved["rows"] if not inq or r["inquiry_key"] == inq]
 
     monkeypatch.setattr(routes.tstore, "get", fake_get)
-    monkeypatch.setattr(routes.tstore, "set_questions", fake_set_questions)
+    monkeypatch.setattr(routes.tstore, "set_inquiries", fake_set_inquiries)
     monkeypatch.setattr(routes.tstore, "list_questions", fake_list_questions)
-    # no LLM → generation falls open to one seek-support question per aspect (free, deterministic)
     app = FastAPI()
     app.include_router(routes.build_router(
         pool_of, providers=None,
@@ -324,20 +329,20 @@ def test_inquiries_and_generate_drive_the_decision_engine(monkeypatch):
         user_of=user_of, tenant="t"))
     c = TestClient(app)
 
-    # before generation: the 4 lines of inquiry exist, no questions
+    # before generation: no questions, no inquiries yet
     r0 = c.get("/thesis/t1/inquiries", headers={"Authorization": "Bearer owner"})
-    assert r0.status_code == 200
-    assert [i["key"] for i in r0.json()["inquiries"]] == ["problem", "buyer", "timing", "market"]
-    assert all(not i["questions"] for i in r0.json()["inquiries"])
+    assert r0.status_code == 200 and r0.json()["inquiries"] == []
 
-    # generate → each aspect gets a question; every inquiry now carries questions
+    # generate → no LLM, so the decision-level generator falls open to a full-coverage set (one
+    # question per rubric dimension), stored as one line of inquiry and read back grouped
     r1 = c.post("/thesis/t1/inquiries/generate", headers={"Authorization": "Bearer owner"})
     assert r1.status_code == 200
-    inqs = {i["key"]: i for i in r1.json()["inquiries"]}
-    assert all(inqs[k]["questions"] for k in ("problem", "buyer", "timing", "market"))
-    # a question carries its lens, reader text, and the declarative target the run will test
-    q = inqs["market"]["questions"][0]
-    assert q["kind"] == "seek_support" and q["text"] and q["target"]
+    inqs = r1.json()["inquiries"]
+    assert len(inqs) >= 1 and inqs[0]["questions"]
+    covered = {a["key"] for i in inqs for a in i["aspects"]}
+    assert {a.key for a in TECH_DECISION_PROFILE.aspects()} <= covered   # every dimension is covered
+    q = inqs[0]["questions"][0]
+    assert q["kind"] and q["text"] and q["target"]
 
 
 def test_generate_requires_owner_and_a_profile(monkeypatch):

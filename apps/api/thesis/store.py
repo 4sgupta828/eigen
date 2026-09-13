@@ -145,6 +145,12 @@ CREATE TABLE IF NOT EXISTS ts_question (
     created_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_ts_question_inq ON ts_question (thesis_id, inquiry_key, sort_order);
+-- The line-of-inquiry (cluster) a question belongs to is now GENERATED per thesis, not a fixed group,
+-- so its display name/framing is denormalized onto the question (the cluster's own row would otherwise
+-- need a table). All questions in one inquiry_key carry the same name/framing.
+ALTER TABLE ts_question ADD COLUMN IF NOT EXISTS inquiry_name text NOT NULL DEFAULT '';
+ALTER TABLE ts_question ADD COLUMN IF NOT EXISTS inquiry_framing text NOT NULL DEFAULT '';
+ALTER TABLE ts_question ADD COLUMN IF NOT EXISTS inquiry_order int NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS ts_run (
     id              text PRIMARY KEY,
@@ -550,6 +556,29 @@ async def set_questions(pool, thesis_id: str, inquiry_key: str, questions: list[
                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)""",
                 uuid.uuid4().hex[:16], thesis_id, inquiry_key, q["aspect_key"], q["kind"],
                 q["text"][:400], q["target"][:400], int(q.get("polarity", 1)), i)
+
+
+async def set_inquiries(pool, thesis_id: str, inquiries: list[dict]) -> None:
+    """Replace ALL unrun questions of a thesis with a freshly generated set of lines of inquiry (the
+    decision-level generation produces every cluster at once). Answered questions (run_id != '') are
+    left untouched, so regenerating never discards paid-for work. Each inquiry:
+    {key, name, framing, questions:[{dimension, kind, text, target, polarity}]}."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute(
+            "UPDATE ts_question SET status='removed' WHERE thesis_id=$1 AND status='active' AND run_id=''",
+            thesis_id)
+        order = 0
+        for inq in inquiries:
+            for i, q in enumerate(inq.get("questions") or []):
+                await conn.execute(
+                    """INSERT INTO ts_question (id, thesis_id, inquiry_key, aspect_key, kind, text,
+                           target, polarity, sort_order, inquiry_name, inquiry_framing, inquiry_order)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)""",
+                    uuid.uuid4().hex[:16], thesis_id, inq["key"], q["dimension"], q["kind"],
+                    q["text"][:400], q["target"][:400], int(q.get("polarity", 1)), i,
+                    (inq.get("name") or "")[:120], (inq.get("framing") or "")[:200], order)
+            order += 1
 
 
 async def list_questions(pool, thesis_id: str, inquiry_key: str = "") -> list[dict]:

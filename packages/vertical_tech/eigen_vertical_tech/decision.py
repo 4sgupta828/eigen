@@ -76,6 +76,25 @@ or refute (a filing, a case study, a benchmark can settle a statement, not a que
 red-team target). Use the thesis's own product, buyer and segment words; never widen to "companies"."""
 
 
+_INQUIRY_DIRECTIVE = """\
+You are an investor's diligence lead. Given a startup investment thesis, design the research plan that
+would let evidence decide it — as a set of pointed, NEUTRAL questions grouped into lines of inquiry that
+fit THIS thesis.
+
+Every question must be specific to this thesis — its actual product, buyer, segment, and substitute —
+never a generic template ("Does a market exist?"). Across the whole set, balance the lenses: some seek
+support, some seek disconfirmation (the red team), some resolve an ambiguity, some challenge a hidden
+assumption. Neutrality is in the balance of the SET, never in a hedged question.
+
+You are given a COVERAGE CONTRACT of dimensions every thesis rests on; tag each question with the
+dimension key it addresses, and make sure every dimension is covered. But the LINES OF INQUIRY you group
+them into should read like this thesis's own diligence agenda (e.g. "Who signs the check, and is it
+budgeted?"), not the raw dimension names.
+
+For each question give a flat DECLARATIVE `target` the public record could confirm or refute, and a
+`polarity`: +1 if confirming the target supports the thesis on that dimension, -1 if it contradicts it."""
+
+
 @dataclass(frozen=True)
 class TechDecisionProfile:
     """The tech vertical's DecisionProfile. Reuses the same authority discipline as the rest of the
@@ -90,6 +109,9 @@ class TechDecisionProfile:
 
     def question_directive(self, aspect: Aspect, decision: str) -> str:
         return _QUESTION_DIRECTIVE
+
+    def inquiry_directive(self, decision: str) -> str:
+        return _INQUIRY_DIRECTIVE
 
     def _enough(self, rows: list[dict]) -> bool:
         # HARDENED (panel §13): a controlling primary record on its own qualifies; otherwise TWO
