@@ -1,0 +1,50 @@
+{
+  "_note": "Gold eval set for thesis ANSWER quality. Each item is one question put to the decision engine, with the thesis + aspect it belongs to and what a strong, purpose-driven answer must cover. Scored by eval/judge.py. Extend freely; keep it small and representative across domains and aspect kinds (corpus-settleable vs call_only, factual vs comparative).",
+  "items": [
+    {
+      "id": "cerebras-adoption",
+      "thesis": "Cerebras will win wafer-scale AI inference customers away from Nvidia GPUs in 2025.",
+      "aspect_key": "problem_exists",
+      "settleable": "corpus",
+      "question": "Are named customers actually moving production inference workloads to Cerebras instead of Nvidia?",
+      "target": "Named enterprises run production inference on Cerebras rather than Nvidia GPUs.",
+      "rubric_focus": "Should name specific customers (e.g. a labeled foundation-model lab or enterprise), cite concrete throughput/contract figures, and distinguish signed/announced from realized deployment. A pass is specific and cited; a fail is generic 'some firms are interested'."
+    },
+    {
+      "id": "crm-comparison",
+      "thesis": "Incumbent CRM vendors are differentiating on AI agents, reshaping mid-market vendor selection.",
+      "aspect_key": "already_spending",
+      "settleable": "corpus",
+      "question": "What are the major CRM vendors today, how do they differentiate, and how are they adapting to AI agents?",
+      "target": "Major CRM vendors differ on product and are adapting to AI agents in distinct ways.",
+      "rubric_focus": "A strong answer is a COMPARISON across several named vendors (Salesforce, Microsoft, HubSpot, etc.) on differentiator + agent play, cited. A wall of prose or a single-vendor answer is weak."
+    },
+    {
+      "id": "rbac-inadequacy",
+      "thesis": "RBAC is inadequate for AI-agent access control, opening a market for agent-native authorization.",
+      "aspect_key": "problem_exists",
+      "settleable": "corpus",
+      "question": "Do practitioners and the record show that RBAC is insufficient for AI-agent access control?",
+      "target": "RBAC is insufficient for governing AI-agent access.",
+      "rubric_focus": "Should give the concrete failure mechanism (static roles vs variable agent scope, machine-speed, over-broad permissions) with cited sources, not a vague 'RBAC has limits'."
+    },
+    {
+      "id": "warehouse-wtp",
+      "thesis": "Mid-market 3PL warehouses will pay for fixed ceiling-mounted computer-vision cameras to replace handheld barcode scanners.",
+      "aspect_key": "willingness_to_pay",
+      "settleable": "call_only",
+      "question": "Does willingness to pay for camera-based inventory tracking exceed the cost to serve for mid-market 3PLs?",
+      "target": "Mid-market 3PLs will pay more for camera inventory tracking than it costs to serve them.",
+      "rubric_focus": "This is call_only. A strong answer surfaces what the record DOES show (labor-cost proxies, incumbent pricing) AND is explicit that a filed budget for an unoffered SKU cannot settle it — it needs a buyer call. It must NOT fabricate a willingness-to-pay number, and must not bare-'not established'."
+    },
+    {
+      "id": "oss-llm-cost",
+      "thesis": "Open-source LLMs will win the enterprise on total cost of ownership.",
+      "aspect_key": "catalyst",
+      "settleable": "partly",
+      "question": "Is there a catalyst forcing enterprises to revisit closed vs open LLMs on cost now?",
+      "target": "A recent catalyst is pushing enterprises to reconsider open-source LLMs on cost.",
+      "rubric_focus": "Should name a concrete, recent catalyst (a price change, a capability parity milestone, a compliance shift) with a date and a cited source, not a timeless 'costs matter'."
+    }
+  ]
+}
