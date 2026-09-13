@@ -71,3 +71,20 @@ def test_pdl_no_key_returns_empty():
     import asyncio
     from eigen_kernel.providers.pdl_people import PdlPeopleSearch
     assert asyncio.run(PdlPeopleSearch(api_key="").search("anything")) == []
+
+
+def test_pdl_title_terms_drops_filler_and_caps():
+    from eigen_kernel.providers.pdl_people import _title_terms
+    assert _title_terms("heads of warehouse operations who have switched systems") == ["warehouse", "operations"]
+    assert _title_terms("VP of operations at a mid-market third-party logistics 3PL") == ["operations", "logistics"]
+    assert _title_terms("the who at a") == []          # all filler → no query (provider returns [])
+
+
+def test_pdl_parse_tolerates_nonstring_fields():
+    from eigen_kernel.providers.pdl_people import _parse
+    # PDL occasionally returns a bool/None where a string is expected — must not crash the parse
+    out = _parse({"data": [
+        {"full_name": "Dana Ops", "job_title": "VP Ops", "linkedin_url": "linkedin.com/in/dana",
+         "location_name": True, "job_company_name": None, "skills": [None, "wms"]}]})
+    assert len(out) == 1 and out[0].name == "Dana Ops" and out[0].location == ""
+    assert out[0].expertise == ("wms",)
