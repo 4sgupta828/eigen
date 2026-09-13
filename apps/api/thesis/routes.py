@@ -27,6 +27,7 @@ from . import decompose as dec
 from . import genesis as gen
 from . import people as ppl
 from . import store as tstore
+from . import transcript as tx
 from .schema import (
     ASK_WHO, BUYER, CALL_ONLY, OPEN, QUESTION, ROLE_LABEL, SET_ASIDE, SETTLEABLE, STATED, UNSETTLEABLE,
     VERDICT_LABEL, labels,
@@ -116,6 +117,14 @@ class QuestionEdit(BaseModel):
 
 class ExpertDiscoverIn(BaseModel):
     aspect_key: str = ""       # thesis-scoped: discover experts for ONE call_only aspect, not a directory
+
+
+class TranscriptIn(BaseModel):
+    aspect_key: str = ""
+    said_by: str = ""
+    said_role: str = ""        # buyer | operator | advisor
+    firm: str = ""             # the account: independence is per person AND firm
+    transcript: str = ""
 
 
 class QuestionAdd(BaseModel):
@@ -745,19 +754,29 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         for q in qs:
             q_by_aspect.setdefault(q["aspect_key"], []).append(q)
         segment = " ".join(str(v) for v in (d.get("subject") or {}).values())
+        ev_by_rung: dict[str, list] = {}
+        for c in (d.get("claims") or []):
+            ev_by_rung[c.get("rung")] = c.get("evidence") or []
         out = []
         for a in profile.aspects():
             if getattr(a, "settleable", "") != CALL_ONLY:
                 continue                              # primary: only the rungs no document can settle
             group = q_by_aspect.get(a.key, [])
-            verdict = _aspect_verdict(profile, group) if group else "open"
             roles = list(ASK_WHO.get(a.key, ()))
             cands = [c for c in candidates if c.get("role") in roles]
+            # A call_only aspect is settled by CALLS, not documents: its verdict comes from the logged
+            # expert calls (tx.call_status), and the logged points are shown so the loop is visible.
+            rung_ev = ev_by_rung.get(a.key, [])
+            calls = [{"quote": e.get("quote", ""), "said_by": e.get("said_by", ""),
+                      "said_role": e.get("said_role", ""), "firm": e.get("source_subject", ""),
+                      "relation": e.get("relation", "")}
+                     for e in rung_ev if e.get("source_key") == "call"]
+            verdict, cnote = tx.call_status(rung_ev)
             out.append({
-                "key": a.key, "prompt": a.prompt, "verdict": verdict,
+                "key": a.key, "prompt": a.prompt, "verdict": verdict, "verdict_note": cnote,
                 "roles": [{"role": r, "label": ROLE_LABEL.get(r, r)} for r in roles],
                 "questions": [q["text"] for q in group] or [a.prompt],
-                "candidates": cands,
+                "candidates": cands, "calls": calls,
                 "guidance": ppl.buyer_guidance(a.prompt, segment) if (BUYER in roles and not cands) else "",
             })
         return {"status": "ok", "aspects": out}
@@ -803,6 +822,50 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                               "org": p.org, "role": role, "relevance": p.relevance,
                               "provider": p.provider})
         return {"status": "ok", "aspect_key": body.aspect_key, "roles": roles, "candidates": found}
+
+    @r.post("/thesis/{thesis_id}/experts/transcript")
+    async def tl_transcript(thesis_id: str, body: TranscriptIn, authorization: str = Header(default=""),
+                            x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Phase 3 — close the loop: an expert-call transcript → chunked, extracted, VERBATIM-gated
+        `call` evidence on a call_only aspect, then a conservative verdict (call_status): one account is
+        primary-research-needed, two INDEPENDENT accounts (person AND firm) move it, never controlling.
+        Owner-only; a call is private to the thesis (store.get hides source_key=='call' from shares)."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if body.aspect_key not in SETTLEABLE:
+            raise HTTPException(status_code=400, detail="unknown aspect")
+        if SETTLEABLE.get(body.aspect_key) != CALL_ONLY:
+            raise HTTPException(status_code=400, detail="transcripts attach to call_only aspects only")
+        if not (body.transcript or "").strip():
+            raise HTTPException(status_code=400, detail="paste the call transcript")
+        who = (body.said_by or "an unnamed source").strip()
+        subject = " ".join(str(v) for v in (d.get("subject") or {}).values())
+        points = await tx.extract_call_points(_llm_json(), transcript=body.transcript,
+                                              aspect_prompt=QUESTION.get(body.aspect_key, body.aspect_key),
+                                              thesis=d.get("thesis") or "", subject=subject)
+        if not points:
+            return {"status": "ok", "aspect_key": body.aspect_key, "points": [],
+                    "note": "Nothing in that transcript could be tied verbatim to this aspect."}
+        rows = [{
+            "side": "for" if p["relation"] == "supports" else "against", "relation": p["relation"],
+            "register": STATED, "source_key": "call", "signal_only": False,
+            "title": who + (f" ({body.said_role})" if body.said_role else "")
+                     + (f", {body.firm}" if body.firm else ""),
+            "quote": p["quote"], "source_url": "", "basis": "first-hand, on a call",
+            "said_by": who, "said_role": body.said_role or "", "source_subject": body.firm or "",
+            "evidence_kind": "expert_call",
+            "independence_key": f"call:{who.lower()}|{(body.firm or '').lower()}",
+        } for p in points]
+        await tstore.add_evidence(pool, thesis_id, body.aspect_key, rows)
+        # Recompute the aspect verdict across ALL call evidence on this rung (existing + new).
+        fresh = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
+        rung_ev = next((c.get("evidence") or [] for c in (fresh.get("claims") or [])
+                        if c.get("rung") == body.aspect_key), [])
+        verdict, note = tx.call_status(rung_ev)
+        if any(c.get("rung") == body.aspect_key for c in (fresh.get("claims") or [])):
+            await tstore.set_verdict(pool, thesis_id, body.aspect_key, verdict, note)
+        return {"status": "ok", "aspect_key": body.aspect_key, "verdict": verdict, "note": note,
+                "points": [{"quote": p["quote"], "point": p["point"], "relation": p["relation"],
+                            "said_by": who, "said_role": body.said_role or ""} for p in points]}
 
     @r.get("/thesis/{thesis_id}/inquiry/status")
     async def tl_inquiry_status(thesis_id: str, run: str = "",

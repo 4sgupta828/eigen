@@ -593,3 +593,60 @@ def test_experts_discover_runs_the_people_leg_scoped_to_a_call_only_aspect(monke
     r2 = c.post("/thesis/t1/experts/discover", headers={"Authorization": "Bearer owner"},
                 json={"aspect_key": "problem_exists"})
     assert r2.status_code == 400
+
+
+def test_transcript_extracts_gated_call_evidence_and_moves_the_verdict(monkeypatch):
+    """Phase 3: a transcript → verbatim-gated call evidence on a call_only aspect; the first account
+    lands as primary_research_needed (never a settle from one voice)."""
+    from types import SimpleNamespace
+    from eigen_vertical_tech.decision import TECH_DECISION_PROFILE
+    written, verdicts = {"rows": []}, []
+    T = "Buyer: switching took a single weekend, far easier than we budgeted for."
+
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {"id": "user-1"} if token == "Bearer owner" else {}
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token="", trusted=False):
+        if thesis_id != "t1":
+            return None
+        if not (owner_id == "user-1" or trusted):
+            return None
+        d = _thesis(owner=True); d["subject"] = {"segment": "3PLs"}
+        d["claims"] = [{"rung": "switching_feasible", "evidence": list(written["rows"])}]
+        return d
+    async def add_evidence(_pool, tid, rung, rows):
+        for r in rows:
+            written["rows"].append(r)
+        return len(rows)
+    async def set_verdict(_pool, tid, rung, verdict, note="", **k):
+        verdicts.append((rung, verdict))
+    async def llm_json(system, user):
+        return {"points": [{"quote": "switching took a single weekend, far easier than we budgeted for",
+                            "point": "Switching was easy.", "relation": "supports"}]}
+
+    monkeypatch.setattr(routes.tstore, "get", fake_get)
+    monkeypatch.setattr(routes.tstore, "add_evidence", add_evidence)
+    monkeypatch.setattr(routes.tstore, "set_verdict", set_verdict)
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=SimpleNamespace(llm_json=llm_json),
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=TECH_DECISION_PROFILE,
+                                 web_domains=(), retrieval_sources={}),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+    r = c.post("/thesis/t1/experts/transcript", headers={"Authorization": "Bearer owner"},
+               json={"aspect_key": "switching_feasible", "said_by": "Dana", "said_role": "buyer",
+                     "firm": "Acme 3PL", "transcript": T})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["points"]) == 1 and body["points"][0]["relation"] == "supports"
+    assert body["verdict"] == "primary_research_needed"          # one account is never a settle
+    # the written row is typed call evidence, private, first-hand
+    row = written["rows"][0]
+    assert row["source_key"] == "call" and row["register"] == "stated" and row["signal_only"] is False
+    assert row["said_by"] == "Dana" and row["source_subject"] == "Acme 3PL"
+    # a corpus aspect is refused
+    r2 = c.post("/thesis/t1/experts/transcript", headers={"Authorization": "Bearer owner"},
+                json={"aspect_key": "problem_exists", "transcript": T})
+    assert r2.status_code == 400

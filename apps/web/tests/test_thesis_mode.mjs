@@ -350,3 +350,12 @@ test("Phase 1: the Who-to-ask panel offers web discovery per call_only aspect", 
   assert.match(SRC, /async function discoverExperts\(/);
   assert.match(SRC, /public profiles.*signal, not evidence/i);   // discovered ≠ evidence, labeled
 });
+
+test("Phase 3: an aspect can log an expert-call transcript that becomes gated call evidence", () => {
+  assert.match(SRC, /class="th-ea-log-btn"/);
+  assert.match(SRC, /async function logCall\(/);
+  assert.match(SRC, /\/experts\/transcript"/);
+  assert.match(SRC, /class="th-ea-transcript"/);
+  assert.match(SRC, /Calls are private to you/);           // privacy copy
+  assert.match(SRC, /no NDA\/internal recordings/);        // consent copy
+});
