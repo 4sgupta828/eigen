@@ -593,6 +593,25 @@
   .th-qn-a{margin:.4rem 0 0;padding:.5rem .7rem;background:color-mix(in srgb,var(--gold) 6%,transparent);
     border-radius:0 8px 8px 0;border-left:2px solid var(--gold);font-size:.82rem;line-height:1.6;color:var(--ink);}
   .th-qn-a.none{background:transparent;border-left-color:var(--hair);color:var(--dim);font-style:italic;}
+  /* answer: compressed by default, opened on demand */
+  .th-qn-ans{margin:.35rem 0 0;}
+  .th-qn-ans > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:.5rem;
+    font-size:.76rem;min-height:30px;}
+  .th-qn-ans > summary::-webkit-details-marker{display:none;}
+  .th-qn-ans > summary::before{content:"\25b8";color:var(--dim);font-size:.7rem;transition:.15s;}
+  .th-qn-ans[open] > summary::before{transform:rotate(90deg);}
+  .th-qn-toggle{font-family:var(--mono);font-size:.66rem;color:var(--dim);}
+  .th-qn-toggle::after{content:"view answer";}
+  .th-qn-ans[open] .th-qn-toggle::after{content:"hide answer";}
+  .th-found{font-family:var(--mono);font-size:.62rem;letter-spacing:.03em;padding:.1rem .45rem;border-radius:999px;
+    border:1px solid currentColor;}
+  .th-found[data-f="ok"]{color:var(--verified,#2f7d5b);}
+  .th-found[data-f="no"]{color:#b4544a;}
+  .th-found[data-f="none"]{color:var(--dim);}
+  .th-qn-work{margin:.35rem 0 0;display:flex;align-items:center;gap:.45rem;font-family:var(--mono);
+    font-size:.72rem;color:var(--gold);}
+  .th-qn-wait{margin:.35rem 0 0;font-family:var(--mono);font-size:.66rem;color:var(--dim);opacity:.7;}
+  @media (prefers-reduced-motion:reduce){.th-qn-ans > summary::before{transition:none;}}
   .th-qn-edit{background:transparent;border:0;color:var(--dim);cursor:pointer;font-size:.72rem;padding:0 .2rem;}
   .th-qn-edit:hover{color:var(--gold);}
   .th-qn-tools{display:flex;gap:.6rem;margin-top:.25rem;}
@@ -11904,11 +11923,20 @@ async function openShare(token){
       + '" title="' + esc2((a.prompt || a.key) + " — " + (VLABEL[a.verdict] || a.verdict)) + '"></span>').join("");
   }
 
+  const FOUND = {
+    target_supported:   {label: "the record confirms this", cls: "ok"},
+    target_contradicted:{label: "the record refutes this", cls: "no"},
+    target_untested:    {label: "nothing decisive found", cls: "none"},
+  };
+
   function inqHtml(inq){
     const owner = canMutate(STATE.doc);
     const qs = inq.questions || [];
     const answered = qs.filter(q => q.target_status).length;
-    const running = STATE.inqRun && STATE.inqRun.key === inq.key;
+    const running = !!(STATE.inqRun && STATE.inqRun.key === inq.key);
+    // Questions are researched in order; the one being worked is the first still unanswered.
+    const active = running ? (qs.find(q => !q.target_status) || null) : null;
+    const ctx = {running: running, activeQid: active ? active.id : ""};
     const byAspect = {};
     qs.forEach(q => { (byAspect[q.aspect_key] = byAspect[q.aspect_key] || []).push(q); });
     const aspects = (inq.aspects || []).map(a => {
@@ -11916,14 +11944,15 @@ async function openShare(token){
       return '<div class="th-aspect"><div class="th-aspect-h"><b>' + esc2(a.prompt || a.key) + "</b>"
         + (a.critical ? '<span class="th-v">critical</span>' : "")
         + '<span class="th-v" data-v="' + esc2(a.verdict) + '">' + esc2(a.verdict.replace(/_/g, " ")) + "</span></div>"
-        + aqs.map(q => qnHtml(q, owner)).join("")
-        + (owner ? '<button type="button" class="th-inq-add" data-add="' + esc2(inq.key) + "|" + esc2(a.key)
+        + aqs.map(q => qnHtml(q, owner, ctx)).join("")
+        + (owner && !running ? '<button type="button" class="th-inq-add" data-add="' + esc2(inq.key) + "|" + esc2(a.key)
             + '">+ add a question</button>' : "")
         + "</div>";
     }).join("");
     const runRow = !owner ? "" : running
-      ? '<div class="th-run-prog"><span class="su-spin"></span> <span>running — ' + esc2(String(STATE.inqRun.done))
-        + " of " + esc2(String(STATE.inqRun.total)) + " questions · corpus, then the open web, then the red team</span></div>"
+      ? '<div class="th-run-prog"><span class="su-spin"></span> <span>Researching '
+        + esc2(String(STATE.inqRun.done + 1)) + " of " + esc2(String(STATE.inqRun.total)) + " — "
+        + (active ? "&ldquo;" + esc2(active.text) + "&rdquo;" : "writing up") + "</span></div>"
       : '<div class="th-run-row"><button type="button" class="th-run" data-run="' + esc2(inq.key) + '">'
         + (answered ? "Re-run this line of inquiry" : "Run this line of inquiry")
         + '</button><span class="th-run-note">' + qs.length + " question" + (qs.length === 1 ? "" : "s")
@@ -11936,21 +11965,30 @@ async function openShare(token){
       + '<div class="th-inq-body">' + runRow + aspects + "</div></details>";
   }
 
-  function qnHtml(q, owner){
+  function qnHtml(q, owner, ctx){
+    ctx = ctx || {};
     const lens = LENS[q.kind] || {glyph: "•", label: q.kind};
-    const ans = q.target_status
-      ? (q.answer
-          ? '<div class="th-qn-a">' + linkEvidence(q.answer, allEvidence()) + "</div>"
-          : '<div class="th-qn-a none">Not established in the record.</div>')
-      : "";
-    return '<div class="th-qn" data-qid="' + esc2(q.id) + '">'
-      + '<div class="th-qn-q"><span class="th-lens" data-k="' + esc2(q.kind) + '" title="' + esc2(lens.label) + '">'
-      + lens.glyph + " " + esc2(lens.label) + '</span><span class="th-qn-text">' + esc2(q.text) + "</span></div>"
-      + ans
-      + (owner && !q.target_status ? '<div class="th-qn-tools"><button type="button" class="th-qn-edit" data-edit="'
-          + esc2(q.id) + '">edit</button><button type="button" class="th-qn-edit" data-rm="' + esc2(q.id)
-          + '">remove</button></div>' : "")
-      + "</div>";
+    const lensTag = '<span class="th-lens" data-k="' + esc2(q.kind) + '" title="' + esc2(lens.label) + '">'
+      + lens.glyph + " " + esc2(lens.label) + "</span>";
+    const qline = '<div class="th-qn-q">' + lensTag + '<span class="th-qn-text">' + esc2(q.text) + "</span></div>";
+    let body = "";
+    if(q.target_status){
+      // Answered: compressed by default, the grounded answer + citations on demand.
+      const f = FOUND[q.target_status] || FOUND.target_untested;
+      const inner = q.answer
+        ? '<div class="th-qn-a">' + linkEvidence(q.answer, allEvidence()) + "</div>"
+        : '<div class="th-qn-a none">Not established in the record.</div>';
+      body = '<details class="th-qn-ans"><summary><span class="th-found" data-f="' + f.cls + '">'
+        + esc2(f.label) + '</span><span class="th-qn-toggle"></span></summary>' + inner + "</details>";
+    }else if(ctx.running && q.id === ctx.activeQid){
+      body = '<div class="th-qn-work"><span class="su-spin"></span> researching this question…</div>';
+    }else if(ctx.running){
+      body = '<div class="th-qn-wait">queued</div>';
+    }else if(owner){
+      body = '<div class="th-qn-tools"><button type="button" class="th-qn-edit" data-edit="' + esc2(q.id)
+        + '">edit</button><button type="button" class="th-qn-edit" data-rm="' + esc2(q.id) + '">remove</button></div>';
+    }
+    return '<div class="th-qn" data-qid="' + esc2(q.id) + '">' + qline + body + "</div>";
   }
 
   function allEvidence(){
@@ -12029,6 +12067,12 @@ async function openShare(token){
       else{
         const s = await r.json();
         STATE.inqRun.done = Number(s.done || 0); STATE.inqRun.total = Number(s.total || STATE.inqRun.total);
+        // Refresh the questions so each answer appears the moment it is saved, and the spinner moves to
+        // the next question — the run is visible as it happens, not only at the end.
+        try{
+          const ir = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries", {headers: hdrs()});
+          if(ir.ok){ STATE.inquiries = (await ir.json()).inquiries || STATE.inquiries; }
+        }catch(e){ /* keep the last snapshot */ }
         renderInquiries();
         if(s.state === "completed"){ STATE.inqRun = null; await loadInquiries(); await open(STATE.id); return; }
         if(s.state === "failed" || s.stage === "stalled"){ stalled = true; }

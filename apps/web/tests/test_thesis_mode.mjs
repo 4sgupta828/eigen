@@ -235,3 +235,24 @@ test("the four lenses are named for a 360-degree read, not decoration", () => {
   assert.deepEqual(Object.keys(api.LENS).sort(),
     ["challenge_assumption", "resolve_ambiguity", "seek_contradiction", "seek_support"]);
 });
+
+test("during a run, the active question shows a spinner and the rest are queued", () => {
+  const {api} = loadThesisModule();
+  api._setState({doc: {is_owner: true, claims: []},
+    inqRun: {key: "problem", run: "r1", done: 1, total: 3}});
+  const inq = {key: "problem", name: "Is the problem real?", framing: "the pain",
+    aspects: [{key: "problem_exists", prompt: "Does it occur?", critical: true, verdict: "supported"}],
+    questions: [
+      {id: "q1", aspect_key: "problem_exists", kind: "seek_support", text: "Answered one?", target: "t", polarity: 1,
+       target_status: "target_supported", answer: "Yes. [[e:e1]]"},
+      {id: "q2", aspect_key: "problem_exists", kind: "seek_contradiction", text: "The one being worked?", target: "t", polarity: -1, target_status: ""},
+      {id: "q3", aspect_key: "problem_exists", kind: "resolve_ambiguity", text: "Still queued?", target: "t", polarity: 1, target_status: ""},
+    ]};
+  const html = api.inqHtml(inq);
+  assert.match(html, /Researching 2 of 3 — .*The one being worked\?/);   // names the active question
+  assert.match(html, /researching this question…/);                       // spinner line on the active one
+  assert.match(html, /queued/);                                           // the later question waits
+  // the answered question is compressed (a details with a "view answer" toggle), not shown expanded
+  assert.match(html, /class="th-qn-ans"/);
+  assert.match(html, /class="th-qn-toggle"/);   // the view-answer/hide label is CSS-driven
+});
