@@ -306,3 +306,10 @@ test("delete controls call the line and clear-all endpoints and preserve answere
   assert.match(SRC, /Clear all &amp; start fresh/);                // the start-fresh control
   assert.match(SRC, /Answered questions are kept/);                // the reassurance in the confirm
 });
+
+test("an explicit run/re-run sends a fresh idempotency key so it is not deduped to the last run", () => {
+  // the content-hash default on the server would make Re-run a no-op; the client forces a new run.
+  assert.match(SRC, /idempotency_key:\s*freshRunKey\("q-" \+ qid\)/);      // single question
+  assert.match(SRC, /idempotency_key:\s*freshRunKey\("inq-" \+ key\)/);    // line of inquiry
+  assert.match(SRC, /function freshRunKey\(/);
+});

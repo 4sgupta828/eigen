@@ -12212,9 +12212,12 @@ async function openShare(token){
           + "The result appears when the run is done.\n\nProjected maximum: $" + max.toFixed(3))){
         STATE.busy = false; return;
       }
+      // A FRESH idempotency key so an explicit Re-run of a line of inquiry actually re-runs, rather
+      // than colliding with the prior run's content hash and returning the old, completed run.
       const sr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/"
                              + encodeURIComponent(key) + "/run",
-                             {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: max, web: true})});
+                             {method: "POST", headers: hdrs(), body: JSON.stringify(
+                               {max_usd: max, web: true, idempotency_key: freshRunKey("inq-" + key)})});
       const started = await sr.json().catch(() => ({}));
       if(!sr.ok || !started.run) throw new Error(started.detail || "could not start this line of inquiry");
       STATE.inqRun = {key: key, run: started.run.id, done: 0, total: nq};
@@ -12229,15 +12232,26 @@ async function openShare(token){
     return inq ? inq.key : "";
   }
 
+  // A unique run key per explicit click, so a re-run is a NEW run (not deduped to the last one). One
+  // key is generated per call and reused if the browser retries that same POST, so a network retry
+  // still dedupes; two separate clicks are blocked by the STATE.busy / STATE.inqRun guards.
+  function freshRunKey(prefix){
+    return (prefix || "run") + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  }
+
   async function runQuestion(qid){
     if(STATE.busy || STATE.inqRun) return;
     STATE.busy = true;
     try{
       // Just execute a single question — no projection round-trip, no confirmation. The cost of one
       // question is small; max_usd is set high enough to auto-approve so the run starts immediately.
+      // A FRESH idempotency key per click so an explicit Re-run actually re-runs (the content-hash
+      // default would collide with the prior run and just re-show the old answer). STATE guards below
+      // and per-thesis serialization on the server prevent an accidental double-run.
       const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/question/"
                             + encodeURIComponent(qid) + "/run",
-                            {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 5, web: true})});
+                            {method: "POST", headers: hdrs(), body: JSON.stringify(
+                              {max_usd: 5, web: true, idempotency_key: freshRunKey("q-" + qid)})});
       const d = await r.json().catch(() => ({}));
       if(!r.ok || !d.run) throw new Error(d.detail || "could not start this question");
       STATE.inqRun = {key: inquiryKeyOf(qid), qid: qid, run: d.run.id, done: 0, total: 1};
