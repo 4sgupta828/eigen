@@ -100,6 +100,10 @@ async def test_authenticated_owner_can_read_but_wrong_or_missing_owner_cannot() 
     assert (await store.get(pool, thesis_id="t1", owner_id="owner-1"))["is_owner"] is True
     assert await store.get(pool, thesis_id="t1", owner_id="owner-2") is None
     assert await store.get(pool, thesis_id="t1") is None
+    # A trusted server-side caller (the background research runner) reads without a credential — the
+    # gate returning None here was the bug that made every question run fail with NoneType.get.
+    trusted = await store.get(pool, thesis_id="t1", trusted=True)
+    assert trusted is not None and trusted["is_owner"] is True
 
 
 @pytest.mark.asyncio

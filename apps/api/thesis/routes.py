@@ -496,7 +496,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     async def _run_research(thesis_id: str, run_id: str):
         pool = await pool_of()
         try:
-            d = await tstore.get(pool, thesis_id=thesis_id)
+            d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
             if not d:
                 return
             done_rungs = await tstore.claims_tested_by_run(pool, thesis_id, run_id)
@@ -524,7 +524,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                     await tstore.set_verdict(pool, thesis_id, c["rung"], "primary_research_needed",
                                              "This claim needs independent primary research.",
                                              run_id=run_id)
-            fresh = await tstore.get(pool, thesis_id=thesis_id)
+            fresh = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
             await _write_cases(pool, thesis_id, fresh)
             policy = _policy()
             decision = (policy.decide(fresh.get("claims") or []) if policy else
@@ -629,7 +629,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         support/contradiction pair on the same target shares one retrieval."""
         pool = await pool_of()
         profile = _profile()
-        d = await tstore.get(pool, thesis_id=thesis_id)
+        d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
         thesis = d.get("thesis") or ""
         subject = " ".join(str(v) for v in (d.get("subject") or {}).values())
         by_aspect: dict[str, list] = {}
@@ -778,8 +778,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="cap",
                                   error={"reason": "approved cost reached", "detail": str(exc)})
         except Exception as exc:      # noqa: BLE001 — a failed run fails closed, never corrupts
+            import traceback as _tb
             await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
-                                  error={"reason": "inquiry run failed", "detail": str(exc)[:300]})
+                                  error={"reason": "inquiry run failed", "detail": str(exc)[:300], "tb": _tb.format_exc()[-800:]})
 
     @r.post("/thesis/{thesis_id}/inquiry/{inquiry_key}/run")
     async def tl_run_inquiry(thesis_id: str, inquiry_key: str, body: ResearchStartIn,
@@ -822,8 +823,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="cap",
                                   error={"reason": "approved cost reached", "detail": str(exc)})
         except Exception as exc:      # noqa: BLE001 — a failed run fails closed, never corrupts
+            import traceback as _tb
             await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
-                                  error={"reason": "question run failed", "detail": str(exc)[:300]})
+                                  error={"reason": "question run failed", "detail": str(exc)[:300], "tb": _tb.format_exc()[-800:]})
 
     @r.post("/thesis/{thesis_id}/question/{qid}/run")
     async def tl_run_question(thesis_id: str, qid: str, body: ResearchStartIn,

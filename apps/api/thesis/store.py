@@ -214,8 +214,10 @@ async def create(pool, *, thesis: str, claims: list[dict], subject: dict,
 
 
 async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str = "",
-              owner_token: str = "") -> dict | None:
-    """Return the ledger only for its owner or an explicit read-only share capability."""
+              owner_token: str = "", trusted: bool = False) -> dict | None:
+    """Return the ledger only for its owner or an explicit read-only share capability. `trusted=True`
+    is for SERVER-SIDE callers (e.g. the background research runner, already authorized at the route)
+    that hold no user credential — it skips the ownership gate; never set it from a request handler."""
     await ensure_schema(pool)
     async with pool.acquire() as conn:
         if thesis_id:
@@ -232,7 +234,7 @@ async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str
                             and hmac.compare_digest(hash_owner_token(owner_token), stored_hash))
         shared = bool(share_token) and bool(stored_share) and hmac.compare_digest(
             share_token, stored_share)
-        is_owner = authenticated_owner or capability_owner
+        is_owner = authenticated_owner or capability_owner or trusted
         if not is_owner and not shared:
             return None
         claims = await conn.fetch(
