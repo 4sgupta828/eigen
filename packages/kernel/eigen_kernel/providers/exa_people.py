@@ -17,6 +17,16 @@ from .people_search import PersonResult
 EXA_URL = "https://api.exa.ai/search"
 
 
+def _clean_md(s: str) -> str:
+    """Strip markdown noise Exa leaves in profile text: '### ', '#### ', '[text](url)' → 'text',
+    stray bullets and repeated whitespace — so a headline reads as prose, not raw markdown."""
+    s = re.sub(r"\[([^\]]+)\]\((?:[^)]*)\)", r"\1", s or "")   # [text](url) -> text
+    s = re.sub(r"(?m)^\s*#{1,6}\s*", "", s)                     # leading headers
+    s = re.sub(r"#{1,6}\s*", "", s)                            # inline ### fragments
+    s = re.sub(r"(?m)^\s*[-*]\s+", "", s)                       # list bullets
+    return re.sub(r"\s+", " ", s).strip(" -–—·|")
+
+
 def _split_title(title: str, url: str) -> tuple[str, str]:
     """LinkedIn/profile titles read 'Name - Headline | LinkedIn' or 'Name | Headline'. Pull the name
     (the first segment) and the headline (the remainder, minus the site suffix)."""
@@ -84,9 +94,10 @@ class ExaPeopleSearch:
             name, headline = _split_title(r.get("title") or "", url)
             hl = [h for h in (r.get("highlights") or []) if h and h.strip()]
             if not headline and hl:
-                headline = hl[0].strip()[:200]
+                headline = hl[0]
             elif not headline:
-                headline = (r.get("text") or "").strip()[:200]
+                headline = (r.get("text") or "")
+            headline = _clean_md(headline)[:200]       # strip markdown Exa leaves in profile text
             out.append(PersonResult(
                 name=name, profile_url=url, headline=headline,
                 relevance=float(r.get("score") or 0.0), provider="exa"))

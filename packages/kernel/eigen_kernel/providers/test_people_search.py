@@ -43,3 +43,10 @@ def test_split_title_tidies_lowercase_names_and_dangling_headlines():
     assert h == "Lead daily operations for a 3PL"     # leading "- " dropped
     n2, h2 = _split_title("Mike Anton | , cut costs structurally", "u")
     assert n2 == "Mike Anton" and h2 == "cut costs structurally"
+
+
+def test_clean_md_strips_markdown_noise_from_headlines():
+    from eigen_kernel.providers.exa_people import _clean_md
+    assert _clean_md("### [Port Jersey Logistics](https://x.com) #### WMS Implementation Manager") \
+        == "Port Jersey Logistics WMS Implementation Manager"
+    assert _clean_md("- Director of Warehouse Operations") == "Director of Warehouse Operations"
