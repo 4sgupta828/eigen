@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from eigen_kernel.decision import sanitize_answer
+from eigen_kernel.decision import sanitize_answer, NOT_ESTABLISHED
 
 
 def make_gather(attack_fn):
@@ -48,7 +48,16 @@ How to answer:
   release, preprint, or forum post is a stated claim or a market signal — never dress a signal up as a
   fact. Where the evidence is one-sided or conflicts, say so.
 - Do not invent sources, numbers, or quotes. Every sentence must cite at least one given evidence id.
-- If the evidence genuinely says nothing about the question, return an empty list."""
+
+ALWAYS EXPLAIN — never leave the reader with a bare "not established":
+- If the evidence directly answers the question, give the comprehensive cited answer above.
+- If it does NOT directly answer it, still be useful: put whatever the record DOES contain that bears
+  on the question into `sentences` (cited — e.g. adjacent facts, proxies, related figures), and use
+  the `note` field to explain, in plain language, WHAT is missing to settle it and WHAT KIND of source
+  would (a filed figure, a named buyer, a benchmark). The note describes our COVERAGE — what we found
+  and what we didn't — it never asserts a new fact about the world.
+- Only when the record is truly, entirely silent do you leave `sentences` empty — and even then the
+  `note` must explain what was searched and what would answer it."""
 
 
 # What each lens is FOR — so the model frames its answer to the actual intent of the question, not just
@@ -71,8 +80,6 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
 
     async def synthesize(question, evidence):
         allowed = [str(e.get("id")) for e in (evidence or []) if e.get("id")]
-        if llm_json is None or not allowed:
-            return ""
         listing = "\n".join(
             f"[{e.get('id')}] ({e.get('register', '')}/{e.get('evidence_kind', '')}"
             + (f" · {e.get('source_subject')}" if e.get('source_subject') else "")
@@ -86,18 +93,32 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
             ctx += f"ASPECT OF THE THESIS: {aspect}\n"
         if intent:
             ctx += f"WHY WE ASK: {intent}\n"
+        empty_note = ("The corpus and open-web search returned nothing that speaks to this question. "
+                      "A direct source — a filing, a named figure, or a benchmark — would be "
+                      "needed to settle it.")
+        if llm_json is None or not allowed:
+            # No model, or no evidence at all: still explain rather than leaving a bare gap.
+            return "" if llm_json is None else empty_note
         user = (ctx + f"QUESTION: {question.text}\nSTATEMENT UNDER TEST: {question.target}\n\n"
                 f"EVIDENCE (cite by the bracketed id):\n{listing}\n\n"
-                'Return ONE JSON object: {"sentences": [{"text": "...", "evidence_ids": ["id", ...]}]}. '
-                "Write a THOROUGH answer (4–8 sentences) using as much of the evidence above as is "
-                "relevant; each sentence states only what its cited evidence shows and cites its id(s). "
-                "Output ONLY the JSON object.")
+                'Return ONE JSON object: {"sentences": [{"text": "...", "evidence_ids": ["id", ...]}], '
+                '"note": "..."}. Write a THOROUGH answer (4–8 sentences) using as much relevant evidence '
+                "as possible; each sentence cites its id(s). If the evidence does not fully settle the "
+                "question, put what it DOES show in sentences and use `note` to explain what is missing "
+                "and what source would settle it. Output ONLY the JSON object.")
         try:
             raw = await llm_json(system, user)
             d = raw if isinstance(raw, dict) else json.loads(raw)
             items = d.get("sentences") or []
-        except Exception:      # noqa: BLE001 — no prose is fine; the verdict rests on evidence, not narrative
-            items = []
-        return sanitize_answer(items, allowed)
+            note = str(d.get("note") or "").strip()
+        except Exception:      # noqa: BLE001 — never blocks; falls back to an honest coverage note
+            items, note = [], ""
+        cited = sanitize_answer(items, allowed)
+        if cited and cited != NOT_ESTABLISHED:
+            # A real answer, plus the model's caveat about what remains open, when it gave one.
+            return cited + ("\n\n" + note if note else "")
+        # Nothing qualified: return the honest gap explanation (uncited coverage note), never a bare
+        # "not established". The client renders a note (no [[e:id]] markers) as a muted explanation.
+        return note or empty_note
 
     return synthesize

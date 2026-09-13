@@ -47,11 +47,9 @@ async def test_synthesize_grounds_and_gates_citations():
 
 
 @pytest.mark.asyncio
-async def test_synthesize_returns_empty_without_a_model_or_evidence():
+async def test_synthesize_returns_empty_only_without_a_model():
     synth = make_synthesize(None)
-    assert await synth(_q("t"), [{"id": "e1"}]) == ""      # no model
-    synth2 = make_synthesize(lambda s, u: {"sentences": []})
-    assert await synth2(_q("t"), []) == ""                 # no evidence
+    assert await synth(_q("t"), [{"id": "e1"}]) == ""      # no model → no prose (verdict stands alone)
 
 
 @pytest.mark.asyncio
@@ -69,3 +67,36 @@ async def test_engine_run_question_through_the_real_adapter_and_tech_profile():
     from eigen_kernel.decision import TARGET_SUPPORTED
     assert st.target_status == TARGET_SUPPORTED
     assert set(st.evidence_ids) == {"a", "b"}
+
+
+@pytest.mark.asyncio
+async def test_synthesize_always_explains_never_bare_not_established():
+    # model finds nothing citable but explains the gap in `note` → the note is the answer
+    async def llm(system, user):
+        return {"sentences": [], "note": "The record has only market-signal coverage; a filed figure "
+                "would be needed to settle it."}
+    synth = make_synthesize(llm)
+    out = await synth(_q("Do enough buyers exist?"), [{"id": "e1", "quote": "q"}])
+    assert "market-signal coverage" in out
+    assert out != "Not established in the record."
+    assert "[[e:" not in out                       # a gap note carries no citations
+
+
+@pytest.mark.asyncio
+async def test_synthesize_appends_caveat_to_a_cited_answer():
+    async def llm(system, user):
+        return {"sentences": [{"text": "Two vendors report 40% adoption.", "evidence_ids": ["e1"]}],
+                "note": "No filing confirms the figure."}
+    synth = make_synthesize(llm)
+    out = await synth(_q("Adoption?"), [{"id": "e1", "quote": "q"}])
+    assert "Two vendors report 40% adoption." in out and "[[e:e1]]" in out
+    assert "No filing confirms the figure." in out   # the caveat rides along
+
+
+@pytest.mark.asyncio
+async def test_synthesize_no_evidence_still_explains():
+    async def llm(s, u):
+        return {"sentences": [], "note": "x"}
+    synth = make_synthesize(llm)
+    out = await synth(_q("t"), [])                    # no evidence at all
+    assert "search returned nothing" in out.lower() or "needed to settle" in out.lower()

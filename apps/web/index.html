@@ -597,6 +597,11 @@
   .th-answer-body p{margin:.45rem 0;}
   .th-answer-body p:first-child{margin-top:0;}
   .th-answer-body.none{color:var(--dim);font-style:italic;}
+  /* a coverage note: the record does not settle it — what we found / what is missing (uncited, muted) */
+  .th-answer-note{margin:.55rem 0 0;font-size:.84rem;line-height:1.6;color:var(--dim);
+    border-left:2px solid var(--hair);padding:.15rem 0 .15rem .6rem;}
+  .th-answer-note p{margin:.35rem 0;}
+  .th-answer-note p:first-child{margin-top:0;}
   .th-answer-body sup.ref{font-size:.62em;line-height:0;color:var(--gold);cursor:pointer;font-weight:600;
     padding:0 .1em;vertical-align:super;text-decoration:none;}
   .th-answer-body sup.ref:hover{text-decoration:underline;}
@@ -12015,15 +12020,20 @@ async function openShare(token){
     const ev = evidenceFor(q);
     const nById = {}; ev.forEach((e, i) => { nById[e.id] = i + 1; });
     const prose = String(q.answer || "").trim();
-    if(!prose || prose === "Not established in the record.")
-      return '<div class="th-answer-body none">Not established in the record.</div>';
+    if(!prose)
+      return '<div class="th-answer-note">Not established in the record.</div>';
+    // A pure gap explanation carries no [[e:id]] markers — render it as a muted coverage note (what
+    // the record shows / what is missing), not as a settled finding.
+    const hasMarkers = /\[\[e:/.test(prose);
     const paras = prose.split(/\n{2,}/).map(p => "<p>" + esc2(p).replace(
       /\[\[e:([A-Za-z0-9_-]{1,80})\]\]/g, (_m, id) => {
         const n = nById[id];
         return n ? '<sup class="ref" data-n="' + n + '" tabindex="0" role="button" aria-label="source ' + n + '">' + n + "</sup>" : "";
       }) + "</p>").join("");
-    const cites = ev.length ? '<div class="th-cites-h">Evidence</div><ol class="th-cites">'
+    const cites = ev.length ? '<div class="th-cites-h">Evidence found</div><ol class="th-cites">'
       + ev.map((e, i) => citeLi(e, i + 1)).join("") + "</ol>" : "";
+    if(!hasMarkers)
+      return '<div class="th-answer-note">' + paras + "</div>" + cites;
     return '<div class="th-answer-body">' + paras + "</div>" + cites;
   }
 
