@@ -201,3 +201,37 @@ test("no partial: the testing progress carries no verdict, case, or recommendati
   // the render() switches to renderTesting() in the testing phase and returns before takesHtml
   assert.match(SRC, /if\(phase === "testing"\)\{\s*renderTesting\(\);/);
 });
+
+test("a line of inquiry renders its questions with typed lens glyphs", () => {
+  const {api} = loadThesisModule();
+  api._setState({doc: {is_owner: true, claims: []}});
+  const inq = {key: "buyer", name: "Who owns the budget to buy this?", framing: "the economic buyer",
+    aspects: [{key: "buyer_nameable", prompt: "Can an economic buyer be named?", critical: true, verdict: "open"}],
+    questions: [
+      {id: "q1", aspect_key: "buyer_nameable", kind: "seek_support", text: "Is a buyer named in filings?", target: "t", polarity: 1, target_status: ""},
+      {id: "q2", aspect_key: "buyer_nameable", kind: "seek_contradiction", text: "Do deals close without a named buyer?", target: "t", polarity: -1, target_status: ""},
+    ]};
+  const html = api.inqHtml(inq);
+  assert.match(html, /Who owns the budget to buy this\?/);        // the inquiry name is the serif hero
+  assert.match(html, /seeks support/);                            // the two lenses are labeled
+  assert.match(html, /seeks disconfirmation/);
+  assert.match(html, /data-run="buyer"/);                         // an unrun inquiry offers to run
+});
+
+test("an answered question shows its grounded answer with resolvable citations", () => {
+  const {api} = loadThesisModule();
+  api._setState({doc: {is_owner: true, claims: [{rung: "buyer_nameable",
+    evidence: [{id: "ev1", quote: "Acme named as buyer"}]}]}});
+  const q = {id: "q1", aspect_key: "buyer_nameable", kind: "seek_support",
+    text: "Is a buyer named?", target: "t", polarity: 1, target_status: "target_supported",
+    answer: "A case study names the buyer. [[e:ev1]]"};
+  const html = api.qnHtml(q, false);
+  assert.match(html, /A case study names the buyer\./);
+  assert.match(html, /data-evidence="ev1"/);                      // citation resolves to the evidence
+});
+
+test("the four lenses are named for a 360-degree read, not decoration", () => {
+  const {api} = loadThesisModule();
+  assert.deepEqual(Object.keys(api.LENS).sort(),
+    ["challenge_assumption", "resolve_ambiguity", "seek_contradiction", "seek_support"]);
+});

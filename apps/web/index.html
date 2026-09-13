@@ -551,6 +551,63 @@
     .th-q,.th-case{overflow-wrap:anywhere;word-break:break-word;}
   }
 
+  /* ===== Lines of inquiry — the decision-engine surface. Each is a focused investigation, not a card
+     in a grid: a serif question you can open, interrogated 360° by typed Socratic questions answered
+     from evidence. ===== */
+  .th-loi-intro{margin:.2rem 0 1rem;line-height:1.6;color:var(--ink);}
+  .th-loi-intro b{color:var(--ink);}
+  .th-inqs{display:grid;gap:.9rem;margin:.4rem 0 1rem;}
+  .th-inq{border:1px solid var(--hair);border-radius:14px;background:var(--panel);overflow:hidden;}
+  .th-inq-head{display:flex;gap:.7rem;align-items:flex-start;justify-content:space-between;
+    padding:.9rem 1rem;cursor:pointer;list-style:none;}
+  .th-inq-head::-webkit-details-marker{display:none;}
+  .th-inq-titlewrap{min-width:0;flex:1 1 auto;}
+  .th-inq h3{font:600 1.12rem/1.25 var(--serif);margin:0;letter-spacing:-.01em;color:var(--ink);}
+  .th-inq .th-inq-framing{font-size:.8rem;color:var(--dim);margin:.2rem 0 0;line-height:1.4;}
+  .th-inq-side{display:flex;align-items:center;gap:.5rem;flex:none;}
+  .th-inq-pips{display:inline-flex;gap:.28rem;}
+  .th-inq-open{font-family:var(--mono);font-size:.62rem;color:var(--dim);white-space:nowrap;}
+  .th-inq[open] .th-inq-head{border-bottom:1px solid var(--hair);}
+  .th-inq-body{padding:.4rem 1rem 1rem;}
+  .th-run-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.2rem 0 .8rem;}
+  .th-run{font-family:var(--mono);font-size:.72rem;padding:.5rem .95rem;border-radius:999px;
+    border:1px solid var(--gold);background:var(--gold);color:#fff;cursor:pointer;min-height:42px;font-weight:600;}
+  .th-run:hover{filter:brightness(1.06);}
+  .th-run[disabled]{opacity:.6;cursor:progress;filter:none;}
+  .th-run-note{font-size:.76rem;color:var(--dim);line-height:1.4;}
+  .th-run-prog{display:flex;align-items:center;gap:.5rem;font-family:var(--mono);font-size:.72rem;color:var(--dim);margin:.2rem 0 .7rem;}
+  /* an aspect within a line of inquiry */
+  .th-aspect{border-top:1px solid var(--hair);padding:.7rem 0 .2rem;}
+  .th-aspect:first-child{border-top:0;}
+  .th-aspect-h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.15rem;}
+  .th-aspect-h b{font-size:.92rem;font-weight:600;line-height:1.4;color:var(--ink);}
+  /* a typed Socratic question + its answer */
+  .th-qn{margin:.55rem 0 .55rem;padding-left:.7rem;border-left:2px solid var(--hair);}
+  .th-qn-q{display:flex;gap:.45rem;align-items:baseline;font-size:.88rem;line-height:1.5;color:var(--ink);}
+  .th-lens{font-family:var(--mono);font-size:.6rem;letter-spacing:.03em;padding:.1rem .4rem;border-radius:6px;
+    border:1px solid currentColor;flex:none;white-space:nowrap;line-height:1.4;}
+  .th-lens[data-k="seek_support"]{color:var(--verified,#2f7d5b);}
+  .th-lens[data-k="seek_contradiction"]{color:#b4544a;}
+  .th-lens[data-k="resolve_ambiguity"]{color:#6b7fd7;}
+  .th-lens[data-k="challenge_assumption"]{color:#8a6d3b;}
+  .th-qn-a{margin:.4rem 0 0;padding:.5rem .7rem;background:color-mix(in srgb,var(--gold) 6%,transparent);
+    border-radius:0 8px 8px 0;border-left:2px solid var(--gold);font-size:.82rem;line-height:1.6;color:var(--ink);}
+  .th-qn-a.none{background:transparent;border-left-color:var(--hair);color:var(--dim);font-style:italic;}
+  .th-qn-edit{background:transparent;border:0;color:var(--dim);cursor:pointer;font-size:.72rem;padding:0 .2rem;}
+  .th-qn-edit:hover{color:var(--gold);}
+  .th-qn-tools{display:flex;gap:.6rem;margin-top:.25rem;}
+  .th-inq-add{font-family:var(--mono);font-size:.66rem;padding:.35rem .7rem;border-radius:8px;border:1px dashed var(--hair);
+    background:transparent;color:var(--dim);cursor:pointer;min-height:36px;margin-top:.3rem;}
+  .th-inq-add:hover{border-color:var(--gold);color:var(--gold);}
+  .th-inq-head:focus-visible,.th-run:focus-visible,.th-inq-add:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  @media (max-width:560px){
+    .th-inq-head{flex-wrap:wrap;}
+    .th-inq h3{font-size:1.02rem;}
+    .th-run{width:100%;}
+    .th-qn-q{flex-wrap:wrap;}
+  }
+  @media (prefers-reduced-motion:reduce){.th-run{transition:none;}}
+
   /* ===== DeepDive — one company, read end to end (body[data-mode="deepdive"]) =====
      Three registers, three treatments, never blended: FILED is a number a filing states, STATED is a
      claim the company made, SIGNAL is how it is being covered. Each section carries a mark and an
@@ -11104,7 +11161,8 @@ async function openShare(token){
   function saveOwners(v){ try{ localStorage.setItem(OWNER_KEY, JSON.stringify(v || {})); }catch(e){} }
   const STATE = { id: "", doc: null, busy: false, labels: null, answers: {}, progress: null,
                   share: "", run: "", owners: readOwners(),
-                  proposed: "", testing: false, selected: null, poll: null };
+                  proposed: "", testing: false, selected: null, poll: null,
+                  inquiries: null, inqRun: null };
   const conv = () => document.getElementById("th-conv");
   const acts = () => document.getElementById("th-acts");
   const claims = () => document.getElementById("th-claims");
@@ -11157,7 +11215,7 @@ async function openShare(token){
     if(STATE.poll) clearTimeout(STATE.poll);
     STATE.id = ""; STATE.doc = null; STATE.answers = {}; STATE.progress = null;
     STATE.share = ""; STATE.run = ""; STATE.proposed = ""; STATE.testing = false;
-    STATE.selected = null; STATE.poll = null;
+    STATE.selected = null; STATE.poll = null; STATE.inquiries = null; STATE.inqRun = null;
     try{ history.replaceState(null, "", newThesisHash()); }catch(e){}
     const recentPanel = document.getElementById("th-recents"); if(recentPanel) recentPanel.hidden = true;
     enter();
@@ -11257,6 +11315,7 @@ async function openShare(token){
       if(!r.ok || !d.thesis) throw new Error(d.detail || "could not open that thesis");
       STATE.id = parsed.id; STATE.doc = d.thesis;
       STATE.testing = false; STATE.selected = null; STATE.proposed = "";
+      if(!STATE.inqRun) STATE.inquiries = null;   // keep in-flight run state across the post-complete reopen
       if(STATE.poll){ clearTimeout(STATE.poll); STATE.poll = null; }
       render();
     }catch(e){ note().textContent = e.message || "could not open that thesis"; }
@@ -11682,19 +11741,14 @@ async function openShare(token){
             ? '<p class="th-hint">Tested. Pick one or more claims below and ask the agent about them, add '
               + "an interview note, or revise a claim to re-test.</p>" : "");
     acts().innerHTML = canMutate(d)
-      ? (hint + (canTest
-          ? '<button type="button" id="th-test">Test this thesis</button>'
-          : "")
-        + '<button type="button" id="th-share">Copy read-only link</button>')
-      : "";
-    const tb = document.getElementById("th-test"); if(tb) tb.addEventListener("click", startTest);
+      ? '<button type="button" id="th-share">Copy read-only link</button>' : "";
     const sh = document.getElementById("th-share");
     if(sh) sh.addEventListener("click", () => shareThesis(sh));
 
-    // The decision brief (or, before testing, the pre-test brief) + the claim context selector.
-    takes().innerHTML = (phase === "tested" ? takesHtml(d) : pretestHtml(d))
-      + (phase === "tested" && canMutate(d) ? contextHtml(d) : "");
-    wireTakes(); wireContext();
+    // Lines of inquiry are the primary tested surface (replacing the for/against brief): a compact
+    // thesis header, then the inquiries loaded from the engine.
+    takes().innerHTML = pretestHtml(d) + '<div id="th-loi"></div>';
+    loadInquiries();
 
     // The ledger: pips in the summary, the claims themselves only when it is opened.
     const cs = [...(d.claims || [])].sort((a, b) => Number(!!b.critical) - Number(!!a.critical));
@@ -11804,10 +11858,222 @@ async function openShare(token){
     const rs = document.getElementById("th-reset"); if(rs) rs.addEventListener("click", reset);
   });
 
+  // ---- lines of inquiry (the decision-engine surface) -------------------------------------------
+  const LENS = {
+    seek_support:         {glyph: "⊕", label: "seeks support"},
+    seek_contradiction:   {glyph: "⊖", label: "seeks disconfirmation"},
+    resolve_ambiguity:    {glyph: "⟲", label: "resolves ambiguity"},
+    challenge_assumption: {glyph: "⚑", label: "tests an assumption"},
+  };
+  const VLABEL = {supported: "the record supports this", contradicted: "the record argues against this",
+    under_tested: "looked, found nothing decisive", unsettleable: "only a person can settle this",
+    open: "not yet explored"};
+
+  async function loadInquiries(){
+    const host = document.getElementById("th-loi"); if(!host) return;
+    host.innerHTML = '<p class="th-run-prog"><span class="su-spin"></span> <span>loading the lines of inquiry…</span></p>';
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries", {headers: hdrs()});
+      const d = await r.json(); if(!r.ok) throw new Error(d.detail || "could not load the lines of inquiry");
+      STATE.inquiries = d.inquiries || [];
+      renderInquiries();
+    }catch(e){ host.innerHTML = '<p class="th-note">' + esc2(e.message || String(e)) + "</p>"; }
+  }
+
+  function renderInquiries(){
+    const host = document.getElementById("th-loi"); if(!host) return;
+    const owner = canMutate(STATE.doc);
+    const inqs = STATE.inquiries || [];
+    const anyQuestions = inqs.some(i => (i.questions || []).length);
+    if(!anyQuestions){
+      host.innerHTML = '<p class="th-loi-intro">This thesis rests on four <b>lines of inquiry</b>. I can '
+        + "draft a balanced set of questions for each — some seeking support, some seeking "
+        + "disconfirmation, some testing the assumptions built in — which you can edit before running. "
+        + "You then run the lines of inquiry you choose; each is priced before it starts.</p>"
+        + (owner ? '<div class="th-run-row"><button type="button" class="th-run" id="th-gen">Draft the questions</button>'
+            + '<span class="th-run-note">Free — no evidence is gathered until you run a line of inquiry.</span></div>' : "");
+      const g = document.getElementById("th-gen"); if(g) g.addEventListener("click", generateInquiries);
+      return;
+    }
+    host.innerHTML = '<div class="th-inqs">' + inqs.map(inqHtml).join("") + "</div>";
+    wireInquiries();
+  }
+
+  function pipRow(aspects){
+    return (aspects || []).map(a => '<span class="th-pip" data-v="' + esc2(a.verdict)
+      + '" title="' + esc2((a.prompt || a.key) + " — " + (VLABEL[a.verdict] || a.verdict)) + '"></span>').join("");
+  }
+
+  function inqHtml(inq){
+    const owner = canMutate(STATE.doc);
+    const qs = inq.questions || [];
+    const answered = qs.filter(q => q.target_status).length;
+    const running = STATE.inqRun && STATE.inqRun.key === inq.key;
+    const byAspect = {};
+    qs.forEach(q => { (byAspect[q.aspect_key] = byAspect[q.aspect_key] || []).push(q); });
+    const aspects = (inq.aspects || []).map(a => {
+      const aqs = byAspect[a.key] || [];
+      return '<div class="th-aspect"><div class="th-aspect-h"><b>' + esc2(a.prompt || a.key) + "</b>"
+        + (a.critical ? '<span class="th-v">critical</span>' : "")
+        + '<span class="th-v" data-v="' + esc2(a.verdict) + '">' + esc2(a.verdict.replace(/_/g, " ")) + "</span></div>"
+        + aqs.map(q => qnHtml(q, owner)).join("")
+        + (owner ? '<button type="button" class="th-inq-add" data-add="' + esc2(inq.key) + "|" + esc2(a.key)
+            + '">+ add a question</button>' : "")
+        + "</div>";
+    }).join("");
+    const runRow = !owner ? "" : running
+      ? '<div class="th-run-prog"><span class="su-spin"></span> <span>running — ' + esc2(String(STATE.inqRun.done))
+        + " of " + esc2(String(STATE.inqRun.total)) + " questions · corpus, then the open web, then the red team</span></div>"
+      : '<div class="th-run-row"><button type="button" class="th-run" data-run="' + esc2(inq.key) + '">'
+        + (answered ? "Re-run this line of inquiry" : "Run this line of inquiry")
+        + '</button><span class="th-run-note">' + qs.length + " question" + (qs.length === 1 ? "" : "s")
+        + (answered ? " · " + answered + " answered" : " · priced before it starts") + "</span></div>";
+    return '<details class="th-inq"' + (running || answered ? " open" : "") + '><summary class="th-inq-head">'
+      + '<div class="th-inq-titlewrap"><h3>' + esc2(inq.name) + "</h3>"
+      + '<p class="th-inq-framing">' + esc2(inq.framing) + "</p></div>"
+      + '<div class="th-inq-side"><span class="th-inq-pips">' + pipRow(inq.aspects) + "</span>"
+      + '<span class="th-inq-open">' + answered + "/" + qs.length + "</span></div></summary>"
+      + '<div class="th-inq-body">' + runRow + aspects + "</div></details>";
+  }
+
+  function qnHtml(q, owner){
+    const lens = LENS[q.kind] || {glyph: "•", label: q.kind};
+    const ans = q.target_status
+      ? (q.answer
+          ? '<div class="th-qn-a">' + linkEvidence(q.answer, allEvidence()) + "</div>"
+          : '<div class="th-qn-a none">Not established in the record.</div>')
+      : "";
+    return '<div class="th-qn" data-qid="' + esc2(q.id) + '">'
+      + '<div class="th-qn-q"><span class="th-lens" data-k="' + esc2(q.kind) + '" title="' + esc2(lens.label) + '">'
+      + lens.glyph + " " + esc2(lens.label) + '</span><span class="th-qn-text">' + esc2(q.text) + "</span></div>"
+      + ans
+      + (owner && !q.target_status ? '<div class="th-qn-tools"><button type="button" class="th-qn-edit" data-edit="'
+          + esc2(q.id) + '">edit</button><button type="button" class="th-qn-edit" data-rm="' + esc2(q.id)
+          + '">remove</button></div>' : "")
+      + "</div>";
+  }
+
+  function allEvidence(){
+    // citations resolve against the whole thesis's evidence (the ledger holds the spans).
+    return (STATE.doc && STATE.doc.claims || []).flatMap(c => c.evidence || []);
+  }
+
+  function wireInquiries(){
+    const host = document.getElementById("th-loi"); if(!host) return;
+    host.querySelectorAll("[data-run]").forEach(b => b.addEventListener("click",
+      e => { e.preventDefault(); runInquiry(b.dataset.run); }));
+    host.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => editQuestion(b.dataset.edit)));
+    host.querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", () => removeQuestion(b.dataset.rm)));
+    host.querySelectorAll("[data-add]").forEach(b => b.addEventListener("click", () => {
+      const [ik, ak] = b.dataset.add.split("|"); addQuestion(ik, ak);
+    }));
+    // citations in answers scroll to the evidence row in the ledger
+    host.querySelectorAll("[data-evidence]").forEach(a => a.addEventListener("click", e => {
+      e.preventDefault();
+      const el = document.getElementById("evidence-" + a.dataset.evidence); if(!el) return;
+      const ledger = document.getElementById("th-ledger"); if(ledger) ledger.open = true;
+      el.scrollIntoView({block: "nearest", behavior: "smooth"});
+      el.classList.add("th-flash"); setTimeout(() => el.classList.remove("th-flash"), 1200);
+    }));
+  }
+
+  async function generateInquiries(){
+    if(STATE.busy) return;
+    STATE.busy = true;
+    const host = document.getElementById("th-loi");
+    if(host) host.innerHTML = '<p class="th-run-prog"><span class="su-spin"></span> <span>drafting the questions…</span></p>';
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries/generate",
+                            {method: "POST", headers: hdrs()});
+      const d = await r.json(); if(!r.ok) throw new Error(d.detail || "could not draft the questions");
+      STATE.inquiries = d.inquiries || []; renderInquiries();
+    }catch(e){ note().textContent = e.message || String(e); if(host) renderInquiries(); }
+    finally{ STATE.busy = false; }
+  }
+
+  async function runInquiry(key){
+    if(STATE.busy || STATE.inqRun) return;
+    STATE.busy = true;
+    try{
+      const inq = (STATE.inquiries || []).find(i => i.key === key) || {};
+      const nq = (inq.questions || []).length;
+      const pr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/"
+                             + encodeURIComponent(key) + "/run",
+                             {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 0, web: true})});
+      const pj = await pr.json();
+      const max = Number((pj.projection || {}).projected_usd || 0);
+      if(!window.confirm("Run “" + (inq.name || key) + "”?\n\n" + nq
+          + " question" + (nq === 1 ? "" : "s") + " against our corpus, the open web, and the red team. "
+          + "The result appears when the run is done.\n\nProjected maximum: $" + max.toFixed(3))){
+        STATE.busy = false; return;
+      }
+      const sr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/"
+                             + encodeURIComponent(key) + "/run",
+                             {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: max, web: true})});
+      const started = await sr.json();
+      if(!sr.ok || !started.run) throw new Error(started.detail || "could not start this line of inquiry");
+      STATE.inqRun = {key: key, run: started.run.id, done: 0, total: nq};
+      renderInquiries();
+      pollInquiry(0);
+    }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; }
+  }
+
+  async function pollInquiry(resumes){
+    if(!STATE.inqRun) return;
+    let stalled = false;
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/status?run="
+                            + encodeURIComponent(STATE.inqRun.run), {headers: hdrs()});
+      if(r.status === 502 || r.status === 503){ stalled = true; }
+      else{
+        const s = await r.json();
+        STATE.inqRun.done = Number(s.done || 0); STATE.inqRun.total = Number(s.total || STATE.inqRun.total);
+        renderInquiries();
+        if(s.state === "completed"){ STATE.inqRun = null; await loadInquiries(); await open(STATE.id); return; }
+        if(s.state === "failed" || s.stage === "stalled"){ stalled = true; }
+      }
+    }catch(e){ stalled = true; }
+    if(stalled){
+      if(resumes > 8){ STATE.inqRun = null; note().textContent =
+        "That line of inquiry kept stopping. Nothing was lost — run it again to resume."; renderInquiries(); return; }
+      try{ await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/"
+             + encodeURIComponent(STATE.inqRun.key) + "/run",
+             {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 999, web: true})}); }catch(e){}
+      resumes++;
+    }
+    setTimeout(() => pollInquiry(resumes), 2500);
+  }
+
+  async function editQuestion(qid){
+    const q = (STATE.inquiries || []).flatMap(i => i.questions || []).find(x => x.id === qid); if(!q) return;
+    const text = (window.prompt("Edit the question:", q.text) || "").trim(); if(!text || text === q.text) return;
+    await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/question/" + encodeURIComponent(qid),
+                {method: "PATCH", headers: hdrs(), body: JSON.stringify({text: text})});
+    await loadInquiries();
+  }
+
+  async function removeQuestion(qid){
+    if(!window.confirm("Remove this question?")) return;
+    await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/question/" + encodeURIComponent(qid),
+                {method: "DELETE", headers: hdrs()});
+    await loadInquiries();
+  }
+
+  async function addQuestion(inquiryKey, aspectKey){
+    const text = (window.prompt("New question (what should the evidence decide?):") || "").trim(); if(!text) return;
+    await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/question",
+                {method: "POST", headers: hdrs(),
+                 body: JSON.stringify({inquiry_key: inquiryKey, aspect_key: aspectKey,
+                                       kind: "seek_support", text: text, target: text, polarity: 1})});
+    await loadInquiries();
+  }
+
   window.TH = {submit, enter, reset, open, startTest, render, confirmThesis,
     __test:{ownerHeaders, thesisUrl, parseThesisHash, canMutate, decisionHtml, linkEvidence,
             newThesisHash, fmtBody, turnHtml, introHtml, phaseOf, genesisHtml, pretestHtml,
-            contextHtml,
+            contextHtml, inqHtml, qnHtml, LENS,
+            _setState: (patch) => Object.assign(STATE, patch),
             claimHtml: (c, focused, owner, answers) => { STATE.answers = answers || {}; return claimHtml(c, focused, owner); }}};
 })();
 </script>
