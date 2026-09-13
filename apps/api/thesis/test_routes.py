@@ -479,3 +479,72 @@ def test_delete_line_and_clear_all_are_owner_gated_and_preserve_answered(monkeyp
     r = c.delete("/thesis/t1/inquiries", headers={"Authorization": "Bearer other"})
     assert r.status_code in (401, 403, 404)
     assert calls["clear"] == ["t1"]      # unchanged — the reader's call did not mutate
+
+
+def test_experts_surfaces_who_and_what_to_ask_for_call_only_aspects(monkeypatch):
+    """Phase 0 Expert mode: /experts returns the call_only aspects with the role to ask, this thesis's
+    questions for that aspect, and any candidate named in already-gathered evidence."""
+    from types import SimpleNamespace
+    from eigen_vertical_tech.decision import TECH_DECISION_PROFILE
+
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {"id": "user-1"} if token == "Bearer owner" else {}
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token="", trusted=False):
+        if thesis_id != "t1" or owner_id != "user-1":
+            return None
+        d = _thesis(owner=True)
+        d["subject"] = {"segment": "mid-market 3PLs"}
+        # an operator named in an eng_blog artifact — people.from_evidence should surface them
+        d["claims"] = [{"rung": "switching_feasible", "evidence": [
+            {"source_key": "eng_blog", "quote": "We migrated off handheld scanners over six months.",
+             "title": "Our warehouse cutover", "source_url": "https://ops.example/cutover",
+             "register": "stated", "facets": {"author": "Dana Ops"}}]}]
+        return d
+    async def fake_list_questions(_pool, tid, inq=""):
+        return [{"id": "q1", "aspect_key": "switching_feasible", "kind": "seek_support",
+                 "text": "How long did your last tooling cutover actually take?", "target": "t",
+                 "polarity": 1, "target_status": "", "inquiry_key": "timing", "inquiry_name": "Timing",
+                 "inquiry_framing": "", "inquiry_order": 0, "run_id": ""}]
+
+    monkeypatch.setattr(routes.tstore, "get", fake_get)
+    monkeypatch.setattr(routes.tstore, "list_questions", fake_list_questions)
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=None,
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=TECH_DECISION_PROFILE,
+                                 web_domains=(), retrieval_sources={}),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+    r = c.get("/thesis/t1/experts", headers={"Authorization": "Bearer owner"})
+    assert r.status_code == 200
+    aspects = {a["key"]: a for a in r.json()["aspects"]}
+    # only call_only aspects appear
+    assert set(aspects) == {"switching_feasible", "willingness_to_pay"}
+    sf = aspects["switching_feasible"]
+    assert any(role["role"] == "operator" for role in sf["roles"])          # ASK_WHO role surfaced
+    assert "How long did your last tooling cutover actually take?" in sf["questions"]   # what to ask
+    assert any(cand["name"] == "Dana Ops" and cand["role"] == "operator" for cand in sf["candidates"])
+    # willingness_to_pay is a buyer rung with no named buyer → honest guidance, not a fake contact
+    wtp = aspects["willingness_to_pay"]
+    assert wtp["candidates"] == [] and "economic buyer" in wtp["guidance"]
+
+
+def test_experts_is_empty_without_a_profile(monkeypatch):
+    from types import SimpleNamespace
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {"id": "user-1"} if token == "Bearer owner" else {}
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token="", trusted=False):
+        return _thesis(owner=True) if thesis_id == "t1" and owner_id == "user-1" else None
+    monkeypatch.setattr(routes.tstore, "get", fake_get)
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=None,
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=None),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+    r = c.get("/thesis/t1/experts", headers={"Authorization": "Bearer owner"})
+    assert r.status_code == 200 and r.json()["aspects"] == []

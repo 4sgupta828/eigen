@@ -686,6 +686,33 @@
   .th-cites-sum:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:6px;}
   .th-cites-wrap[open] .th-cites{margin-top:.55rem;}
   .th-cites{list-style:none;margin:0;padding:0;display:grid;gap:.55rem;}
+  /* Phase 0 Expert mode: "Who to ask" — the aspects the record can't settle, who to ask, what to ask */
+  .th-experts-wrap{margin:1.6rem 0 .5rem;border:1px solid var(--hair);border-radius:14px;
+    background:var(--panel);padding:1rem 1.05rem 1.1rem;}
+  .th-experts-h{font:600 1.05rem/1.2 var(--serif);color:var(--ink);margin:0 0 .2rem;}
+  .th-experts-intro{margin:0 0 .8rem;font-size:.84rem;line-height:1.55;color:var(--dim);}
+  .th-ea{border-top:1px solid var(--hair);padding:.8rem 0 .2rem;}
+  .th-ea:first-of-type{border-top:0;}
+  .th-ea-head{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.3rem;}
+  .th-ea-head b{font-size:.92rem;font-weight:600;color:var(--ink);line-height:1.4;}
+  .th-ea-role{font-family:var(--mono);font-size:.66rem;letter-spacing:.03em;color:var(--gold);
+    text-transform:uppercase;margin:.2rem 0 .25rem;}
+  .th-ea-qs{margin:.15rem 0 .55rem;padding-left:1.15rem;display:grid;gap:.25rem;}
+  .th-ea-qs li{font-size:.86rem;line-height:1.5;color:var(--ink);}
+  .th-ea-qs li::marker{color:var(--gold);}
+  .th-ea-cand{display:flex;flex-wrap:wrap;gap:.4rem .6rem;align-items:baseline;padding:.4rem 0;
+    border-top:1px dashed var(--hair-soft);}
+  .th-ea-name{font-size:.86rem;font-weight:600;color:var(--ink);}
+  .th-ea-why{font-size:.8rem;color:var(--dim);line-height:1.45;flex:1 1 14rem;min-width:0;}
+  .th-ea-why a,.th-ea-find{color:var(--gold);text-decoration:none;}
+  .th-ea-why a:hover,.th-ea-find:hover{text-decoration:underline;}
+  .th-ea-find{font-family:var(--mono);font-size:.7rem;white-space:nowrap;}
+  .th-ea-guide{font-size:.83rem;line-height:1.55;color:var(--dim);margin:.3rem 0 .5rem;
+    border-left:2px solid var(--hair);padding-left:.6rem;}
+  .th-ea-copy{font-family:var(--mono);font-size:.68rem;color:var(--dim);background:transparent;cursor:pointer;
+    border:1px solid var(--hair);border-radius:8px;padding:.4rem .7rem;margin-top:.5rem;min-height:36px;}
+  .th-ea-copy:hover{border-color:var(--gold);color:var(--gold);}
+  .th-ea-copy:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
   .th-cite{display:flex;gap:.55rem;align-items:flex-start;}
   .th-cite-n{flex:none;width:1.3rem;height:1.3rem;border-radius:50%;background:var(--panel);border:1px solid var(--hair);
     font:600 .66rem/1.3rem var(--mono);text-align:center;color:var(--dim);}
@@ -11905,8 +11932,9 @@ async function openShare(token){
       ? '<button type="button" id="th-share">Copy read-only link</button>' : "";
     const sh = document.getElementById("th-share");
     if(sh) sh.addEventListener("click", () => shareThesis(sh));
-    takes().innerHTML = pretestHtml(d) + '<div id="th-loi"></div>';
+    takes().innerHTML = pretestHtml(d) + '<div id="th-loi"></div><div id="th-experts"></div>';
     loadInquiries();
+    loadExperts();
   }
 
   // The proposed thesis, editable, with "Use this thesis" (the only decomposition) + any clarifiers.
@@ -12051,6 +12079,62 @@ async function openShare(token){
       STATE.inquiries = d.inquiries || [];
       renderInquiries();
     }catch(e){ host.innerHTML = '<p class="th-note">' + esc2(e.message || String(e)) + "</p>"; }
+  }
+
+  // Phase 0 Expert mode — "Who to ask / what to ask". For the aspects no document can settle
+  // (call_only), surface the role to ask, the questions to put to them, and anyone already named in
+  // the evidence. No provider yet: pure decision support from what the thesis holds.
+  function segmentOf(d){ return Object.values((d && d.subject) || {}).map(String).join(" ").trim(); }
+
+  async function loadExperts(){
+    const host = document.getElementById("th-experts"); if(!host) return;
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/experts", {headers: hdrs()});
+      if(!r.ok){ host.innerHTML = ""; return; }
+      STATE.experts = (await r.json()).aspects || [];
+      renderExperts();
+    }catch(e){ host.innerHTML = ""; }   // decision support is additive; never block the thesis view
+  }
+
+  function outreachText(aspect, d){
+    const qs = (aspect.questions || []).slice(0, 3).map(q => "  • " + q).join("\n");
+    return "Hi — I'm doing diligence on " + (segmentOf(d) || "this space")
+      + " and would value 20 minutes with someone close to it. I'm trying to understand:\n\n"
+      + qs + "\n\nWould you be open to a short call? Happy to work around your schedule.";
+  }
+
+  function renderExperts(){
+    const host = document.getElementById("th-experts"); if(!host) return;
+    const aspects = (STATE.experts || []).filter(a => (a.roles || []).length);
+    if(!aspects.length){ host.innerHTML = ""; return; }
+    const d = STATE.doc, seg = segmentOf(d);
+    const cardFor = a => {
+      const roleLabels = (a.roles || []).map(r => esc2(r.label)).join(" or ");
+      const qs = '<ul class="th-ea-qs">' + (a.questions || []).map(q => "<li>" + esc2(q) + "</li>").join("") + "</ul>";
+      const cands = (a.candidates || []).map(c => {
+        const art = (c.artifacts || [])[0] || {};
+        const li = '<a href="' + esc2(linkedinSearchUrl(c.name, seg, c.role)) + '" target="_blank" rel="noopener" class="th-ea-find">find on LinkedIn ↗</a>';
+        const src = art.url ? ' · <a href="' + esc2(art.url) + '" target="_blank" rel="noopener">' + esc2(art.title || "source") + " ↗</a>" : "";
+        return '<div class="th-ea-cand"><span class="th-ea-name">' + esc2(c.name) + "</span>"
+          + '<span class="th-ea-why">' + esc2(c.why || "") + src + "</span>" + li + "</div>";
+      }).join("");
+      const body = cands || ('<p class="th-ea-guide">' + esc2(a.guidance || "")
+        + ' <a href="' + esc2(linkedinSearchUrl("", seg, roleLabels)) + '" target="_blank" rel="noopener" class="th-ea-find">search LinkedIn ↗</a></p>');
+      return '<div class="th-ea"><div class="th-ea-head"><b>' + esc2(a.prompt) + "</b>"
+        + '<span class="th-aspect-v" data-v="' + esc2(a.verdict || "open") + '">' + esc2(verdictWord(a.verdict || "open")) + "</span></div>"
+        + '<div class="th-ea-role">Ask ' + roleLabels + " — what to ask:</div>" + qs + body
+        + '<button type="button" class="th-ea-copy" data-key="' + esc2(a.key) + '">Copy outreach message</button></div>';
+    };
+    host.innerHTML = '<section class="th-experts-wrap"><div class="th-experts-h">Who to ask</div>'
+      + '<p class="th-experts-intro">These aspects can’t be settled from the record — they need a person. '
+      + "Here’s who to ask, what to ask, and anyone already named in the evidence.</p>"
+      + aspects.map(cardFor).join("") + "</section>";
+    host.querySelectorAll(".th-ea-copy").forEach(b => b.addEventListener("click", () => {
+      const a = (STATE.experts || []).find(x => x.key === b.dataset.key); if(!a) return;
+      const txt = outreachText(a, STATE.doc);
+      try{ navigator.clipboard.writeText(txt); b.textContent = "Copied ✓"; setTimeout(() => { b.textContent = "Copy outreach message"; }, 1600); }
+      catch(e){ window.prompt("Copy this outreach message:", txt); }
+    }));
   }
 
   function renderInquiries(){
@@ -12365,6 +12449,7 @@ async function openShare(token){
           try{ const ir2 = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries", {headers: hdrs()});
                if(ir2.ok) STATE.inquiries = (await ir2.json()).inquiries || STATE.inquiries; }catch(e){ }
           renderInquiries();
+          loadExperts();   // new evidence may name new people to ask — refresh the "Who to ask" panel
           return;
         }
         if(s.state === "failed" || s.state === "none" || s.stage === "stalled"){
@@ -12428,7 +12513,7 @@ async function openShare(token){
   window.TH = {submit, enter, reset, open, startTest, render, confirmThesis,
     __test:{ownerHeaders, thesisUrl, parseThesisHash, canMutate, decisionHtml, linkEvidence,
             newThesisHash, fmtBody, turnHtml, introHtml, phaseOf, genesisHtml, pretestHtml,
-            contextHtml, inqHtml, qnHtml, LENS,
+            contextHtml, inqHtml, qnHtml, LENS, outreachText, segmentOf,
             _setState: (patch) => Object.assign(STATE, patch),
             claimHtml: (c, focused, owner, answers) => { STATE.answers = answers || {}; return claimHtml(c, focused, owner); }}};
 })();

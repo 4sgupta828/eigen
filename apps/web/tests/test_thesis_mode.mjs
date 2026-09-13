@@ -321,3 +321,25 @@ test("an explicit run/re-run sends a fresh idempotency key so it is not deduped 
   assert.match(SRC, /idempotency_key:\s*freshRunKey\("inq-" \+ key\)/);    // line of inquiry
   assert.match(SRC, /function freshRunKey\(/);
 });
+
+test("Phase 0 Expert mode: the ready/tested view surfaces a 'Who to ask' panel", () => {
+  // the render branch injects the container and loads it; the endpoint + copy handler are wired
+  assert.match(SRC, /id="th-loi"><\/div><div id="th-experts"><\/div>/);
+  assert.match(SRC, /loadExperts\(\);/);
+  assert.match(SRC, /\/experts"/);
+  assert.match(SRC, /Who to ask/);
+  assert.match(SRC, /class="th-ea-copy"/);            // copyable outreach
+});
+
+test("outreach message is built from the aspect's questions and the thesis segment", () => {
+  const {api} = loadThesisModule();
+  const d = {subject: {segment: "mid-market 3PLs"}};
+  const aspect = {key: "willingness_to_pay", questions: [
+    "Would you allocate budget for continuous inventory tracking?",
+    "What do you pay today for cycle counting?"]};
+  const txt = api.outreachText(aspect, d);
+  assert.match(txt, /mid-market 3PLs/);               // the segment
+  assert.match(txt, /Would you allocate budget/);      // the questions become the ask
+  assert.match(txt, /open to a short call/);           // it's a call request
+  assert.equal(api.segmentOf(d), "mid-market 3PLs");
+});

@@ -28,7 +28,7 @@ from . import genesis as gen
 from . import people as ppl
 from . import store as tstore
 from .schema import (
-    ASK_WHO, CALL_ONLY, OPEN, QUESTION, ROLE_LABEL, SET_ASIDE, SETTLEABLE, STATED, UNSETTLEABLE,
+    ASK_WHO, BUYER, CALL_ONLY, OPEN, QUESTION, ROLE_LABEL, SET_ASIDE, SETTLEABLE, STATED, UNSETTLEABLE,
     VERDICT_LABEL, labels,
 )
 
@@ -714,10 +714,49 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 by_dim.setdefault(q["aspect_key"], []).append(q)
             aspects = [{"key": dk, "prompt": getattr(_aspect_by_key(profile, dk), "prompt", dk),
                         "critical": bool(getattr(_aspect_by_key(profile, dk), "critical", False)),
+                        "settleable": getattr(_aspect_by_key(profile, dk), "settleable", ""),
                         "verdict": _aspect_verdict(profile, g)} for dk, g in by_dim.items()]
             out.append({"key": key, "name": iqs[0].get("inquiry_name") or "Line of inquiry",
                         "framing": iqs[0].get("inquiry_framing") or "", "aspects": aspects, "questions": iqs})
         return {"status": "ok", "inquiries": out}
+
+    @r.get("/thesis/{thesis_id}/experts")
+    async def tl_experts(thesis_id: str, authorization: str = Header(default=""),
+                         x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Phase 0 of Expert mode — 'who to ask / what to ask'. For the aspects the RECORD cannot settle
+        (call_only), surface: the role to ask (ASK_WHO), the questions to put to them (this thesis's own
+        generated questions for that aspect), and any candidate named in evidence we already gathered
+        (people.from_evidence — strong-key identity only, never a name merge). No new provider: this is
+        decision support built from what the thesis already holds."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner)
+        profile = _profile()
+        if profile is None:
+            return {"status": "ok", "aspects": []}
+        # Candidates come from evidence already retrieved for this thesis (each carries its artifact).
+        all_ev = [e for c in (d.get("claims") or []) for e in (c.get("evidence") or [])]
+        facets_by_quote = {(e.get("quote") or "")[:120]: (e.get("facets") or {}) for e in all_ev}
+        candidates = ppl.from_evidence(all_ev, facets_by_quote)
+        qs = await tstore.list_questions(pool, thesis_id)
+        q_by_aspect: dict[str, list] = {}
+        for q in qs:
+            q_by_aspect.setdefault(q["aspect_key"], []).append(q)
+        segment = " ".join(str(v) for v in (d.get("subject") or {}).values())
+        out = []
+        for a in profile.aspects():
+            if getattr(a, "settleable", "") != CALL_ONLY:
+                continue                              # primary: only the rungs no document can settle
+            group = q_by_aspect.get(a.key, [])
+            verdict = _aspect_verdict(profile, group) if group else "open"
+            roles = list(ASK_WHO.get(a.key, ()))
+            cands = [c for c in candidates if c.get("role") in roles]
+            out.append({
+                "key": a.key, "prompt": a.prompt, "verdict": verdict,
+                "roles": [{"role": r, "label": ROLE_LABEL.get(r, r)} for r in roles],
+                "questions": [q["text"] for q in group] or [a.prompt],
+                "candidates": cands,
+                "guidance": ppl.buyer_guidance(a.prompt, segment) if (BUYER in roles and not cands) else "",
+            })
+        return {"status": "ok", "aspects": out}
 
     @r.get("/thesis/{thesis_id}/inquiry/status")
     async def tl_inquiry_status(thesis_id: str, run: str = "",
