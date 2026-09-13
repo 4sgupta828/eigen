@@ -32,4 +32,6 @@ def sanitize_answer(items: list[dict], allowed_ids) -> str:
             continue                      # one bad citation drops the whole sentence
         markers = "".join(f"[[e:{i}]]" for i in dict.fromkeys(ids))   # de-duped, order-stable
         kept.append(f"{text} {markers}".strip())
-    return " ".join(kept) if kept else NOT_ESTABLISHED
+    # Each grounded point on its own line (blank-line separated) so the reader gets distinct,
+    # readable points rather than one wall of prose. The client renders each as its own paragraph.
+    return "\n\n".join(kept) if kept else NOT_ESTABLISHED

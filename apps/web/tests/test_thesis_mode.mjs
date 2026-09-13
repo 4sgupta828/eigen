@@ -218,16 +218,19 @@ test("a line of inquiry renders its questions with typed lens glyphs", () => {
   assert.match(html, /data-run="buyer"/);                         // an unrun inquiry offers to run
 });
 
-test("an answered question shows its grounded answer with resolvable citations", () => {
+test("an answered question shows a grounded answer with footnotes and an evidence list", () => {
   const {api} = loadThesisModule();
   api._setState({doc: {is_owner: true, claims: [{rung: "buyer_nameable",
-    evidence: [{id: "ev1", quote: "Acme named as buyer"}]}]}});
+    evidence: [{id: "ev1", quote: "Acme named as buyer in a case study", register: "stated",
+                source_url: "https://x.test"}]}]}});
   const q = {id: "q1", aspect_key: "buyer_nameable", kind: "seek_support",
     text: "Is a buyer named?", target: "t", polarity: 1, target_status: "target_supported",
-    answer: "A case study names the buyer. [[e:ev1]]"};
-  const html = api.qnHtml(q, false);
+    evidence_ids: ["ev1"], answer: "A case study names the buyer. [[e:ev1]]"};
+  const html = api.qnHtml(q, false, {});
   assert.match(html, /A case study names the buyer\./);
-  assert.match(html, /data-evidence="ev1"/);                      // citation resolves to the evidence
+  assert.match(html, /<sup class="ref" data-n="1"/);              // inline footnote marker
+  assert.match(html, /id="f1"/);                                  // numbered evidence item it points to
+  assert.match(html, /Acme named as buyer in a case study/);     // the quote is shown, always visible
 });
 
 test("the four lenses are named for a 360-degree read, not decoration", () => {
@@ -252,9 +255,8 @@ test("during a run, the active question shows a spinner and the rest are queued"
   assert.match(html, /Researching 2 of 3 — .*The one being worked\?/);   // names the active question
   assert.match(html, /researching this question…/);                       // spinner line on the active one
   assert.match(html, /queued/);                                           // the later question waits
-  // the answered question is compressed (a details with a "view answer" toggle), not shown expanded
-  assert.match(html, /class="th-qn-ans"/);
-  assert.match(html, /class="th-qn-toggle"/);   // the view-answer/hide label is CSS-driven
+  // the answered question shows its grounded answer inline (no double collapse)
+  assert.match(html, /class="th-answer-body"/);
 });
 
 test("each question can be run on its own — Run when unrun, Re-run when answered", () => {

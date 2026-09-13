@@ -581,12 +581,39 @@
   .th-aspect:first-child{border-top:0;}
   .th-aspect-h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.15rem;}
   .th-aspect-h b{font-size:.92rem;font-weight:600;line-height:1.4;color:var(--ink);}
+  .th-aspect-v{font-family:var(--mono);font-size:.62rem;letter-spacing:.04em;color:var(--dim);}
+  .th-aspect-v[data-v="supported"]{color:var(--verified,#2f7d5b);}
+  .th-aspect-v[data-v="contradicted"]{color:#b4544a;}
+  .th-aspect-v[data-v="under_tested"]{color:#8a6d3b;}
   /* a typed Socratic question, boxed as its own card */
-  .th-qn{margin:.55rem 0;padding:.6rem .7rem;border:1px solid var(--hair);border-radius:10px;
+  .th-qn{margin:.55rem 0;padding:.65rem .8rem;border:1px solid var(--hair);border-radius:10px;
     background:var(--panel2);}
   .th-qn.th-qn-active{border-color:var(--gold);box-shadow:0 0 0 1px color-mix(in srgb,var(--gold) 35%,transparent);}
-  .th-qn-q{display:flex;gap:.45rem;align-items:flex-start;font-size:.88rem;line-height:1.5;color:var(--ink);}
+  .th-qn-q{display:flex;gap:.5rem;align-items:flex-start;font-size:.9rem;line-height:1.5;color:var(--ink);font-weight:500;}
   .th-qn-q .th-qn-text{flex:1 1 auto;min-width:0;}
+  .th-qn-lens{font-family:var(--mono);font-size:.6rem;letter-spacing:.04em;color:var(--dim);margin:.2rem 0 0;text-transform:lowercase;}
+  /* the grounded answer: readable paragraphs + inline footnotes + a numbered evidence list */
+  .th-answer-body{margin:.55rem 0 0;font-size:.86rem;line-height:1.65;color:var(--ink);}
+  .th-answer-body p{margin:.45rem 0;}
+  .th-answer-body p:first-child{margin-top:0;}
+  .th-answer-body.none{color:var(--dim);font-style:italic;}
+  .th-answer-body sup.ref{font-size:.62em;line-height:0;color:var(--gold);cursor:pointer;font-weight:600;
+    padding:0 .1em;vertical-align:super;text-decoration:none;}
+  .th-answer-body sup.ref:hover{text-decoration:underline;}
+  .th-cites-h{font:600 .58rem/1.2 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+    margin:.75rem 0 .35rem;padding-top:.5rem;border-top:1px solid var(--hair);}
+  .th-cites{list-style:none;margin:0;padding:0;display:grid;gap:.55rem;}
+  .th-cite{display:flex;gap:.55rem;align-items:flex-start;}
+  .th-cite-n{flex:none;width:1.3rem;height:1.3rem;border-radius:50%;background:var(--panel);border:1px solid var(--hair);
+    font:600 .66rem/1.3rem var(--mono);text-align:center;color:var(--dim);}
+  .th-cite-body{min-width:0;flex:1 1 auto;}
+  .th-cite .ctext{font-family:var(--mono);font-size:.64rem;color:var(--dim);letter-spacing:.02em;}
+  .th-cite .cquote{margin:.2rem 0;font-size:.8rem;line-height:1.5;color:var(--ink);font-style:italic;
+    border-left:2px solid var(--hair);padding-left:.55rem;overflow-wrap:anywhere;}
+  .th-cite-src a.srclink,.th-cite-src .src{font-family:var(--mono);font-size:.68rem;color:var(--dim);text-decoration:none;
+    border:1px solid var(--hair);border-radius:8px;padding:.1rem .45rem;}
+  .th-cite-src a.srclink:hover{color:var(--gold);border-color:var(--gold);}
+  .th-flash .cquote,.th-cite.th-flash{background:color-mix(in srgb,var(--gold) 12%,transparent);}
   .th-qn-play{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--gold);
     background:transparent;color:var(--gold);cursor:pointer;font-size:.8rem;line-height:1;display:grid;
     place-items:center;padding:0;}
@@ -11935,29 +11962,23 @@ async function openShare(token){
       const g = document.getElementById("th-gen"); if(g) g.addEventListener("click", generateInquiries);
       return;
     }
-    host.innerHTML = '<div class="th-inqs">' + inqs.map(inqHtml).join("") + "</div>";
+    // Preserve scroll + which inquiries are open across the rebuild, so a run/poll re-render never
+    // snaps the page or collapses a card the reader opened.
+    const openKeys = new Set([...host.querySelectorAll(".th-inq[open]")].map(d => d.dataset.key));
+    const y = window.scrollY;
+    host.innerHTML = '<div class="th-inqs">' + inqs.map(i => inqHtml(i, openKeys)).join("") + "</div>";
     wireInquiries();
+    window.scrollTo(0, y);
   }
 
-  function pipRow(aspects){
-    return (aspects || []).map(a => '<span class="th-pip" data-v="' + esc2(a.verdict)
-      + '" title="' + esc2((a.prompt || a.key) + " — " + (VLABEL[a.verdict] || a.verdict)) + '"></span>').join("");
-  }
+  function verdictWord(v){ return (v || "open").replace(/_/g, " "); }
 
-  const FOUND = {
-    target_supported:   {label: "the record confirms this", cls: "ok"},
-    target_contradicted:{label: "the record refutes this", cls: "no"},
-    target_untested:    {label: "nothing decisive found", cls: "none"},
-  };
-
-  function inqHtml(inq){
+  function inqHtml(inq, openKeys){
     const owner = canMutate(STATE.doc);
     const qs = inq.questions || [];
     const answered = qs.filter(q => q.target_status).length;
     const singleQid = (STATE.inqRun && STATE.inqRun.qid) || "";
     const running = !!(STATE.inqRun && STATE.inqRun.key === inq.key);
-    // The question being worked: for a single-question run it's that one; for a whole-inquiry run it's
-    // the first still unanswered (they run in order).
     const active = running ? (singleQid ? qs.find(q => q.id === singleQid)
                                         : qs.find(q => !q.target_status)) || null : null;
     const ctx = {running: running, activeQid: active ? active.id : ""};
@@ -11965,9 +11986,9 @@ async function openShare(token){
     qs.forEach(q => { (byAspect[q.aspect_key] = byAspect[q.aspect_key] || []).push(q); });
     const aspects = (inq.aspects || []).map(a => {
       const aqs = byAspect[a.key] || [];
-      return '<div class="th-aspect"><div class="th-aspect-h"><b>' + esc2(a.prompt || a.key) + "</b>"
-        + (a.critical ? '<span class="th-v">critical</span>' : "")
-        + '<span class="th-v" data-v="' + esc2(a.verdict) + '">' + esc2(a.verdict.replace(/_/g, " ")) + "</span></div>"
+      const vd = a.verdict && a.verdict !== "open"
+        ? '<span class="th-aspect-v" data-v="' + esc2(a.verdict) + '">' + esc2(verdictWord(a.verdict)) + "</span>" : "";
+      return '<div class="th-aspect"><div class="th-aspect-h"><b>' + esc2(a.prompt || a.key) + "</b>" + vd + "</div>"
         + aqs.map(q => qnHtml(q, owner, ctx)).join("")
         + (owner && !running ? '<button type="button" class="th-inq-add" data-add="' + esc2(inq.key) + "|" + esc2(a.key)
             + '">+ add a question</button>' : "")
@@ -11981,53 +12002,65 @@ async function openShare(token){
         + (active ? "&ldquo;" + esc2(active.text) + "&rdquo;" : "writing up") + "</span></div>"
       : '<div class="th-run-row"><button type="button" class="th-run" data-run="' + esc2(inq.key) + '">'
         + (answered ? "Re-run this line of inquiry" : "Run this line of inquiry")
-        + '</button><span class="th-run-note">' + qs.length + " question" + (qs.length === 1 ? "" : "s")
-        + (answered ? " · " + answered + " answered" : " · priced before it starts") + "</span></div>";
-    return '<details class="th-inq"' + (running || answered ? " open" : "") + '><summary class="th-inq-head">'
-      + '<div class="th-inq-titlewrap"><h3>' + esc2(inq.name) + "</h3>"
+        + '</button><span class="th-run-note">' + answered + " of " + qs.length + " answered</span></div>";
+    const isOpen = running || (openKeys && openKeys.has(inq.key)) || (!openKeys && answered);
+    return '<details class="th-inq" data-key="' + esc2(inq.key) + '"' + (isOpen ? " open" : "")
+      + '><summary class="th-inq-head"><div class="th-inq-titlewrap"><h3>' + esc2(inq.name) + "</h3>"
       + '<p class="th-inq-framing">' + esc2(inq.framing) + "</p></div>"
-      + '<div class="th-inq-side"><span class="th-inq-pips">' + pipRow(inq.aspects) + "</span>"
-      + '<span class="th-inq-open">' + answered + "/" + qs.length + "</span></div></summary>"
+      + '<span class="th-inq-open">' + answered + "/" + qs.length + "</span></summary>"
       + '<div class="th-inq-body">' + runRow + aspects + "</div></details>";
+  }
+
+  // A grounded answer, factra-style: the prose in readable paragraphs with inline [n] footnotes that
+  // hover to their source, followed by a standing numbered Evidence list. The [n] markers reuse the
+  // shell's citation hover (.ref[data-n] → #f{n}); each question card holds its OWN #f{n} list.
+  function citeLi(e, n){
+    const meta = [e.register, e.evidence_kind, e.source_subject, e.period || e.as_of].filter(Boolean).join(" · ");
+    const src = e.source_url
+      ? '<a class="srclink" href="' + esc2(e.source_url) + '" target="_blank" rel="noopener">'
+        + esc2(e.source_key || "source") + " ↗</a>"
+      : '<span class="src">' + esc2(e.source_key || (e.said_by ? "call" : "source")) + "</span>";
+    return '<li id="f' + n + '" class="th-cite"><span class="th-cite-n">' + n + "</span>"
+      + '<div class="th-cite-body"><div class="ctext">'
+      + '<span class="srcbadge" title="' + esc2(e.register) + '">' + (REG[e.register] || "▢") + "</span> "
+      + esc2(meta || "source") + "</div>"
+      + '<blockquote class="cquote">' + esc2((e.quote || "").slice(0, 400)) + "</blockquote>"
+      + '<div class="th-cite-src">' + src + "</div></div></li>";
+  }
+
+  function groundedAnswer(q){
+    const ev = evidenceFor(q);
+    const nById = {}; ev.forEach((e, i) => { nById[e.id] = i + 1; });
+    const prose = String(q.answer || "").trim();
+    if(!prose || prose === "Not established in the record.")
+      return '<div class="th-answer-body none">Not established in the record.</div>';
+    const paras = prose.split(/\n{2,}/).map(p => "<p>" + esc2(p).replace(
+      /\[\[e:([A-Za-z0-9_-]{1,80})\]\]/g, (_m, id) => {
+        const n = nById[id];
+        return n ? '<sup class="ref" data-n="' + n + '" tabindex="0" role="button" aria-label="source ' + n + '">' + n + "</sup>" : "";
+      }) + "</p>").join("");
+    const cites = ev.length ? '<div class="th-cites-h">Evidence</div><ol class="th-cites">'
+      + ev.map((e, i) => citeLi(e, i + 1)).join("") + "</ol>" : "";
+    return '<div class="th-answer-body">' + paras + "</div>" + cites;
   }
 
   function qnHtml(q, owner, ctx){
     ctx = ctx || {};
-    const lens = LENS[q.kind] || {glyph: "•", label: q.kind};
+    const lens = LENS[q.kind] || {label: q.kind};
     const isActive = ctx.running && q.id === ctx.activeQid;
-    const lensTag = '<span class="th-lens" data-k="' + esc2(q.kind) + '" title="' + esc2(lens.label) + '">'
-      + lens.glyph + " " + esc2(lens.label) + "</span>";
-    // The play button lives on the question line — the primary way to run this one question.
     const canRun = owner && !ctx.running;
-    const play = !canRun ? "" : '<button type="button" class="th-qn-play" data-qrun="' + esc2(q.id) + '" title="'
-      + (q.target_status ? "Re-run this question" : "Run this question") + '" aria-label="'
-      + (q.target_status ? "Re-run this question" : "Run this question") + '">'
-      + (q.target_status ? "↻" : "▶") + "</button>";
-    const qline = '<div class="th-qn-q">' + lensTag + '<span class="th-qn-text">' + esc2(q.text) + "</span>"
-      + play + "</div>";
+    const run = !canRun ? "" : '<button type="button" class="th-qn-play" data-qrun="' + esc2(q.id)
+      + '" title="' + (q.target_status ? "Re-run" : "Run") + ' this question" aria-label="'
+      + (q.target_status ? "Re-run" : "Run") + ' this question">' + (q.target_status ? "↻" : "▶") + "</button>";
+    const qline = '<div class="th-qn-q"><span class="th-qn-text">' + esc2(q.text) + "</span>" + run + "</div>"
+      + '<div class="th-qn-lens">' + esc2(lens.label || "") + "</div>";
     let body = "";
     if(isActive){
       body = '<div class="th-qn-work"><span class="su-spin"></span> researching this question…</div>';
     }else if(ctx.running && !q.target_status){
       body = '<div class="th-qn-wait">queued</div>';
     }else if(q.target_status){
-      // Answered: compressed by default, the grounded answer + citations on demand.
-      // "untested" with a cited answer means the record has relevant material but nothing DECISIVE —
-      // say that, rather than "nothing found", which a substantive answer would contradict.
-      let f = FOUND[q.target_status] || FOUND.target_untested;
-      if(q.target_status === "target_untested" && q.answer)
-        f = {label: "found, but not decisive", cls: "none"};
-      const qev = evidenceFor(q);
-      const evBlock = qev.length
-        ? '<div class="th-qn-ev"><div class="th-qn-ev-h">Evidence</div>'
-          + qev.map(e => evHtml(e, true)).join("") + "</div>" : "";
-      const inner = q.answer
-        ? '<div class="th-qn-a">' + linkEvidence(q.answer, allEvidence()) + "</div>" + evBlock
-        : '<div class="th-qn-a none">Not established in the record.</div>' + evBlock;
-      body = '<details class="th-qn-ans"><summary><span class="th-found" data-f="' + f.cls + '">'
-        + esc2(f.label) + '</span>' + (qev.length ? '<span class="th-qn-evn">' + qev.length
-            + " source" + (qev.length === 1 ? "" : "s") + "</span>" : "")
-        + '<span class="th-qn-toggle"></span></summary>' + inner + "</details>";
+      body = groundedAnswer(q);
     }else if(canRun){
       body = '<div class="th-qn-tools"><button type="button" class="th-qn-edit" data-edit="' + esc2(q.id)
         + '">edit</button><button type="button" class="th-qn-edit" data-rm="' + esc2(q.id) + '">remove</button></div>';
@@ -12051,14 +12084,19 @@ async function openShare(token){
     host.querySelectorAll("[data-add]").forEach(b => b.addEventListener("click", () => {
       const [ik, ak] = b.dataset.add.split("|"); addQuestion(ik, ak);
     }));
-    // citations in answers scroll to the evidence row in the ledger
-    host.querySelectorAll("[data-evidence]").forEach(a => a.addEventListener("click", e => {
-      e.preventDefault();
-      const el = document.getElementById("evidence-" + a.dataset.evidence); if(!el) return;
-      const ledger = document.getElementById("th-ledger"); if(ledger) ledger.open = true;
-      el.scrollIntoView({block: "nearest", behavior: "smooth"});
-      el.classList.add("th-flash"); setTimeout(() => el.classList.remove("th-flash"), 1200);
-    }));
+    // A footnote [n] scrolls to its evidence item within the SAME question card (desktop hover is
+    // wired globally on .ref[data-n]); on tap it jumps to the source and flashes it.
+    host.querySelectorAll("sup.ref[data-n]").forEach(ref => {
+      const jump = e => {
+        e.preventDefault();
+        const card = ref.closest(".th-qn") || host;
+        const el = card.querySelector("#f" + ref.dataset.n); if(!el) return;
+        el.scrollIntoView({block: "nearest", behavior: "smooth"});
+        el.classList.add("th-flash"); setTimeout(() => el.classList.remove("th-flash"), 1200);
+      };
+      ref.addEventListener("click", jump);
+      ref.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " ") jump(e); });
+    });
   }
 
   async function generateInquiries(){
