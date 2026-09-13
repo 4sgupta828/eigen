@@ -396,6 +396,18 @@
   .ex-open{font-family:var(--mono);font-size:.72rem;color:var(--gold);text-decoration:none;white-space:nowrap;}
   .ex-open:hover{text-decoration:underline;}
   .ex-signal{font-size:.72rem;color:var(--dim);margin:.2rem 0 .8rem;font-style:italic;}
+  .ex-filters{border:1px solid var(--hair);border-radius:14px;background:var(--panel);padding:.8rem .9rem;margin:.2rem 0 1rem;}
+  .ex-filters-h{font:600 .62rem/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 .55rem;}
+  .ex-filters-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;}
+  .ex-fx{font-size:.84rem;padding:.5rem .6rem;border:1px solid var(--hair);border-radius:8px;background:var(--panel2);color:var(--ink);min-width:0;}
+  .ex-fx:focus{outline:none;border-color:var(--gold);background:var(--panel);}
+  .ex-search-btn{margin-top:.6rem;font-family:var(--mono);font-size:.72rem;color:var(--on-accent);background:var(--gold);
+    cursor:pointer;border:1px solid var(--gold);border-radius:8px;padding:.5rem .9rem;min-height:38px;}
+  .ex-search-btn:hover{background:var(--gold-strong);}
+  .ex-via{font-family:var(--mono);font-size:.58rem;letter-spacing:.04em;text-transform:uppercase;color:var(--dim);
+    border:1px solid var(--hair);border-radius:6px;padding:.08rem .3rem;}
+  .ex-via[data-p="pdl"]{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 40%,var(--hair));}
+  @media (max-width:560px){ .ex-filters-grid{grid-template-columns:1fr;} }
   /* Thesis Explorations: a persistent left rail of theses + the selected one on the right. Widen the
      page in this mode so both panels breathe (reverts to the standard width on a phone). */
   body[data-mode="thesis"] .wrap{max-width:62rem;}
@@ -12691,51 +12703,82 @@ async function openShare(token){
   const noteEl = () => document.getElementById("ex-note");
   let BUSY = false;
 
-  function introHtml(){
+  const FX = [
+    ["title", "Title — e.g. VP Operations"], ["seniority", "Seniority — VP / Director / Manager / CXO"],
+    ["company", "Current company"], ["past_company", "Past company (ever worked at)"],
+    ["skills", "Skills — e.g. warehouse, WMS"], ["location", "Location — e.g. Texas"],
+  ];
+
+  function shellHtml(){
     return '<div class="ex-intro"><h2>Find an expert</h2>'
-      + "<p>Describe who could speak to a question first-hand — by role, expertise, or the kind of "
-      + "company they’re at (“heads of warehouse ops at mid-market 3PLs who’ve switched "
-      + "systems”). I search public professional profiles and return people to reach out to. "
-      + "These are <b>public signal</b> — a starting point for a call, not evidence. "
-      + "To tie what an expert says back to a specific thesis, use <b>Test Thesis → Who to ask</b>.</p></div>";
+      + "<p>Two ways, used together: describe who you need in the box above (semantic search), and/or "
+      + "set <b>precise filters</b> below — title, seniority, company, <b>past company</b>, skills, "
+      + "location. Results are <b>public signal</b> to reach out to, not evidence. To tie what an expert "
+      + "says back to a thesis, use <b>Test Thesis → Who to ask</b>.</p></div>"
+      + '<div class="ex-filters"><div class="ex-filters-h">Precise filters</div>'
+      + '<div class="ex-filters-grid">'
+      + FX.map(([k, ph]) => '<input type="text" class="ex-fx" data-fx="' + k + '" placeholder="' + esc(ph) + '">').join("")
+      + "</div>"
+      + '<button type="button" class="ex-search-btn" id="ex-go">Search experts</button></div>'
+      + '<div id="ex-results"></div>';
+  }
+
+  function resultsEl(){ return document.getElementById("ex-results"); }
+  function readFilters(){
+    const f = {};
+    document.querySelectorAll("#ex-body .ex-fx").forEach(i => { const v = (i.value || "").trim(); if(v) f[i.dataset.fx] = v; });
+    return f;
   }
 
   function enter(){
     if(noteEl()) noteEl().textContent = "";
-    if(bodyEl()) bodyEl().innerHTML = introHtml();
+    if(bodyEl()) bodyEl().innerHTML = shellHtml();
+    const go = document.getElementById("ex-go"); if(go) go.addEventListener("click", () => search());
+    document.querySelectorAll("#ex-body .ex-fx").forEach(i => i.addEventListener("keydown",
+      e => { if(e.key === "Enter"){ e.preventDefault(); search(); } }));
   }
 
   function cardFor(p){
     const li = p.profile_url
       ? '<a class="ex-open" href="' + esc(p.profile_url) + '" target="_blank" rel="noopener">open profile ↗</a>' : "";
+    const via = p.provider ? '<span class="ex-via" data-p="' + esc(p.provider) + '">' + esc(p.provider) + "</span>" : "";
     return '<div class="ex-card"><span class="ex-name">' + esc(p.name || "Unnamed") + "</span>"
       + '<span class="ex-head">' + esc(p.headline || "") + (p.org ? " · " + esc(p.org) : "") + "</span>"
-      + li + "</div>";
+      + via + li + "</div>";
   }
 
   async function search(query){
-    const q = (query || "").trim();
-    if(q.length < 3){ if(noteEl()) noteEl().textContent = "Say who you're looking for."; return; }
+    // query may come from the shared intake box (Go) or be omitted (filters-only via the Search button)
+    let q = (query || "").trim();
+    if(!q){ try{ q = (document.getElementById("q").value || "").trim(); }catch(e){} }
+    const filters = readFilters();
+    if(q.length < 3 && !Object.keys(filters).length){
+      if(noteEl()) noteEl().textContent = "Describe who you need, or set at least one filter."; return;
+    }
+    if(!resultsEl()){ enter(); }   // ensure the shell (filters + results slot) exists
     if(BUSY) return; BUSY = true;
     if(noteEl()) noteEl().textContent = "";
-    if(bodyEl()) bodyEl().innerHTML = '<p class="status">Searching public professional profiles…</p>';
+    resultsEl().innerHTML = '<p class="status">Searching public professional profiles…</p>';
     try{
       const headers = {"Content-Type": "application/json"};
       try{ if(window.USER && USER.token) headers["Authorization"] = "Bearer " + USER.token; }catch(e){}
       const r = await fetch("/experts/search", {method: "POST", headers: headers,
-        body: JSON.stringify({query: q, max_results: 12})});
+        body: JSON.stringify({query: q, filters: filters, max_results: 14})});
       const d = await r.json().catch(() => ({}));
       if(!r.ok) throw new Error(d.detail || "search failed");
       const found = d.candidates || [];
+      const fbits = Object.entries(filters).map(([k, v]) => k.replace("_", " ") + ": " + v);
+      const desc = [q && ("“" + q + "”"), fbits.length && ("filters — " + fbits.join(", "))].filter(Boolean).join(" · ");
       if(!found.length){
-        bodyEl().innerHTML = introHtml() + '<p class="ex-signal">No public profiles surfaced for that. '
-          + "Try a broader description (role + segment), e.g. “operations leaders at 3PL warehouses”.</p>";
+        resultsEl().innerHTML = '<p class="ex-signal">No public profiles surfaced for ' + esc(desc || "that")
+          + ". Loosen a filter or broaden the description.</p>";
       }else{
-        bodyEl().innerHTML = '<p class="ex-signal">' + found.length + " public profile"
-          + (found.length === 1 ? "" : "s") + " for “" + esc(q) + "” — signal to reach out to, not evidence.</p>"
+        resultsEl().innerHTML = '<p class="ex-signal">' + found.length + " profile"
+          + (found.length === 1 ? "" : "s") + (desc ? " for " + esc(desc) : "")
+          + " — public signal to reach out to, not evidence.</p>"
           + '<div class="ex-grid">' + found.map(cardFor).join("") + "</div>";
       }
-    }catch(e){ if(bodyEl()) bodyEl().innerHTML = '<p class="th-note">' + esc(e.message || String(e)) + "</p>"; }
+    }catch(e){ if(resultsEl()) resultsEl().innerHTML = '<p class="th-note">' + esc(e.message || String(e)) + "</p>"; }
     finally{ BUSY = false; }
   }
 

@@ -33,6 +33,43 @@ def _title_terms(query: str, k: int = 2) -> list[str]:
     return seen[:k]
 
 
+# Normalized PDL job_title_levels; map common seniority words the user types onto them.
+_LEVELS = {"vp": "vp", "svp": "vp", "evp": "vp", "vice president": "vp",
+           "director": "director", "head": "director", "manager": "manager",
+           "cxo": "cxo", "c-level": "cxo", "ceo": "cxo", "cto": "cxo", "coo": "cxo", "cfo": "cxo",
+           "founder": "owner", "owner": "owner", "partner": "partner", "senior": "senior"}
+
+
+def _lit(s: str) -> str:
+    return (s or "").replace("'", "").strip()
+
+
+def _like_tokens(field: str, val: str) -> list[str]:
+    """AND of LIKE clauses, one per token of `val` — so 'supply chain' requires both words in `field`."""
+    out = []
+    for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9+&.\-]{1,}", (val or "").lower()):
+        out.append("%s LIKE '%%%s%%'" % (field, _lit(t)))
+    return out
+
+
+def _sql_from_filters(f: dict) -> str:
+    """A precise PDL query from structured filters (all provided fields ANDed) — this is where PDL earns
+    its keep: exact title/seniority/company/past-company/skills/location, not a fuzzy sentence."""
+    f = f or {}
+    clauses: list[str] = []
+    clauses += _like_tokens("job_title", f.get("title"))
+    sen = (f.get("seniority") or "").strip().lower()
+    if sen in _LEVELS:
+        clauses.append("job_title_levels='%s'" % _LEVELS[sen])
+    elif sen:
+        clauses += _like_tokens("job_title", sen)
+    clauses += _like_tokens("job_company_name", f.get("company"))
+    clauses += _like_tokens("experience.company.name", f.get("past_company"))
+    clauses += _like_tokens("skills", f.get("skills"))
+    clauses += _like_tokens("location_name", f.get("location"))
+    return " AND ".join(clauses)
+
+
 def _s(v) -> str:
     """PDL fields are usually strings but occasionally a bool/number/null — coerce safely so one odd
     record never breaks the whole parse."""
@@ -71,14 +108,15 @@ class PdlPeopleSearch:
         if not self._api_key or not (query or "").strip():
             return []
         import httpx
-        # PDL's ES subset is restricted (no query_string / minimum_should_match, and `match` is
-        # AND-token) — a full sentence over-constrains it. PDL is the structured/breadth leg on a ROLE,
-        # so search its title with the salient role terms via SQL LIKE (Exa beside it carries the
-        # semantic precision of the whole ask). No usable terms → no query.
-        terms = _title_terms(query)
-        if not terms:
-            return []
-        where = " AND ".join("job_title LIKE '%%%s%%'" % t.replace("'", "") for t in terms)
+        # STRUCTURED filters (title/seniority/company/past-company/skills/location) are where PDL shines
+        # — build a precise SQL from them. With no filters, fall back to the salient role terms of the
+        # freeform query (Exa beside it carries the semantic precision of the whole ask).
+        where = _sql_from_filters(filters) if filters else ""
+        if not where:
+            terms = _title_terms(query)
+            if not terms:
+                return []
+            where = " AND ".join("job_title LIKE '%%%s%%'" % _lit(t) for t in terms)
         payload = {"sql": "SELECT * FROM person WHERE %s" % where,
                    "size": max(1, min(25, int(max_results))), "dataset": "all", "pretty": False}
         headers = {"X-Api-Key": self._api_key, "content-type": "application/json"}

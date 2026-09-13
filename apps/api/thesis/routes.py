@@ -128,8 +128,10 @@ class TranscriptIn(BaseModel):
 
 
 class PeopleSearchIn(BaseModel):
-    query: str = ""            # freeform expertise/title/company query — standalone, no thesis needed
+    query: str = ""            # freeform expertise query (Exa's semantic leg)
     max_results: int = 10
+    # structured filters (PDL's precision leg): title, seniority, company, past_company, skills, location
+    filters: dict | None = None
 
 
 class QuestionAdd(BaseModel):
@@ -874,17 +876,33 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
 
     @r.post("/experts/search")
     async def tl_experts_standalone(body: PeopleSearchIn):
-        """Standalone expert discovery — the first-class Experts mode. A freeform expertise/title/company
-        query over the people leg (Exa public-web profiles), independent of any thesis. Returns PUBLIC
-        profile links (signal, never evidence). Paid; runs on an explicit search."""
+        """Standalone expert discovery — the first-class Experts mode. Freeform query drives Exa's
+        semantic leg; structured `filters` (title/seniority/company/past-company/skills/location) drive
+        PDL's precision leg. Independent of any thesis. Returns PUBLIC profile links (signal, never
+        evidence). Paid; runs on an explicit search."""
+        f = {k: str(v).strip() for k, v in (body.filters or {}).items() if str(v or "").strip()}
         q = (body.query or "").strip()
-        if len(q) < 3:
-            raise HTTPException(status_code=400, detail="say who you're looking for")
+        # Exa is semantic, so fold the filters into a natural-language query when the box is empty.
+        if not q and f:
+            bits = [f.get("seniority", ""), f.get("title", "")]
+            if f.get("company"):
+                bits.append("at " + f["company"])
+            if f.get("past_company"):
+                bits.append("previously at " + f["past_company"])
+            if f.get("skills"):
+                bits.append("skilled in " + f["skills"])
+            if f.get("location"):
+                bits.append("in " + f["location"])
+            q = " ".join(b for b in bits if b).strip()
+        if len(q) < 3 and not f:
+            raise HTTPException(status_code=400, detail="say who you're looking for, or set a filter")
         try:
             from eigen_kernel.runtime.build import build_people
             client = build_people(mode=os.environ.get("EIGEN_PROVIDER_MODE") or "live",
                                   include_domains=tuple(getattr(manifest, "people_domains", ()) or ()))
-            rows = await client.search(q, max_results=max(1, min(20, int(body.max_results or 10))))
+            rows = await client.search(q or (f.get("title") or "expert"),
+                                       max_results=max(1, min(20, int(body.max_results or 10))),
+                                       filters=(f or None))
         except Exception:      # noqa: BLE001 — no people leg / provider error → empty, reported as such
             return {"status": "ok", "query": q, "candidates": [], "unavailable": True}
         seen: set = set()

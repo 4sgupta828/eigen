@@ -88,3 +88,19 @@ def test_pdl_parse_tolerates_nonstring_fields():
          "location_name": True, "job_company_name": None, "skills": [None, "wms"]}]})
     assert len(out) == 1 and out[0].name == "Dana Ops" and out[0].location == ""
     assert out[0].expertise == ("wms",)
+
+
+def test_pdl_sql_from_filters_builds_precise_and_query():
+    from eigen_kernel.providers.pdl_people import _sql_from_filters
+    sql = _sql_from_filters({"title": "operations", "seniority": "VP", "company": "logistics",
+                             "past_company": "amazon", "skills": "warehouse", "location": "texas"})
+    assert "job_title LIKE '%operations%'" in sql
+    assert "job_title_levels='vp'" in sql                       # seniority → normalized level
+    assert "job_company_name LIKE '%logistics%'" in sql
+    assert "experience.company.name LIKE '%amazon%'" in sql     # past company
+    assert "skills LIKE '%warehouse%'" in sql
+    assert "location_name LIKE '%texas%'" in sql
+    assert sql.count(" AND ") == 5                              # all six clauses ANDed
+    # multi-word value → both tokens required
+    assert _sql_from_filters({"skills": "supply chain"}) == "skills LIKE '%supply%' AND skills LIKE '%chain%'"
+    assert _sql_from_filters({}) == ""

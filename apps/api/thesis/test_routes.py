@@ -681,3 +681,33 @@ def test_experts_search_is_standalone_no_thesis_required(monkeypatch):
     assert cands and cands[0]["name"] == "Dana Ops" and cands[0]["profile_url"].startswith("https://linkedin")
     # too-short query is refused
     assert c.post("/experts/search", json={"query": "x"}).status_code == 400
+
+
+def test_experts_search_passes_structured_filters_to_the_people_leg(monkeypatch):
+    from types import SimpleNamespace
+    from eigen_kernel.providers.people_search import PersonResult
+    import eigen_kernel.runtime.build as kbuild
+    seen = {}
+
+    class _FakePeople:
+        async def search(self, query, *, max_results=8, filters=None):
+            seen["query"] = query; seen["filters"] = filters
+            return [PersonResult(name="Dana Ops", profile_url="https://linkedin.com/in/dana", provider="pdl")]
+    monkeypatch.setattr(kbuild, "build_people", lambda **k: _FakePeople())
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {}
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=None,
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=None,
+                                 web_domains=(), retrieval_sources={}, people_domains=()),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+    # filters-only (no freeform query) is allowed and passed through
+    r = c.post("/experts/search", json={"query": "", "filters": {"title": "VP Operations",
+               "past_company": "Amazon", "location": "Texas"}})
+    assert r.status_code == 200 and r.json()["candidates"][0]["name"] == "Dana Ops"
+    assert seen["filters"] == {"title": "VP Operations", "past_company": "Amazon", "location": "Texas"}
+    assert "VP Operations" in seen["query"]           # filters folded into the Exa query too

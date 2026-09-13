@@ -369,3 +369,16 @@ test("Experts is a first-class mode: its own tab, body, and standalone search", 
   assert.match(SRC, /exbtn = \$\("#expertsTab"\)/);      // shown by applyModeTabs
   assert.match(SRC, /mode === "experts" && THESIS_ENABLED/);  // gated + allowed in setMode
 });
+
+test("Experts mode has a precise filters panel (PDL) alongside the semantic box", () => {
+  assert.match(SRC, /class="ex-filters"/);
+  assert.match(SRC, /data-fx="' \+ k \+ '"/);          // inputs built from the FX list
+  // the FX list names the PDL filter fields, including past-company
+  assert.match(SRC, /\["title",/);
+  assert.match(SRC, /\["seniority",/);
+  assert.match(SRC, /\["past_company",/);
+  assert.match(SRC, /\["skills",/);
+  assert.match(SRC, /\["location",/);
+  assert.match(SRC, /filters: filters/);              // filters are sent to the endpoint
+  assert.match(SRC, /function readFilters\(/);
+});
