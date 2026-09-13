@@ -488,7 +488,10 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     # polls status and renders only when it is done. A deploy can kill this in-process task — the run
     # is therefore RESUMABLE at claim granularity (a claim already tested by this run is skipped) and
     # the client silently re-POSTs /research/run to resume, which idempotency makes invisible.
-    STALE_SECONDS = 30
+    # A single question's evidence run (corpus + web + red-team + relation judge + synthesis) can take
+    # well over a minute; the heartbeat touches the run per question, so a genuinely stalled run is one
+    # with no progress for a couple of minutes, not one merely working on a slow question.
+    STALE_SECONDS = 150
 
     async def _run_research(thesis_id: str, run_id: str):
         pool = await pool_of()
@@ -640,13 +643,20 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             gather = _make_gather(_attack_fn(aspect.settleable, frame, web))
             synth = _make_synthesize(_llm_json(), thesis=thesis, aspect=aspect.prompt)
             for row in group:
+                # Idempotent resume: a question already answered by THIS run is skipped, so a resumed
+                # run re-drives only what is left and never repeats work.
+                if row.get("run_id") == run_id and row.get("target_status"):
+                    continue
                 q = _dec.Question(kind=_dec.QuestionKind(row["kind"]), text=row["text"],
                                   target=row["target"], polarity=int(row["polarity"]))
                 st = await _dec.run_question(gather, profile, q, synth)
                 await tstore.answer_question(pool, thesis_id, row["id"], target_status=st.target_status,
                                              answer=st.answer, evidence_ids=list(st.evidence_ids), run_id=run_id)
-            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id,
-                                     stage=f"aspect:{akey}", actual_delta=0.01)
+                # Heartbeat per QUESTION (not per aspect): a slow aspect used to leave the run silent for
+                # minutes, tripping the stale check and triggering a resume storm that deadlocked. A
+                # per-question touch keeps a healthy run visibly alive.
+                await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id,
+                                         stage=f"q:{row['id']}", actual_delta=0.01)
 
     @r.get("/thesis/{thesis_id}/inquiries")
     async def tl_inquiries(thesis_id: str, authorization: str = Header(default=""),

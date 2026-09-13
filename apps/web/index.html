@@ -581,9 +581,17 @@
   .th-aspect:first-child{border-top:0;}
   .th-aspect-h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.15rem;}
   .th-aspect-h b{font-size:.92rem;font-weight:600;line-height:1.4;color:var(--ink);}
-  /* a typed Socratic question + its answer */
-  .th-qn{margin:.55rem 0 .55rem;padding-left:.7rem;border-left:2px solid var(--hair);}
-  .th-qn-q{display:flex;gap:.45rem;align-items:baseline;font-size:.88rem;line-height:1.5;color:var(--ink);}
+  /* a typed Socratic question, boxed as its own card */
+  .th-qn{margin:.55rem 0;padding:.6rem .7rem;border:1px solid var(--hair);border-radius:10px;
+    background:var(--panel2);}
+  .th-qn.th-qn-active{border-color:var(--gold);box-shadow:0 0 0 1px color-mix(in srgb,var(--gold) 35%,transparent);}
+  .th-qn-q{display:flex;gap:.45rem;align-items:flex-start;font-size:.88rem;line-height:1.5;color:var(--ink);}
+  .th-qn-q .th-qn-text{flex:1 1 auto;min-width:0;}
+  .th-qn-play{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--gold);
+    background:transparent;color:var(--gold);cursor:pointer;font-size:.8rem;line-height:1;display:grid;
+    place-items:center;padding:0;}
+  .th-qn-play:hover{background:var(--gold);color:#fff;}
+  .th-qn-play:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
   .th-lens{font-family:var(--mono);font-size:.6rem;letter-spacing:.03em;padding:.1rem .4rem;border-radius:6px;
     border:1px solid currentColor;flex:none;white-space:nowrap;line-height:1.4;}
   .th-lens[data-k="seek_support"]{color:var(--verified,#2f7d5b);}
@@ -611,11 +619,6 @@
   .th-qn-work{margin:.35rem 0 0;display:flex;align-items:center;gap:.45rem;font-family:var(--mono);
     font-size:.72rem;color:var(--gold);}
   .th-qn-wait{margin:.35rem 0 0;font-family:var(--mono);font-size:.66rem;color:var(--dim);opacity:.7;}
-  .th-qn.th-qn-active{border-left-color:var(--gold);}
-  .th-qn-run{font-family:var(--mono);font-size:.66rem;padding:.3rem .7rem;border-radius:999px;
-    border:1px solid var(--gold);background:transparent;color:var(--gold);cursor:pointer;min-height:34px;}
-  .th-qn-run:hover{background:color-mix(in srgb,var(--gold) 10%,transparent);}
-  .th-qn-run:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
   @media (prefers-reduced-motion:reduce){.th-qn-ans > summary::before{transition:none;}}
   .th-qn-edit{background:transparent;border:0;color:var(--dim);cursor:pointer;font-size:.72rem;padding:0 .2rem;}
   .th-qn-edit:hover{color:var(--gold);}
@@ -11978,11 +11981,18 @@ async function openShare(token){
   function qnHtml(q, owner, ctx){
     ctx = ctx || {};
     const lens = LENS[q.kind] || {glyph: "•", label: q.kind};
+    const isActive = ctx.running && q.id === ctx.activeQid;
     const lensTag = '<span class="th-lens" data-k="' + esc2(q.kind) + '" title="' + esc2(lens.label) + '">'
       + lens.glyph + " " + esc2(lens.label) + "</span>";
-    const qline = '<div class="th-qn-q">' + lensTag + '<span class="th-qn-text">' + esc2(q.text) + "</span></div>";
+    // The play button lives on the question line — the primary way to run this one question.
+    const canRun = owner && !ctx.running;
+    const play = !canRun ? "" : '<button type="button" class="th-qn-play" data-qrun="' + esc2(q.id) + '" title="'
+      + (q.target_status ? "Re-run this question" : "Run this question") + '" aria-label="'
+      + (q.target_status ? "Re-run this question" : "Run this question") + '">'
+      + (q.target_status ? "↻" : "▶") + "</button>";
+    const qline = '<div class="th-qn-q">' + lensTag + '<span class="th-qn-text">' + esc2(q.text) + "</span>"
+      + play + "</div>";
     let body = "";
-    const isActive = ctx.running && q.id === ctx.activeQid;
     if(isActive){
       body = '<div class="th-qn-work"><span class="su-spin"></span> researching this question…</div>';
     }else if(ctx.running && !q.target_status){
@@ -11994,13 +12004,9 @@ async function openShare(token){
         ? '<div class="th-qn-a">' + linkEvidence(q.answer, allEvidence()) + "</div>"
         : '<div class="th-qn-a none">Not established in the record.</div>';
       body = '<details class="th-qn-ans"><summary><span class="th-found" data-f="' + f.cls + '">'
-        + esc2(f.label) + '</span><span class="th-qn-toggle"></span></summary>' + inner + "</details>"
-        + (owner && !ctx.running ? '<div class="th-qn-tools"><button type="button" class="th-qn-run" data-qrun="'
-            + esc2(q.id) + '">Re-run this question</button></div>' : "");
-    }else if(owner && !ctx.running){
-      // Unrun: run it on its own, or curate it first.
-      body = '<div class="th-qn-tools"><button type="button" class="th-qn-run" data-qrun="' + esc2(q.id)
-        + '">Run this question</button><button type="button" class="th-qn-edit" data-edit="' + esc2(q.id)
+        + esc2(f.label) + '</span><span class="th-qn-toggle"></span></summary>' + inner + "</details>";
+    }else if(canRun){
+      body = '<div class="th-qn-tools"><button type="button" class="th-qn-edit" data-edit="' + esc2(q.id)
         + '">edit</button><button type="button" class="th-qn-edit" data-rm="' + esc2(q.id) + '">remove</button></div>';
     }
     return '<div class="th-qn' + (isActive ? " th-qn-active" : "") + '" data-qid="' + esc2(q.id) + '">' + qline + body + "</div>";
@@ -12101,36 +12107,41 @@ async function openShare(token){
     finally{ STATE.busy = false; }
   }
 
-  async function pollInquiry(resumes){
+  // Poll a run WITHOUT ever re-POSTing it: the client only reads status + refreshes answers as they
+  // land. Re-triggering from the poll used to spawn concurrent background tasks that deadlocked (a
+  // resume storm); resume is now an explicit user action instead. `misses` counts transient transport
+  // errors so a brief blip doesn't look like a stop.
+  async function pollInquiry(misses){
     if(!STATE.inqRun) return;
-    let stalled = false;
+    misses = misses || 0;
     try{
       const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/status?run="
                             + encodeURIComponent(STATE.inqRun.run), {headers: hdrs()});
-      if(r.status === 502 || r.status === 503){ stalled = true; }
+      if(r.status === 502 || r.status === 503){ misses++; }
       else{
+        misses = 0;
         const s = await r.json();
         STATE.inqRun.done = Number(s.done || 0); STATE.inqRun.total = Number(s.total || STATE.inqRun.total);
-        // Refresh the questions so each answer appears the moment it is saved, and the spinner moves to
-        // the next question — the run is visible as it happens, not only at the end.
+        // Refresh the questions so each answer appears the moment it is saved and the spinner advances.
         try{
           const ir = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries", {headers: hdrs()});
           if(ir.ok){ STATE.inquiries = (await ir.json()).inquiries || STATE.inquiries; }
         }catch(e){ /* keep the last snapshot */ }
         renderInquiries();
         if(s.state === "completed"){ STATE.inqRun = null; await loadInquiries(); await open(STATE.id); return; }
-        if(s.state === "failed" || s.stage === "stalled"){ stalled = true; }
+        if(s.state === "failed" || s.state === "none" || s.stage === "stalled"){
+          const why = (s.error && s.error.reason) || "the run stopped";
+          const key = STATE.inqRun.key; STATE.inqRun = null;
+          note().textContent = why + ". Nothing was lost — press run again to resume where it left off.";
+          await loadInquiries(); return;   // stop; resume is the user's explicit choice, no storm
+        }
       }
-    }catch(e){ stalled = true; }
-    if(stalled){
-      if(resumes > 8){ STATE.inqRun = null; note().textContent =
-        "That line of inquiry kept stopping. Nothing was lost — run it again to resume."; renderInquiries(); return; }
-      try{ await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/"
-             + encodeURIComponent(STATE.inqRun.key) + "/run",
-             {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 999, web: true})}); }catch(e){}
-      resumes++;
+    }catch(e){ misses++; }
+    if(misses > 12){   // ~30s of no contact — stop cleanly rather than spin forever
+      STATE.inqRun = null; note().textContent =
+        "Lost contact with the run. Nothing was lost — press run again to resume."; renderInquiries(); return;
     }
-    setTimeout(() => pollInquiry(resumes), 2500);
+    setTimeout(() => pollInquiry(misses), 2500);
   }
 
   async function editQuestion(qid){
