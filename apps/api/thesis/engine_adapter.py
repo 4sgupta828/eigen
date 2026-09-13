@@ -38,10 +38,22 @@ market signal, never dressed up as more. Do not invent sources, numbers, or quot
 not answer the question, return an empty list."""
 
 
-def make_synthesize(llm_json, directive: str | None = None):
-    """Grounded, cited answer per question. The model returns a JSON array of sentences each carrying
-    its own citation ids; the kernel's `sanitize_answer` gates them (an id must resolve; an uncited or
-    wrongly-cited sentence is dropped) and emits [[e:<id>]] prose. Never fabricates."""
+# What each lens is FOR — so the model frames its answer to the actual intent of the question, not just
+# the bare target. Full context (thesis + aspect + intent) makes a one-line target legible.
+_LENS_INTENT = {
+    "seek_support": "We are looking for evidence that this holds.",
+    "seek_contradiction": "This is a red-team probe — we are looking for evidence that UNDERMINES the "
+                          "aspect. Finding the statement true counts AGAINST the thesis.",
+    "resolve_ambiguity": "The thesis could go two ways here; we want which the record actually shows.",
+    "challenge_assumption": "This tests a hidden premise the thesis rests on.",
+}
+
+
+def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "", aspect: str = ""):
+    """Grounded, cited answer per question — carrying FULL CONTEXT: the thesis under test, the aspect of
+    it this question probes, and the lens intent (why we ask). The model returns a JSON array of
+    sentences each carrying its citation ids; the kernel's `sanitize_answer` gates them and emits
+    [[e:<id>]] prose. Never fabricates."""
     system = directive or _SYNTH_DEFAULT
 
     async def synthesize(question, evidence):
@@ -51,10 +63,19 @@ def make_synthesize(llm_json, directive: str | None = None):
         listing = "\n".join(
             f"[{e.get('id')}] ({e.get('register', '')}/{e.get('evidence_kind', '')}) "
             f"{str(e.get('quote') or '')[:220]}" for e in evidence[:8])
-        user = (f"QUESTION: {question.text}\nSTATEMENT UNDER TEST: {question.target}\n\n"
+        intent = _LENS_INTENT.get(getattr(question, "kind", None) and question.kind.value, "")
+        ctx = ""
+        if thesis:
+            ctx += f"THESIS UNDER TEST: {thesis}\n"
+        if aspect:
+            ctx += f"ASPECT OF THE THESIS: {aspect}\n"
+        if intent:
+            ctx += f"WHY WE ASK: {intent}\n"
+        user = (ctx + f"QUESTION: {question.text}\nSTATEMENT UNDER TEST: {question.target}\n\n"
                 f"EVIDENCE (cite by the bracketed id):\n{listing}\n\n"
                 'Return ONE JSON object: {"sentences": [{"text": "...", "evidence_ids": ["id", ...]}]}. '
-                "Each sentence states only what its cited evidence shows. Output ONLY the JSON object.")
+                "Answer THIS question in the context of the thesis; each sentence states only what its "
+                "cited evidence shows. Output ONLY the JSON object.")
         try:
             raw = await llm_json(system, user)
             d = raw if isinstance(raw, dict) else json.loads(raw)

@@ -611,6 +611,11 @@
   .th-qn-work{margin:.35rem 0 0;display:flex;align-items:center;gap:.45rem;font-family:var(--mono);
     font-size:.72rem;color:var(--gold);}
   .th-qn-wait{margin:.35rem 0 0;font-family:var(--mono);font-size:.66rem;color:var(--dim);opacity:.7;}
+  .th-qn.th-qn-active{border-left-color:var(--gold);}
+  .th-qn-run{font-family:var(--mono);font-size:.66rem;padding:.3rem .7rem;border-radius:999px;
+    border:1px solid var(--gold);background:transparent;color:var(--gold);cursor:pointer;min-height:34px;}
+  .th-qn-run:hover{background:color-mix(in srgb,var(--gold) 10%,transparent);}
+  .th-qn-run:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
   @media (prefers-reduced-motion:reduce){.th-qn-ans > summary::before{transition:none;}}
   .th-qn-edit{background:transparent;border:0;color:var(--dim);cursor:pointer;font-size:.72rem;padding:0 .2rem;}
   .th-qn-edit:hover{color:var(--gold);}
@@ -11933,9 +11938,12 @@ async function openShare(token){
     const owner = canMutate(STATE.doc);
     const qs = inq.questions || [];
     const answered = qs.filter(q => q.target_status).length;
+    const singleQid = (STATE.inqRun && STATE.inqRun.qid) || "";
     const running = !!(STATE.inqRun && STATE.inqRun.key === inq.key);
-    // Questions are researched in order; the one being worked is the first still unanswered.
-    const active = running ? (qs.find(q => !q.target_status) || null) : null;
+    // The question being worked: for a single-question run it's that one; for a whole-inquiry run it's
+    // the first still unanswered (they run in order).
+    const active = running ? (singleQid ? qs.find(q => q.id === singleQid)
+                                        : qs.find(q => !q.target_status)) || null : null;
     const ctx = {running: running, activeQid: active ? active.id : ""};
     const byAspect = {};
     qs.forEach(q => { (byAspect[q.aspect_key] = byAspect[q.aspect_key] || []).push(q); });
@@ -11949,7 +11957,9 @@ async function openShare(token){
             + '">+ add a question</button>' : "")
         + "</div>";
     }).join("");
-    const runRow = !owner ? "" : running
+    const runRow = !owner ? "" : (running && singleQid)
+      ? '<div class="th-run-prog"><span class="su-spin"></span> <span>Researching one question…</span></div>'
+      : running
       ? '<div class="th-run-prog"><span class="su-spin"></span> <span>Researching '
         + esc2(String(STATE.inqRun.done + 1)) + " of " + esc2(String(STATE.inqRun.total)) + " — "
         + (active ? "&ldquo;" + esc2(active.text) + "&rdquo;" : "writing up") + "</span></div>"
@@ -11972,23 +11982,28 @@ async function openShare(token){
       + lens.glyph + " " + esc2(lens.label) + "</span>";
     const qline = '<div class="th-qn-q">' + lensTag + '<span class="th-qn-text">' + esc2(q.text) + "</span></div>";
     let body = "";
-    if(q.target_status){
+    const isActive = ctx.running && q.id === ctx.activeQid;
+    if(isActive){
+      body = '<div class="th-qn-work"><span class="su-spin"></span> researching this question…</div>';
+    }else if(ctx.running && !q.target_status){
+      body = '<div class="th-qn-wait">queued</div>';
+    }else if(q.target_status){
       // Answered: compressed by default, the grounded answer + citations on demand.
       const f = FOUND[q.target_status] || FOUND.target_untested;
       const inner = q.answer
         ? '<div class="th-qn-a">' + linkEvidence(q.answer, allEvidence()) + "</div>"
         : '<div class="th-qn-a none">Not established in the record.</div>';
       body = '<details class="th-qn-ans"><summary><span class="th-found" data-f="' + f.cls + '">'
-        + esc2(f.label) + '</span><span class="th-qn-toggle"></span></summary>' + inner + "</details>";
-    }else if(ctx.running && q.id === ctx.activeQid){
-      body = '<div class="th-qn-work"><span class="su-spin"></span> researching this question…</div>';
-    }else if(ctx.running){
-      body = '<div class="th-qn-wait">queued</div>';
-    }else if(owner){
-      body = '<div class="th-qn-tools"><button type="button" class="th-qn-edit" data-edit="' + esc2(q.id)
+        + esc2(f.label) + '</span><span class="th-qn-toggle"></span></summary>' + inner + "</details>"
+        + (owner && !ctx.running ? '<div class="th-qn-tools"><button type="button" class="th-qn-run" data-qrun="'
+            + esc2(q.id) + '">Re-run this question</button></div>' : "");
+    }else if(owner && !ctx.running){
+      // Unrun: run it on its own, or curate it first.
+      body = '<div class="th-qn-tools"><button type="button" class="th-qn-run" data-qrun="' + esc2(q.id)
+        + '">Run this question</button><button type="button" class="th-qn-edit" data-edit="' + esc2(q.id)
         + '">edit</button><button type="button" class="th-qn-edit" data-rm="' + esc2(q.id) + '">remove</button></div>';
     }
-    return '<div class="th-qn" data-qid="' + esc2(q.id) + '">' + qline + body + "</div>";
+    return '<div class="th-qn' + (isActive ? " th-qn-active" : "") + '" data-qid="' + esc2(q.id) + '">' + qline + body + "</div>";
   }
 
   function allEvidence(){
@@ -12000,6 +12015,8 @@ async function openShare(token){
     const host = document.getElementById("th-loi"); if(!host) return;
     host.querySelectorAll("[data-run]").forEach(b => b.addEventListener("click",
       e => { e.preventDefault(); runInquiry(b.dataset.run); }));
+    host.querySelectorAll("[data-qrun]").forEach(b => b.addEventListener("click",
+      e => { e.preventDefault(); runQuestion(b.dataset.qrun); }));
     host.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => editQuestion(b.dataset.edit)));
     host.querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", () => removeQuestion(b.dataset.rm)));
     host.querySelectorAll("[data-add]").forEach(b => b.addEventListener("click", () => {
@@ -12051,6 +12068,33 @@ async function openShare(token){
       const started = await sr.json();
       if(!sr.ok || !started.run) throw new Error(started.detail || "could not start this line of inquiry");
       STATE.inqRun = {key: key, run: started.run.id, done: 0, total: nq};
+      renderInquiries();
+      pollInquiry(0);
+    }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; }
+  }
+
+  function inquiryKeyOf(qid){
+    const inq = (STATE.inquiries || []).find(i => (i.questions || []).some(q => q.id === qid));
+    return inq ? inq.key : "";
+  }
+
+  async function runQuestion(qid){
+    if(STATE.busy || STATE.inqRun) return;
+    STATE.busy = true;
+    try{
+      const q = (STATE.inquiries || []).flatMap(i => i.questions || []).find(x => x.id === qid) || {};
+      const base = "/thesis/" + encodeURIComponent(STATE.id) + "/question/" + encodeURIComponent(qid) + "/run";
+      const pr = await fetch(base, {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 0, web: true})});
+      const pj = await pr.json();
+      const max = Number((pj.projection || {}).projected_usd || 0);
+      if(!window.confirm("Research this one question?\n\n“" + (q.text || "")
+          + "”\n\nAgainst our corpus, the open web, and the red team — in the context of the "
+          + "whole thesis.\n\nProjected maximum: $" + max.toFixed(3))){ STATE.busy = false; return; }
+      const sr = await fetch(base, {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: max, web: true})});
+      const started = await sr.json();
+      if(!sr.ok || !started.run) throw new Error(started.detail || "could not start this question");
+      STATE.inqRun = {key: inquiryKeyOf(qid), qid: qid, run: started.run.id, done: 0, total: 1};
       renderInquiries();
       pollInquiry(0);
     }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e); }

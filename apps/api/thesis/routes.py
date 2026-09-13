@@ -611,12 +611,42 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         return next((a for a in profile.aspects() if a.key == key), None)
 
     def _attack_fn(settleable: str, ctx: str, web: bool):
+        # ctx carries the FULL frame: the thesis under test + the aspect + the subject, so retrieval and
+        # the relation judge disambiguate a bare target against what we are actually testing.
         async def go(target: str):
             wc = atk._web_client(manifest) if web else None
             return await atk.attack_claim(dsn, claim=target, settleable=settleable, judge_llm=judge_llm,
                                           ui=_ui(), extra_context=ctx, web_client=wc,
                                           relation_llm=_llm_json(), evidence_policy=_policy(), tenant=tenant)
         return go
+
+    async def _run_question_rows(thesis_id: str, run_id: str, rows: list[dict], web: bool):
+        """Run a specific list of question rows against evidence, carrying full context (thesis + aspect
+        + lens intent). Shared by a whole-inquiry run and a single-question run. Grouped by aspect so a
+        support/contradiction pair on the same target shares one retrieval."""
+        pool = await pool_of()
+        profile = _profile()
+        d = await tstore.get(pool, thesis_id=thesis_id)
+        thesis = d.get("thesis") or ""
+        subject = " ".join(str(v) for v in (d.get("subject") or {}).values())
+        by_aspect: dict[str, list] = {}
+        for q in rows:
+            by_aspect.setdefault(q["aspect_key"], []).append(q)
+        for akey, group in by_aspect.items():
+            aspect = _aspect_by_key(profile, akey)
+            if aspect is None:
+                continue
+            frame = f"Thesis under test: {thesis} | Aspect: {aspect.prompt} | {subject}".strip()
+            gather = _make_gather(_attack_fn(aspect.settleable, frame, web))
+            synth = _make_synthesize(_llm_json(), thesis=thesis, aspect=aspect.prompt)
+            for row in group:
+                q = _dec.Question(kind=_dec.QuestionKind(row["kind"]), text=row["text"],
+                                  target=row["target"], polarity=int(row["polarity"]))
+                st = await _dec.run_question(gather, profile, q, synth)
+                await tstore.answer_question(pool, thesis_id, row["id"], target_status=st.target_status,
+                                             answer=st.answer, evidence_ids=list(st.evidence_ids), run_id=run_id)
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id,
+                                     stage=f"aspect:{akey}", actual_delta=0.01)
 
     @r.get("/thesis/{thesis_id}/inquiries")
     async def tl_inquiries(thesis_id: str, authorization: str = Header(default=""),
@@ -727,32 +757,11 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         return {"status": "ok"}
 
     async def _run_inquiry(thesis_id: str, inquiry_key: str, run_id: str, web: bool):
-        """Run one line of inquiry: for each aspect, gather evidence per question (shared across
-        identical targets), qualify + aggregate via the profile, persist each answer + the run."""
+        """Run one line of inquiry: every question of it, then complete the run."""
         pool = await pool_of()
         try:
-            profile = _profile()
-            d = await tstore.get(pool, thesis_id=thesis_id)
-            ctx = " ".join(str(v) for v in (d.get("subject") or {}).values())
-            synth = _make_synthesize(_llm_json())
-            qs = [q for q in await tstore.list_questions(pool, thesis_id, inquiry_key)]
-            by_aspect: dict[str, list] = {}
-            for q in qs:
-                by_aspect.setdefault(q["aspect_key"], []).append(q)
-            for akey, group in by_aspect.items():
-                aspect = _aspect_by_key(profile, akey)
-                if aspect is None:
-                    continue
-                gather = _make_gather(_attack_fn(aspect.settleable, ctx, web))
-                for row in group:
-                    q = _dec.Question(kind=_dec.QuestionKind(row["kind"]), text=row["text"],
-                                      target=row["target"], polarity=int(row["polarity"]))
-                    st = await _dec.run_question(gather, profile, q, synth)
-                    await tstore.answer_question(pool, thesis_id, row["id"],
-                                                 target_status=st.target_status, answer=st.answer,
-                                                 evidence_ids=list(st.evidence_ids), run_id=run_id)
-                await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id,
-                                         stage=f"aspect:{akey}", actual_delta=0.01)
+            rows = await tstore.list_questions(pool, thesis_id, inquiry_key)
+            await _run_question_rows(thesis_id, run_id, rows, web)
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
                                      state="completed")
         except tstore.SpendCapError as exc:
@@ -788,6 +797,49 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             return {"status": "completed", "run": run}
         await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="running", state="running")
         asyncio.create_task(_run_inquiry(thesis_id, inquiry_key, run["id"], body.web))
+        return {"status": "running", "run": run}
+
+    async def _run_single(thesis_id: str, run_id: str, qid: str, web: bool):
+        """Run ONE question (carrying its full thesis+aspect context) and complete the run."""
+        pool = await pool_of()
+        try:
+            row = next((q for q in await tstore.list_questions(pool, thesis_id) if q["id"] == qid), None)
+            if row is not None:
+                await _run_question_rows(thesis_id, run_id, [row], web)
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
+                                     state="completed")
+        except tstore.SpendCapError as exc:
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="cap",
+                                  error={"reason": "approved cost reached", "detail": str(exc)})
+        except Exception as exc:      # noqa: BLE001 — a failed run fails closed, never corrupts
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                  error={"reason": "question run failed", "detail": str(exc)[:300]})
+
+    @r.post("/thesis/{thesis_id}/question/{qid}/run")
+    async def tl_run_question(thesis_id: str, qid: str, body: ResearchStartIn,
+                              authorization: str = Header(default=""),
+                              x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Run a SINGLE question against evidence — cost projected + gated, serialized per thesis."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        row = next((q for q in await tstore.list_questions(pool, thesis_id) if q["id"] == qid), None)
+        if row is None:
+            raise HTTPException(status_code=404, detail="no such question")
+        projection = project_research_cost(1, web=body.web, web_available=bool(atk._web_client(manifest)))
+        if projection["projected_usd"] > max(0.0, body.max_usd):
+            return {"status": "refused", "projection": projection,
+                    "reason": "Projected question cost exceeds the approved maximum."}
+        key = body.idempotency_key or ("q-" + qid + "-" + tstore.active_question_hash([row]))
+        try:
+            run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
+                                          projected_usd=projection["projected_usd"], approved_usd=body.max_usd,
+                                          metadata={"question": qid, "questions": [qid], "web": body.web,
+                                                    "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if run.get("state") == "completed":
+            return {"status": "completed", "run": run}
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="running", state="running")
+        asyncio.create_task(_run_single(thesis_id, run["id"], qid, body.web))
         return {"status": "running", "run": run}
 
     return r

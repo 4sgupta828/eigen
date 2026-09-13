@@ -256,3 +256,20 @@ test("during a run, the active question shows a spinner and the rest are queued"
   assert.match(html, /class="th-qn-ans"/);
   assert.match(html, /class="th-qn-toggle"/);   // the view-answer/hide label is CSS-driven
 });
+
+test("each question can be run on its own — Run when unrun, Re-run when answered", () => {
+  const {api} = loadThesisModule();
+  api._setState({doc: {is_owner: true, claims: []}, inqRun: null});
+  const unrun = {id: "q1", aspect_key: "a", kind: "seek_support", text: "?", target: "t", polarity: 1, target_status: ""};
+  const answered = {id: "q2", aspect_key: "a", kind: "seek_support", text: "?", target: "t", polarity: 1,
+    target_status: "target_supported", answer: "Yes."};
+  const uh = api.qnHtml(unrun, true, {});
+  const ah = api.qnHtml(answered, true, {});
+  assert.match(uh, /data-qrun="q1"/);
+  assert.match(uh, /Run this question/);
+  assert.match(ah, /data-qrun="q2"/);
+  assert.match(ah, /Re-run this question/);
+  // while a run is in flight, no per-question run button is offered
+  const running = api.qnHtml(unrun, true, {running: true, activeQid: "other"});
+  assert.doesNotMatch(running, /data-qrun/);
+});
