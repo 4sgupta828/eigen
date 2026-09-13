@@ -650,3 +650,34 @@ def test_transcript_extracts_gated_call_evidence_and_moves_the_verdict(monkeypat
     r2 = c.post("/thesis/t1/experts/transcript", headers={"Authorization": "Bearer owner"},
                 json={"aspect_key": "problem_exists", "transcript": T})
     assert r2.status_code == 400
+
+
+def test_experts_search_is_standalone_no_thesis_required(monkeypatch):
+    """The first-class Experts mode: a freeform people search that needs no thesis."""
+    from types import SimpleNamespace
+    from eigen_kernel.providers.people_search import PersonResult
+    import eigen_kernel.runtime.build as kbuild
+
+    class _FakePeople:
+        async def search(self, query, *, max_results=8, filters=None):
+            return [PersonResult(name="Dana Ops", profile_url="https://linkedin.com/in/dana",
+                                 headline="VP Operations, Acme 3PL", provider="exa")]
+    monkeypatch.setattr(kbuild, "build_people", lambda **k: _FakePeople())
+
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {"id": "u"} if token else {}
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=None,
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=None,
+                                 web_domains=(), retrieval_sources={}, people_domains=()),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+    r = c.post("/experts/search", json={"query": "warehouse operations leaders at 3PLs"})
+    assert r.status_code == 200
+    cands = r.json()["candidates"]
+    assert cands and cands[0]["name"] == "Dana Ops" and cands[0]["profile_url"].startswith("https://linkedin")
+    # too-short query is refused
+    assert c.post("/experts/search", json={"query": "x"}).status_code == 400

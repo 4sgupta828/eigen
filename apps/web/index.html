@@ -381,6 +381,21 @@
   #thesisbody{display:none;}
   body[data-mode="thesis"] #thesisbody{display:block;}
   body[data-mode="thesis"] #out, body[data-mode="thesis"] #effort{display:none !important;}
+  /* Experts — a first-class mode: find people by expertise, standalone (no thesis required) */
+  #expertsbody{display:none;}
+  body[data-mode="experts"] #expertsbody{display:block;}
+  body[data-mode="experts"] #out, body[data-mode="experts"] #effort{display:none !important;}
+  .ex-intro{border:1px solid var(--hair);border-radius:16px;padding:1.1rem 1.15rem;margin:.55rem 0 1rem;background:var(--panel);}
+  .ex-intro h2{font:600 1.3rem/1.2 var(--serif);margin:0 0 .35rem;}
+  .ex-intro p{margin:0;color:var(--dim);line-height:1.6;}
+  .ex-grid{display:grid;gap:.7rem;margin:.6rem 0;}
+  .ex-card{display:flex;flex-wrap:wrap;gap:.35rem .7rem;align-items:baseline;border:1px solid var(--hair);
+    border-radius:12px;background:var(--panel);padding:.7rem .85rem;}
+  .ex-name{font-size:.95rem;font-weight:600;color:var(--ink);}
+  .ex-head{font-size:.85rem;color:var(--dim);line-height:1.45;flex:1 1 16rem;min-width:0;}
+  .ex-open{font-family:var(--mono);font-size:.72rem;color:var(--gold);text-decoration:none;white-space:nowrap;}
+  .ex-open:hover{text-decoration:underline;}
+  .ex-signal{font-size:.72rem;color:var(--dim);margin:.2rem 0 .8rem;font-style:italic;}
   /* Thesis Explorations: a persistent left rail of theses + the selected one on the right. Widen the
      page in this mode so both panels breathe (reverts to the standard width on a phone). */
   body[data-mode="thesis"] .wrap{max-width:62rem;}
@@ -2654,6 +2669,8 @@
       <button type="button" class="mbtn" id="deepdiveTab" role="tab" aria-selected="false" hidden title="DeepDive — one company, read end to end">⌖ DeepDive</button>
       <button type="button" class="mbtn" id="thesisTab" role="tab" aria-selected="false" hidden
             title="Test a startup thesis — the claims it rests on, attacked">⚗ Test Thesis</button>
+    <button type="button" class="mbtn" id="expertsTab" role="tab" aria-selected="false" hidden
+            title="Find experts to validate a thesis — search people by expertise, title or company">⚑ Experts</button>
     <button type="button" class="mbtn" id="investorsTab" role="tab" aria-selected="false" hidden title="Investors — who funds what, from the public record">◈ Investors</button>
     </div>
   </div>
@@ -2859,6 +2876,11 @@
       </details>
     </div>
   </div>
+</section>
+
+<section id="expertsbody" aria-label="Find experts">
+  <p class="dd-note" id="ex-note" role="alert" aria-live="assertive"></p>
+  <div id="ex-body"></div>
 </section>
 
 <section id="investorsbody" aria-label="Investor search">
@@ -5048,6 +5070,7 @@ $("#ask").addEventListener("submit", e=>{
   }
   if(APP_MODE === "voices"){ if(window.VO) VO.search(question); return; }                 // voices → keyword search over first-person content
   if(APP_MODE === "thesis"){ if(window.TH) TH.submit(question); return; }                 // thesis → decompose, then attack
+  if(APP_MODE === "experts"){ if(window.EX) EX.search(question); return; }               // experts → people search
   if(APP_MODE === "deepdive"){ if(window.DD) DD.search(question); return; }             // deepdive → resolve one company, then read it
   if(APP_MODE === "guided"){ if(window.SG) SG.send(question); return; }                      // guided → one intake turn
   if(CURRENT_ABORT) return;               // a question is in flight — Enter/submit is a no-op (use Stop)
@@ -5250,6 +5273,7 @@ function applyModeTabs(){
   const dbtn = $("#deepdiveTab"); if(dbtn){ dbtn.hidden = !DEEPDIVE_ENABLED; dbtn.dataset.mode = "deepdive"; }
   const ibtn = $("#investorsTab"); if(ibtn){ ibtn.hidden = !INVESTORS_ENABLED; ibtn.dataset.mode = "investors"; }
   const thbtn = $("#thesisTab"); if(thbtn){ thbtn.hidden = !THESIS_ENABLED; thbtn.dataset.mode = "thesis"; }
+  const exbtn = $("#expertsTab"); if(exbtn){ exbtn.hidden = !THESIS_ENABLED; exbtn.dataset.mode = "experts"; }
   wireModeSwitch($("#modeswitch"));
 }
 // Flip the shell between Guided intake, Quick Q&A and Expert Panel. The header, heading, mode switch and
@@ -5259,6 +5283,7 @@ function setMode(mode, opts){
   mode = (mode === "panel" || mode === "triage" || (mode === "voices" && VOICES_ENABLED)
           || (mode === "deepdive" && DEEPDIVE_ENABLED)
           || (mode === "thesis" && THESIS_ENABLED)
+          || (mode === "experts" && THESIS_ENABLED)
           || (mode === "investors" && INVESTORS_ENABLED)
           || ((mode === "startups" || mode === "guided") && STARTUPS_ENABLED)) ? mode : "qa";
   // Capture the mode we are LEAVING before overwriting it. The deepdive branch used to guard its
@@ -5321,6 +5346,13 @@ function setMode(mode, opts){
     q.placeholder = "State the thesis in a sentence \u2014 e.g. mid-market logistics firms will pay for automated route re-planning";
     if(location.hash.indexOf("#thesis") !== 0) history.pushState(null, "", "#thesis");
     if(window.TH) TH.enter(opts.params);
+    q.focus();
+  } else if(mode === "experts"){
+    document.body.classList.remove("chatting"); out.style.paddingBottom = "";
+    $("#heading").textContent = "Find an expert to validate a thesis";
+    q.setAttribute("placeholder", "Describe who you need — e.g. VP of ops at a mid-market 3PL who has switched warehouse systems");
+    if(location.hash !== "#experts") history.pushState(null, "", "#experts");
+    if(window.EX) EX.enter();
     q.focus();
   } else if(mode === "deepdive"){
     document.body.classList.remove("chatting"); out.style.paddingBottom = "";
@@ -6881,6 +6913,11 @@ function newConversation(){
     try{ history.replaceState(null, "", "#thesis"); }catch(e){}
     return;
   }
+  if(APP_MODE === "experts"){                           // a fresh expert search, still in Experts
+    if(window.EX) EX.reset();
+    try{ history.replaceState(null, "", "#experts"); }catch(e){}
+    return;
+  }
   if(APP_MODE === "deepdive"){                          // a fresh dive, still in Deep Dive
     if(window.DD) DD.enter(true);
     try{ history.replaceState(null, "", "#deepdive"); }catch(e){}
@@ -7797,6 +7834,7 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel �
     setMode("thesis"); if(window.TH) TH.open(id);
   }
   else if(location.hash === "#thesis" && THESIS_ENABLED){ setMode("thesis"); }
+  else if(location.hash === "#experts" && THESIS_ENABLED){ setMode("experts"); }
   else if(location.hash.indexOf("#investors") === 0 && INVESTORS_ENABLED){
     const m = location.hash.match(/[?&]b=([^&]*)/);
     setMode("investors", {params: m ? {brief: decodeURIComponent(m[1])} : null});
@@ -12639,6 +12677,70 @@ async function openShare(token){
             contextHtml, inqHtml, qnHtml, LENS, outreachText, segmentOf,
             _setState: (patch) => Object.assign(STATE, patch),
             claimHtml: (c, focused, owner, answers) => { STATE.answers = answers || {}; return claimHtml(c, focused, owner); }}};
+})();
+
+// ---- Experts — a first-class, standalone people-search mode -------------------------------------
+// Find subject-matter experts by expertise / title / company, independent of any thesis (it also
+// powers the thesis-scoped "Who to ask" panel). Public professional profiles are SIGNAL to reach out
+// to, never evidence. Uses the shared intake box: typing a query + Go runs EX.search.
+(function(){
+  const $ = s => document.querySelector(s);
+  const esc = x => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const bodyEl = () => document.getElementById("ex-body");
+  const noteEl = () => document.getElementById("ex-note");
+  let BUSY = false;
+
+  function introHtml(){
+    return '<div class="ex-intro"><h2>Find an expert</h2>'
+      + "<p>Describe who could speak to a question first-hand — by role, expertise, or the kind of "
+      + "company they’re at (“heads of warehouse ops at mid-market 3PLs who’ve switched "
+      + "systems”). I search public professional profiles and return people to reach out to. "
+      + "These are <b>public signal</b> — a starting point for a call, not evidence. "
+      + "To tie what an expert says back to a specific thesis, use <b>Test Thesis → Who to ask</b>.</p></div>";
+  }
+
+  function enter(){
+    if(noteEl()) noteEl().textContent = "";
+    if(bodyEl()) bodyEl().innerHTML = introHtml();
+  }
+
+  function cardFor(p){
+    const li = p.profile_url
+      ? '<a class="ex-open" href="' + esc(p.profile_url) + '" target="_blank" rel="noopener">open profile ↗</a>' : "";
+    return '<div class="ex-card"><span class="ex-name">' + esc(p.name || "Unnamed") + "</span>"
+      + '<span class="ex-head">' + esc(p.headline || "") + (p.org ? " · " + esc(p.org) : "") + "</span>"
+      + li + "</div>";
+  }
+
+  async function search(query){
+    const q = (query || "").trim();
+    if(q.length < 3){ if(noteEl()) noteEl().textContent = "Say who you're looking for."; return; }
+    if(BUSY) return; BUSY = true;
+    if(noteEl()) noteEl().textContent = "";
+    if(bodyEl()) bodyEl().innerHTML = '<p class="status">Searching public professional profiles…</p>';
+    try{
+      const headers = {"Content-Type": "application/json"};
+      try{ if(window.USER && USER.token) headers["Authorization"] = "Bearer " + USER.token; }catch(e){}
+      const r = await fetch("/experts/search", {method: "POST", headers: headers,
+        body: JSON.stringify({query: q, max_results: 12})});
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok) throw new Error(d.detail || "search failed");
+      const found = d.candidates || [];
+      if(!found.length){
+        bodyEl().innerHTML = introHtml() + '<p class="ex-signal">No public profiles surfaced for that. '
+          + "Try a broader description (role + segment), e.g. “operations leaders at 3PL warehouses”.</p>";
+      }else{
+        bodyEl().innerHTML = '<p class="ex-signal">' + found.length + " public profile"
+          + (found.length === 1 ? "" : "s") + " for “" + esc(q) + "” — signal to reach out to, not evidence.</p>"
+          + '<div class="ex-grid">' + found.map(cardFor).join("") + "</div>";
+      }
+    }catch(e){ if(bodyEl()) bodyEl().innerHTML = '<p class="th-note">' + esc(e.message || String(e)) + "</p>"; }
+    finally{ BUSY = false; }
+  }
+
+  function reset(){ enter(); }
+  window.EX = {enter, search, reset};
 })();
 </script>
 </body>

@@ -359,3 +359,13 @@ test("Phase 3: an aspect can log an expert-call transcript that becomes gated ca
   assert.match(SRC, /Calls are private to you/);           // privacy copy
   assert.match(SRC, /no NDA\/internal recordings/);        // consent copy
 });
+
+test("Experts is a first-class mode: its own tab, body, and standalone search", () => {
+  assert.match(MARKUP, /id="expertsTab"[^>]*data-mode|id="expertsTab"/);
+  assert.match(MARKUP, /<section id="expertsbody"/);
+  assert.match(SRC, /window.EX = \{enter, search, reset\}/);
+  assert.match(SRC, /APP_MODE === "experts"/);          // submit + reset route to EX
+  assert.match(SRC, /\/experts\/search"/);              // standalone endpoint, no thesis
+  assert.match(SRC, /exbtn = \$\("#expertsTab"\)/);      // shown by applyModeTabs
+  assert.match(SRC, /mode === "experts" && THESIS_ENABLED/);  // gated + allowed in setMode
+});

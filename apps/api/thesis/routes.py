@@ -127,6 +127,11 @@ class TranscriptIn(BaseModel):
     transcript: str = ""
 
 
+class PeopleSearchIn(BaseModel):
+    query: str = ""            # freeform expertise/title/company query — standalone, no thesis needed
+    max_results: int = 10
+
+
 class QuestionAdd(BaseModel):
     inquiry_key: str = ""
     aspect_key: str = ""
@@ -866,6 +871,32 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         return {"status": "ok", "aspect_key": body.aspect_key, "verdict": verdict, "note": note,
                 "points": [{"quote": p["quote"], "point": p["point"], "relation": p["relation"],
                             "said_by": who, "said_role": body.said_role or ""} for p in points]}
+
+    @r.post("/experts/search")
+    async def tl_experts_standalone(body: PeopleSearchIn):
+        """Standalone expert discovery — the first-class Experts mode. A freeform expertise/title/company
+        query over the people leg (Exa public-web profiles), independent of any thesis. Returns PUBLIC
+        profile links (signal, never evidence). Paid; runs on an explicit search."""
+        q = (body.query or "").strip()
+        if len(q) < 3:
+            raise HTTPException(status_code=400, detail="say who you're looking for")
+        try:
+            from eigen_kernel.runtime.build import build_people
+            client = build_people(mode=os.environ.get("EIGEN_PROVIDER_MODE") or "live",
+                                  include_domains=tuple(getattr(manifest, "people_domains", ()) or ()))
+            rows = await client.search(q, max_results=max(1, min(20, int(body.max_results or 10))))
+        except Exception:      # noqa: BLE001 — no people leg / provider error → empty, reported as such
+            return {"status": "ok", "query": q, "candidates": [], "unavailable": True}
+        seen: set = set()
+        out: list[dict] = []
+        for p in rows:
+            u = (p.profile_url or "").strip().lower()
+            if not u or u in seen:
+                continue
+            seen.add(u)
+            out.append({"name": p.name, "profile_url": p.profile_url, "headline": p.headline,
+                        "org": p.org, "relevance": p.relevance, "provider": p.provider})
+        return {"status": "ok", "query": q, "candidates": out}
 
     @r.get("/thesis/{thesis_id}/inquiry/status")
     async def tl_inquiry_status(thesis_id: str, run: str = "",
