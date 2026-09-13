@@ -151,7 +151,7 @@ def verdict_for(*, settleable: str, n_for: int, n_against: int) -> tuple[str, st
 
 
 WEB_USD_PER_QUERY = float(os.environ.get("EIGEN_THESIS_WEB_USD", "0.006"))
-WEB_MAX_RESULTS = 6
+WEB_MAX_RESULTS = 8
 WEB_MIN_CHARS = 80
 
 
@@ -179,9 +179,13 @@ async def _web(client, query: str, side: str, terms: list[str]) -> list[dict]:
         return []
     out = []
     for r in res or []:
+        # Exa returns query-aware highlights (the discriminating passages) PLUS a full-text body. Keep
+        # the highlights first (they lead the shown quote), then a generous slice of the body so the
+        # synthesis has real depth to draw on — not just a 300-char snippet. block_text carries all of
+        # it; the shown/verifiable quote is still capped at MAX_QUOTE below.
         text = " ".join(filter(None, [*(getattr(r, "highlights", ()) or ()),
                                       getattr(r, "snippet", "") or "",
-                                      (getattr(r, "body", "") or "")[:1200]])).strip()
+                                      (getattr(r, "body", "") or "")[:3000]])).strip()
         if len(text) < WEB_MIN_CHARS or not binds(text, terms):
             continue
         host = ""
@@ -275,7 +279,9 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     evidence = []
     for row in bound:
         merged = {**original[row["id"]], **row}
-        merged.pop("block_text", None)
+        # Keep block_text on the in-memory row: the synthesis reads it for depth (the full passage the
+        # row was drawn from, e.g. Exa highlights + body). add_evidence persists only its own columns
+        # (block_text is not one), so this never bloats the ledger or the client response.
         # `side` remains a display grouping only. Relationship is the semantic judgment.
         if row["relation"] == "supports":
             merged["side"] = SIDE_FOR

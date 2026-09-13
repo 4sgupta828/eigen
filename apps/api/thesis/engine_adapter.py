@@ -8,8 +8,65 @@ LLM, so the kernel never learns what a corpus or a filing is. The active vertica
 from __future__ import annotations
 
 import json
+import re
 
 from eigen_kernel.decision import sanitize_answer, NOT_ESTABLISHED
+
+# Distinctive tokens for citation recovery: multi-digit numbers (750, 20, 1000, 5.6) and proper
+# nouns / model names (OpenAI, AlphaSense, WSE-3, GPT-5.6). These are what tie a sentence to the
+# specific source it was drawn from; common words are not distinctive and are ignored.
+_NUM = re.compile(r"\d[\d.,]*\d|\d")
+_PROP = re.compile(r"[A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*")
+_STOP = {"The", "This", "That", "These", "Those", "Cerebras", "There", "While", "However", "Their",
+         "It", "Its", "A", "An", "In", "On", "For", "As", "Named", "Specific", "Further"}
+
+
+def _distinctive(text: str) -> tuple[set, set]:
+    nums = {n.replace(",", "") for n in _NUM.findall(text or "") if len(n.replace(",", "").replace(".", "")) >= 2}
+    props = {p for p in _PROP.findall(text or "") if len(p) >= 4 and p not in _STOP}
+    return nums, props
+
+
+def _recover_citations(items: list[dict], evidence: list[dict]) -> list[dict]:
+    """When the model writes a factual sentence but forgets its `evidence_ids`, bind it to the evidence
+    row(s) whose source text actually contains the sentence's distinctive tokens (a shared number, or
+    ≥2 shared proper nouns). Keeps grounding honest — a sentence that matches no source stays uncited
+    and is dropped downstream — while rescuing real findings the model failed to tag. Sentences the
+    model DID cite are left untouched."""
+    haystacks = []
+    for e in evidence or []:
+        eid = str(e.get("id") or "")
+        if not eid:
+            continue
+        txt = str(e.get("block_text") or e.get("quote") or "")
+        hn, hp = _distinctive(txt)
+        haystacks.append((eid, hn, {p.lower() for p in hp}, txt.lower()))
+    out = []
+    for it in items or []:
+        ids = [str(x) for x in ((it or {}).get("evidence_ids") or []) if str(x)]
+        if ids:
+            out.append(it); continue
+        text = str((it or {}).get("text") or "")
+        if not text.strip():
+            continue
+        snums, sprops = _distinctive(text)
+        sprops_l = {p.lower() for p in sprops}
+        scored = []
+        for eid, hn, hp, hl in haystacks:
+            num_hit = len(snums & hn)
+            prop_hit = len(sprops_l & hp)
+            # also count proper nouns that appear anywhere in the source text (substring), catching
+            # multi-word entities the token split missed
+            prop_sub = sum(1 for p in sprops_l if len(p) >= 5 and p in hl)
+            score = num_hit * 2 + max(prop_hit, prop_sub)
+            if num_hit >= 1 or prop_hit >= 2 or prop_sub >= 2:
+                scored.append((score, eid))
+        scored.sort(reverse=True)
+        if scored:
+            it = {**it, "evidence_ids": [eid for _s, eid in scored[:2]]}
+            out.append(it)
+        # else: no source contains this sentence's specifics → drop it (sanitize would too)
+    return out
 
 
 def make_gather(attack_fn):
@@ -80,11 +137,17 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
 
     async def synthesize(question, evidence):
         allowed = [str(e.get("id")) for e in (evidence or []) if e.get("id")]
+        # Give the model the FULLER source text (block_text — the whole passage the row was drawn from,
+        # e.g. Exa's query-aware highlights + body), not just the 400-char display quote, so the answer
+        # has real material to reason over. It still cites by evidence id; congruence was gated at
+        # retrieval, so showing more of the same passage deepens the answer without loosening grounding.
+        def _ctx(e):
+            return (str(e.get("block_text") or e.get("quote") or "").strip()[:1400]) or ""
         listing = "\n".join(
             f"[{e.get('id')}] ({e.get('register', '')}/{e.get('evidence_kind', '')}"
             + (f" · {e.get('source_subject')}" if e.get('source_subject') else "")
             + (f" · {e.get('period')}" if e.get('period') else "") + ") "
-            f"{str(e.get('quote') or '')[:400]}" for e in evidence[:16])
+            f"{_ctx(e)}" for e in evidence[:20])
         intent = _LENS_INTENT.get(getattr(question, "kind", None) and question.kind.value, "")
         ctx = ""
         if thesis:
@@ -101,11 +164,16 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
             return "" if llm_json is None else empty_note
         user = (ctx + f"QUESTION: {question.text}\nSTATEMENT UNDER TEST: {question.target}\n\n"
                 f"EVIDENCE (cite by the bracketed id):\n{listing}\n\n"
-                'Return ONE JSON object: {"sentences": [{"text": "...", "evidence_ids": ["id", ...]}], '
+                'Return ONE JSON object: {"sentences": [{"text": "...", "evidence_ids": ["<id>", ...]}], '
                 '"note": "..."}. Write a THOROUGH answer (4–8 sentences) using as much relevant evidence '
-                "as possible; each sentence cites its id(s). If the evidence does not fully settle the "
-                "question, put what it DOES show in sentences and use `note` to explain what is missing "
-                "and what source would settle it. Output ONLY the JSON object.")
+                "as possible.\n"
+                "CITATIONS ARE MANDATORY: every sentence MUST list the exact bracketed id(s) it rests on "
+                'in its `evidence_ids` array — e.g. {"text": "OpenAI runs GPT-5.6 inference on Cerebras '
+                'WSE-3 at 750 tokens/sec.", "evidence_ids": ["' + (allowed[0] if allowed else "abc123")
+                + '"]}. A sentence with an empty or missing evidence_ids will be DROPPED, so never leave '
+                "it out. If the evidence does not fully settle the question, put what it DOES show in "
+                "sentences (still cited) and use `note` to explain what is missing and what source would "
+                "settle it. Output ONLY the JSON object.")
         try:
             raw = await llm_json(system, user)
             d = raw if isinstance(raw, dict) else json.loads(raw)
@@ -113,6 +181,10 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
             note = str(d.get("note") or "").strip()
         except Exception:      # noqa: BLE001 — never blocks; falls back to an honest coverage note
             items, note = [], ""
+        # Rescue findings the model wrote but forgot to tag: bind each uncited sentence to the source
+        # that actually contains its specifics, so a rich answer never collapses to "not established"
+        # over a missing id. The strict gate below still drops anything that binds to no source.
+        items = _recover_citations(items, evidence)
         cited = sanitize_answer(items, allowed)
         if cited and cited != NOT_ESTABLISHED:
             # A real answer, plus the model's caveat about what remains open, when it gave one.

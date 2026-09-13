@@ -100,3 +100,37 @@ async def test_synthesize_no_evidence_still_explains():
     synth = make_synthesize(llm)
     out = await synth(_q("t"), [])                    # no evidence at all
     assert "search returned nothing" in out.lower() or "needed to settle" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_uncited_sentences_are_recovered_by_content_not_dropped():
+    # The model writes a real, specific finding but forgets evidence_ids. Recovery binds it to the
+    # source that contains its distinctive tokens, so the grounded answer survives instead of
+    # collapsing to "not established".
+    async def llm(system, user):
+        return {"sentences": [
+            {"text": "OpenAI runs GPT-5.6 inference on Cerebras WSE-3 at 750 tokens per second.",
+             "evidence_ids": None},                                     # forgotten citation
+            {"text": "A vague unsupported aside about the weather.", "evidence_ids": None}],  # binds to nothing
+            "note": ""}
+    ev = [{"id": "e1", "block_text": "Report: OpenAI deployed GPT-5.6 on Cerebras WSE-3 hitting 750 tokens/sec in production."},
+          {"id": "e2", "block_text": "Unrelated filing about quarterly revenue of 12 million dollars."}]
+    synth = make_synthesize(llm)
+    out = await synth(_q("Are customers switching?"), ev)
+    assert "750 tokens per second" in out                              # the real finding is kept
+    assert "[[e:e1]]" in out                                           # bound to the right source
+    assert "weather" not in out                                        # the unbindable aside is dropped
+
+
+def test_recover_citations_requires_a_real_content_match():
+    from api.thesis.engine_adapter import _recover_citations
+    ev = [{"id": "e1", "block_text": "Cerebras posted 750 tokens per second on WSE-3."}]
+    # a number match binds
+    got = _recover_citations([{"text": "Throughput reached 750 tokens/sec.", "evidence_ids": []}], ev)
+    assert got[0]["evidence_ids"] == ["e1"]
+    # a sentence sharing no distinctive token binds to nothing and is dropped (never enters uncited)
+    got2 = _recover_citations([{"text": "The team is optimistic about the future.", "evidence_ids": []}], ev)
+    assert got2 == []
+    # an already-cited sentence is left untouched
+    got3 = _recover_citations([{"text": "x", "evidence_ids": ["e9"]}], ev)
+    assert got3[0]["evidence_ids"] == ["e9"]
