@@ -581,17 +581,36 @@
   .th-aspect:first-child{border-top:0;}
   .th-aspect-h{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.15rem;}
   .th-aspect-h b{font-size:.92rem;font-weight:600;line-height:1.4;color:var(--ink);}
-  .th-aspect-v{font-family:var(--mono);font-size:.62rem;letter-spacing:.04em;color:var(--dim);}
-  .th-aspect-v[data-v="supported"]{color:var(--verified,#2f7d5b);}
-  .th-aspect-v[data-v="contradicted"]{color:#b4544a;}
-  .th-aspect-v[data-v="under_tested"]{color:#8a6d3b;}
-  /* a typed Socratic question, boxed as its own card */
-  .th-qn{margin:.55rem 0;padding:.65rem .8rem;border:1px solid var(--hair);border-radius:10px;
-    background:var(--panel2);}
+  /* verdict badge — the per-aspect outcome, colour-coded so it reads at a glance */
+  .th-aspect-v{display:inline-flex;align-items:center;gap:.32rem;font:600 .56rem/1 var(--mono);
+    letter-spacing:.05em;text-transform:uppercase;padding:.22rem .5rem .24rem;border-radius:999px;
+    --v:var(--dim);color:var(--v);border:1px solid color-mix(in srgb,var(--v) 34%,transparent);
+    background:color-mix(in srgb,var(--v) 10%,transparent);white-space:nowrap;}
+  .th-aspect-v::before{content:"";width:.4rem;height:.4rem;border-radius:50%;background:var(--v);flex:none;}
+  .th-aspect-v[data-v="supported"]{--v:var(--verified);}
+  .th-aspect-v[data-v="contradicted"]{--v:#b4544a;}
+  .th-aspect-v[data-v="under_tested"]{--v:var(--gap);}
+  .th-aspect-v[data-v="unsettleable"]{--v:var(--muted);}
+  .th-aspect-v[data-v="open"]{--v:var(--dim);opacity:.6;}
+  /* a typed Socratic question, boxed as its own card; the LENS hue tints the left edge so a support
+     probe and a red-team probe are tellable apart without reading the label */
+  .th-qn{margin:.55rem 0;padding:.65rem .8rem;border:1px solid var(--hair);border-left-width:3px;
+    border-radius:10px;background:var(--panel2);--lens:var(--dim);
+    border-left-color:color-mix(in srgb,var(--lens) 55%,var(--hair));}
   .th-qn.th-qn-active{border-color:var(--gold);box-shadow:0 0 0 1px color-mix(in srgb,var(--gold) 35%,transparent);}
   .th-qn-q{display:flex;gap:.5rem;align-items:flex-start;font-size:.9rem;line-height:1.5;color:var(--ink);font-weight:500;}
   .th-qn-q .th-qn-text{flex:1 1 auto;min-width:0;}
-  .th-qn-lens{font-family:var(--mono);font-size:.6rem;letter-spacing:.04em;color:var(--dim);margin:.2rem 0 0;text-transform:lowercase;}
+  /* lens chip: glyph + stance, one hue per reasoning lens (shared with the card's left edge) */
+  .th-qn[data-lens="seek_support"],.th-lens[data-lens="seek_support"]{--lens:var(--verified);}
+  .th-qn[data-lens="seek_contradiction"],.th-lens[data-lens="seek_contradiction"]{--lens:#b4544a;}
+  .th-qn[data-lens="resolve_ambiguity"],.th-lens[data-lens="resolve_ambiguity"]{--lens:var(--gold);}
+  .th-qn[data-lens="challenge_assumption"],.th-lens[data-lens="challenge_assumption"]{--lens:var(--gap);}
+  .th-lens{display:inline-flex;align-items:center;gap:.34rem;margin:.4rem 0 0;
+    font:600 .58rem/1 var(--mono);letter-spacing:.03em;text-transform:lowercase;
+    padding:.22rem .5rem .24rem;border-radius:999px;--lens:var(--dim);color:var(--lens);
+    border:1px solid color-mix(in srgb,var(--lens) 38%,transparent);
+    background:color-mix(in srgb,var(--lens) 9%,transparent);}
+  .th-lens-g{font-size:.82rem;line-height:0;}
   /* the grounded answer: readable paragraphs + inline footnotes + a numbered evidence list */
   .th-answer-body{margin:.55rem 0 0;font-size:.86rem;line-height:1.65;color:var(--ink);}
   .th-answer-body p{margin:.45rem 0;}
@@ -662,9 +681,18 @@
   .th-inq-add{font-family:var(--mono);font-size:.66rem;padding:.35rem .7rem;border-radius:8px;border:1px dashed var(--hair);
     background:transparent;color:var(--dim);cursor:pointer;min-height:36px;margin-top:.3rem;}
   .th-inq-add:hover{border-color:var(--gold);color:var(--gold);}
-  .th-inq-del{color:var(--dim);border-color:var(--hair);}
-  .th-inq-del:hover{border-color:#c0563f;color:#c0563f;}
+  /* per-line delete: quiet and clearly secondary to Run — borderless until hovered */
+  .th-inq-del{font-family:var(--mono);font-size:.66rem;padding:.35rem .6rem;border-radius:8px;
+    border:1px solid transparent;background:transparent;color:var(--dim);cursor:pointer;
+    min-height:36px;margin-top:.3rem;}
+  .th-inq-del:hover{color:#c0563f;border-color:color-mix(in srgb,#c0563f 35%,transparent);
+    background:color-mix(in srgb,#c0563f 7%,transparent);}
+  .th-inq-del:focus-visible{outline:2px solid #c0563f;outline-offset:2px;}
+  /* top-bar clear-all keeps the dashed affordance of its sibling but reads as destructive */
+  .th-inq-add.th-inq-del{border:1px dashed color-mix(in srgb,#c0563f 32%,var(--hair));}
   .th-loi-bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 .9rem;}
+  .th-loi-bar #th-redraft{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 45%,var(--hair));}
+  .th-loi-bar #th-redraft:hover{color:var(--on-accent);background:var(--gold);border-color:var(--gold);}
   .th-inq-head:focus-visible,.th-run:focus-visible,.th-inq-add:focus-visible,.th-inq-del:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
   @media (max-width:560px){
     .th-inq-head{flex-wrap:wrap;}
@@ -11985,8 +12013,8 @@ async function openShare(token){
     qs.forEach(q => { (byAspect[q.aspect_key] = byAspect[q.aspect_key] || []).push(q); });
     const aspects = (inq.aspects || []).map(a => {
       const aqs = byAspect[a.key] || [];
-      const vd = a.verdict && a.verdict !== "open"
-        ? '<span class="th-aspect-v" data-v="' + esc2(a.verdict) + '">' + esc2(verdictWord(a.verdict)) + "</span>" : "";
+      const vv = a.verdict || "open";
+      const vd = '<span class="th-aspect-v" data-v="' + esc2(vv) + '">' + esc2(verdictWord(vv)) + "</span>";
       return '<div class="th-aspect"><div class="th-aspect-h"><b>' + esc2(a.prompt || a.key) + "</b>" + vd + "</div>"
         + aqs.map(q => qnHtml(q, owner, ctx)).join("")
         + (owner && !running ? '<button type="button" class="th-inq-add" data-add="' + esc2(inq.key) + "|" + esc2(a.key)
@@ -12059,8 +12087,10 @@ async function openShare(token){
     const run = !canRun ? "" : '<button type="button" class="th-qn-play" data-qrun="' + esc2(q.id)
       + '" title="' + (q.target_status ? "Re-run" : "Run") + ' this question" aria-label="'
       + (q.target_status ? "Re-run" : "Run") + ' this question">' + (q.target_status ? "↻" : "▶") + "</button>";
+    const lensChip = '<span class="th-lens" data-lens="' + esc2(q.kind) + '"><span class="th-lens-g" aria-hidden="true">'
+      + esc2(lens.glyph || "") + "</span>" + esc2(lens.label || q.kind) + "</span>";
     const qline = '<div class="th-qn-q"><span class="th-qn-text">' + esc2(q.text) + "</span>" + run + "</div>"
-      + '<div class="th-qn-lens">' + esc2(lens.label || "") + "</div>";
+      + lensChip;
     let body = "";
     if(isActive){
       body = '<div class="th-qn-work"><span class="su-spin"></span> researching this question…</div>';
@@ -12072,7 +12102,8 @@ async function openShare(token){
       body = '<div class="th-qn-tools"><button type="button" class="th-qn-edit" data-edit="' + esc2(q.id)
         + '">edit</button><button type="button" class="th-qn-edit" data-rm="' + esc2(q.id) + '">remove</button></div>';
     }
-    return '<div class="th-qn' + (isActive ? " th-qn-active" : "") + '" data-qid="' + esc2(q.id) + '">' + qline + body + "</div>";
+    return '<div class="th-qn' + (isActive ? " th-qn-active" : "") + '" data-lens="' + esc2(q.kind)
+      + '" data-qid="' + esc2(q.id) + '">' + qline + body + "</div>";
   }
 
   function allEvidence(){

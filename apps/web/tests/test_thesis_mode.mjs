@@ -216,6 +216,12 @@ test("a line of inquiry renders its questions with typed lens glyphs", () => {
   assert.match(html, /seeks support/);                            // the two lenses are labeled
   assert.match(html, /seeks disconfirmation/);
   assert.match(html, /data-run="buyer"/);                         // an unrun inquiry offers to run
+  // lens is colour-coded: each question card + its chip carry data-lens, and the chip shows the glyph
+  assert.match(html, /class="th-qn"[^>]*data-lens="seek_support"/);
+  assert.match(html, /class="th-lens" data-lens="seek_contradiction"><span class="th-lens-g"/);
+  assert.match(html, /⊕/);                                        // the support glyph renders
+  // the aspect verdict renders as a badge (data-v), always present so status reads at a glance
+  assert.match(html, /class="th-aspect-v" data-v="open"/);
 });
 
 test("an answered question shows a grounded answer with footnotes and an evidence list", () => {
