@@ -12189,6 +12189,12 @@ async function openShare(token){
   // (call_only), surface the role to ask, the questions to put to them, and anyone already named in
   // the evidence. No provider yet: pure decision support from what the thesis holds.
   function segmentOf(d){ return Object.values((d && d.subject) || {}).map(String).join(" ").trim(); }
+  // Local copy — the global one lives in another module's IIFE and is not in this closure's scope, so
+  // referencing it here threw and loadExperts silently swallowed it, leaving the "Who to ask" panel blank.
+  function thLinkedinUrl(name, company, title){
+    const bits = [name, company, (title || "").split(" ").slice(0, 3).join(" ")].filter(Boolean);
+    return "https://www.google.com/search?q=" + encodeURIComponent(bits.join(" ").slice(0, 160) + " linkedin");
+  }
 
   async function loadExperts(){
     const host = document.getElementById("th-experts"); if(!host) return;
@@ -12217,13 +12223,13 @@ async function openShare(token){
       const qs = '<ul class="th-ea-qs">' + (a.questions || []).map(q => "<li>" + esc2(q) + "</li>").join("") + "</ul>";
       const cands = (a.candidates || []).map(c => {
         const art = (c.artifacts || [])[0] || {};
-        const li = '<a href="' + esc2(linkedinSearchUrl(c.name, seg, c.role)) + '" target="_blank" rel="noopener" class="th-ea-find">find on LinkedIn ↗</a>';
+        const li = '<a href="' + esc2(thLinkedinUrl(c.name, seg, c.role)) + '" target="_blank" rel="noopener" class="th-ea-find">find on LinkedIn ↗</a>';
         const src = art.url ? ' · <a href="' + esc2(art.url) + '" target="_blank" rel="noopener">' + esc2(art.title || "source") + " ↗</a>" : "";
         return '<div class="th-ea-cand"><span class="th-ea-name">' + esc2(c.name) + "</span>"
           + '<span class="th-ea-why">' + esc2(c.why || "") + src + "</span>" + li + "</div>";
       }).join("");
       const body = cands || ('<p class="th-ea-guide">' + esc2(a.guidance || "")
-        + ' <a href="' + esc2(linkedinSearchUrl("", seg, roleLabels)) + '" target="_blank" rel="noopener" class="th-ea-find">search LinkedIn ↗</a></p>');
+        + ' <a href="' + esc2(thLinkedinUrl("", seg, roleLabels)) + '" target="_blank" rel="noopener" class="th-ea-find">search LinkedIn ↗</a></p>');
       // Logged expert calls (Phase 3): each a gated, verbatim call point that moves the verdict.
       const calls = (a.calls || []).length ? '<div class="th-ea-calls"><div class="th-ea-found-h">Expert calls logged</div>'
         + a.calls.map(cl => '<div class="th-ea-call" data-rel="' + esc2(cl.relation || "") + '">'
