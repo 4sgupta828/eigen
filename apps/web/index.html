@@ -3123,6 +3123,18 @@ async function loadConfig(){
           try{ if(ACCOUNTS_ENABLED && USER && !USER.token) AUTH_MODE = "login"; updateAuthUI(); maybeShowAuthButtons(); }catch(e){}   // the sign-in state on THIS load
           DYN_ENGINES = !!f.dynamic_engines_enabled;
           PULSE_ENABLED = !!f.pulse_enabled; maybeShowPulseBell();
+          // Self-heal mode-tab visibility from the FRESH config: a stale cached config (written before a
+          // mode was enabled) would otherwise hide a newly-enabled tab until the load-after-next, and
+          // localStorage survives a hard refresh — so the user could never see it. Re-apply the mode
+          // flags + tabs here, and if the URL names a now-enabled mode we are not in, route to it.
+          try{
+            STARTUPS_ENABLED = !!f.startup_search_enabled; INVESTORS_ENABLED = !!f.investor_search_enabled;
+            THESIS_ENABLED = !!f.thesis_enabled; VOICES_ENABLED = !!f.voices_enabled;
+            DEEPDIVE_ENABLED = !!f.deepdive_enabled; ASK_PANEL_ENABLED = !!f.ask_panel_enabled;
+            TRIAGE_ENABLED = !!f.triage_enabled;
+            applyModeTabs();
+            if(APP_MODE === "qa" && location.hash && location.hash !== "#" && typeof routeHash === "function") routeHash();
+          }catch(e){}
         })
         .catch(()=>{});
     } else {
@@ -3176,21 +3188,7 @@ async function loadConfig(){
     }
     PANEL_SPECIALISTS = c.panel_specialists || [];
     PANEL_EXAMPLES = c.panel_examples || [];
-    if(ASK_PANEL_ENABLED || TRIAGE_ENABLED || STARTUPS_ENABLED || VOICES_ENABLED || DEEPDIVE_ENABLED || INVESTORS_ENABLED || THESIS_ENABLED){
-      // One shell, up to three modes (Guided intake ⇄ Quick Q&A ⇄ Expert Panel), switched in the same
-      // place under the heading. Only the enabled modes' buttons show; the shared box carries across them.
-      $("#modeswitch").classList.add("on");
-      const pbtn = $("#modeswitch .mbtn[data-mode='panel']"); if(pbtn) pbtn.hidden = !ASK_PANEL_ENABLED;
-      const tbtn = $("#modeswitch .mbtn[data-mode='triage']"); if(tbtn) tbtn.hidden = !TRIAGE_ENABLED;
-      // Startup Search is a separate page (a detached feature) — the tab navigates rather than switching mode.
-      const sbtn = $("#startupsTab"); if(sbtn){ sbtn.hidden = !STARTUPS_ENABLED; sbtn.dataset.mode = "startups"; }
-      const gbtn = $("#guidedTab"); if(gbtn){ gbtn.hidden = !STARTUPS_ENABLED; gbtn.dataset.mode = "guided"; }
-      const vbtn = $("#voicesTab"); if(vbtn){ vbtn.hidden = !VOICES_ENABLED; vbtn.dataset.mode = "voices"; }
-      const dbtn = $("#deepdiveTab"); if(dbtn){ dbtn.hidden = !DEEPDIVE_ENABLED; dbtn.dataset.mode = "deepdive"; }
-      const ibtn = $("#investorsTab"); if(ibtn){ ibtn.hidden = !INVESTORS_ENABLED; ibtn.dataset.mode = "investors"; }
-      const thbtn = $("#thesisTab"); if(thbtn){ thbtn.hidden = !THESIS_ENABLED; thbtn.dataset.mode = "thesis"; }
-      wireModeSwitch($("#modeswitch"));
-    }
+    applyModeTabs();   // show the enabled modes' tabs (re-applied when fresh /config arrives, see below)
     VISION_ENABLED = !!c.vision_enabled;
     if(EFFORT_ENABLED){
       $("#effort").hidden = false;
@@ -5227,7 +5225,32 @@ function setPanelState(st){ PANEL_STATE = st; document.body.dataset.panel = st; 
 // Wire the mode-switch control: clicking any mode button flips the shell to that mode.
 function wireModeSwitch(el){
   if(!el) return;
-  el.querySelectorAll(".mbtn").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  // Idempotent: guard each button so a re-apply (fresh config arriving after a stale cache) never
+  // double-registers the click handler.
+  el.querySelectorAll(".mbtn").forEach(b => {
+    if(b.dataset.wired) return;
+    b.dataset.wired = "1";
+    b.addEventListener("click", () => setMode(b.dataset.mode));
+  });
+}
+
+// Show/hide the mode tabs from the CURRENT flag globals. Idempotent — safe to call again when a fresh
+// /config arrives after a stale cached one, so a newly-enabled mode (e.g. Test Thesis) appears on THIS
+// load instead of the load after next.
+function applyModeTabs(){
+  const any = ASK_PANEL_ENABLED || TRIAGE_ENABLED || STARTUPS_ENABLED || VOICES_ENABLED
+    || DEEPDIVE_ENABLED || INVESTORS_ENABLED || THESIS_ENABLED;
+  if(!any) return;
+  $("#modeswitch").classList.add("on");
+  const pbtn = $("#modeswitch .mbtn[data-mode='panel']"); if(pbtn) pbtn.hidden = !ASK_PANEL_ENABLED;
+  const tbtn = $("#modeswitch .mbtn[data-mode='triage']"); if(tbtn) tbtn.hidden = !TRIAGE_ENABLED;
+  const sbtn = $("#startupsTab"); if(sbtn){ sbtn.hidden = !STARTUPS_ENABLED; sbtn.dataset.mode = "startups"; }
+  const gbtn = $("#guidedTab"); if(gbtn){ gbtn.hidden = !STARTUPS_ENABLED; gbtn.dataset.mode = "guided"; }
+  const vbtn = $("#voicesTab"); if(vbtn){ vbtn.hidden = !VOICES_ENABLED; vbtn.dataset.mode = "voices"; }
+  const dbtn = $("#deepdiveTab"); if(dbtn){ dbtn.hidden = !DEEPDIVE_ENABLED; dbtn.dataset.mode = "deepdive"; }
+  const ibtn = $("#investorsTab"); if(ibtn){ ibtn.hidden = !INVESTORS_ENABLED; ibtn.dataset.mode = "investors"; }
+  const thbtn = $("#thesisTab"); if(thbtn){ thbtn.hidden = !THESIS_ENABLED; thbtn.dataset.mode = "thesis"; }
+  wireModeSwitch($("#modeswitch"));
 }
 // Flip the shell between Guided intake, Quick Q&A and Expert Panel. The header, heading, mode switch and
 // intake box are shared; only the answer surface (and Q&A-only control rows) swap. Typed text is preserved.
