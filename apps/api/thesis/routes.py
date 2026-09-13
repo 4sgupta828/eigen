@@ -649,6 +649,15 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                     continue
                 q = _dec.Question(kind=_dec.QuestionKind(row["kind"]), text=row["text"],
                                   target=row["target"], polarity=int(row["polarity"]))
+                # Persist the gathered evidence to the ledger (keyed to the aspect/rung) BEFORE the
+                # answer — otherwise the answer's [[e:id]] citations reference rows that were never
+                # stored, so they cannot resolve and the answer reads "without evidence". gather is
+                # cached, so run_question below reuses this same pull with no second retrieval.
+                ev = await gather(q)
+                for e in ev:
+                    e["run_id"] = run_id
+                if ev:
+                    await tstore.add_evidence(pool, thesis_id, row["aspect_key"], ev)
                 st = await _dec.run_question(gather, profile, q, synth)
                 await tstore.answer_question(pool, thesis_id, row["id"], target_status=st.target_status,
                                              answer=st.answer, evidence_ids=list(st.evidence_ids), run_id=run_id)

@@ -616,6 +616,10 @@
   .th-found[data-f="ok"]{color:var(--verified,#2f7d5b);}
   .th-found[data-f="no"]{color:#b4544a;}
   .th-found[data-f="none"]{color:var(--dim);}
+  .th-qn-ev{margin:.55rem 0 0;display:grid;gap:.4rem;}
+  .th-qn-ev-h{font:600 .58rem/1.2 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+    margin:.3rem 0 .1rem;}
+  .th-qn-evn{font-family:var(--mono);font-size:.62rem;color:var(--dim);}
   .th-qn-work{margin:.35rem 0 0;display:flex;align-items:center;gap:.45rem;font-family:var(--mono);
     font-size:.72rem;color:var(--gold);}
   .th-qn-wait{margin:.35rem 0 0;font-family:var(--mono);font-size:.66rem;color:var(--dim);opacity:.7;}
@@ -11497,7 +11501,7 @@ async function openShare(token){
       + "</div>";
   }
 
-  function evHtml(e){
+  function evHtml(e, inline){
     const src = e.source_url
       ? '<a class="th-src" href="' + esc2(e.source_url) + '" target="_blank" rel="noopener">'
         + esc2(e.source_key || "source") + " ↗</a>"
@@ -11507,12 +11511,21 @@ async function openShare(token){
       + (e.said_role ? " · " + esc2(e.said_role) : "") + "</span>" : "";
     const meta = [e.source_subject, e.evidence_kind, e.period || e.as_of].filter(Boolean).join(" · ");
     const relation = e.relation || (e.signal_only ? "signal" : "context");
-    return '<div class="th-ev" id="evidence-' + esc2(e.id || "") + '" data-side="' + esc2(e.side) + '">'
+    // The ledger copy carries id="evidence-<id>" (the citation scroll target); an INLINE copy under a
+    // question must not repeat that id (duplicate ids break getElementById).
+    return '<div class="th-ev"' + (inline ? "" : ' id="evidence-' + esc2(e.id || "") + '"')
+      + ' data-side="' + esc2(e.side) + '">'
       + '<span title="' + esc2(e.register) + '">' + (REG[e.register] || "▢") + "</span>"
-      + '<span class="th-q">' + esc2((e.quote || "").slice(0, 300))
+      + '<span class="th-q">' + esc2((e.quote || "").slice(0, 400))
       + ' <span class="th-signal">' + esc2(relation.replace(/_/g, " ")) + "</span>"
       + (meta ? '<small class="th-note">' + esc2(meta) + "</small>" : "")
       + "</span>" + who + src + "</div>";
+  }
+
+  // The evidence a question's answer draws on, resolved from the ledger by the ids it cited.
+  function evidenceFor(q){
+    const want = new Set(q.evidence_ids || []);
+    return allEvidence().filter(e => e && want.has(e.id));
   }
 
   function claimHtml(c, focused, owner){
@@ -12004,11 +12017,17 @@ async function openShare(token){
       let f = FOUND[q.target_status] || FOUND.target_untested;
       if(q.target_status === "target_untested" && q.answer)
         f = {label: "found, but not decisive", cls: "none"};
+      const qev = evidenceFor(q);
+      const evBlock = qev.length
+        ? '<div class="th-qn-ev"><div class="th-qn-ev-h">Evidence</div>'
+          + qev.map(e => evHtml(e, true)).join("") + "</div>" : "";
       const inner = q.answer
-        ? '<div class="th-qn-a">' + linkEvidence(q.answer, allEvidence()) + "</div>"
-        : '<div class="th-qn-a none">Not established in the record.</div>';
+        ? '<div class="th-qn-a">' + linkEvidence(q.answer, allEvidence()) + "</div>" + evBlock
+        : '<div class="th-qn-a none">Not established in the record.</div>' + evBlock;
       body = '<details class="th-qn-ans"><summary><span class="th-found" data-f="' + f.cls + '">'
-        + esc2(f.label) + '</span><span class="th-qn-toggle"></span></summary>' + inner + "</details>";
+        + esc2(f.label) + '</span>' + (qev.length ? '<span class="th-qn-evn">' + qev.length
+            + " source" + (qev.length === 1 ? "" : "s") + "</span>" : "")
+        + '<span class="th-qn-toggle"></span></summary>' + inner + "</details>";
     }else if(canRun){
       body = '<div class="th-qn-tools"><button type="button" class="th-qn-edit" data-edit="' + esc2(q.id)
         + '">edit</button><button type="button" class="th-qn-edit" data-rm="' + esc2(q.id) + '">remove</button></div>';

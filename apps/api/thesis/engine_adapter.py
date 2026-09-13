@@ -32,10 +32,19 @@ def make_gather(attack_fn):
 
 
 _SYNTH_DEFAULT = """\
-You answer ONE question about a decision using ONLY the evidence given. State what the evidence shows,
-in its honest register — a filing states a fact, a press release or forum post is a stated claim or a
-market signal, never dressed up as more. Do not invent sources, numbers, or quotes. If the evidence does
-not answer the question, return an empty list."""
+You are a diligence analyst answering ONE question about a decision, grounded ONLY in the evidence given.
+Write a THOROUGH, evidence-backed answer — not a one-liner.
+
+How to answer:
+- Cover EVERY distinct point the evidence supports: the mechanism, the numbers, named parties, dates,
+  and any conflict or nuance. Use as much of the evidence as is relevant — do not stop at one item.
+- Write 4–8 sentences. Each sentence makes ONE factual assertion and cites the specific evidence id(s)
+  it rests on. Lead each with the fact (the company, the number, the party), not with "the evidence".
+- Report each source in its honest register: a filing or granted patent states a fact; a press release,
+  preprint, or forum post is a stated claim or a market signal — never dress a signal up as a fact.
+- Where the evidence conflicts or is one-sided, say so plainly. Note what the record does NOT establish.
+- Do not invent sources, numbers, or quotes. Every sentence must cite at least one given evidence id.
+- If the evidence genuinely says nothing about the question, return an empty list."""
 
 
 # What each lens is FOR — so the model frames its answer to the actual intent of the question, not just
@@ -61,8 +70,10 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
         if llm_json is None or not allowed:
             return ""
         listing = "\n".join(
-            f"[{e.get('id')}] ({e.get('register', '')}/{e.get('evidence_kind', '')}) "
-            f"{str(e.get('quote') or '')[:220]}" for e in evidence[:8])
+            f"[{e.get('id')}] ({e.get('register', '')}/{e.get('evidence_kind', '')}"
+            + (f" · {e.get('source_subject')}" if e.get('source_subject') else "")
+            + (f" · {e.get('period')}" if e.get('period') else "") + ") "
+            f"{str(e.get('quote') or '')[:400]}" for e in evidence[:16])
         intent = _LENS_INTENT.get(getattr(question, "kind", None) and question.kind.value, "")
         ctx = ""
         if thesis:
@@ -74,8 +85,9 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
         user = (ctx + f"QUESTION: {question.text}\nSTATEMENT UNDER TEST: {question.target}\n\n"
                 f"EVIDENCE (cite by the bracketed id):\n{listing}\n\n"
                 'Return ONE JSON object: {"sentences": [{"text": "...", "evidence_ids": ["id", ...]}]}. '
-                "Answer THIS question in the context of the thesis; each sentence states only what its "
-                "cited evidence shows. Output ONLY the JSON object.")
+                "Write a THOROUGH answer (4–8 sentences) using as much of the evidence above as is "
+                "relevant; each sentence states only what its cited evidence shows and cites its id(s). "
+                "Output ONLY the JSON object.")
         try:
             raw = await llm_json(system, user)
             d = raw if isinstance(raw, dict) else json.loads(raw)
