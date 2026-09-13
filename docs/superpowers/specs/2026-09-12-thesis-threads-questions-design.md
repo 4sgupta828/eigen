@@ -407,3 +407,86 @@ prior answers preserved on the superseded rows.
    requires run_id.
 5. `ts_question` table; mutable-until-run then immutable-with-supersede; idempotency = active-question-set
    hash.
+
+---
+
+## 14. Build it generic: a kernel decision-testing engine + a vertical DecisionProfile (owner direction, 2026-09-12)
+
+This reframes WHERE the feature lives. Per the standing **Kernel/Vertical Split** directive, the
+MECHANICS are domain-free and central; a vertical ADAPTS them to become native. The litmus — "could a
+LEGAL or BIOTECH vertical reuse this by supplying its own manifest, kernel untouched?" — is now the
+design's explicit goal: the same engine informs a startup thesis here, a clinical-case decision in
+noesis, a hiring decision in roster.
+
+**Hard constraint (No-coupling-with-noesis directive):** the kernel names NO domain noun and eigen
+contains NO medical/hiring vocabulary. "Generic so noesis/roster can reuse it" means the kernel is
+shared *design lineage* those SEPARATE products adapt with their OWN profiles in their OWN repos. Eigen
+ships exactly one profile — the tech one. The grep + AST guardrails (`tools/check_kernel_*`) enforce
+this and must stay green.
+
+### 14.1 The kernel engine (`packages/kernel/eigen_kernel/decision/`, domain-free)
+
+Generic vocabulary — the tech vertical maps its nouns onto these; the kernel never says "thesis",
+"startup", "rung", "claim":
+
+- **Decision** — the proposition to be informed (tech: the thesis).
+- **Aspect** — a coverage unit the decision rests on (tech: a ladder rung). The aspect SET is the
+  coverage contract, supplied by the profile, not the model's to edit.
+- **Inquiry** — a group of related aspects (the card).
+- **Question** — `{kind, text, target, polarity}`: `kind` ∈ the generic lens taxonomy below; `text` is
+  the Socratic question shown to the user; `target` is the declarative proposition the evidence pipeline
+  actually tests; `polarity` says whether confirming `target` supports or contradicts the aspect.
+- **QuestionKind** (generic decision-testing lenses, domain-free): `SEEK_SUPPORT`, `SEEK_CONTRADICTION`,
+  `RESOLVE_AMBIGUITY`, `CHALLENGE_ASSUMPTION`.
+- **Verdict** — `supported / contradicted / under_tested / unsettleable / open` (generic).
+
+Kernel MECHANICS (no domain vocabulary): the Socratic question generator (prompted by the profile), the
+per-`target` evidence run over kernel retrieval + the existing grounding/congruence/authority gates, the
+per-question status, the deterministic aspect-verdict aggregation (delegated to the profile's policy),
+and the run/curation/supersede/idempotency machinery. These are the pieces §10–13 specified — they move
+into the kernel, parameterized.
+
+### 14.2 The adaptation seam: `DecisionProfile` on the VerticalManifest
+
+The vertical supplies, via `manifest.py` (like `thesis_policy` already is):
+
+- `aspects()` → the coverage structure + each aspect's canonical question + settleability
+  (tech: the 10-rung ladder, `schema.py`).
+- `inquiries()` → the grouping of aspects into lines of inquiry.
+- `decompose_directive` / `question_directive` → domain-flavored prompts: what a concrete decision looks
+  like, and how to phrase typed Socratic questions + their declarative `target` sub-claims for this
+  domain.
+- `authority` + `qualify` + `aggregate_questions` → the domain judgment (authority tiers, what counts as
+  "enough", the question-set→aspect-verdict mapping). Already vertical (`thesis_policy.py`,
+  `authority.py`); `aggregate_questions` is the new piece (§13).
+- connectors / corpus (already vertical).
+
+The **tech vertical** implements `TechDecisionProfile` from the current startup-thesis ladder + tech
+authority + the hardened aggregation policy. A medical or hiring product implements its own profile in
+its own repo — never in eigen.
+
+### 14.3 App layer becomes a thin adapter
+
+`apps/api/thesis/` stops owning the mechanics: its routes wire the kernel engine + the active vertical's
+`DecisionProfile` (from `build_manifest()`), exactly as the app already resolves `manifest.thesis_policy`
+and `manifest.ui`. The just-shipped genesis (converse-to-a-decision) and the async runner are themselves
+generic decision-support mechanics; they MIGRATE into the kernel engine under the same profile as part of
+this work (or a tracked fast-follow) so there is one philosophy, not a kernel engine beside an app-layer
+twin.
+
+### 14.4 What this changes for the plan
+
+- Build the NEW work (inquiries, typed Socratic questions, `aggregate_questions`, per-question runs) in
+  `eigen_kernel/decision/` FIRST, domain-free, with the `DecisionProfile` contract; the tech vertical
+  supplies the profile; the app wires it.
+- Keep `tools/check_kernel_invariant.sh` + `check_kernel_imports.py` green at every step (no "thesis",
+  "startup", "buyer", "sentiment" in kernel code/prompts — those come from the profile as data).
+- Conformance: a second, MINIMAL profile fixture in tests (a toy non-tech decision) proves the engine is
+  actually vertical-neutral — the real proof of §14's litmus, and the guard against the tech vocabulary
+  creeping back into the kernel.
+
+### Panel question this adds
+- The `DecisionProfile` boundary: is the split above (kernel = mechanics + lens taxonomy + run/aggregate
+  machinery; profile = aspects + inquiries + directives + authority + qualify/aggregate) the right cut,
+  or does any piece (e.g. the lens taxonomy, the polarity model) belong on the vertical side? And is
+  migrating genesis + the async runner into the kernel now in-scope, or a fast-follow?

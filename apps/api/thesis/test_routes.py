@@ -403,7 +403,11 @@ def test_generate_frames_the_thesis_then_asks_questions_of_the_frame(monkeypatch
                                      "dimension": "buyer_nameable"}],
                     "risks": [{"text": "Procurement cycles are 18 months", "dimension": "catalyst"}],
                     "unknowns": [], "anchors": ["hospital procurement"]}
-        saw["gen_user"] = user                            # the question step
+        if "COVERAGE GAP" in user:                        # the thesis-native gap-fill pass
+            return {"questions": [{"dimension": "enough_buyers", "kind": "seek_support",
+                                   "text": "Do enough hospitals run this procurement model?",
+                                   "target": "Enough hospitals use central procurement.", "polarity": 1}]}
+        saw["gen_user"] = user                            # the MAIN, frame-driven question step
         return {"inquiries": [{"name": "Who signs the check", "framing": "the buyer",
             "questions": [{"dimension": "buyer_nameable", "kind": "seek_support",
                            "text": "Does hospital procurement hold the budget line?",
@@ -431,3 +435,47 @@ def test_generate_frames_the_thesis_then_asks_questions_of_the_frame(monkeypatch
     inqs = r.json()["inquiries"]
     covered = {a["key"] for i in inqs for a in i["aspects"]}
     assert {a.key for a in TECH_DECISION_PROFILE.aspects()} <= covered
+
+
+def test_delete_line_and_clear_all_are_owner_gated_and_preserve_answered(monkeypatch):
+    """Per-line delete and clear-all remove drafted questions via the store; a reader cannot, and the
+    store calls target only unrun questions (answered work is preserved there)."""
+    from types import SimpleNamespace
+    calls = {"line": [], "clear": []}
+
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {"id": "user-1"} if token == "Bearer owner" else ({"id": "user-2"} if token == "Bearer other" else {})
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token="", trusted=False):
+        return _thesis(owner=True) if thesis_id == "t1" and owner_id == "user-1" else None
+    async def fake_remove_inquiry(_pool, tid, key):
+        calls["line"].append((tid, key)); return 2
+    async def fake_clear_inquiries(_pool, tid):
+        calls["clear"].append(tid); return 5
+
+    monkeypatch.setattr(routes.tstore, "get", fake_get)
+    monkeypatch.setattr(routes.tstore, "remove_inquiry", fake_remove_inquiry)
+    monkeypatch.setattr(routes.tstore, "clear_inquiries", fake_clear_inquiries)
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=None,
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=None,
+                                 web_domains=(), retrieval_sources={}),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+
+    # owner: delete one line
+    r = c.delete("/thesis/t1/inquiry/buyer", headers={"Authorization": "Bearer owner"})
+    assert r.status_code == 200 and r.json()["removed"] == 2
+    assert calls["line"] == [("t1", "buyer")]
+
+    # owner: clear all
+    r = c.delete("/thesis/t1/inquiries", headers={"Authorization": "Bearer owner"})
+    assert r.status_code == 200 and r.json()["removed"] == 5
+    assert calls["clear"] == ["t1"]
+
+    # a non-owner is refused (owner_only read gate) and never reaches the store
+    r = c.delete("/thesis/t1/inquiries", headers={"Authorization": "Bearer other"})
+    assert r.status_code in (401, 403, 404)
+    assert calls["clear"] == ["t1"]      # unchanged — the reader's call did not mutate

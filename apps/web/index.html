@@ -662,11 +662,15 @@
   .th-inq-add{font-family:var(--mono);font-size:.66rem;padding:.35rem .7rem;border-radius:8px;border:1px dashed var(--hair);
     background:transparent;color:var(--dim);cursor:pointer;min-height:36px;margin-top:.3rem;}
   .th-inq-add:hover{border-color:var(--gold);color:var(--gold);}
-  .th-inq-head:focus-visible,.th-run:focus-visible,.th-inq-add:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  .th-inq-del{color:var(--dim);border-color:var(--hair);}
+  .th-inq-del:hover{border-color:#c0563f;color:#c0563f;}
+  .th-loi-bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 .9rem;}
+  .th-inq-head:focus-visible,.th-run:focus-visible,.th-inq-add:focus-visible,.th-inq-del:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
   @media (max-width:560px){
     .th-inq-head{flex-wrap:wrap;}
     .th-inq h3{font-size:1.02rem;}
     .th-run{width:100%;}
+    .th-loi-bar .th-inq-add{flex:1;text-align:center;}
     .th-qn-q{flex-wrap:wrap;}
   }
   @media (prefers-reduced-motion:reduce){.th-run{transition:none;}}
@@ -11954,7 +11958,14 @@ async function openShare(token){
     // snaps the page or collapses a card the reader opened.
     const openKeys = new Set([...host.querySelectorAll(".th-inq[open]")].map(d => d.dataset.key));
     const y = window.scrollY;
-    host.innerHTML = '<div class="th-inqs">' + inqs.map(i => inqHtml(i, openKeys)).join("") + "</div>";
+    const draftable = inqs.some(i => (i.questions || []).some(q => !q.target_status));
+    const bar = (owner && draftable)
+      ? '<div class="th-loi-bar"><button type="button" class="th-inq-add" id="th-redraft">Redraft all questions</button>'
+        + '<button type="button" class="th-inq-add th-inq-del" id="th-clear">Clear all &amp; start fresh</button></div>'
+      : "";
+    host.innerHTML = bar + '<div class="th-inqs">' + inqs.map(i => inqHtml(i, openKeys)).join("") + "</div>";
+    const rd = document.getElementById("th-redraft"); if(rd) rd.addEventListener("click", generateInquiries);
+    const cl = document.getElementById("th-clear"); if(cl) cl.addEventListener("click", clearInquiries);
     wireInquiries();
     window.scrollTo(0, y);
   }
@@ -11990,7 +12001,10 @@ async function openShare(token){
         + (active ? "&ldquo;" + esc2(active.text) + "&rdquo;" : "writing up") + "</span></div>"
       : '<div class="th-run-row"><button type="button" class="th-run" data-run="' + esc2(inq.key) + '">'
         + (answered ? "Re-run this line of inquiry" : "Run this line of inquiry")
-        + '</button><span class="th-run-note">' + answered + " of " + qs.length + " answered</span></div>";
+        + '</button><span class="th-run-note">' + answered + " of " + qs.length + " answered</span>"
+        + (answered < qs.length ? '<button type="button" class="th-inq-del" data-del="' + esc2(inq.key)
+            + '" title="Delete this line’s drafted questions">Delete line</button>' : "")
+        + "</div>";
     const isOpen = running || (openKeys && openKeys.has(inq.key)) || (!openKeys && answered);
     return '<details class="th-inq" data-key="' + esc2(inq.key) + '"' + (isOpen ? " open" : "")
       + '><summary class="th-inq-head"><div class="th-inq-titlewrap"><h3>' + esc2(inq.name) + "</h3>"
@@ -12074,6 +12088,7 @@ async function openShare(token){
       e => { e.preventDefault(); runQuestion(b.dataset.qrun); }));
     host.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => editQuestion(b.dataset.edit)));
     host.querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", () => removeQuestion(b.dataset.rm)));
+    host.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => removeInquiry(b.dataset.del)));
     host.querySelectorAll("[data-add]").forEach(b => b.addEventListener("click", () => {
       const [ik, ak] = b.dataset.add.split("|"); addQuestion(ik, ak);
     }));
@@ -12217,6 +12232,25 @@ async function openShare(token){
   async function removeQuestion(qid){
     if(!window.confirm("Remove this question?")) return;
     await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/question/" + encodeURIComponent(qid),
+                {method: "DELETE", headers: hdrs()});
+    await loadInquiries();
+  }
+
+  async function removeInquiry(key){
+    if(STATE.inqRun) return;   // never delete under an active run
+    const inq = (STATE.inquiries || []).find(i => i.key === key) || {};
+    if(!window.confirm("Delete the drafted questions in “" + (inq.name || key)
+        + "”?\n\nAnswered questions are kept.")) return;
+    await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/" + encodeURIComponent(key),
+                {method: "DELETE", headers: hdrs()});
+    await loadInquiries();
+  }
+
+  async function clearInquiries(){
+    if(STATE.inqRun) return;
+    if(!window.confirm("Clear ALL drafted questions and start fresh?\n\nAnswered questions are kept; "
+        + "you can draft a new set afterwards.")) return;
+    await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries",
                 {method: "DELETE", headers: hdrs()});
     await loadInquiries();
   }

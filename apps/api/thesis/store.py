@@ -645,6 +645,30 @@ async def remove_question(pool, thesis_id: str, qid: str) -> None:
             "UPDATE ts_question SET status='removed' WHERE thesis_id=$1 AND id=$2", thesis_id, qid)
 
 
+async def remove_inquiry(pool, thesis_id: str, inquiry_key: str) -> int:
+    """Drop one line of inquiry's UNRUN questions so the user can redraft it. Answered questions
+    (run_id != '') are preserved — deleting a line never silently discards paid-for research. Returns
+    the number of drafted questions removed."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        res = await conn.execute(
+            """UPDATE ts_question SET status='removed'
+                 WHERE thesis_id=$1 AND inquiry_key=$2 AND status='active' AND run_id=''""",
+            thesis_id, inquiry_key)
+    return int((res or "UPDATE 0").split()[-1])
+
+
+async def clear_inquiries(pool, thesis_id: str) -> int:
+    """Drop ALL unrun questions across every line of inquiry — a clean slate to draft fresh from.
+    Answered questions are preserved (paid work is never discarded silently). Returns the count removed."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        res = await conn.execute(
+            "UPDATE ts_question SET status='removed' WHERE thesis_id=$1 AND status='active' AND run_id=''",
+            thesis_id)
+    return int((res or "UPDATE 0").split()[-1])
+
+
 async def answer_question(pool, thesis_id: str, qid: str, *, target_status: str, answer: str,
                           evidence_ids: list[str], run_id: str) -> None:
     await ensure_schema(pool)

@@ -172,7 +172,11 @@ async def test_generation_interrogates_the_frame_when_one_is_supplied():
              "unknowns": [], "anchors": []}
     captured = {}
     async def llm(_sys, user):
-        captured["user"] = user
+        if "COVERAGE GAP" in user:                 # the gap-fill pass — not what this test inspects
+            return {"questions": [{"dimension": "scenic", "kind": "seek_support",
+                                   "text": "Are the coastal views the best on Route 1?",
+                                   "target": "Route 1 has the best coastal views.", "polarity": 1}]}
+        captured["user"] = user                    # the MAIN, frame-driven pass
         return {"inquiries": [
             {"name": "Dawn traffic", "framing": "t",
              "questions": [{"dimension": "faster", "kind": "seek_support",
@@ -185,3 +189,26 @@ async def test_generation_interrogates_the_frame_when_one_is_supplied():
     assert "COVERAGE FLOOR" in captured["user"]                 # rubric demoted to a floor
     covered = {q["dimension"] for i in inqs for q in i["questions"]}
     assert covered == {"faster", "scenic"}                      # floor still enforced (scenic gap-filled)
+
+
+@pytest.mark.asyncio
+async def test_coverage_gap_is_filled_thesis_natively_not_with_raw_rubric():
+    # When the main pass misses a dimension, the gap is filled by a SECOND thesis-native pass — the raw
+    # aspect prompt is only the last-resort fallback, never the default.
+    from eigen_kernel.decision import generate_inquiries
+    aspects = ToyProfile().aspects()   # faster, scenic
+    async def llm(_sys, user):
+        if "COVERAGE GAP" in user:                      # the gap-fill pass
+            return {"questions": [{"dimension": "scenic", "kind": "seek_support",
+                                   "text": "Do drivers rate the coastal cliffs as the best view on Route 1?",
+                                   "target": "Route 1's coastal cliffs are rated the best view.",
+                                   "polarity": 1}]}
+        return {"inquiries": [{"name": "Speed", "framing": "t",   # main pass covers only 'faster'
+            "questions": [{"dimension": "faster", "kind": "seek_support",
+                           "text": "Is Route 1 faster at dawn?", "target": "Route 1 is faster at dawn.",
+                           "polarity": 1}]}]}
+    inqs = await generate_inquiries(llm, decision="coastal vs inland", aspects=aspects, directive="x")
+    further = next(i for i in inqs if "Further checks" in i["name"])
+    scenic_q = next(q for q in further["questions"] if q["dimension"] == "scenic")
+    assert "coastal cliffs" in scenic_q["text"]         # thesis-native, not the raw "more scenic?" prompt
+    assert scenic_q["text"] != "Is the coastal route more scenic?"

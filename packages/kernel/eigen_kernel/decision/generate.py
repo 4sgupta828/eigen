@@ -131,12 +131,47 @@ async def generate_inquiries(llm_json, *, decision: str, aspects: tuple[Aspect, 
                         "framing": str(c.get("framing") or "").strip()[:200], "questions": qs})
     if not out:
         return _fallback(aspects)
-    # Coverage gate: any contract dimension the model missed is added as a canonical question so the
-    # thesis is never left with a blind spot.
+    # Coverage gate: any contract dimension the model missed is added so the thesis is never left with a
+    # blind spot — but phrased THESIS-NATIVELY (a second pass), not as the raw rubric prompt, so the
+    # gap-fill never reintroduces the generic questions the frame step exists to avoid.
     missing = [a for a in aspects if a.key not in seen_dims]
     if missing:
+        gap_qs = await _gapfill(llm_json, decision=decision, missing=missing,
+                                frame=frame, directive=directive, valid=valid) if llm_json else []
+        filled = {q["dimension"] for q in gap_qs}
+        raw = [{"dimension": a.key, "kind": "seek_support", "text": a.prompt, "target": a.prompt,
+                "polarity": 1} for a in missing if a.key not in filled]   # degraded fallback only
         out.append({"key": "further-checks", "name": "Further checks",
                     "framing": "coverage the drafted lines of inquiry did not reach",
-                    "questions": [{"dimension": a.key, "kind": "seek_support", "text": a.prompt,
-                                   "target": a.prompt, "polarity": 1} for a in missing]})
+                    "questions": gap_qs + raw})
+    return out
+
+
+async def _gapfill(llm_json, *, decision: str, missing, frame: dict | None,
+                   directive: str, valid: set) -> list[dict]:
+    """One thesis-native question per missing dimension, so coverage never falls back to the raw rubric
+    prompt. Returns coerced question dicts; [] on any failure (caller uses the raw-prompt fallback)."""
+    rubric = "\n".join(f"- {a.key}: {a.prompt}" for a in missing)
+    reading = (frame or {}).get("reading") or ""
+    user = (f"DECISION (the thesis to test):\n{decision}\n\n"
+            + (f"HOW IT READS:\n{reading}\n\n" if reading else "")
+            + "COVERAGE GAP — the draft did not yet ask about these dimensions. Write ONE pointed "
+            "question for EACH, in THIS thesis's own nouns (never the generic prompt text), tagged with "
+            f"its dimension key:\n{rubric}\n\n"
+            'Return ONE JSON object: {"questions": [{"dimension": "<key>", "kind": "seek_support|'
+            'seek_contradiction|resolve_ambiguity|challenge_assumption", "text": "the question", '
+            '"target": "a flat declarative statement the record could confirm or refute", '
+            '"polarity": 1|-1}]}. Output ONLY the JSON object.')
+    try:
+        raw = await llm_json(directive, user)
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+        items = d.get("questions") or []
+    except Exception:      # noqa: BLE001 — gap-fill never blocks; caller falls back to raw prompts
+        return []
+    out: list[dict] = []
+    got: set = set()
+    for it in items:
+        q = _coerce_question(it, valid)
+        if q and q["dimension"] not in got:
+            out.append(q); got.add(q["dimension"])
     return out

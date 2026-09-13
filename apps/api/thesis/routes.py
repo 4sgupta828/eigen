@@ -792,6 +792,22 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         await tstore.remove_question(pool, thesis_id, qid)
         return {"status": "ok"}
 
+    @r.delete("/thesis/{thesis_id}/inquiry/{inquiry_key}")
+    async def tl_remove_inquiry(thesis_id: str, inquiry_key: str, authorization: str = Header(default=""),
+                                x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Delete one line of inquiry's drafted (unrun) questions. Answered questions are preserved."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        removed = await tstore.remove_inquiry(pool, thesis_id, inquiry_key)
+        return {"status": "ok", "removed": removed}
+
+    @r.delete("/thesis/{thesis_id}/inquiries")
+    async def tl_clear_inquiries(thesis_id: str, authorization: str = Header(default=""),
+                                 x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Clear ALL drafted (unrun) questions to start fresh. Answered questions are preserved."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        removed = await tstore.clear_inquiries(pool, thesis_id)
+        return {"status": "ok", "removed": removed}
+
     async def _run_inquiry(thesis_id: str, inquiry_key: str, run_id: str, web: bool):
         """Run one line of inquiry: every question of it, then complete the run."""
         pool = await pool_of()

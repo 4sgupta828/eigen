@@ -275,3 +275,25 @@ test("each question can be run on its own — Run when unrun, Re-run when answer
   const running = api.qnHtml(unrun, true, {running: true, activeQid: "other"});
   assert.doesNotMatch(running, /data-qrun/);
 });
+
+test("a line with drafted questions can be deleted; an all-answered line cannot", () => {
+  const {api} = loadThesisModule();
+  api._setState({doc: {is_owner: true, claims: []}, inqRun: null});
+  const drafted = {key: "buyer", name: "Who owns the budget?", framing: "the buyer",
+    aspects: [{key: "b", prompt: "Buyer?", verdict: "open"}],
+    questions: [{id: "q1", aspect_key: "b", kind: "seek_support", text: "?", target: "t", polarity: 1, target_status: ""}]};
+  assert.match(api.inqHtml(drafted), /data-del="buyer"/);          // drafted line offers delete
+  const answered = {key: "market", name: "Enough buyers?", framing: "size",
+    aspects: [{key: "m", prompt: "Size?", verdict: "supported"}],
+    questions: [{id: "q9", aspect_key: "m", kind: "seek_support", text: "?", target: "t", polarity: 1,
+                 target_status: "target_supported", answer: "Yes."}]};
+  assert.doesNotMatch(api.inqHtml(answered), /data-del=/);         // paid work isn't offered for deletion
+});
+
+test("delete controls call the line and clear-all endpoints and preserve answered work", () => {
+  // start-fresh: clear-all and per-line delete hit DELETE endpoints; both keep answered questions.
+  assert.match(SRC, /DELETE[\s\S]*?\/inquiries"/);                 // clear-all endpoint
+  assert.match(SRC, /\/inquiry\/" \+ encodeURIComponent\(key\)[\s\S]*?method: "DELETE"/);  // per-line
+  assert.match(SRC, /Clear all &amp; start fresh/);                // the start-fresh control
+  assert.match(SRC, /Answered questions are kept/);                // the reassurance in the confirm
+});
