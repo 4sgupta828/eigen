@@ -50,3 +50,24 @@ def test_clean_md_strips_markdown_noise_from_headlines():
     assert _clean_md("### [Port Jersey Logistics](https://x.com) #### WMS Implementation Manager") \
         == "Port Jersey Logistics WMS Implementation Manager"
     assert _clean_md("- Director of Warehouse Operations") == "Director of Warehouse Operations"
+
+
+def test_pdl_parse_maps_records_and_prefixes_linkedin():
+    from eigen_kernel.providers.pdl_people import _parse
+    data = {"data": [
+        {"full_name": "dana ops", "job_title": "VP Operations", "job_company_name": "Acme 3PL",
+         "linkedin_url": "linkedin.com/in/dana", "skills": ["wms", "logistics"], "location_name": "Chicago, IL"},
+        {"full_name": "", "linkedin_url": "https://linkedin.com/in/jordan-vp"},   # name from slug
+        {"job_title": "orphan record, no name, no url"}]}                          # dropped
+    out = _parse(data)
+    assert len(out) == 2
+    assert out[0].name == "Dana Ops" and out[0].provider == "pdl"
+    assert out[0].profile_url == "https://linkedin.com/in/dana"                    # scheme added
+    assert out[0].headline == "VP Operations · Acme 3PL" and "wms" in out[0].expertise
+    assert out[1].name == "Jordan Vp"                                             # slug fallback
+
+
+def test_pdl_no_key_returns_empty():
+    import asyncio
+    from eigen_kernel.providers.pdl_people import PdlPeopleSearch
+    assert asyncio.run(PdlPeopleSearch(api_key="").search("anything")) == []

@@ -161,15 +161,22 @@ def build_people(*, mode: ProviderMode | str | None = None,
     """The people-discovery leg, cassette-wrapped like the web leg. Live/record uses Exa (public-web
     profile search) when EXA_API_KEY is set; no key ⇒ Fake (empty) so nothing breaks and CI stays free.
     Replay reads the cassette and never spends."""
-    from eigen_kernel.providers.people_search import (CassettePeopleSearch, FakePeopleSearch)
+    from eigen_kernel.providers.people_search import (
+        CassettePeopleSearch, CompositePeopleSearch, FakePeopleSearch)
     m = resolve_mode(mode)
     inner = None
     if m is not ProviderMode.REPLAY:
-        if os.environ.get("EXA_API_KEY"):
+        clients: list = []
+        if os.environ.get("EXA_API_KEY"):        # semantic reach: expertise described in prose
             from eigen_kernel.providers.exa_people import ExaPeopleSearch
-            inner = ExaPeopleSearch(include_domains=list(include_domains) if include_domains else None)
-        else:
-            inner = FakePeopleSearch()
+            clients.append(ExaPeopleSearch(include_domains=list(include_domains) if include_domains else None))
+        if os.environ.get("PDL_API_KEY"):        # structured precision: title/seniority/skills/past-company
+            from eigen_kernel.providers.pdl_people import PdlPeopleSearch
+            clients.append(PdlPeopleSearch())
+        # One provider → use it directly; two → fan out and merge (cross-engine agreement bubbles up);
+        # none → Fake (empty) so nothing breaks and CI stays free.
+        inner = (clients[0] if len(clients) == 1
+                 else CompositePeopleSearch(clients) if clients else FakePeopleSearch())
     return CassettePeopleSearch(inner, cassette_root=cassette_root or default_cassette_root(),
                                 namespace="people", mode=m)
 
