@@ -30,6 +30,14 @@ def sanitize_answer(items: list[dict], allowed_ids) -> str:
             continue                      # uncited prose never enters a grounded answer
         if any(i not in allowed for i in ids):
             continue                      # one bad citation drops the whole sentence
+        # Strip any RAW evidence id the model wrote into the prose (e.g. "(9af40…)" or a bare id) — the
+        # only citation the reader should see is the clean [[e:id]] marker we append.
+        text = re.sub(r"\(\s*[A-Za-z0-9_-]{12,}\s*\)", "", text)
+        for i in ids:
+            text = text.replace(i, "")
+        text = re.sub(r"\s{2,}", " ", text).replace(" .", ".").replace(" ,", ",").replace("()", "").strip()
+        if not text:
+            continue
         markers = "".join(f"[[e:{i}]]" for i in dict.fromkeys(ids))   # de-duped, order-stable
         kept.append(f"{text} {markers}".strip())
     # Each grounded point on its own line (blank-line separated) so the reader gets distinct,

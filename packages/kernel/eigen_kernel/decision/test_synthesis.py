@@ -40,3 +40,11 @@ def test_mixed_kept_and_dropped():
     assert "Good, cited." in out
     assert "Bad, invented cite." not in out
     assert "Uncited." not in out
+
+
+def test_raw_ids_in_prose_are_stripped_keeping_only_clean_markers():
+    out = sanitize_answer([{"text": "Revenue grew 20% (abc123def456ghi789).", "evidence_ids": ["abc123def456ghi789"]}],
+                          ["abc123def456ghi789"])
+    assert "Revenue grew 20%." in out                    # the parenthesized raw id is gone
+    assert "abc123def456ghi789" not in out.replace("[[e:abc123def456ghi789]]", "")  # no bare id leaks
+    assert "[[e:abc123def456ghi789]]" in out             # only the clean marker remains

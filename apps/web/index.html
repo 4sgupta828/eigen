@@ -11771,7 +11771,11 @@ async function openShare(token){
     const turns = d.turns || [];
     conv().innerHTML = turns.map((t, i) =>
       turnHtml(t.role, t.move, t.text, (i === turns.length - 1) ? payloadHtml(t.payload) : "")).join("");
-    const thread = document.getElementById("th-thread"); if(thread) thread.hidden = !turns.length;
+    // The conversation thread belongs to GENESIS (shaping the thesis). Once the thesis is decomposed,
+    // the lines of inquiry are the surface — the old genesis/attack turns and the claims ledger are
+    // remnants of the retired claims model and are hidden.
+    const thread = document.getElementById("th-thread");
+    if(thread) thread.hidden = !(phase === "draft" && turns.length);
     const threadH = document.querySelector(".th-thread-h");
     if(threadH) threadH.textContent = phase === "draft"
       ? "Shaping the thesis — answer or refine until it is concrete"
@@ -11796,36 +11800,15 @@ async function openShare(token){
       return;
     }
 
-    // READY / TESTED: the brief (or the pre-test prompt) + actions + ledger + follow-up.
-    if(ledger) ledger.hidden = false;
-    const untested = (d.claims || []).filter(c => c.settleable !== "call_only" && !c.attacked);
-    const canTest = canMutate(d) && phase === "ready" && untested.length;
-    const hint = !canMutate(d) ? ""
-      : (canTest
-          ? '<p class="th-hint">Next: test every claim at once against our corpus, the open web, and a '
-            + "red team — you approve the cost first. The result appears when the whole run is done.</p>"
-          : phase === "tested"
-            ? '<p class="th-hint">Tested. Pick one or more claims below and ask the agent about them, add '
-              + "an interview note, or revise a claim to re-test.</p>" : "");
+    // READY / TESTED: the thesis header + the lines of inquiry. The old claims ledger and its pips are
+    // retired with the claims model — evidence now lives inline under each question.
+    if(ledger) ledger.hidden = true;
     acts().innerHTML = canMutate(d)
       ? '<button type="button" id="th-share">Copy read-only link</button>' : "";
     const sh = document.getElementById("th-share");
     if(sh) sh.addEventListener("click", () => shareThesis(sh));
-
-    // Lines of inquiry are the primary tested surface (replacing the for/against brief): a compact
-    // thesis header, then the inquiries loaded from the engine.
     takes().innerHTML = pretestHtml(d) + '<div id="th-loi"></div>';
     loadInquiries();
-
-    // The ledger: pips in the summary, the claims themselves only when it is opened.
-    const cs = [...(d.claims || [])].sort((a, b) => Number(!!b.critical) - Number(!!a.critical));
-    const pips = cs.map(c => '<span class="th-pip" data-v="' + esc2(c.verdict) + '" title="'
-      + esc2(c.rung.replace(/_/g, " ") + " — " + c.verdict.replace("_", " ")) + '"></span>').join("");
-    const done = cs.filter(c => (c.research_status || c.verdict) !== "open").length;
-    const sum = document.getElementById("th-sum");
-    if(sum) sum.innerHTML = pips + " <span>" + done + " of " + cs.length + " claims tested</span>";
-    claims().innerHTML = cs.map(c => claimHtml(c, c.rung === d.focus_rung, canMutate(d))).join("");
-    wireClaims();
   }
 
   // The proposed thesis, editable, with "Use this thesis" (the only decomposition) + any clarifiers.
