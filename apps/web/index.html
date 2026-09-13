@@ -12046,7 +12046,7 @@ async function openShare(token){
     try{
       const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries/generate",
                             {method: "POST", headers: hdrs()});
-      const d = await r.json(); if(!r.ok) throw new Error(d.detail || "could not draft the questions");
+      const d = await r.json().catch(() => ({})); if(!r.ok) throw new Error(d.detail || "could not draft the questions");
       STATE.inquiries = d.inquiries || []; renderInquiries();
     }catch(e){ note().textContent = e.message || String(e); if(host) renderInquiries(); }
     finally{ STATE.busy = false; }
@@ -12061,7 +12061,7 @@ async function openShare(token){
       const pr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/"
                              + encodeURIComponent(key) + "/run",
                              {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 0, web: true})});
-      const pj = await pr.json();
+      const pj = await pr.json().catch(() => ({}));
       const max = Number((pj.projection || {}).projected_usd || 0);
       if(!window.confirm("Run “" + (inq.name || key) + "”?\n\n" + nq
           + " question" + (nq === 1 ? "" : "s") + " against our corpus, the open web, and the red team. "
@@ -12071,7 +12071,7 @@ async function openShare(token){
       const sr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/"
                              + encodeURIComponent(key) + "/run",
                              {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: max, web: true})});
-      const started = await sr.json();
+      const started = await sr.json().catch(() => ({}));
       if(!sr.ok || !started.run) throw new Error(started.detail || "could not start this line of inquiry");
       STATE.inqRun = {key: key, run: started.run.id, done: 0, total: nq};
       renderInquiries();
@@ -12089,21 +12089,18 @@ async function openShare(token){
     if(STATE.busy || STATE.inqRun) return;
     STATE.busy = true;
     try{
-      const q = (STATE.inquiries || []).flatMap(i => i.questions || []).find(x => x.id === qid) || {};
-      const base = "/thesis/" + encodeURIComponent(STATE.id) + "/question/" + encodeURIComponent(qid) + "/run";
-      const pr = await fetch(base, {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 0, web: true})});
-      const pj = await pr.json();
-      const max = Number((pj.projection || {}).projected_usd || 0);
-      if(!window.confirm("Research this one question?\n\n“" + (q.text || "")
-          + "”\n\nAgainst our corpus, the open web, and the red team — in the context of the "
-          + "whole thesis.\n\nProjected maximum: $" + max.toFixed(3))){ STATE.busy = false; return; }
-      const sr = await fetch(base, {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: max, web: true})});
-      const started = await sr.json();
-      if(!sr.ok || !started.run) throw new Error(started.detail || "could not start this question");
-      STATE.inqRun = {key: inquiryKeyOf(qid), qid: qid, run: started.run.id, done: 0, total: 1};
+      // Just execute a single question — no projection round-trip, no confirmation. The cost of one
+      // question is small; max_usd is set high enough to auto-approve so the run starts immediately.
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/question/"
+                            + encodeURIComponent(qid) + "/run",
+                            {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 5, web: true})});
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok || !d.run) throw new Error(d.detail || "could not start this question");
+      STATE.inqRun = {key: inquiryKeyOf(qid), qid: qid, run: d.run.id, done: 0, total: 1};
       renderInquiries();
       pollInquiry(0);
-    }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e); }
+    }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e);
+      try{ renderInquiries(); }catch(_){ } }
     finally{ STATE.busy = false; }
   }
 
