@@ -21,7 +21,7 @@ from .schema import (
     UNSETTLEABLE, is_signal_only, register_of,
 )
 
-MAX_PER_SIDE = 6
+MAX_PER_SIDE = 8      # was 6; reformulation surfaces ~8 distinct sources, let more reach synthesis
 MAX_PER_QUERY = 8
 
 
@@ -121,13 +121,16 @@ def _row(r, side: str, ui=None) -> dict:
 
 
 def _dedupe(rows: list[dict], cap: int, per_source_cap: int = 2) -> list[dict]:
-    """One document may not fill a side, and a register may not be represented by one loud source."""
+    """One document may not fill a side, and no single PUBLISHER should dominate. Key the per-source cap
+    on independence_key (the host for a web hit, the document for a corpus hit) — NOT source_key, which
+    is the literal "web" for every open-web result and so used to crush a dozen distinct sites down to
+    per_source_cap. Falls back to source_key when there is no independence key."""
     seen_q, per_source, out = set(), {}, []
     for r in rows:
         k = r["quote"][:120]
         if k in seen_q:
             continue
-        sk = r["source_key"]
+        sk = str(r.get("independence_key") or r.get("source_key") or "")
         if per_source.get(sk, 0) >= per_source_cap:
             continue
         seen_q.add(k)
