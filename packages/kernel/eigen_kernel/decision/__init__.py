@@ -25,7 +25,7 @@ from .frame import frame_decision, normalize_frame, is_substantive
 from .generate import generate_inquiries
 from .aggregate import resolve_signal, aggregate_aspect
 from .run import run_question, run_aspect, run_inquiry
-from .synthesis import sanitize_answer, NOT_ESTABLISHED
+from .synthesis import sanitize_answer, sanitize_table, NOT_ESTABLISHED
 
 __all__ = [
     "QuestionKind", "Question", "QuestionStatus", "Aspect", "Inquiry",
@@ -36,5 +36,5 @@ __all__ = [
     "frame_decision", "normalize_frame", "is_substantive",
     "resolve_signal", "aggregate_aspect",
     "run_question", "run_aspect", "run_inquiry",
-    "sanitize_answer", "NOT_ESTABLISHED",
+    "sanitize_answer", "sanitize_table", "NOT_ESTABLISHED",
 ]

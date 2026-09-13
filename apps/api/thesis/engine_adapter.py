@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 
-from eigen_kernel.decision import sanitize_answer, NOT_ESTABLISHED
+from eigen_kernel.decision import sanitize_answer, sanitize_table, NOT_ESTABLISHED
 
 # Distinctive tokens for citation recovery: multi-digit numbers (750, 20, 1000, 5.6) and proper
 # nouns / model names (OpenAI, AlphaSense, WSE-3, GPT-5.6). These are what tie a sentence to the
@@ -106,6 +106,17 @@ How to answer:
   fact. Where the evidence is one-sided or conflicts, say so.
 - Do not invent sources, numbers, or quotes. Every sentence must cite at least one given evidence id.
 
+SHAPE THE ANSWER for the question — do not default to a wall of prose:
+- When you are COMPARING or ENUMERATING several items across the same attributes (tools, vendors,
+  companies, options, metrics side by side), return a `table`: give `columns` and one `row` per item,
+  each row citing its own evidence_ids. A table is far more consumable than prose for a comparison.
+- When you are listing several DISTINCT facts that do not share a common structure, set
+  "layout":"bullets" so each point renders as its own bullet.
+- Use "layout":"prose" only for a genuinely short narrative answer (one or two connected points).
+- You may use BOTH: a `table` for the comparison plus a couple of `sentences` that summarize or caveat
+  it. Every row and every sentence still cites its evidence_ids — a table row is grounded exactly like
+  a sentence, so never put an uncited cell in it.
+
 ALWAYS EXPLAIN — never leave the reader with a bare "not established":
 - If the evidence directly answers the question, give the comprehensive cited answer above.
 - If it does NOT directly answer it, still be useful: put whatever the record DOES contain that bears
@@ -162,31 +173,44 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
         if llm_json is None or not allowed:
             # No model, or no evidence at all: still explain rather than leaving a bare gap.
             return "" if llm_json is None else empty_note
+        eg = allowed[0] if allowed else "abc123"
         user = (ctx + f"QUESTION: {question.text}\nSTATEMENT UNDER TEST: {question.target}\n\n"
                 f"EVIDENCE (cite by the bracketed id):\n{listing}\n\n"
-                'Return ONE JSON object: {"sentences": [{"text": "...", "evidence_ids": ["<id>", ...]}], '
-                '"note": "..."}. Write a THOROUGH answer (4–8 sentences) using as much relevant evidence '
-                "as possible.\n"
-                "CITATIONS ARE MANDATORY: every sentence MUST list the exact bracketed id(s) it rests on "
-                'in its `evidence_ids` array — e.g. {"text": "OpenAI runs GPT-5.6 inference on Cerebras '
-                'WSE-3 at 750 tokens/sec.", "evidence_ids": ["' + (allowed[0] if allowed else "abc123")
-                + '"]}. A sentence with an empty or missing evidence_ids will be DROPPED, so never leave '
-                "it out. If the evidence does not fully settle the question, put what it DOES show in "
-                "sentences (still cited) and use `note` to explain what is missing and what source would "
-                "settle it. Output ONLY the JSON object.")
+                'Return ONE JSON object: {"layout": "bullets"|"prose", '
+                '"sentences": [{"text": "...", "evidence_ids": ["<id>", ...]}], '
+                '"table": {"columns": ["...", "..."], "rows": [{"cells": ["...", "..."], '
+                '"evidence_ids": ["<id>"]}]} , "note": "..."}. Use as much relevant evidence as possible.\n'
+                "Choose the SHAPE that makes the answer most consumable: a `table` when comparing or "
+                "enumerating items across attributes (omit `table` otherwise); \"bullets\" for a list of "
+                "distinct facts; \"prose\" only for a short narrative. You may combine a table with a few "
+                "summarizing sentences.\n"
+                "CITATIONS ARE MANDATORY on every sentence AND every table row: list the exact bracketed "
+                'id(s) it rests on in `evidence_ids` — e.g. {"text": "OpenAI runs GPT-5.6 inference on '
+                'Cerebras WSE-3 at 750 tokens/sec.", "evidence_ids": ["' + eg + '"]}. A sentence or row '
+                "with empty/missing evidence_ids is DROPPED, so never leave it out. If the evidence does "
+                "not settle the question, put what it DOES show (still cited) and use `note` to explain "
+                "what is missing and what source would settle it. Output ONLY the JSON object.")
         try:
             raw = await llm_json(system, user)
             d = raw if isinstance(raw, dict) else json.loads(raw)
             items = d.get("sentences") or []
+            table = d.get("table")
+            layout = str(d.get("layout") or "").strip().lower()
             note = str(d.get("note") or "").strip()
         except Exception:      # noqa: BLE001 — never blocks; falls back to an honest coverage note
-            items, note = [], ""
+            items, table, layout, note = [], None, "", ""
         # Rescue findings the model wrote but forgot to tag: bind each uncited sentence to the source
         # that actually contains its specifics, so a rich answer never collapses to "not established"
         # over a missing id. The strict gate below still drops anything that binds to no source.
         items = _recover_citations(items, evidence)
-        cited = sanitize_answer(items, allowed)
-        if cited and cited != NOT_ESTABLISHED:
+        table_md = sanitize_table(table, allowed)
+        # bullets by default for a multi-point answer; prose only when the model asked for it and there
+        # is no table alongside. A table renders its rows; the sentences frame or caveat it.
+        use_bullets = layout != "prose" and (bool(table_md) or len(items) > 1)
+        points = sanitize_answer(items, allowed, bullets=use_bullets)
+        parts = [p for p in (table_md, (points if points != NOT_ESTABLISHED else "")) if p]
+        cited = "\n\n".join(parts)
+        if cited:
             # A real answer, plus the model's caveat about what remains open, when it gave one.
             return cited + ("\n\n" + note if note else "")
         # Nothing qualified: return the honest gap explanation (uncited coverage note), never a bare

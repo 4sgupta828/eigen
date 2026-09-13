@@ -616,6 +616,19 @@
   .th-answer-body p{margin:.45rem 0;}
   .th-answer-body p:first-child{margin-top:0;}
   .th-answer-body.none{color:var(--dim);font-style:italic;}
+  /* bullets for an enumeration of distinct facts */
+  .th-answer-list{margin:.4rem 0;padding-left:1.15rem;display:grid;gap:.3rem;}
+  .th-answer-list li{line-height:1.55;}
+  .th-answer-list li::marker{color:var(--gold);}
+  /* a comparison table — scrolls horizontally on a phone, never widens the card */
+  .th-tablewrap{margin:.55rem 0;overflow-x:auto;border:1px solid var(--hair);border-radius:10px;}
+  .th-table{border-collapse:collapse;width:100%;font-size:.82rem;}
+  .th-table th,.th-table td{text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--hair);
+    vertical-align:top;}
+  .th-table thead th{font:600 .62rem/1.2 var(--mono);letter-spacing:.05em;text-transform:uppercase;
+    color:var(--dim);background:var(--panel2);white-space:nowrap;}
+  .th-table tbody tr:last-child td{border-bottom:0;}
+  .th-table td:last-child,.th-table th:last-child{white-space:nowrap;width:1%;color:var(--dim);}
   /* a coverage note: the record does not settle it — what we found / what is missing (uncited, muted) */
   .th-answer-note{margin:.55rem 0 0;font-size:.84rem;line-height:1.6;color:var(--dim);
     border-left:2px solid var(--hair);padding:.15rem 0 .15rem .6rem;}
@@ -626,6 +639,18 @@
   .th-answer-body sup.ref:hover{text-decoration:underline;}
   .th-cites-h{font:600 .58rem/1.2 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
     margin:.75rem 0 .35rem;padding-top:.5rem;border-top:1px solid var(--hair);}
+  /* evidence: collapsed by default, a quiet "N sources" toggle the reader expands on demand */
+  .th-cites-wrap{margin:.7rem 0 0;border-top:1px solid var(--hair);padding-top:.5rem;}
+  .th-cites-sum{display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;list-style:none;
+    font:600 .58rem/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+    padding:.15rem 0;user-select:none;}
+  .th-cites-sum::-webkit-details-marker{display:none;}
+  .th-cites-sum::before{content:"▸";font-size:.7rem;color:var(--gold);transition:transform .12s ease;}
+  .th-cites-wrap[open] .th-cites-sum::before{transform:rotate(90deg);}
+  .th-cites-badge{display:inline-grid;place-items:center;min-width:1.15rem;height:1.15rem;padding:0 .25rem;
+    border-radius:999px;background:rgba(var(--gold-rgb),.12);color:var(--gold);font-size:.62rem;}
+  .th-cites-sum:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:6px;}
+  .th-cites-wrap[open] .th-cites{margin-top:.55rem;}
   .th-cites{list-style:none;margin:0;padding:0;display:grid;gap:.55rem;}
   .th-cite{display:flex;gap:.55rem;align-items:flex-start;}
   .th-cite-n{flex:none;width:1.3rem;height:1.3rem;border-radius:50%;background:var(--panel);border:1px solid var(--hair);
@@ -12047,6 +12072,15 @@ async function openShare(token){
       + '<div class="th-cite-src">' + src + "</div></div></li>";
   }
 
+  // Turn one text run into safe HTML with [[e:id]] citations rendered as hoverable footnote sups.
+  function thRef(text, nById){
+    return esc2(text).replace(/\[\[e:([A-Za-z0-9_-]{1,80})\]\]/g, (_m, id) => {
+      const n = nById[id];
+      return n ? '<sup class="ref" data-n="' + n + '" tabindex="0" role="button" aria-label="source '
+        + n + '">' + n + "</sup>" : "";
+    });
+  }
+
   function groundedAnswer(q){
     const ev = evidenceFor(q);
     const nById = {}; ev.forEach((e, i) => { nById[e.id] = i + 1; });
@@ -12060,16 +12094,32 @@ async function openShare(token){
     // A pure gap explanation carries no [[e:id]] markers — render it as a muted coverage note (what
     // the record shows / what is missing), not as a settled finding.
     const hasMarkers = /\[\[e:/.test(prose);
-    const paras = prose.split(/\n{2,}/).map(p => "<p>" + esc2(p).replace(
-      /\[\[e:([A-Za-z0-9_-]{1,80})\]\]/g, (_m, id) => {
-        const n = nById[id];
-        return n ? '<sup class="ref" data-n="' + n + '" tabindex="0" role="button" aria-label="source ' + n + '">' + n + "</sup>" : "";
-      }) + "</p>").join("");
-    const cites = ev.length ? '<div class="th-cites-h">Evidence found</div><ol class="th-cites">'
-      + ev.map((e, i) => citeLi(e, i + 1)).join("") + "</ol>" : "";
+    const cellSplit = r => r.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(c => c.trim());
+    // Each blank-line block is a table (| … | with a |---| separator), a bullet list (- …), or a
+    // paragraph — so a comparison renders as a table and an enumeration as bullets, not a wall of text.
+    const body = prose.split(/\n{2,}/).map(block => {
+      const lines = block.split(/\n/).filter(l => l.trim());
+      if(lines.length >= 2 && /^\s*\|.*\|\s*$/.test(lines[0]) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[1])){
+        const head = cellSplit(lines[0]);
+        const rows = lines.slice(2).filter(l => /^\s*\|.*\|\s*$/.test(l)).map(cellSplit);
+        return '<div class="th-tablewrap"><table class="th-table"><thead><tr>'
+          + head.map(c => "<th>" + thRef(c, nById) + "</th>").join("") + "</tr></thead><tbody>"
+          + rows.map(r => "<tr>" + r.map(c => "<td>" + thRef(c, nById) + "</td>").join("") + "</tr>").join("")
+          + "</tbody></table></div>";
+      }
+      if(lines.every(l => /^\s*-\s+/.test(l)))
+        return '<ul class="th-answer-list">'
+          + lines.map(l => "<li>" + thRef(l.replace(/^\s*-\s+/, ""), nById) + "</li>").join("") + "</ul>";
+      return "<p>" + thRef(lines.join(" "), nById) + "</p>";
+    }).join("");
+    // Evidence is collapsed by default — a quiet "N sources" the reader expands on demand.
+    const cites = ev.length ? '<details class="th-cites-wrap"><summary class="th-cites-sum">'
+      + '<span class="th-cites-badge">' + ev.length + "</span> "
+      + (ev.length === 1 ? "source" : "sources") + '</summary><ol class="th-cites">'
+      + ev.map((e, i) => citeLi(e, i + 1)).join("") + "</ol></details>" : "";
     if(!hasMarkers)
-      return '<div class="th-answer-note">' + paras + "</div>" + cites;
-    return '<div class="th-answer-body">' + paras + "</div>" + cites;
+      return '<div class="th-answer-note">' + body + "</div>" + cites;
+    return '<div class="th-answer-body">' + body + "</div>" + cites;
   }
 
   function qnHtml(q, owner, ctx){
@@ -12123,6 +12173,7 @@ async function openShare(token){
         e.preventDefault();
         const card = ref.closest(".th-qn") || host;
         const el = card.querySelector("#f" + ref.dataset.n); if(!el) return;
+        const det = el.closest("details"); if(det) det.open = true;   // expand collapsed evidence first
         el.scrollIntoView({block: "nearest", behavior: "smooth"});
         el.classList.add("th-flash"); setTimeout(() => el.classList.remove("th-flash"), 1200);
       };

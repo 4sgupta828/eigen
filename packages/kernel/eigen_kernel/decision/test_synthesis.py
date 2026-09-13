@@ -64,3 +64,29 @@ def test_literal_empty_brackets_from_the_model_are_removed():
     out = sanitize_answer([{"text": "The results were clear []. ", "evidence_ids": ["ok"]}], ["ok"])
     assert "The results were clear." in out              # empty [] the model typed is gone
     assert "[]" not in out.replace("[[e:ok]]", "")
+
+
+def test_bullets_mode_prefixes_each_point_and_single_newline_joins():
+    out = sanitize_answer([
+        {"text": "Fact one.", "evidence_ids": ["a"]},
+        {"text": "Fact two.", "evidence_ids": ["b"]}], ["a", "b"], bullets=True)
+    assert out == "- Fact one. [[e:a]]\n- Fact two. [[e:b]]"
+
+
+def test_sanitize_table_gates_rows_and_appends_source_markers():
+    from eigen_kernel.decision import sanitize_table
+    tbl = {"columns": ["Tool", "Result"], "rows": [
+        {"cells": ["LangSmith", "failed causality test"], "evidence_ids": ["ok1"]},
+        {"cells": ["Phoenix", "failed"], "evidence_ids": ["nope"]},        # bad id → dropped
+        {"cells": ["Studio"], "evidence_ids": ["ok1"]}]}                   # wrong arity → dropped
+    md = sanitize_table(tbl, ["ok1"])
+    assert "| Tool | Result | Source |" in md                             # header + Source column
+    assert "| LangSmith | failed causality test | [[e:ok1]] |" in md      # kept row cites its source
+    assert "Phoenix" not in md and "Studio" not in md                     # ungrounded rows dropped
+
+
+def test_sanitize_table_empty_or_single_column_returns_blank():
+    from eigen_kernel.decision import sanitize_table
+    assert sanitize_table(None, ["x"]) == ""
+    assert sanitize_table({"columns": ["Only"], "rows": [{"cells": ["a"], "evidence_ids": ["x"]}]}, ["x"]) == ""
+    assert sanitize_table({"columns": ["A", "B"], "rows": []}, ["x"]) == ""
