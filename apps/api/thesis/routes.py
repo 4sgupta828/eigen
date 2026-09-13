@@ -114,6 +114,10 @@ class QuestionEdit(BaseModel):
     target: str = ""
 
 
+class ExpertDiscoverIn(BaseModel):
+    aspect_key: str = ""       # thesis-scoped: discover experts for ONE call_only aspect, not a directory
+
+
 class QuestionAdd(BaseModel):
     inquiry_key: str = ""
     aspect_key: str = ""
@@ -757,6 +761,48 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 "guidance": ppl.buyer_guidance(a.prompt, segment) if (BUYER in roles and not cands) else "",
             })
         return {"status": "ok", "aspects": out}
+
+    @r.post("/thesis/{thesis_id}/experts/discover")
+    async def tl_experts_discover(thesis_id: str, body: ExpertDiscoverIn,
+                                  authorization: str = Header(default=""),
+                                  x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Phase 1 — discover experts for ONE call_only aspect via the people leg (Exa public-web
+        profile search). Thesis-scoped (an aspect_key, not a freeform directory query): the vertical
+        phrases the query per role, the kernel port runs it, and we return PUBLIC profile links only —
+        ranking signal for who to reach out to, NEVER evidence. Paid; runs on an explicit user click."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        profile = _profile()
+        aspect = _aspect_by_key(profile, body.aspect_key) if profile else None
+        if aspect is None or getattr(aspect, "settleable", "") != CALL_ONLY:
+            raise HTTPException(status_code=400, detail="expert discovery is for call_only aspects only")
+        roles = list(ASK_WHO.get(body.aspect_key, ()))
+        segment = " ".join(str(v) for v in (d.get("subject") or {}).values())
+        decision = d.get("thesis") or ""
+        try:
+            from eigen_kernel.runtime.build import build_people
+            client = build_people(mode=os.environ.get("EIGEN_PROVIDER_MODE") or "live",
+                                  include_domains=tuple(getattr(manifest, "people_domains", ()) or ()))
+        except Exception:      # noqa: BLE001 — no people leg configured → empty, reported as such
+            return {"status": "ok", "aspect_key": body.aspect_key, "candidates": [], "unavailable": True}
+        seen: set = set()
+        found: list[dict] = []
+        for role in (roles or ["operator"]):
+            q = (profile.people_query(role=role, aspect_prompt=aspect.prompt, decision=decision,
+                                      segment=segment)
+                 if hasattr(profile, "people_query") else f"{role} in {segment}")
+            try:
+                rows = await client.search(q, max_results=6)
+            except Exception:      # noqa: BLE001 — a provider failure thins results, never 500s
+                rows = []
+            for p in rows:
+                url = (p.profile_url or "").strip().lower()
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                found.append({"name": p.name, "profile_url": p.profile_url, "headline": p.headline,
+                              "org": p.org, "role": role, "relevance": p.relevance,
+                              "provider": p.provider})
+        return {"status": "ok", "aspect_key": body.aspect_key, "roles": roles, "candidates": found}
 
     @r.get("/thesis/{thesis_id}/inquiry/status")
     async def tl_inquiry_status(thesis_id: str, run: str = "",

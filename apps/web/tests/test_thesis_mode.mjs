@@ -343,3 +343,10 @@ test("outreach message is built from the aspect's questions and the thesis segme
   assert.match(txt, /open to a short call/);           // it's a call request
   assert.equal(api.segmentOf(d), "mid-market 3PLs");
 });
+
+test("Phase 1: the Who-to-ask panel offers web discovery per call_only aspect", () => {
+  assert.match(SRC, /class="th-ea-find-btn"/);
+  assert.match(SRC, /\/experts\/discover"/);
+  assert.match(SRC, /async function discoverExperts\(/);
+  assert.match(SRC, /public profiles.*signal, not evidence/i);   // discovered ≠ evidence, labeled
+});

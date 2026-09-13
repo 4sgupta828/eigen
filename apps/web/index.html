@@ -709,10 +709,16 @@
   .th-ea-find{font-family:var(--mono);font-size:.7rem;white-space:nowrap;}
   .th-ea-guide{font-size:.83rem;line-height:1.55;color:var(--dim);margin:.3rem 0 .5rem;
     border-left:2px solid var(--hair);padding-left:.6rem;}
-  .th-ea-copy{font-family:var(--mono);font-size:.68rem;color:var(--dim);background:transparent;cursor:pointer;
-    border:1px solid var(--hair);border-radius:8px;padding:.4rem .7rem;margin-top:.5rem;min-height:36px;}
-  .th-ea-copy:hover{border-color:var(--gold);color:var(--gold);}
-  .th-ea-copy:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  .th-ea-acts{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.55rem;}
+  .th-ea-copy,.th-ea-find-btn{font-family:var(--mono);font-size:.68rem;color:var(--dim);background:transparent;
+    cursor:pointer;border:1px solid var(--hair);border-radius:8px;padding:.4rem .7rem;min-height:36px;}
+  .th-ea-copy:hover,.th-ea-find-btn:hover{border-color:var(--gold);color:var(--gold);}
+  .th-ea-find-btn{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 45%,var(--hair));}
+  .th-ea-find-btn:hover{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
+  .th-ea-find-btn[disabled]{opacity:.6;cursor:progress;}
+  .th-ea-copy:focus-visible,.th-ea-find-btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  .th-ea-found{margin:.5rem 0 0;}
+  .th-ea-found-h{font:600 .58rem/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:.3rem 0 .2rem;}
   .th-cite{display:flex;gap:.55rem;align-items:flex-start;}
   .th-cite-n{flex:none;width:1.3rem;height:1.3rem;border-radius:50%;background:var(--panel);border:1px solid var(--hair);
     font:600 .66rem/1.3rem var(--mono);text-align:center;color:var(--dim);}
@@ -12123,7 +12129,12 @@ async function openShare(token){
       return '<div class="th-ea"><div class="th-ea-head"><b>' + esc2(a.prompt) + "</b>"
         + '<span class="th-aspect-v" data-v="' + esc2(a.verdict || "open") + '">' + esc2(verdictWord(a.verdict || "open")) + "</span></div>"
         + '<div class="th-ea-role">Ask ' + roleLabels + " — what to ask:</div>" + qs + body
-        + '<button type="button" class="th-ea-copy" data-key="' + esc2(a.key) + '">Copy outreach message</button></div>';
+        + '<div id="th-ea-found-' + esc2(a.key) + '" class="th-ea-found"></div>'
+        + '<div class="th-ea-acts">'
+        + (canMutate(d) ? '<button type="button" class="th-ea-find-btn" data-key="' + esc2(a.key)
+            + '">⌕ Find experts on the web</button>' : "")
+        + '<button type="button" class="th-ea-copy" data-key="' + esc2(a.key) + '">Copy outreach message</button>'
+        + "</div></div>";
     };
     host.innerHTML = '<section class="th-experts-wrap"><div class="th-experts-h">Who to ask</div>'
       + '<p class="th-experts-intro">These aspects can’t be settled from the record — they need a person. '
@@ -12135,6 +12146,31 @@ async function openShare(token){
       try{ navigator.clipboard.writeText(txt); b.textContent = "Copied ✓"; setTimeout(() => { b.textContent = "Copy outreach message"; }, 1600); }
       catch(e){ window.prompt("Copy this outreach message:", txt); }
     }));
+    host.querySelectorAll(".th-ea-find-btn").forEach(b => b.addEventListener("click", () => discoverExperts(b.dataset.key, b)));
+  }
+
+  // Phase 1: discover experts for one call_only aspect via the people leg (Exa public-web profiles).
+  // Explicit user action (it spends); results are public profile links to reach out to, never evidence.
+  async function discoverExperts(aspectKey, btn){
+    const box = document.getElementById("th-ea-found-" + aspectKey); if(!box) return;
+    if(btn){ btn.disabled = true; btn.textContent = "Searching…"; }
+    box.innerHTML = '<p class="th-run-prog"><span class="su-spin"></span> <span>searching public profiles…</span></p>';
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/experts/discover",
+                            {method: "POST", headers: hdrs(), body: JSON.stringify({aspect_key: aspectKey})});
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok) throw new Error(d.detail || "could not search");
+      const found = d.candidates || [];
+      if(!found.length){
+        box.innerHTML = '<p class="th-ea-guide">No public profiles surfaced for this one — try the LinkedIn search above, or refine the thesis segment.</p>';
+      }else{
+        box.innerHTML = '<div class="th-ea-found-h">Discovered on the web (public profiles — signal, not evidence)</div>'
+          + found.map(p => '<div class="th-ea-cand"><span class="th-ea-name">' + esc2(p.name) + "</span>"
+            + '<span class="th-ea-why">' + esc2(p.headline || "") + (p.role ? " · " + esc2(p.role) : "") + "</span>"
+            + '<a href="' + esc2(p.profile_url) + '" target="_blank" rel="noopener" class="th-ea-find">open profile ↗</a></div>').join("");
+      }
+    }catch(e){ box.innerHTML = '<p class="th-note">' + esc2(e.message || String(e)) + "</p>"; }
+    finally{ if(btn){ btn.disabled = false; btn.textContent = "⌕ Find experts on the web"; } }
   }
 
   function renderInquiries(){

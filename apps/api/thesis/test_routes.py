@@ -548,3 +548,48 @@ def test_experts_is_empty_without_a_profile(monkeypatch):
     c = TestClient(app)
     r = c.get("/thesis/t1/experts", headers={"Authorization": "Bearer owner"})
     assert r.status_code == 200 and r.json()["aspects"] == []
+
+
+def test_experts_discover_runs_the_people_leg_scoped_to_a_call_only_aspect(monkeypatch):
+    """Phase 1: /experts/discover phrases a query per role (vertical), runs the kernel people leg, and
+    returns PUBLIC profile links for a call_only aspect only — never for a corpus aspect."""
+    from types import SimpleNamespace
+    from eigen_vertical_tech.decision import TECH_DECISION_PROFILE
+    from eigen_kernel.providers.people_search import PersonResult
+    import eigen_kernel.runtime.build as kbuild
+    captured = {"queries": []}
+
+    class _FakePeople:
+        async def search(self, query, *, max_results=8, filters=None):
+            captured["queries"].append(query)
+            return [PersonResult(name="Dana Ops", profile_url="https://linkedin.com/in/dana",
+                                 headline="VP Operations, Acme 3PL", provider="exa", relevance=0.9)]
+    monkeypatch.setattr(kbuild, "build_people", lambda **k: _FakePeople())
+
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {"id": "user-1"} if token == "Bearer owner" else {}
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token="", trusted=False):
+        if thesis_id != "t1" or owner_id != "user-1":
+            return None
+        d = _thesis(owner=True); d["subject"] = {"segment": "mid-market 3PLs"}; return d
+    monkeypatch.setattr(routes.tstore, "get", fake_get)
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=None,
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=TECH_DECISION_PROFILE,
+                                 web_domains=(), retrieval_sources={}, people_domains=()),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+    # a call_only aspect → discovery runs
+    r = c.post("/thesis/t1/experts/discover", headers={"Authorization": "Bearer owner"},
+               json={"aspect_key": "switching_feasible"})
+    assert r.status_code == 200
+    cands = r.json()["candidates"]
+    assert cands and cands[0]["name"] == "Dana Ops" and cands[0]["profile_url"].startswith("https://linkedin")
+    assert any("mid-market 3PLs" in q for q in captured["queries"])   # vertical phrased it in-segment
+    # a corpus aspect is refused (thesis-scoped to call_only, no directory drift)
+    r2 = c.post("/thesis/t1/experts/discover", headers={"Authorization": "Bearer owner"},
+                json={"aspect_key": "problem_exists"})
+    assert r2.status_code == 400

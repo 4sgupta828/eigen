@@ -64,6 +64,16 @@ def _independent(rows: list[dict]) -> int:
                 if str(r.get("independence_key") or r.get("document_id") or r.get("source_url") or "").strip()})
 
 
+# How each role's expertise reads as a people-search query. The role is WHO can settle a rung the
+# record can't (see thesis ASK_WHO / people.py): a buyer owns the budget, an operator lives the status
+# quo, an advisor tracks the category. These are ranking/query phrasings only — never evidence.
+_ROLE_QUERY = {
+    "buyer": "economic buyers and budget owners",
+    "operator": "hands-on operators and practitioners who live the status quo",
+    "advisor": "analysts and advisors who track the category",
+}
+
+
 _QUESTION_DIRECTIVE = """\
 You are stress-testing a startup investment thesis with its author. For ONE aspect of the thesis, write
 a balanced set of pointed, NEUTRAL questions that would let evidence decide it — some seeking support,
@@ -139,6 +149,15 @@ class TechDecisionProfile:
 
     def inquiry_directive(self, decision: str) -> str:
         return _INQUIRY_DIRECTIVE
+
+    def people_query(self, *, role: str, aspect_prompt: str, decision: str, segment: str = "") -> str:
+        """A natural-language expertise query for the people-discovery leg — how a tech-investment
+        thesis should look for the person who can settle one aspect. Domain judgment: which KIND of
+        person answers a rung (a buyer owns the budget; an operator lives the status quo; an advisor
+        tracks the category), phrased in this segment's own terms."""
+        who = _ROLE_QUERY.get(role, "practitioners")
+        seg = (segment or "this market").strip()
+        return f"{who} in {seg} who could speak first-hand to whether {aspect_prompt.rstrip('?').lower()}"
 
     def _enough(self, rows: list[dict]) -> bool:
         # HARDENED (panel §13): a controlling primary record on its own qualifies; otherwise TWO

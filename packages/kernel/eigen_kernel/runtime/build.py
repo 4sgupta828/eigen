@@ -155,6 +155,25 @@ def build_web(*, mode: ProviderMode | str | None = None,
                              namespace="web", mode=m)
 
 
+def build_people(*, mode: ProviderMode | str | None = None,
+                 cassette_root: Path | None = None,
+                 include_domains: tuple[str, ...] | list[str] | None = None):
+    """The people-discovery leg, cassette-wrapped like the web leg. Live/record uses Exa (public-web
+    profile search) when EXA_API_KEY is set; no key ⇒ Fake (empty) so nothing breaks and CI stays free.
+    Replay reads the cassette and never spends."""
+    from eigen_kernel.providers.people_search import (CassettePeopleSearch, FakePeopleSearch)
+    m = resolve_mode(mode)
+    inner = None
+    if m is not ProviderMode.REPLAY:
+        if os.environ.get("EXA_API_KEY"):
+            from eigen_kernel.providers.exa_people import ExaPeopleSearch
+            inner = ExaPeopleSearch(include_domains=list(include_domains) if include_domains else None)
+        else:
+            inner = FakePeopleSearch()
+    return CassettePeopleSearch(inner, cassette_root=cassette_root or default_cassette_root(),
+                                namespace="people", mode=m)
+
+
 def load_active_vertical(name: str | None = None):
     """Discover installed verticals via the `eigen.verticals` entry point and
     return the one named by EIGEN_ACTIVE_VERTICAL (single-vertical-per-deployment)."""
