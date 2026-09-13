@@ -11962,10 +11962,10 @@ async function openShare(token){
     const inqs = STATE.inquiries || [];
     const anyQuestions = inqs.some(i => (i.questions || []).length);
     if(!anyQuestions){
-      host.innerHTML = '<p class="th-loi-intro">This thesis rests on four <b>lines of inquiry</b>. I can '
-        + "draft a balanced set of questions for each — some seeking support, some seeking "
-        + "disconfirmation, some testing the assumptions built in — which you can edit before running. "
-        + "You then run the lines of inquiry you choose; each is priced before it starts.</p>"
+      host.innerHTML = '<p class="th-loi-intro">I’ll read this thesis and draft the <b>lines of '
+        + "inquiry</b> it rests on — as many as it takes to cover it — each a cluster of pointed "
+        + "questions: some seeking support, some seeking disconfirmation, some testing the assumptions "
+        + "built in. Edit any of them, then run the lines you choose.</p>"
         + (owner ? '<div class="th-run-row"><button type="button" class="th-run" id="th-gen">Draft the questions</button>'
             + '<span class="th-run-note">Free — no evidence is gathered until you run a line of inquiry.</span></div>' : "");
       const g = document.getElementById("th-gen"); if(g) g.addEventListener("click", generateInquiries);
