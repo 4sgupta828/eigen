@@ -134,3 +134,38 @@ def test_recover_citations_requires_a_real_content_match():
     # an already-cited sentence is left untouched
     got3 = _recover_citations([{"text": "x", "evidence_ids": ["e9"]}], ev)
     assert got3[0]["evidence_ids"] == ["e9"]
+
+
+def test_recover_table_binds_untagged_rows_by_content():
+    from api.thesis.engine_adapter import _recover_table
+    ev = [{"id": "e1", "block_text": "Salesforce leads with Agentforce, its agentic layer for CRM."},
+          {"id": "e2", "block_text": "HubSpot targets mid-market with Breeze AI agents."}]
+    table = {"columns": ["CRM", "Agent play"], "rows": [
+        {"cells": ["Salesforce", "Agentforce"], "evidence_ids": []},      # untagged → recovered to e1
+        {"cells": ["HubSpot", "Breeze AI"], "evidence_ids": []},          # untagged → recovered to e2
+        {"cells": ["Unknownco", "mystery"], "evidence_ids": []}]}         # binds to nothing → dropped
+    out = _recover_table(table, ev)
+    by_first = {r["cells"][0]: r.get("evidence_ids") for r in out["rows"]}
+    assert by_first.get("Salesforce") == ["e1"]
+    assert by_first.get("HubSpot") == ["e2"]
+    assert "Unknownco" not in by_first                                    # unbindable row removed
+
+
+@pytest.mark.asyncio
+async def test_table_survives_when_the_model_forgets_row_citations():
+    # end-to-end: the model returns a comparison table with NO row evidence_ids; recovery + gate keep it
+    # instead of collapsing to a note.
+    async def llm(system, user):
+        return {"layout": "prose", "sentences": [],
+                "table": {"columns": ["CRM", "Differentiation"],
+                          "rows": [{"cells": ["Salesforce", "Agentforce agentic layer"], "evidence_ids": None},
+                                   {"cells": ["Microsoft", "Copilot across Dynamics"], "evidence_ids": None}]},
+                "note": "Other CRMs are not covered by the evidence."}
+    ev = [{"id": "a1", "block_text": "Salesforce differentiates with its Agentforce agentic layer for CRM."},
+          {"id": "a2", "block_text": "Microsoft embeds Copilot across Dynamics 365."}]
+    synth = make_synthesize(llm)
+    out = await synth(_q("Compare CRMs and their agent adaptation."), ev)
+    assert "| CRM | Differentiation | Source |" in out                    # the table survived
+    assert "Salesforce" in out and "Microsoft" in out
+    assert "[[e:a1]]" in out and "[[e:a2]]" in out                        # rows bound to their sources
+    assert "Other CRMs are not covered" in out                           # the gap note rides along

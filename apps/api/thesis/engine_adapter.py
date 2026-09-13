@@ -27,20 +27,42 @@ def _distinctive(text: str) -> tuple[set, set]:
     return nums, props
 
 
-def _recover_citations(items: list[dict], evidence: list[dict]) -> list[dict]:
-    """When the model writes a factual sentence but forgets its `evidence_ids`, bind it to the evidence
-    row(s) whose source text actually contains the sentence's distinctive tokens (a shared number, or
-    ≥2 shared proper nouns). Keeps grounding honest — a sentence that matches no source stays uncited
-    and is dropped downstream — while rescuing real findings the model failed to tag. Sentences the
-    model DID cite are left untouched."""
-    haystacks = []
+def _haystacks(evidence: list[dict]) -> list:
+    hs = []
     for e in evidence or []:
         eid = str(e.get("id") or "")
         if not eid:
             continue
         txt = str(e.get("block_text") or e.get("quote") or "")
         hn, hp = _distinctive(txt)
-        haystacks.append((eid, hn, {p.lower() for p in hp}, txt.lower()))
+        hs.append((eid, hn, {p.lower() for p in hp}, txt.lower()))
+    return hs
+
+
+def _bind_ids(text: str, haystacks: list) -> list[str]:
+    """The evidence id(s) whose source text contains this text's distinctive tokens (a shared number, or
+    ≥2 shared proper nouns). [] when nothing matches — the caller then drops the unit, so grounding stays
+    honest. Used to rescue a sentence OR a table row the model wrote but forgot to tag."""
+    snums, sprops = _distinctive(text or "")
+    sprops_l = {p.lower() for p in sprops}
+    scored = []
+    for eid, hn, hp, hl in haystacks:
+        num_hit = len(snums & hn)
+        prop_hit = len(sprops_l & hp)
+        prop_sub = sum(1 for p in sprops_l if len(p) >= 5 and p in hl)   # multi-word entities
+        score = num_hit * 2 + max(prop_hit, prop_sub)
+        if num_hit >= 1 or prop_hit >= 2 or prop_sub >= 2:
+            scored.append((score, eid))
+    scored.sort(reverse=True)
+    return [eid for _s, eid in scored[:2]]
+
+
+def _recover_citations(items: list[dict], evidence: list[dict]) -> list[dict]:
+    """When the model writes a factual sentence but forgets its `evidence_ids`, bind it to the evidence
+    row(s) whose source text actually contains its distinctive tokens. Keeps grounding honest — a
+    sentence that matches no source stays uncited and is dropped downstream — while rescuing real
+    findings the model failed to tag. Sentences the model DID cite are left untouched."""
+    haystacks = _haystacks(evidence)
     out = []
     for it in items or []:
         ids = [str(x) for x in ((it or {}).get("evidence_ids") or []) if str(x)]
@@ -49,24 +71,32 @@ def _recover_citations(items: list[dict], evidence: list[dict]) -> list[dict]:
         text = str((it or {}).get("text") or "")
         if not text.strip():
             continue
-        snums, sprops = _distinctive(text)
-        sprops_l = {p.lower() for p in sprops}
-        scored = []
-        for eid, hn, hp, hl in haystacks:
-            num_hit = len(snums & hn)
-            prop_hit = len(sprops_l & hp)
-            # also count proper nouns that appear anywhere in the source text (substring), catching
-            # multi-word entities the token split missed
-            prop_sub = sum(1 for p in sprops_l if len(p) >= 5 and p in hl)
-            score = num_hit * 2 + max(prop_hit, prop_sub)
-            if num_hit >= 1 or prop_hit >= 2 or prop_sub >= 2:
-                scored.append((score, eid))
-        scored.sort(reverse=True)
-        if scored:
-            it = {**it, "evidence_ids": [eid for _s, eid in scored[:2]]}
-            out.append(it)
+        bound = _bind_ids(text, haystacks)
+        if bound:
+            out.append({**it, "evidence_ids": bound})
         # else: no source contains this sentence's specifics → drop it (sanitize would too)
     return out
+
+
+def _recover_table(table, evidence: list[dict]):
+    """Same rescue for a comparison table: a row the model left untagged is bound to the source whose
+    text contains the row's distinctive tokens (the entity name + its metrics). Without this, a table
+    the model built but forgot to cite is dropped whole and the answer collapses to a bare note — the
+    exact failure this repairs."""
+    if not isinstance(table, dict) or not (table.get("rows") or []):
+        return table
+    haystacks = _haystacks(evidence)
+    rows = []
+    for r in (table.get("rows") or []):
+        ids = [str(x) for x in ((r or {}).get("evidence_ids") or []) if str(x)]
+        if ids:
+            rows.append(r); continue
+        cells = [str(c) for c in ((r or {}).get("cells") or [])]
+        bound = _bind_ids(" ".join(cells), haystacks)
+        if bound:
+            rows.append({**r, "evidence_ids": bound})
+        # else: row binds to no source → dropped (sanitize_table would too)
+    return {**table, "rows": rows}
 
 
 def make_gather(attack_fn):
@@ -116,6 +146,11 @@ SHAPE THE ANSWER for the question — do not default to a wall of prose:
 - You may use BOTH: a `table` for the comparison plus a couple of `sentences` that summarize or caveat
   it. Every row and every sentence still cites its evidence_ids — a table row is grounded exactly like
   a sentence, so never put an uncited cell in it.
+- BUILD THE STRUCTURE FROM WHAT YOU HAVE: if the question compares or enumerates items (e.g. "all major
+  CRMs"), give the table/bullets for the items the evidence DOES cover — never withhold the table just
+  because the list may not be exhaustive. Put "which items are missing / not covered" in `note`, not in
+  place of the table. A comparison table over 4 named items plus a note beats a bare "would need more
+  sources" every time.
 
 ALWAYS EXPLAIN — never leave the reader with a bare "not established":
 - If the evidence directly answers the question, give the comprehensive cited answer above.
@@ -203,6 +238,7 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
         # that actually contains its specifics, so a rich answer never collapses to "not established"
         # over a missing id. The strict gate below still drops anything that binds to no source.
         items = _recover_citations(items, evidence)
+        table = _recover_table(table, evidence)
         table_md = sanitize_table(table, allowed)
         # bullets by default for a multi-point answer; prose only when the model asked for it and there
         # is no table alongside. A table renders its rows; the sentences frame or caveat it.
