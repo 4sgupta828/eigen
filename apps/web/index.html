@@ -12179,12 +12179,23 @@ async function openShare(token){
           if(ir.ok){ STATE.inquiries = (await ir.json()).inquiries || STATE.inquiries; }
         }catch(e){ /* keep the last snapshot */ }
         renderInquiries();
-        if(s.state === "completed"){ STATE.inqRun = null; await loadInquiries(); await open(STATE.id); return; }
+        if(s.state === "completed"){
+          // Refresh the doc (so citation footnotes resolve against fresh evidence) and the inquiries,
+          // then re-render IN PLACE — never call open()/render() here: that rebuilds the whole thesis
+          // body and wipes #th-loi, collapsing every open card back to a fresh drafted-questions list.
+          STATE.inqRun = null;
+          try{ const tr = await fetch("/thesis/" + encodeURIComponent(STATE.id), {headers: hdrs()});
+               if(tr.ok) STATE.doc = (await tr.json()).thesis || STATE.doc; }catch(e){ }
+          try{ const ir2 = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries", {headers: hdrs()});
+               if(ir2.ok) STATE.inquiries = (await ir2.json()).inquiries || STATE.inquiries; }catch(e){ }
+          renderInquiries();
+          return;
+        }
         if(s.state === "failed" || s.state === "none" || s.stage === "stalled"){
           const why = (s.error && s.error.reason) || "the run stopped";
-          const key = STATE.inqRun.key; STATE.inqRun = null;
+          STATE.inqRun = null;
           note().textContent = why + ". Nothing was lost — press run again to resume where it left off.";
-          await loadInquiries(); return;   // stop; resume is the user's explicit choice, no storm
+          renderInquiries(); return;   // in-place; STATE.inquiries was just refreshed. Resume is explicit.
         }
       }
     }catch(e){ misses++; }
