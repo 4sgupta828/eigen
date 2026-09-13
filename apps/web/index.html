@@ -11999,7 +11999,11 @@ async function openShare(token){
       body = '<div class="th-qn-wait">queued</div>';
     }else if(q.target_status){
       // Answered: compressed by default, the grounded answer + citations on demand.
-      const f = FOUND[q.target_status] || FOUND.target_untested;
+      // "untested" with a cited answer means the record has relevant material but nothing DECISIVE —
+      // say that, rather than "nothing found", which a substantive answer would contradict.
+      let f = FOUND[q.target_status] || FOUND.target_untested;
+      if(q.target_status === "target_untested" && q.answer)
+        f = {label: "found, but not decisive", cls: "none"};
       const inner = q.answer
         ? '<div class="th-qn-a">' + linkEvidence(q.answer, allEvidence()) + "</div>"
         : '<div class="th-qn-a none">Not established in the record.</div>';
