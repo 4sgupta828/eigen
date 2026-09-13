@@ -41,7 +41,7 @@ def build_producer(*, dsn, web_client, relation_llm, synth_llm, refuter_llm, ten
         q = Question(kind=QuestionKind.SEEK_SUPPORT, text=item.get("question", ""),
                      target=item.get("target", ""), polarity=1)
         answer = await synth(q, evidence)
-        return answer, evidence
+        return answer, evidence, (res.get("retrieval") or {})
 
     return producer
 
@@ -52,18 +52,19 @@ async def run_eval(items, *, produce, judge_llm) -> dict:
     results = []
     for item in items:
         try:
-            answer, evidence = await produce(item)
+            got = await produce(item)
+            answer, evidence = got[0], got[1]
+            retr = got[2] if len(got) > 2 else {}
         except Exception as exc:      # noqa: BLE001 — one item's failure never sinks the batch
-            answer, evidence = "", []
             results.append({"id": item.get("id"), "answer": "", "evidence_n": 0, "error": str(exc)[:200],
-                            "scores": {}})
+                            "scores": {}, "retrieval": {}})
             continue
         scores = await judge_answer(judge_llm, question=item.get("question", ""),
                                     thesis=item.get("thesis", ""), aspect=item.get("question", ""),
                                     rubric_focus=item.get("rubric_focus", ""), answer=answer,
                                     evidence=evidence)
         results.append({"id": item.get("id"), "answer": answer, "evidence_n": len(evidence),
-                        "scores": scores})
+                        "scores": scores, "retrieval": retr})
     return {"results": results, "summary": aggregate(results)}
 
 
@@ -82,4 +83,18 @@ def format_report(report: dict) -> str:
     rows.append("MEANS (n=%d, scored=%d)      cov=%.2f spec=%.2f grnd=%.2f use=%.2f  OVERALL=%.2f" % (
         a.get("n", 0), a.get("n_scored", 0), a.get("coverage", 0), a.get("specificity", 0),
         a.get("groundedness", 0), a.get("usefulness", 0), a.get("overall", 0)))
+    # Retrieval diagnostics: does reformulation reach NEW sources, or do the caps/corpus bind?
+    rows.append("")
+    rows.append("RETRIEVAL  (angles = reformulated queries; new = distinct docs each angle added)")
+    rows.append("id                     angles  raw  bound  unique  kept  cap  per-angle new")
+    for r in report["results"]:
+        rt = r.get("retrieval") or {}
+        if not rt:
+            continue
+        pa = rt.get("per_angle") or []
+        newseq = "/".join(str(x.get("new", 0)) for x in pa) or "-"
+        rows.append("%-21s  %6d  %3d  %5d  %6s  %4s  %3s  %s" % (
+            (r.get("id") or "")[:21], len(rt.get("for_queries") or []),
+            (rt.get("corpus_for_raw", 0) + rt.get("web_for_raw", 0)), rt.get("for_bound_total", 0),
+            rt.get("for_unique", "-"), rt.get("for_kept", "-"), rt.get("cap", "-"), newseq))
     return "\n".join(rows)

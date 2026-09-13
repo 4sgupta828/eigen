@@ -35,7 +35,7 @@
       "settleable": "call_only",
       "question": "Does willingness to pay for camera-based inventory tracking exceed the cost to serve for mid-market 3PLs?",
       "target": "Mid-market 3PLs will pay more for camera inventory tracking than it costs to serve them.",
-      "rubric_focus": "This is call_only. A strong answer surfaces what the record DOES show (labor-cost proxies, incumbent pricing) AND is explicit that a filed budget for an unoffered SKU cannot settle it — it needs a buyer call. It must NOT fabricate a willingness-to-pay number, and must not bare-'not established'."
+      "rubric_focus": "This is call_only. A strong answer surfaces what the record DOES show (labor-cost proxies, incumbent pricing) AND is explicit that a filed budget for an unoffered SKU cannot settle it \u2014 it needs a buyer call. It must NOT fabricate a willingness-to-pay number, and must not bare-'not established'."
     },
     {
       "id": "oss-llm-cost",
@@ -45,6 +45,69 @@
       "question": "Is there a catalyst forcing enterprises to revisit closed vs open LLMs on cost now?",
       "target": "A recent catalyst is pushing enterprises to reconsider open-source LLMs on cost.",
       "rubric_focus": "Should name a concrete, recent catalyst (a price change, a capability parity milestone, a compliance shift) with a date and a cited source, not a timeless 'costs matter'."
+    },
+    {
+      "id": "vertical-ai-legal",
+      "thesis": "Vertical AI drafting copilots will win law firms away from horizontal LLM assistants.",
+      "aspect_key": "budget_category",
+      "settleable": "partly",
+      "question": "Is there an existing budget line at law firms that a vertical AI drafting copilot is bought from, and who owns it?",
+      "target": "Law firms have a budget category that a vertical AI drafting copilot is purchased from.",
+      "rubric_focus": "Name the actual budget line (legal-tech / knowledge-management / practice-innovation), name owners or named-vendor deployments at named firms, cited. Vague 'firms are adopting AI' is weak."
+    },
+    {
+      "id": "databricks-vs-snowflake",
+      "thesis": "Databricks will out-grow Snowflake in enterprise data-and-AI platform spend.",
+      "aspect_key": "enough_buyers",
+      "settleable": "corpus",
+      "question": "How do Databricks and Snowflake compare on enterprise adoption, growth, and AI-workload traction?",
+      "target": "Databricks is gaining enterprise data-and-AI platform share against Snowflake.",
+      "rubric_focus": "A COMPARISON with named metrics (revenue/growth, customer counts, named enterprise wins, AI product traction) and cited sources, distinguishing announced from realized. A single-vendor gloss is weak."
+    },
+    {
+      "id": "stablecoin-b2b",
+      "thesis": "Stablecoins are becoming the default rail for cross-border B2B payments.",
+      "aspect_key": "status_quo_costs",
+      "settleable": "corpus",
+      "question": "Does the status quo of correspondent-bank cross-border B2B payments cost real money and time that stablecoins remove?",
+      "target": "Correspondent-bank cross-border B2B payments cost material fees and settlement time.",
+      "rubric_focus": "Concrete cost/time figures for the status quo (fee %, settlement days) AND evidence of realized stablecoin B2B volume with dates, cited; distinguish pilots from production. Timeless 'payments are slow' is weak."
+    },
+    {
+      "id": "soc-copilot-switching",
+      "thesis": "Mid-market MSSPs will move tier-1 SOC triage to AI copilots.",
+      "aspect_key": "switching_feasible",
+      "settleable": "call_only",
+      "question": "Is it feasible for a mid-market MSSP to switch tier-1 SOC triage from analysts to an AI copilot?",
+      "target": "A mid-market MSSP can surmount the cost of switching tier-1 triage to an AI copilot.",
+      "rubric_focus": "call_only: surface integration/trust/workflow-change proxies from the record and be explicit that switching EASE needs an operator call; must not fabricate adoption or bare-'not established'."
+    },
+    {
+      "id": "usage-pricing-catalyst",
+      "thesis": "Infra SaaS is shifting from seat-based to usage-based pricing.",
+      "aspect_key": "catalyst",
+      "settleable": "partly",
+      "question": "Is there a recent catalyst pushing infra SaaS vendors from seat-based to usage-based pricing now?",
+      "target": "A recent catalyst is driving infra SaaS toward usage-based pricing.",
+      "rubric_focus": "Name specific recent pricing-model changes by named vendors with dates and cited sources; a timeless 'usage pricing is popular' is weak."
+    },
+    {
+      "id": "humanoid-warehouse-pmf",
+      "thesis": "Humanoid robots will reach commercial product-market fit in warehouse picking before manufacturing.",
+      "aspect_key": "problem_exists",
+      "settleable": "corpus",
+      "question": "Are humanoid robots actually being deployed for warehouse picking today, beyond demos?",
+      "target": "Humanoid robots are in real warehouse-picking deployments, not just demos.",
+      "rubric_focus": "Name specific robots/vendors and warehouse deployments with concrete task/throughput, and clearly separate pilots/demos from paid production. Generic 'robots are coming' is weak."
+    },
+    {
+      "id": "cuda-moat-erosion",
+      "thesis": "Nvidia's CUDA software moat is eroding as inference shifts to alternative accelerators.",
+      "aspect_key": "problem_exists",
+      "settleable": "corpus",
+      "question": "Is there evidence that production inference is moving to non-Nvidia accelerators despite CUDA lock-in?",
+      "target": "Production inference workloads are running on non-Nvidia accelerators despite CUDA.",
+      "rubric_focus": "Name specific alternative accelerators, named production deployments, and portability tooling/frameworks, cited; distinguish benchmark claims from realized migration. Vague 'competition is heating up' is weak."
     }
   ]
 }

@@ -48,7 +48,11 @@ async def test_run_eval_end_to_end_with_fakes():
     async def produce(item):
         if item["id"] == "boom":
             raise RuntimeError("retrieval down")
-        return "A grounded answer. [[e:e1]]", [{"id": "e1", "quote": "q"}]
+        retr = {"for_queries": ["q", "angle2"], "corpus_for_raw": 6, "web_for_raw": 0,
+                "for_bound_total": 3, "for_unique": 3, "for_kept": 2, "cap": 6,
+                "per_angle": [{"q": "q", "leg": "corpus", "raw": 4, "bound": 2, "new": 2},
+                              {"q": "angle2", "leg": "corpus", "raw": 2, "bound": 1, "new": 1}]}
+        return "A grounded answer. [[e:e1]]", [{"id": "e1", "quote": "q"}], retr
     async def judge(system, user):
         return {"coverage": 4, "specificity": 3, "groundedness": 5, "usefulness": 4, "overall": 4,
                 "rationale": "ok", "missing": ""}
@@ -56,4 +60,7 @@ async def test_run_eval_end_to_end_with_fakes():
     assert rep["summary"]["n"] == 2 and rep["summary"]["n_scored"] == 1   # 'boom' failed → unscored
     assert rep["results"][0]["scores"]["overall"] == 4 and rep["results"][0]["evidence_n"] == 1
     assert rep["results"][1]["error"] == "retrieval down"
-    assert "OVERALL=4.00" in format_report(rep)                            # report renders the baseline
+    rpt = format_report(rep)
+    assert "OVERALL=4.00" in rpt                                            # report renders the baseline
+    assert "RETRIEVAL" in rpt and "per-angle new" in rpt                    # + retrieval diagnostics
+    assert rep["results"][0]["retrieval"]["for_kept"] == 2

@@ -23,6 +23,13 @@ from .schema import (
 
 MAX_PER_SIDE = 6
 MAX_PER_QUERY = 8
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, "") or default))
+    except Exception:      # noqa: BLE001
+        return default
 MIN_CHARS = 60
 MAX_QUOTE = 400
 N_AGAINST_QUERIES = 3
@@ -113,7 +120,7 @@ def _row(r, side: str, ui=None) -> dict:
             "independence_key": document_id or f"{sk}:{subject}", "facets": facets}
 
 
-def _dedupe(rows: list[dict], cap: int) -> list[dict]:
+def _dedupe(rows: list[dict], cap: int, per_source_cap: int = 2) -> list[dict]:
     """One document may not fill a side, and a register may not be represented by one loud source."""
     seen_q, per_source, out = set(), {}, []
     for r in rows:
@@ -121,7 +128,7 @@ def _dedupe(rows: list[dict], cap: int) -> list[dict]:
         if k in seen_q:
             continue
         sk = r["source_key"]
-        if per_source.get(sk, 0) >= 2:
+        if per_source.get(sk, 0) >= per_source_cap:
             continue
         seen_q.add(k)
         per_source[sk] = per_source.get(sk, 0) + 1
@@ -275,15 +282,35 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     ev_against: list[dict] = []
     searched = 0
     corpus_failed = False
+    # Retrieval instrumentation: per-angle raw/bound/new, so we can see whether reformulation reaches
+    # NEW sources or the caps/corpus are the wall (the specificity bottleneck the eval flagged).
+    retr: dict = {"for_queries": for_queries, "per_angle": [], "corpus_for_raw": 0, "web_for_raw": 0}
+    _seen_for: set = set()
+
+    def _note(q, leg, hits, rows):
+        raw = len(hits or [])
+        bound = new = 0
+        for row in rows:
+            bound += 1
+            k = row["quote"][:120]
+            if k not in _seen_for:
+                _seen_for.add(k)
+                new += 1
+        retr["per_angle"].append({"q": (q or "")[:60], "leg": leg, "raw": raw, "bound": bound, "new": new})
+        return bound
+
     if dsn and retrieve:
         try:
             import asyncpg
             conn = await asyncpg.connect(dsn)
             try:
                 for fq in for_queries:                    # each reformulated angle for the FOR side
-                    for r in await _search(conn, tenant, fq, MAX_PER_QUERY):
-                        if len((r["text"] or "")) >= MIN_CHARS and binds(r["text"], terms):
-                            ev_for.append(_row(r, SIDE_FOR, ui))
+                    hits = await _search(conn, tenant, fq, MAX_PER_QUERY)
+                    rows = [_row(r, SIDE_FOR, ui) for r in hits
+                            if len((r["text"] or "")) >= MIN_CHARS and binds(r["text"], terms)]
+                    ev_for.extend(rows)
+                    retr["corpus_for_raw"] += len(hits)
+                    _note(fq, "corpus", hits, rows)
                     searched += 1
                 for q in against_qs:
                     for r in await _search(conn, tenant, q, MAX_PER_QUERY):
@@ -299,6 +326,8 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     # own Postgres costs nothing and is tier-classified; a paid web query is worth spending only on a
     # claim the record could not speak to at all. A demand thesis about a market segment is exactly
     # the case the corpus is thin on and the open web is not.
+    cap = _int_env("EIGEN_THESIS_MAX_PER_SIDE", MAX_PER_SIDE)
+    per_source_cap = _int_env("EIGEN_THESIS_PER_SOURCE", 2)
     web_qs = 0
     if web_client is not None and retrieve:
         if not ev_for:
@@ -306,15 +335,22 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
                 got = await _web(web_client, fq, SIDE_FOR, terms)
                 web_qs += 1
                 ev_for.extend(got)
-                if len(ev_for) >= MAX_PER_SIDE:
+                retr["web_for_raw"] += len(got)
+                _note(fq, "web", got, got)
+                if len(ev_for) >= cap:
                     break
         if not ev_against and against_qs:
             got = await _web(web_client, against_qs[0], SIDE_AGAINST, terms)
             web_qs += 1
             ev_against.extend(got)
 
-    ev_for = _dedupe(ev_for, MAX_PER_SIDE)
-    ev_against = _dedupe(ev_against, MAX_PER_SIDE)
+    retr["for_bound_total"] = len(ev_for)          # bound rows before dedupe/cap
+    retr["for_unique"] = len(_seen_for)            # distinct bound rows across all angles
+    ev_for = _dedupe(ev_for, cap, per_source_cap)
+    ev_against = _dedupe(ev_against, cap, per_source_cap)
+    retr["for_kept"] = len(ev_for)                 # after dedupe + cap (what synthesis actually sees)
+    retr["cap"] = cap
+    retr["per_source_cap"] = per_source_cap
     raw = ev_for + ev_against
     candidates = [EvidenceCandidate(
         id=e["id"], quote=e["quote"], block_text=e.get("block_text") or e["quote"],
@@ -357,5 +393,6 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     return {"evidence": evidence, "verdict": research_status, "research_status": research_status,
             "attack_attempted": attack_attempted, "note": note,
             "against_queries": against_qs, "searched": searched, "web_queries": web_qs,
+            "retrieval": retr,
             "counts": {"for": counts["supports"], "against": counts["contradicts"],
                        "context": counts["context"], "signal": counts["signal"]}}
