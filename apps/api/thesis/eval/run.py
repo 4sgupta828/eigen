@@ -14,7 +14,9 @@ from api.thesis.eval.harness import build_producer, format_report, load_gold, ru
 
 async def main():
     dsn = os.environ.get("EIGEN_CORPUS_DSN") or ""
-    llm = Providers.from_env().llm_json
+    llm = Providers.from_env().llm_json          # default (DeepSeek): relation judge + the eval judge
+    from api.thesis.llm import strong_json
+    strong = strong_json() or llm                # strong (OpenAI): synthesis + query reformulation
     refuter = None
     try:
         if os.environ.get("OPENAI_API_KEY"):
@@ -24,12 +26,15 @@ async def main():
         refuter = None
     web = atk._web_client()
     tenant = os.environ.get("EIGEN_TENANT_ID") or "demo"
+    strong_on = strong is not llm
     items = load_gold()
     print(f"[eval] {len(items)} gold items · corpus={'yes' if dsn else 'no'} · "
-          f"web={'yes' if web else 'no'} · refuter={'yes' if refuter else 'no'} · tenant={tenant}")
-    produce = build_producer(dsn=dsn, web_client=web, relation_llm=llm, synth_llm=llm,
-                             refuter_llm=refuter, tenant=tenant)
-    report = await run_eval(items, produce=produce, judge_llm=llm)
+          f"web={'yes' if web else 'no'} · refuter={'yes' if refuter else 'no'} · "
+          f"strong(synth+reformulate)={'openai' if strong_on else 'default'} · "
+          f"judge={'cross-family' if strong_on else 'same-family'} · tenant={tenant}")
+    produce = build_producer(dsn=dsn, web_client=web, relation_llm=llm, synth_llm=strong,
+                             refuter_llm=refuter, tenant=tenant, reformulate_llm=strong)
+    report = await run_eval(items, produce=produce, judge_llm=llm)   # judge = DeepSeek, cross-family from OpenAI synth
     print("\n" + format_report(report) + "\n")
     try:
         with open("/tmp/eigen_eval_report.json", "w") as fh:

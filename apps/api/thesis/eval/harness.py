@@ -19,7 +19,7 @@ def load_gold(path: str | None = None) -> list[dict]:
         return (json.load(fh) or {}).get("items") or []
 
 
-def build_producer(*, dsn, web_client, relation_llm, synth_llm, refuter_llm, tenant):
+def build_producer(*, dsn, web_client, relation_llm, synth_llm, refuter_llm, tenant, reformulate_llm=None):
     """An async producer(item) -> (answer, evidence) over the real pipeline — attack_claim gathers +
     gates evidence (always_retrieve, so call_only aspects still surface what the record says), and
     make_synthesize writes the grounded answer. Mirrors routes._run_question_rows' answer path; we take
@@ -34,7 +34,8 @@ def build_producer(*, dsn, web_client, relation_llm, synth_llm, refuter_llm, ten
         res = await atk.attack_claim(dsn, claim=item.get("target", ""),
                                      settleable=item.get("settleable", "corpus"), judge_llm=refuter_llm,
                                      extra_context=ctx, web_client=web_client, relation_llm=relation_llm,
-                                     evidence_policy=None, tenant=tenant, always_retrieve=True)
+                                     evidence_policy=None, tenant=tenant, always_retrieve=True,
+                                     reformulate_llm=reformulate_llm)
         evidence = res.get("evidence") or []
         synth = make_synthesize(synth_llm, thesis=item.get("thesis", ""), aspect=aspect_prompt)
         q = Question(kind=QuestionKind.SEEK_SUPPORT, text=item.get("question", ""),

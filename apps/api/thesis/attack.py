@@ -208,9 +208,38 @@ async def _web(client, query: str, side: str, terms: list[str]) -> list[dict]:
     return out
 
 
+_REFORMULATE_SYSTEM = """You are an investor's diligence researcher. Given a declarative claim being
+tested (and the thesis context), write the SEARCH QUERIES you'd run to find the SPECIFICS that settle it
+— named companies/people, figures, dates, filings, case studies, benchmarks — not restatements of the
+claim. Vary the angle: the entity + the metric, the incumbent/alternative, the customer/segment, the
+filing/press term. Keep each query short and keyword-like (what you'd type into a search box), in the
+claim's own nouns. Return ONLY {"queries": ["...", "..."]} with 3-5 queries."""
+
+
+async def reformulate(llm_json, *, claim: str, context: str = "") -> list[str]:
+    """The literal claim plus 3-5 diligence-intent search angles. Never raises; returns [claim] on any
+    failure. De-duped, capped, each non-trivial — so retrieval casts a wider, specifics-seeking net."""
+    import json as _json
+    out = [claim]
+    if llm_json is None or not (claim or "").strip():
+        return out
+    try:
+        raw = await llm_json(_REFORMULATE_SYSTEM,
+                             f"CLAIM: {claim}\nCONTEXT: {context}\n\nReturn the JSON now.")
+        d = raw if isinstance(raw, dict) else _json.loads(raw)
+        for q in (d.get("queries") or []):
+            q = str(q or "").strip()
+            if len(q) >= 4 and q.lower() not in {x.lower() for x in out}:
+                out.append(q[:200])
+    except Exception:      # noqa: BLE001 — reformulation is best-effort; the literal claim always stands
+        return [claim]
+    return out[:5]
+
+
 async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None, ui=None,
                        tenant: str = "demo", extra_context: str = "", web_client=None,
-                       relation_llm=None, evidence_policy=None, always_retrieve: bool = False) -> dict:
+                       relation_llm=None, evidence_policy=None, always_retrieve: bool = False,
+                       reformulate_llm=None) -> dict:
     """-> {evidence: [...], verdict, note, against_queries, searched}.
 
     Never raises: a corpus we cannot reach yields an honest `under_tested`, reported as an attempt.
@@ -222,6 +251,16 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     """
     retrieve = always_retrieve or settleable != CALL_ONLY
     terms = _terms(claim + " " + extra_context)
+    # QUERY REFORMULATION (strategic): expand the bare declarative target into several diligence-analyst
+    # search angles so retrieval finds the SPECIFICS (named customers, figures, dates) a single literal
+    # query misses — the eval's specificity/groundedness gap. Gated: only when a (strong) llm is passed;
+    # otherwise the single claim query, unchanged.
+    for_queries = [claim]
+    if reformulate_llm is not None:
+        try:
+            for_queries = await reformulate(reformulate_llm, claim=claim, context=extra_context)
+        except Exception:      # noqa: BLE001 — reformulation never blocks; fall back to the literal claim
+            for_queries = [claim]
     from eigen_kernel.research.refuter import refute_hypothesis
 
     # The red team writes the against-queries. A different family, and fail-closed: with no
@@ -241,10 +280,11 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
             import asyncpg
             conn = await asyncpg.connect(dsn)
             try:
-                for r in await _search(conn, tenant, claim, MAX_PER_QUERY * 2):
-                    if len((r["text"] or "")) >= MIN_CHARS and binds(r["text"], terms):
-                        ev_for.append(_row(r, SIDE_FOR, ui))
-                searched += 1
+                for fq in for_queries:                    # each reformulated angle for the FOR side
+                    for r in await _search(conn, tenant, fq, MAX_PER_QUERY):
+                        if len((r["text"] or "")) >= MIN_CHARS and binds(r["text"], terms):
+                            ev_for.append(_row(r, SIDE_FOR, ui))
+                    searched += 1
                 for q in against_qs:
                     for r in await _search(conn, tenant, q, MAX_PER_QUERY):
                         if len((r["text"] or "")) >= MIN_CHARS and binds(r["text"], terms):
@@ -262,9 +302,12 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     web_qs = 0
     if web_client is not None and retrieve:
         if not ev_for:
-            got = await _web(web_client, claim, SIDE_FOR, terms)
-            web_qs += 1
-            ev_for.extend(got)
+            for fq in for_queries[:3]:                     # a few angles on the open web when corpus is silent
+                got = await _web(web_client, fq, SIDE_FOR, terms)
+                web_qs += 1
+                ev_for.extend(got)
+                if len(ev_for) >= MAX_PER_SIDE:
+                    break
         if not ev_against and against_qs:
             got = await _web(web_client, against_qs[0], SIDE_AGAINST, terms)
             web_qs += 1

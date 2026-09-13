@@ -169,6 +169,15 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     def _llm_json():
         return getattr(providers, "llm_json", None)
 
+    def _strong_llm_json():
+        # The stronger (OpenAI) model for the quality-critical steps — synthesizing the answer and
+        # reformulating search queries — where the eval showed us weak. Falls back to the default seam.
+        try:
+            from .llm import strong_json
+            return strong_json() or _llm_json()
+        except Exception:      # noqa: BLE001
+            return _llm_json()
+
     def _ui():
         return getattr(manifest, "ui", None)
 
@@ -653,7 +662,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             return await atk.attack_claim(dsn, claim=target, settleable=settleable, judge_llm=judge_llm,
                                           ui=_ui(), extra_context=ctx, web_client=wc,
                                           relation_llm=_llm_json(), evidence_policy=_policy(), tenant=tenant,
-                                          always_retrieve=True)   # the inquiry model runs the user's own
+                                          always_retrieve=True, reformulate_llm=_strong_llm_json())
+            #  reformulate with the strong model for specifics; the inquiry model runs the user's own
             #  question — always show what the record says, even for a call_only aspect (authority policy
             #  still keeps low-tier coverage from carrying it). Never a bare "nothing found".
         return go
@@ -676,7 +686,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 continue
             frame = f"Thesis under test: {thesis} | Aspect: {aspect.prompt} | {subject}".strip()
             gather = _make_gather(_attack_fn(aspect.settleable, frame, web))
-            synth = _make_synthesize(_llm_json(), thesis=thesis, aspect=aspect.prompt)
+            synth = _make_synthesize(_strong_llm_json(), thesis=thesis, aspect=aspect.prompt)
             for row in group:
                 # Idempotent resume: a question already answered by THIS run is skipped, so a resumed
                 # run re-drives only what is left and never repeats work.
