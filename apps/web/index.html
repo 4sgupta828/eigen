@@ -412,31 +412,33 @@
      page in this mode so both panels breathe (reverts to the standard width on a phone). */
   body[data-mode="thesis"] .wrap{max-width:62rem;}
   .th-explore{display:block;margin-top:.4rem;}
-  /* Thesis Explorations is a DRAWER at every width — hidden off-canvas behind the ☰ button, so it never
-     collides with the chat. Opening slides it in over a scrim; selecting or tapping the scrim closes it. */
-  .th-rail{position:fixed;left:0;top:0;bottom:0;width:min(88vw,20rem);z-index:70;overflow:auto;
-    border:0;border-right:1px solid var(--hair);border-radius:0;background:var(--panel);
-    padding:.6rem .6rem .8rem;transform:translateX(-100%);transition:transform .2s ease;
-    box-shadow:0 0 40px -10px rgba(0,0,0,.5);}
-  .th-rail.open{transform:none;}
-  .th-rail-scrim{position:fixed;inset:0;z-index:65;background:rgba(0,0,0,.35);opacity:0;
-    pointer-events:none;transition:opacity .2s ease;}
-  .th-rail-scrim.open{opacity:1;pointer-events:auto;}
-  .th-rail-h{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.35rem .4rem .5rem;
-    font:600 .7rem/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim);}
-  .th-rail-new{font-family:var(--mono);font-size:.68rem;color:var(--gold);background:transparent;cursor:pointer;
-    border:1px solid color-mix(in srgb,var(--gold) 45%,var(--hair));border-radius:8px;padding:.28rem .55rem;min-height:32px;}
+  /* Thesis Explorations is a DEDICATED FULL PAGE (like Past Sessions), opened by the ☰ button and closed
+     with ← Back — not a side drawer, so it never collides with the chat. */
+  .th-rail{display:none;position:fixed;inset:0;z-index:70;background:var(--bg);overflow-y:auto;
+    padding:1.1rem 1.4rem 3rem;}
+  .th-rail.open{display:block;}
+  .th-rail-head{display:flex;align-items:center;gap:.9rem;max-width:60rem;margin:0 auto 1.2rem;
+    padding-bottom:.9rem;border-bottom:1px solid var(--hair);}
+  .th-rail-back{font-family:var(--mono);font-size:.7rem;letter-spacing:.04em;text-transform:uppercase;
+    background:transparent;border:1px solid var(--hair);border-radius:999px;color:var(--muted);
+    padding:.4rem .9rem;cursor:pointer;min-height:40px;}
+  .th-rail-back:hover{border-color:var(--gold);color:var(--gold);}
+  .th-rail-title-h{font:600 1.15rem/1.2 var(--serif);color:var(--ink);}
+  .th-rail-new{margin-left:auto;font-family:var(--mono);font-size:.72rem;color:var(--gold);background:transparent;
+    cursor:pointer;border:1px solid color-mix(in srgb,var(--gold) 45%,var(--hair));border-radius:999px;
+    padding:.4rem .9rem;min-height:40px;}
   .th-rail-new:hover{color:var(--on-accent);background:var(--gold);border-color:var(--gold);}
-  .th-rail-list{display:grid;gap:.25rem;}
-  .th-rail-empty{font-size:.78rem;color:var(--dim);line-height:1.5;padding:.4rem;}
-  .th-rail-item{display:grid;gap:.15rem;width:100%;text-align:left;cursor:pointer;
-    background:transparent;border:1px solid transparent;border-radius:10px;padding:.5rem .55rem;}
-  .th-rail-item:hover{background:var(--panel2);border-color:var(--hair);}
-  .th-rail-item.on{background:rgba(var(--gold-rgb),.09);border-color:color-mix(in srgb,var(--gold) 40%,var(--hair));}
-  .th-rail-title{font-size:.83rem;line-height:1.35;color:var(--ink);font-weight:500;
-    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .th-rail-list{max-width:60rem;margin:0 auto;display:grid;gap:.7rem;
+    grid-template-columns:repeat(auto-fill,minmax(16rem,1fr));}
+  .th-rail-empty{grid-column:1/-1;font-size:.9rem;color:var(--dim);line-height:1.6;padding:1rem;text-align:center;}
+  .th-rail-item{display:grid;gap:.35rem;width:100%;text-align:left;cursor:pointer;
+    background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:.9rem 1rem;min-height:5.5rem;}
+  .th-rail-item:hover{border-color:var(--gold);transform:translateY(-1px);}
+  .th-rail-item.on{background:rgba(var(--gold-rgb),.08);border-color:color-mix(in srgb,var(--gold) 45%,var(--hair));}
+  .th-rail-title{font:500 .98rem/1.4 var(--serif);color:var(--ink);
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
   .th-rail-item.on .th-rail-title{color:var(--gold-strong);}
-  .th-rail-meta{font-family:var(--mono);font-size:.62rem;color:var(--dim);letter-spacing:.02em;}
+  .th-rail-meta{font-family:var(--mono);font-size:.66rem;color:var(--dim);letter-spacing:.02em;margin-top:auto;}
   .th-main{min-width:0;}
   .th-rail-toggle{display:inline-flex;align-items:center;gap:.4rem;font-family:var(--mono);font-size:.72rem;
     color:var(--muted);cursor:pointer;background:transparent;border:1px solid var(--hair);border-radius:8px;
@@ -2924,12 +2926,14 @@
 
 <section id="thesisbody" aria-label="Test a startup thesis">
   <div class="th-explore">
-    <aside class="th-rail" id="th-rail" aria-label="Your theses">
-      <div class="th-rail-h"><span>Thesis Explorations</span>
-        <button type="button" class="th-rail-new" id="th-reset" title="Start a new thesis">＋ New</button></div>
+    <section class="th-rail" id="th-rail" aria-label="Thesis Explorations" role="dialog" aria-modal="true">
+      <div class="th-rail-head">
+        <button type="button" class="th-rail-back" id="th-rail-back">← Back</button>
+        <span class="th-rail-title-h">Thesis Explorations</span>
+        <button type="button" class="th-rail-new" id="th-reset" title="Start a new thesis">＋ New thesis</button>
+      </div>
       <div class="th-rail-list" id="th-rail-list"></div>
-    </aside>
-    <div class="th-rail-scrim" id="th-rail-scrim"></div>
+    </section>
     <div class="th-main">
       <button type="button" class="th-rail-toggle" id="th-rail-toggle" aria-expanded="false"
         aria-controls="th-rail">☰ Explorations</button>
@@ -12233,17 +12237,16 @@ async function openShare(token){
     const rs = document.getElementById("th-reset"); if(rs) rs.addEventListener("click", reset);
     const tg = document.getElementById("th-rail-toggle");
     if(tg) tg.addEventListener("click", () => setRail());
-    const scrim = document.getElementById("th-rail-scrim");
-    if(scrim) scrim.addEventListener("click", () => setRail(false));
+    const back = document.getElementById("th-rail-back");
+    if(back) back.addEventListener("click", () => setRail(false));
     document.addEventListener("keydown", e => { if(e.key === "Escape") setRail(false); });
   });
 
-  // Open/close the Explorations drawer (a scrim behind it). Toggles when called with no argument.
+  // Open/close the Explorations PAGE (a full-screen overlay). Toggles when called with no argument.
   function setRail(open){
     const rail = document.getElementById("th-rail"); if(!rail) return;
     const want = (open === undefined) ? !rail.classList.contains("open") : !!open;
     rail.classList.toggle("open", want);
-    const scrim = document.getElementById("th-rail-scrim"); if(scrim) scrim.classList.toggle("open", want);
     const tg = document.getElementById("th-rail-toggle"); if(tg) tg.setAttribute("aria-expanded", want ? "true" : "false");
     if(want) renderRail();
   }

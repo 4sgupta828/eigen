@@ -106,17 +106,17 @@ test("phone layout has touch targets and a single-column decision brief", () => 
   assert.match(SRC, /prefers-reduced-motion:reduce/);
 });
 
-test("Thesis Explorations is a drawer behind a button, not a column that collides with the chat", () => {
+test("Thesis Explorations is a dedicated full page behind a button, not a column that collides with the chat", () => {
   assert.match(MARKUP, /<div class="th-explore">/);
-  assert.match(MARKUP, /<aside class="th-rail"[^>]*id="th-rail"/);
+  assert.match(MARKUP, /<section class="th-rail"[^>]*id="th-rail"[^>]*role="dialog"/);
   assert.match(MARKUP, /Thesis Explorations/);
   assert.match(MARKUP, /id="th-rail-list"/);
-  assert.match(MARKUP, /id="th-rail-toggle"/);                    // the button that opens the drawer
-  assert.match(MARKUP, /id="th-rail-scrim"/);                     // a scrim behind the open drawer
-  // the rail is off-canvas by default (transform) at every width — not a persistent flex column
-  assert.match(SRC, /\.th-rail\{position:fixed[^}]*transform:translateX\(-100%\)/);
-  assert.match(SRC, /\.th-explore\{display:block/);
-  assert.match(SRC, /function setRail\(/);                        // open/close helper, scrim + esc wired
+  assert.match(MARKUP, /id="th-rail-toggle"/);                    // the button that opens the page
+  assert.match(MARKUP, /id="th-rail-back"/);                      // ← Back closes it
+  // the page is a full-screen overlay, hidden until opened — not a persistent column or a side drawer
+  assert.match(SRC, /\.th-rail\{display:none;position:fixed;inset:0/);
+  assert.match(SRC, /\.th-rail\.open\{display:block/);
+  assert.match(SRC, /function setRail\(/);
   assert.match(MARKUP, /<div class="th-main">[\s\S]*id="th-takes"[\s\S]*id="th-thread"/);
 });
 
