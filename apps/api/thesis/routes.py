@@ -290,7 +290,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         reply = got.get("reply") or ("Ready when you are." if ready else "Tell me a little more.")
         proposed = d.get("proposed_thesis") or d.get("thesis") or ""
         if ready:
-            proposed = await gen.synthesize(_strong_llm_json(), history=turns, said=said) or proposed
+            proposed = await gen.synthesize(_strong_llm_json(), history=turns, said=said,
+                                            fallback=d.get("thesis") or proposed) or proposed
             await tstore.set_proposed_thesis(pool, thesis_id, proposed)
         await tstore.add_turn(pool, thesis_id, role="agent", move="genesis", text=reply,
                               payload={"ready": ready, "proposed_thesis": proposed if ready else ""})

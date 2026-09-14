@@ -5146,7 +5146,11 @@ $("#ask").addEventListener("submit", e=>{
     return;
   }
   if(APP_MODE === "voices"){ if(window.VO) VO.search(question); return; }                 // voices → keyword search over first-person content
-  if(APP_MODE === "thesis"){ if(window.TH) TH.submit(question); return; }                 // thesis → decompose, then attack
+  if(APP_MODE === "thesis"){                                                               // thesis → genesis chat / follow-up
+    if(window.TH) TH.submit(question);
+    q.value = ""; if(typeof autoGrow === "function") autoGrow();   // reset the composer, like every other chat mode
+    return;
+  }
   if(APP_MODE === "experts"){ if(window.EX) EX.search(question); return; }               // experts → people search
   if(APP_MODE === "deepdive"){ if(window.DD) DD.search(question); return; }             // deepdive → resolve one company, then read it
   if(APP_MODE === "guided"){ if(window.SG) SG.send(question); return; }                      // guided → one intake turn
