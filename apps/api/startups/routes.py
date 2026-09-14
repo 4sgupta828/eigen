@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from eigen_kernel.facets import Contract, evaluate, matches_must, validate_contract
 
 from . import compile as compile_mod
-from . import intent_prompt, grouping as grouping_mod, pipeline, ranking
+from . import intent_prompt, grouping as grouping_mod, pipeline, query_expand, ranking
 from .schema import KIND, SCHEMA, WEIGHTS, labels
 from .store import StartupStore
 
@@ -84,8 +84,8 @@ class RosterAtsIn(BaseModel):
 class _Bound:
     """The kernel evaluator's store view: exclusions and the embedder bound in, so `evaluate` stays generic."""
 
-    def __init__(self, store: StartupStore, exclude: dict, embed):
-        self._s, self._x, self._e = store, exclude, embed
+    def __init__(self, store: StartupStore, exclude: dict, embed, dense_text: str | None = None):
+        self._s, self._x, self._e, self._dense = store, exclude, embed, dense_text
 
     async def enumerate(self, kind, must, *, cap=400):
         return await self._s.enumerate(kind, must, cap=cap, exclude=self._x)
@@ -99,10 +99,11 @@ class _Bound:
 
         Until the keyword leg existed the pool came from one embedding, so a query that is already the
         corpus's own words had nothing to anchor it: a search for the companies one firm backed reached
-        companies that merely resembled the firm's name. Dense expands, sparse anchors.
+        companies that merely resembled the firm's name. Dense expands, sparse anchors. `_dense`, when
+        present, is a HyDE expansion of the query added as a dense-only leg (query_expand.py).
         """
         try:
-            rows, diag = await self._s.hybrid(kind, text, must, cap=cap, exclude=self._x, embed=self._e)
+            rows, diag = await self._s.hybrid(kind, text, must, cap=cap, exclude=self._x, embed=self._e, dense_text=self._dense)
         except Exception as e:   # noqa: BLE001 — retrieval trouble must never 500 a search
             rows, diag = [], {"degraded": f"search degraded ({type(e).__name__}): filters only"}
         self.legs = diag
@@ -148,6 +149,7 @@ async def _no_user(token: str):
 
 def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str, admin_token: str = "", user_of=None) -> APIRouter:
     _intent_cache: dict = {}
+    _expand_cache: dict = {}
     r = APIRouter()
     user_of = user_of or _no_user
 
@@ -195,12 +197,12 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
             out["investor_sites"] = {}
         return out
 
-    async def _evaluate_core(c: Contract, counts: bool = True) -> dict:
+    async def _evaluate_core(c: Contract, counts: bool = True, *, dense_text: str | None = None) -> dict:
         errs = validate_contract(c, SCHEMA)
         if errs:
             raise HTTPException(status_code=400, detail="; ".join(errs))
         exclude = dict((c.scope or {}).get("exclude") or {})
-        bound = _Bound(store, exclude, providers.embed)
+        bound = _Bound(store, exclude, providers.embed, dense_text=dense_text)
         out = await evaluate(c, bound, SCHEMA, WEIGHTS, depth=({"counts": False} if not counts else None))
         if bound.degraded:
             out["coverage"]["degraded"] = bound.degraded
@@ -219,24 +221,40 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
     async def _slice(must: dict, exclude: dict) -> int:
         return await store.slice_size(must, exclude=exclude)
 
+    async def _dense_text_for(c: Contract) -> str | None:
+        """The HyDE expansion of the query for the dense leg — computed ONCE per search and reused across
+        every recipe / relaxation evaluate, cached by query so a rail Apply on the same words is free."""
+        if not (c.text and providers.llm_json):
+            return None
+        key = query_expand.cache_key(c.text)
+        if key not in _expand_cache:
+            if len(_expand_cache) > 512:
+                _expand_cache.clear()
+            _expand_cache[key] = await query_expand.expand_query(providers.llm_json, c.text)
+        return _expand_cache[key]
+
     async def _evaluate(c: Contract, merge: dict | None = None) -> dict:
         """Single evaluate, or — with words and a model — roster's MERGED search: recipes probed, fused, the head judged blind."""
         from . import contract_search as cs
         merge = merge or {}
         mode = merge.get("mode") or ("merged" if (c.text and providers.llm_json) else "single")
         user_keys = set(merge.get("user_keys") or [])
+        dense_text = await _dense_text_for(c)
+
+        async def _core(contract, counts=True):
+            return await _evaluate_core(contract, counts=counts, dense_text=dense_text)
         relaxed: list = []
         if merge.get("relax") and c.must:
             # SMART RELAXING (first searches only; a rail Apply runs the chips as set): too few results → the least
             # important musts rank instead of filtering, until the pool is a good size
             if mode == "merged" and c.text and providers.llm_json:
                 async def _probe_eval(contract, counts=True):
-                    return await _evaluate_core(Contract.from_dict({**contract.to_dict(), "limit": 60}), counts=False)
+                    return await _core(Contract.from_dict({**contract.to_dict(), "limit": 60}), counts=False)
                 probe, relaxed = await cs.relax_to_enough(c, user_keys=user_keys, slice_fn=_slice, evaluate_fn=_probe_eval)
                 if relaxed:
                     c = Contract.from_dict(probe.get("contract") or c.to_dict()); c.limit = int(merge.get("limit") or 60)
             else:
-                out, relaxed = await cs.relax_to_enough(c, user_keys=user_keys, slice_fn=_slice, evaluate_fn=_evaluate_core)
+                out, relaxed = await cs.relax_to_enough(c, user_keys=user_keys, slice_fn=_slice, evaluate_fn=_core)
                 out["relaxed"] = relaxed
                 rows = out["rows"]
                 out["coverage"]["index"] = await store.coverage()
@@ -244,15 +262,15 @@ def build_router(store: StartupStore, providers: pipeline.Providers, *, dsn: str
                 return out
         if mode == "merged" and c.text and providers.llm_json:
             try:
-                out = await cs.merged_search(c, user_keys=user_keys, evaluate_fn=_evaluate_core, slice_fn=_slice, llm_json=providers.llm_json, off=merge.get("off"), top=int(c.limit))
+                out = await cs.merged_search(c, user_keys=user_keys, evaluate_fn=_core, slice_fn=_slice, llm_json=providers.llm_json, off=merge.get("off"), top=int(c.limit))
             except HTTPException:
                 raise
             except Exception as e:   # noqa: BLE001 — the merged path must never be the reason a search fails outright
-                out = await _evaluate_core(c)
+                out = await _core(c)
                 out["coverage"]["degraded"] = (out["coverage"].get("degraded") or "") + f" merged search unavailable ({type(e).__name__})"
             out["coverage"]["matched"] = (out.get("coverage") or {}).get("matched")
         else:
-            out = await _evaluate_core(c)
+            out = await _core(c)
         out["relaxed"] = relaxed
         rows = out["rows"]
         out["coverage"]["index"] = await store.coverage()

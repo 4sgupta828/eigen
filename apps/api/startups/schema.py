@@ -116,6 +116,15 @@ SELF_REPORTED_SENSITIVE = ("arr", "stage", "headcount", "investor", "lead_invest
 # rail taps are never downgraded.
 LOW_COVERAGE_DEFAULT_PREFER = ("arr",)
 
+# SOFT MUST KEYS — descriptive facets that say WHAT A COMPANY DOES, extracted from its pages and known for
+# only a minority of the corpus (tech_area ~41%, customer ~1%, business_model ~6%). For these, a must admits
+# a company that carries the value OR has NO value for the key at all: absence means WE HAVE NOT READ IT, not
+# that the company is a non-match ("unknown is never a 'no'" — the evidence-typed discipline). A company with a
+# DIFFERENT known value is still excluded; the unknown majority stays in the pool and is ranked by the words.
+# Deliberate structural filters (program, investor, stage, metro, country, status) are NOT softened — a must
+# there is the user drawing a hard line, and absence reasonably excludes.
+SOFT_MUST_KEYS = ("tech_area", "customer", "business_model")
+
 WEIGHTS = FacetWeights(
     prefer={"program": 0.15, "lead_investor": 0.15, "investor": 0.10, "tech_area": 0.12, "founder_prior_company": 0.12,
             "country": 0.10, "metro": 0.10, "customer": 0.08, "hiring_function": 0.05, "stage": 0.10},
