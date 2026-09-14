@@ -206,6 +206,55 @@ async def sample_thesis(llm_json, *, sector: str = "") -> str:
         return ""
 
 
+# ---------------------------------------------------------------- GenSimpleThesis (high-school level)
+# A SEPARATE, gentler generator so a high-school class can use the platform: everyday domains a teenager
+# actually sees, plain language, a project a student could realistically build and test — never VC jargon
+# or deep market/regulatory knowledge. Still a real, specific, falsifiable idea (who it helps, what it is,
+# why it might work), just accessible. Kept apart from sample_thesis so the main (investor) flow is
+# untouched. Runs on the OpenAI seam like the main sample (the endpoint wires it).
+_SIMPLE_SECTORS = ("school and studying", "sports and fitness", "food and cooking", "the local community",
+                   "the environment and recycling", "money and saving", "art, music and hobbies",
+                   "helping older neighbours", "pets and animals", "getting around town",
+                   "phone apps students would use", "small local businesses")
+
+_SAMPLE_SIMPLE_SYSTEM = """You help a HIGH-SCHOOL student pick ONE startup / project idea for a class
+project. Invent one idea in the named everyday area that a motivated teenager could realistically build,
+try, and learn from — a school club, a simple app or website, a small product, or a neighbourhood service.
+
+RULES:
+- PLAIN, friendly language a 15-year-old understands. NO business or investor jargon (no "TAM", "wedge",
+  "go-to-market", "moat", "incumbent", "B2B"). No sci-fi, no world-changing hype.
+- Concrete and SPECIFIC: a real everyday problem a student notices, a clear idea to solve it, exactly WHO
+  it helps, and one plain reason it might work. Small enough to actually try.
+- It must be a real claim you could TEST — something that could turn out to be wrong — not a vague wish.
+- 3-5 short sentences of flowing prose. No labels, no bullet lists.
+
+Return ONE JSON object exactly:
+{"idea": "<a few words naming the idea>",
+ "thesis": "<3-5 plain sentences: the everyday problem, the idea, who it helps, and why it might work>"}
+Output ONLY the JSON object."""
+
+_SIMPLE_THESIS_CAP = 900
+
+
+async def sample_thesis_simple(llm_json, *, area: str = "") -> str:
+    """A simple, high-school-project-level thesis — the GenSimpleThesis button. Plain language, everyday
+    area, something a student could actually build and test. -> the thesis, or '' on failure (endpoint
+    answers 502). Separate from sample_thesis; the endpoint wires it to the OpenAI seam."""
+    if llm_json is None:
+        return ""
+    area = area or random.choice(_SIMPLE_SECTORS)
+    try:
+        raw = await llm_json(_SAMPLE_SIMPLE_SYSTEM,
+                             f"AREA: {area}\nInvent one simple, specific, testable project idea a high-school "
+                             "student could build in this area, in plain language. Return the JSON.")
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+        d = d or {}
+        return _clip_sentence(str(d.get("thesis") or d.get("text") or "").strip(), _SIMPLE_THESIS_CAP)
+    except Exception:      # noqa: BLE001 — a helper; a failure just means no sample this click
+        return ""
+
+
 def _clip_sentence(text: str, cap: int) -> str:
     """Bound `text` to `cap` chars WITHOUT cutting mid-word: trim back to the last sentence end (or, if
     none, the last space) so the seed never ends on a truncated fragment."""

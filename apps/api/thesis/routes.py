@@ -324,6 +324,17 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             raise HTTPException(status_code=502, detail="could not generate a thesis just now — try again")
         return {"status": "ok", "thesis": t}
 
+    @r.post("/thesis/sample/simple")
+    async def tl_sample_simple():
+        """GenSimpleThesis — a plausible startup idea at HIGH-SCHOOL PROJECT level (plain language, an
+        everyday area, something a student could actually build and test). Separate from the main sample
+        so schools can use the platform without VC framing. No auth, no persistence. OpenAI-only (same as
+        the main sample), 502 if OpenAI is unconfigured."""
+        t = await gen.sample_thesis_simple(_openai_only_llm_json())
+        if not t:
+            raise HTTPException(status_code=502, detail="could not generate an idea just now — try again")
+        return {"status": "ok", "thesis": t}
+
     @r.post("/thesis/{thesis_id}/confirm")
     async def tl_confirm(thesis_id: str, body: ConfirmIn, authorization: str = Header(default=""),
                          x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
