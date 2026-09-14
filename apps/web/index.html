@@ -411,9 +411,17 @@
   /* Thesis Explorations: a persistent left rail of theses + the selected one on the right. Widen the
      page in this mode so both panels breathe (reverts to the standard width on a phone). */
   body[data-mode="thesis"] .wrap{max-width:62rem;}
-  .th-explore{display:flex;gap:1.25rem;align-items:flex-start;margin-top:.4rem;}
-  .th-rail{flex:0 0 14rem;position:sticky;top:1rem;max-height:calc(100vh - 2rem);overflow:auto;
-    border:1px solid var(--hair);border-radius:14px;background:var(--panel);padding:.5rem .5rem .6rem;}
+  .th-explore{display:block;margin-top:.4rem;}
+  /* Thesis Explorations is a DRAWER at every width — hidden off-canvas behind the ☰ button, so it never
+     collides with the chat. Opening slides it in over a scrim; selecting or tapping the scrim closes it. */
+  .th-rail{position:fixed;left:0;top:0;bottom:0;width:min(88vw,20rem);z-index:70;overflow:auto;
+    border:0;border-right:1px solid var(--hair);border-radius:0;background:var(--panel);
+    padding:.6rem .6rem .8rem;transform:translateX(-100%);transition:transform .2s ease;
+    box-shadow:0 0 40px -10px rgba(0,0,0,.5);}
+  .th-rail.open{transform:none;}
+  .th-rail-scrim{position:fixed;inset:0;z-index:65;background:rgba(0,0,0,.35);opacity:0;
+    pointer-events:none;transition:opacity .2s ease;}
+  .th-rail-scrim.open{opacity:1;pointer-events:auto;}
   .th-rail-h{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.35rem .4rem .5rem;
     font:600 .7rem/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim);}
   .th-rail-new{font-family:var(--mono);font-size:.68rem;color:var(--gold);background:transparent;cursor:pointer;
@@ -429,19 +437,13 @@
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   .th-rail-item.on .th-rail-title{color:var(--gold-strong);}
   .th-rail-meta{font-family:var(--mono);font-size:.62rem;color:var(--dim);letter-spacing:.02em;}
-  .th-main{flex:1 1 auto;min-width:0;}
-  .th-rail-toggle{display:none;font-family:var(--mono);font-size:.72rem;color:var(--muted);cursor:pointer;
-    background:transparent;border:1px solid var(--hair);border-radius:8px;padding:.4rem .7rem;margin:0 0 .6rem;min-height:38px;}
-  .th-rail-scrim{display:none;}
-  @media (max-width:760px){
-    body[data-mode="thesis"] .wrap{max-width:44rem;}
-    .th-explore{display:block;}
-    .th-rail-toggle{display:inline-flex;align-items:center;gap:.4rem;}
-    .th-rail{position:fixed;left:0;top:0;bottom:0;width:min(82vw,17rem);z-index:70;border-radius:0;
-      transform:translateX(-100%);transition:transform .2s ease;box-shadow:0 0 40px -10px rgba(0,0,0,.5);}
-    .th-rail.open{transform:none;}
-  }
-  @media (prefers-reduced-motion:reduce){ .th-rail{transition:none;} }
+  .th-main{min-width:0;}
+  .th-rail-toggle{display:inline-flex;align-items:center;gap:.4rem;font-family:var(--mono);font-size:.72rem;
+    color:var(--muted);cursor:pointer;background:transparent;border:1px solid var(--hair);border-radius:8px;
+    padding:.4rem .7rem;margin:0 0 .7rem;min-height:38px;}
+  .th-rail-toggle:hover{color:var(--ink);border-color:var(--gold);}
+  @media (max-width:760px){ body[data-mode="thesis"] .wrap{max-width:44rem;} }
+  @media (prefers-reduced-motion:reduce){ .th-rail,.th-rail-scrim{transition:none;} }
   .th-conv{display:grid;gap:1rem;margin:.2rem 0 1rem;}
   /* The conversation IS the interface. The ledger is what it refers to, kept out of the way until
      asked for — the first version dumped ten claims at the reader and called a button "chat". */
@@ -2927,6 +2929,7 @@
         <button type="button" class="th-rail-new" id="th-reset" title="Start a new thesis">＋ New</button></div>
       <div class="th-rail-list" id="th-rail-list"></div>
     </aside>
+    <div class="th-rail-scrim" id="th-rail-scrim"></div>
     <div class="th-main">
       <button type="button" class="th-rail-toggle" id="th-rail-toggle" aria-expanded="false"
         aria-controls="th-rail">☰ Explorations</button>
@@ -11572,6 +11575,7 @@ async function openShare(token){
     STATE.selected = null; STATE.poll = null; STATE.inquiries = null; STATE.inqRun = null;
     try{ history.replaceState(null, "", newThesisHash()); }catch(e){}
     const recentPanel = document.getElementById("th-recents"); if(recentPanel) recentPanel.hidden = true;
+    setRail(false);                       // starting a new thesis closes the drawer
     enter();
   }
 
@@ -11831,7 +11835,7 @@ async function openShare(token){
       + "You run the ones you choose.</li>"
       + "<li><b>Read the evidence</b> — comprehensive, cited answers and a verdict on each aspect.</li>"
       + "</ol>"
-      + '<p class="th-intro-cta">↓ Type your thesis in the box below to begin '
+      + '<p class="th-intro-cta">↑ Type your thesis in the box above to begin '
       + '<span class="th-intro-or">— or —</span></p>'
       + '<button type="button" class="th-sample-btn" id="th-sample">🎲 Generate a plausible thesis to try</button>'
       + "</div>";
@@ -12218,7 +12222,7 @@ async function openShare(token){
     }).join("");
     list.querySelectorAll(".th-rail-item").forEach(b => b.addEventListener("click", () => {
       const id = b.dataset.id; if(!id) return;
-      document.getElementById("th-rail").classList.remove("open");   // close the mobile drawer
+      setRail(false);                                                // selecting closes the drawer
       if(id !== STATE.id){ try{ history.replaceState(null, "", "#thesis/" + id); }catch(e){} open(id); }
     }));
   }
@@ -12228,13 +12232,21 @@ async function openShare(token){
   document.addEventListener("DOMContentLoaded", () => {
     const rs = document.getElementById("th-reset"); if(rs) rs.addEventListener("click", reset);
     const tg = document.getElementById("th-rail-toggle");
-    if(tg) tg.addEventListener("click", () => {
-      const rail = document.getElementById("th-rail"); if(!rail) return;
-      const open = rail.classList.toggle("open");
-      tg.setAttribute("aria-expanded", open ? "true" : "false");
-      if(open) renderRail();
-    });
+    if(tg) tg.addEventListener("click", () => setRail());
+    const scrim = document.getElementById("th-rail-scrim");
+    if(scrim) scrim.addEventListener("click", () => setRail(false));
+    document.addEventListener("keydown", e => { if(e.key === "Escape") setRail(false); });
   });
+
+  // Open/close the Explorations drawer (a scrim behind it). Toggles when called with no argument.
+  function setRail(open){
+    const rail = document.getElementById("th-rail"); if(!rail) return;
+    const want = (open === undefined) ? !rail.classList.contains("open") : !!open;
+    rail.classList.toggle("open", want);
+    const scrim = document.getElementById("th-rail-scrim"); if(scrim) scrim.classList.toggle("open", want);
+    const tg = document.getElementById("th-rail-toggle"); if(tg) tg.setAttribute("aria-expanded", want ? "true" : "false");
+    if(want) renderRail();
+  }
 
   // ---- lines of inquiry (the decision-engine surface) -------------------------------------------
   const LENS = {

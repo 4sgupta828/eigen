@@ -106,15 +106,17 @@ test("phone layout has touch targets and a single-column decision brief", () => 
   assert.match(SRC, /prefers-reduced-motion:reduce/);
 });
 
-test("theses live in a persistent left rail beside the selected thesis (factra model)", () => {
-  // a two-panel Thesis Explorations layout: a left rail list + a main panel, not an inline growing list
+test("Thesis Explorations is a drawer behind a button, not a column that collides with the chat", () => {
   assert.match(MARKUP, /<div class="th-explore">/);
   assert.match(MARKUP, /<aside class="th-rail"[^>]*id="th-rail"/);
   assert.match(MARKUP, /Thesis Explorations/);
   assert.match(MARKUP, /id="th-rail-list"/);
-  assert.match(MARKUP, /<div class="th-main">/);
-  assert.match(MARKUP, /id="th-rail-toggle"/);            // a mobile drawer toggle
-  // the main panel still holds the thesis surfaces
+  assert.match(MARKUP, /id="th-rail-toggle"/);                    // the button that opens the drawer
+  assert.match(MARKUP, /id="th-rail-scrim"/);                     // a scrim behind the open drawer
+  // the rail is off-canvas by default (transform) at every width — not a persistent flex column
+  assert.match(SRC, /\.th-rail\{position:fixed[^}]*transform:translateX\(-100%\)/);
+  assert.match(SRC, /\.th-explore\{display:block/);
+  assert.match(SRC, /function setRail\(/);                        // open/close helper, scrim + esc wired
   assert.match(MARKUP, /<div class="th-main">[\s\S]*id="th-takes"[\s\S]*id="th-thread"/);
 });
 
@@ -155,7 +157,7 @@ test("the empty state explains the flow instead of showing an empty brief", () =
   assert.match(html, /lines of inquiry/);                          // the new model, not a claim ladder
   assert.doesNotMatch(html, /Fund \/ Pass \/ Continue/);           // retired claims-model framing is gone
   assert.match(html, /State it/);
-  assert.match(html, /Type your thesis in the box below/);
+  assert.match(html, /Type your thesis in the box above/);
 });
 
 test("the discussion thread is a visible surface, not folded into a collapsed details", () => {
