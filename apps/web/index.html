@@ -2008,7 +2008,7 @@
   body.triage-live #triagebody{padding-bottom:9rem;}
   /* Thesis genesis reads like a chat: the docked composer sits below the message thread, so the
      conversation column needs room to clear it. The rail stays put; only the main column pads. */
-  body[data-mode="thesis"].chatting .th-main{padding-bottom:9rem;}
+  body[data-mode="thesis"].chatting .th-main{padding-bottom:11rem;}
   body[data-mode="thesis"].chatting .th-thread-h{font-family:var(--mono);font-size:.62rem;
     letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:0;padding:0;margin:.2rem 0 .6rem;}
   /* the disclaimer footer is a landing element — hide it whenever the composer is docked (Q&A thread or
@@ -12121,8 +12121,9 @@ async function openShare(token){
     document.body.classList.toggle("chatting", genesisChat);
     if(genesisChat){
       try{ q.placeholder = "Answer, or add what you know — I'll keep sharpening it"; }catch(e){}
-      const last = conv() && conv().lastElementChild;
-      if(last) last.scrollIntoView({block: "nearest"});
+      // Scroll the whole page to the bottom — .th-main's bottom padding clears the docked composer, so
+      // the newest turn AND its "Use this thesis" card sit fully above the input (not hidden behind it).
+      try{ requestAnimationFrame(() => window.scrollTo({top: document.documentElement.scrollHeight})); }catch(e){}
     }
 
     const ledger = document.getElementById("th-ledger");
