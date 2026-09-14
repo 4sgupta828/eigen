@@ -34,16 +34,21 @@ def _ranks(rows: list[dict], expected: list[str]) -> dict[str, int | None]:
     return {d: by_id.get(d) for d in expected}
 
 
-def _metrics(cases_ranks: list[dict]) -> dict:
-    """recall@K over ALL expected across cases; MRR = mean over expected of 1/rank (0 if absent)."""
-    total = sum(len(c["ranks"]) for c in cases_ranks)
+def _metrics(cases_ranks: list[dict], *, only: str | None = None) -> dict:
+    """recall@K over expected across cases; MRR = mean over expected of 1/rank (0 if absent).
+    `only`='thin' restricts to vocabulary-gap anchors, 'control' to the rest."""
+    def keep(c, d):
+        if only is None:
+            return True
+        is_thin = d in set(c.get("thin") or [])
+        return is_thin if only == "thin" else not is_thin
+    pairs = [(c, d, r) for c in cases_ranks for d, r in c["ranks"].items() if keep(c, d)]
+    total = len(pairs)
     out: dict = {"expected_total": total}
     for k in KS:
-        hit = sum(1 for c in cases_ranks for r in c["ranks"].values() if r is not None and r <= k)
-        out[f"recall@{k}"] = round(hit / total, 3) if total else 0.0
-    mrr = sum((1.0 / r) for c in cases_ranks for r in c["ranks"].values() if r) / total if total else 0.0
-    out["mrr"] = round(mrr, 3)
-    out["absent"] = sum(1 for c in cases_ranks for r in c["ranks"].values() if r is None)
+        out[f"recall@{k}"] = round(sum(1 for _, _, r in pairs if r is not None and r <= k) / total, 3) if total else 0.0
+    out["mrr"] = round(sum((1.0 / r) for _, _, r in pairs if r) / total, 3) if total else 0.0
+    out["absent"] = sum(1 for _, _, r in pairs if r is None)
     return out
 
 
@@ -91,10 +96,15 @@ async def run(base: str, mode: str, deployed: bool) -> None:
                         delta = "  ⚠️ worse"
                 print(f"   {d:26}{mark:8} baseline={b if b else 'ABSENT'}{arrow}{delta}")
 
+    ranks = exp_ranks if not deployed else base_ranks
     print("\n" + "=" * 60)
-    print("BASELINE:", _metrics(base_ranks))
     if not deployed:
+        print("BASELINE:", _metrics(base_ranks))
         print("EXPANDED:", _metrics(exp_ranks))
+    else:
+        print("ALL:    ", _metrics(ranks))
+        print("THIN:   ", _metrics(ranks, only="thin"))
+        print("CONTROL:", _metrics(ranks, only="control"))
 
 
 def main() -> None:
