@@ -196,6 +196,17 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         except Exception:      # noqa: BLE001
             return _llm_json()
 
+    def _openai_only_llm_json():
+        # OpenAI-ONLY seam (no DeepSeek fallback). The sample-thesis generator must run on the strong
+        # (OpenAI) model to be genuinely non-obvious; if OpenAI is unconfigured we return None so the
+        # caller yields "" and the endpoint answers 502, rather than quietly using the weaker default.
+        # Model is configurable via EIGEN_THESIS_STRONG_MODEL (default gpt-4o) inside strong_json().
+        try:
+            from .llm import strong_json
+            return strong_json()
+        except Exception:      # noqa: BLE001
+            return None
+
     def _ui():
         return getattr(manifest, "ui", None)
 
@@ -306,8 +317,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     async def tl_sample():
         """Generate ONE plausible, realistic, falsifiable startup thesis (from the model's parametric
         knowledge, varied by a random sector) — a one-click way to try the intake conversation. No auth,
-        no persistence; a tiny LLM call. Strong model for a genuinely realistic thesis."""
-        t = await gen.sample_thesis(_strong_llm_json())
+        no persistence; a tiny LLM call. OpenAI-only (no DeepSeek fallback) for a genuinely non-obvious,
+        detailed thesis — 502 if OpenAI is unconfigured rather than a weaker sample."""
+        t = await gen.sample_thesis(_openai_only_llm_json())
         if not t:
             raise HTTPException(status_code=502, detail="could not generate a thesis just now — try again")
         return {"status": "ok", "thesis": t}
