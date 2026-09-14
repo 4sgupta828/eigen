@@ -547,6 +547,13 @@
   .th-redline-key ins{text-decoration:none;background:color-mix(in srgb,var(--verified) 20%,transparent);border-radius:3px;padding:0 .25em;}
   .th-redline-key del{text-decoration:line-through;text-decoration-color:#b4544a;margin-left:.3rem;}
   .th-landed-h{display:flex;align-items:center;gap:.5rem;}
+  .th-mem{display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:.6rem 1.2rem;
+    margin:.8rem 0 .2rem;padding-top:.7rem;border-top:1px dashed var(--hair);}
+  .th-mem-h{font:600 .6rem/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:0 0 .3rem;}
+  .th-mem-list{margin:0;padding-left:1rem;display:grid;gap:.2rem;}
+  .th-mem-list li{font-size:.82rem;line-height:1.45;color:var(--ink);}
+  .th-mem-list.open li::marker{color:var(--gap);}
+  .th-mem-list.assume li::marker{color:var(--gold);}
   .th-landed-row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-top:.7rem;}
   .th-landed .th-use{font-family:var(--mono);font-size:.72rem;padding:.5rem 1rem;border-radius:999px;
     border:1px solid var(--gold);background:var(--gold);color:var(--on-accent);cursor:pointer;min-height:44px;font-weight:600;}
@@ -11952,6 +11959,20 @@ async function openShare(token){
     return out;
   }
 
+  // The agent's working MEMORY (its goal-tracking): the open threads it's still resolving and the
+  // load-bearing assumptions it has surfaced. Rendered compactly under the thesis so it's visible.
+  function memHtml(mem){
+    mem = mem || {};
+    const open = (mem.open_threads || []).slice(0, 6), assume = (mem.assumptions || []).slice(0, 6);
+    if(!open.length && !assume.length) return "";
+    const list = (cls, items) => '<ul class="th-mem-list ' + cls + '">'
+      + items.map(x => "<li>" + esc2(x) + "</li>").join("") + "</ul>";
+    return '<div class="th-mem">'
+      + (open.length ? '<div class="th-mem-col"><div class="th-mem-h">Still resolving</div>' + list("open", open) + "</div>" : "")
+      + (assume.length ? '<div class="th-mem-col"><div class="th-mem-h">Assumptions it rests on</div>' + list("assume", assume) + "</div>" : "")
+      + "</div>";
+  }
+
   function payloadHtml(pay, prevThesis){
     if(!pay) return "";
     let out = "";
@@ -11969,6 +11990,7 @@ async function openShare(token){
         + '<blockquote class="th-landed-q th-clean">' + esc2(pay.proposed_thesis) + "</blockquote>"
         + (changed ? '<blockquote class="th-landed-q th-redline" hidden><span class="th-redline-key">changes since last turn: '
             + '<ins>added</ins> <del>removed</del></span>' + redlineThesis(prevThesis, pay.proposed_thesis) + "</blockquote>" : "")
+        + memHtml(pay.memory)
         + '<div class="th-landed-row"><button type="button" class="th-use" id="th-use">Use this thesis →</button>'
         + '<span class="th-landed-hint">' + (pay.ready ? "or keep refining it below." : "keep refining below, or use it now.") + "</span></div></div>";
     }

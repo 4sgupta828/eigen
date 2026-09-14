@@ -17,10 +17,15 @@ async def test_turn_restates_the_thesis_and_proposes_a_refinement_every_turn():
                      "displacing RBAC/ABAC, because agents change resource scope mid-task.",
            "reply": "Is the buyer the security team or platform-eng? If platform-eng, the wedge is CI/CD agents.",
            "ready": False}
-    r = await genesis.turn(_llm(out), said="agent authorization vs RBAC", history=[], budget_left=6)
-    assert r["proposed_thesis"].startswith("Mid-market SaaS security teams")   # full thesis every turn
-    assert "platform-eng" in r["reply"]                                        # a concrete refinement, not open
+    out2 = dict(out, assumptions=["agents will proliferate in prod"], open_threads=["which buyer segment"],
+                resolved=[], thought="buyer still vague")
+    r = await genesis.turn(_llm(out2), said="agent authorization vs RBAC", history=[], budget_left=6,
+                           memory={"assumptions": ["prior"], "open_threads": [], "resolved": []})
+    assert r["proposed_thesis"].startswith("Mid-market SaaS security teams")
+    assert "platform-eng" in r["reply"]
     assert r["ready"] is False
+    assert r["memory"]["open_threads"] == ["which buyer segment"]              # memory carried out
+    assert r["thought"] == "buyer still vague"
 
 
 @pytest.mark.asyncio
@@ -30,6 +35,17 @@ async def test_explicit_proceed_signal_flips_ready_even_if_the_model_hesitates()
                            budget_left=6)
     assert r["ready"] is True                     # code honours "proceed" even when the model says false
     assert r["proposed_thesis"] == "A specific falsifiable thesis."
+
+
+@pytest.mark.asyncio
+async def test_memory_falls_back_to_prior_when_the_model_drops_a_field():
+    # model returns no assumptions this turn -> keep the prior ones (don't lose memory)
+    out = {"thesis": "T", "reply": "r", "ready": False, "open_threads": ["x"]}
+    r = await genesis.turn(_llm(out), said="hmm", history=[{"role": "user", "text": "a"}], budget_left=6,
+                           memory={"assumptions": ["keep me"], "open_threads": [], "resolved": ["done"]})
+    assert r["memory"]["assumptions"] == ["keep me"]      # carried forward
+    assert r["memory"]["open_threads"] == ["x"]           # updated
+    assert r["memory"]["resolved"] == ["done"]            # carried forward
 
 
 @pytest.mark.asyncio

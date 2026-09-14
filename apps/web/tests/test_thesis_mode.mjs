@@ -191,6 +191,18 @@ test("genesis shows the UPDATED thesis every turn with a Use button — no form"
   assert.doesNotMatch(ready, /id="th-proposed"|textarea/);     // no editable form — the chat is the interface
 });
 
+test("the thesis card shows the agent's memory — open threads + assumptions", () => {
+  const {api} = loadThesisModule();
+  const html = api.payloadHtml({ready: false, proposed_thesis: "A thesis.",
+    memory: {open_threads: ["specialist supply ceiling"], assumptions: ["CMS reimbursement holds"], resolved: []}});
+  assert.match(html, /Still resolving/);
+  assert.match(html, /specialist supply ceiling/);
+  assert.match(html, /Assumptions it rests on/);
+  assert.match(html, /CMS reimbursement holds/);
+  // no memory → no panel
+  assert.doesNotMatch(api.payloadHtml({ready: false, proposed_thesis: "A."}), /th-mem\b/);
+});
+
 test("the thesis card offers a redline of changes since the PREVIOUS turn, hidden by default", () => {
   const {api} = loadThesisModule();
   const prev = "Mid-market 3PLs will pay for route planning.";
