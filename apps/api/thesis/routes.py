@@ -686,6 +686,34 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             lines.append(f"{who}: {text}")
         return "\n".join(lines)[-6000:]
 
+    def _genesis_memory(doc: dict) -> dict:
+        """The DISTILLED memory genesis carried forward — assumptions surfaced and open threads still
+        resolving — read off the last agent turn's payload (same place tl_genesis stores it). This is
+        higher-signal than the raw transcript: the author already worked out what the thesis rests on and
+        what is unsettled, so the framing/question step should test THOSE, not re-derive from scratch."""
+        for t in reversed(doc.get("turns") or []):
+            if t.get("role") == "agent":
+                mem = (t.get("payload") or {}).get("memory")
+                if isinstance(mem, dict) and (mem.get("assumptions") or mem.get("open_threads")):
+                    return mem
+        return {}
+
+    def _framing_context(doc: dict) -> str:
+        """Raw transcript PLUS the distilled memory, so the frame sees both the messy specifics and the
+        author's own surfaced assumptions / still-resolving threads."""
+        parts = []
+        mem = _genesis_memory(doc)
+        if mem.get("assumptions"):
+            parts.append("ASSUMPTIONS THE AUTHOR SURFACED (test each — its falsity would break the thesis):\n"
+                         + "\n".join(f"- {a}" for a in mem["assumptions"][:8]))
+        if mem.get("open_threads"):
+            parts.append("STILL RESOLVING — open threads the author flagged as unsettled (the questions must "
+                         "close these):\n" + "\n".join(f"- {o}" for o in mem["open_threads"][:8]))
+        transcript = _genesis_transcript(doc)
+        if transcript:
+            parts.append("THE CONVERSATION THAT PRODUCED THE THESIS (raw — mine it for specifics):\n" + transcript)
+        return "\n\n".join(parts)
+
     def _aspect_by_key(profile, key: str):
         return next((a for a in profile.aspects() if a.key == key), None)
 
@@ -1083,7 +1111,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         frame = {}
         if hasattr(profile, "frame_directive"):
             frame = await _dec.frame_decision(
-                _llm_json(), decision=decision, context=_genesis_transcript(d),
+                _llm_json(), decision=decision, context=_framing_context(d),
                 directive=profile.frame_directive(decision), aspects=aspects)
         inquiries = await _dec.generate_inquiries(
             _llm_json(), decision=decision, aspects=aspects, directive=directive,
