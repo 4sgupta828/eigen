@@ -68,11 +68,13 @@ def project_cost() -> dict:
 
 import re
 
-# Explicit "I'm done / proceed" signals from the author — code flips ready even if the model hesitates,
-# so the conversation can always terminate (never an interrogation the reader can't escape).
+# Signals that the author is done refining — either an explicit "proceed" OR an "this detail is open"
+# answer (TBD / don't know). Code flips ready on these even if the model keeps proposing refinements, so
+# the conversation always terminates and an open detail simply becomes a thing the diligence tests.
 _DONE = re.compile(r"\b(proceed|go ahead|let'?s go|that'?s (it|enough|all)|good to go|move on|"
-                   r"use (this|it)|i'?m ready|we'?re ready|sounds good|looks good|yes let'?s|ship it)\b",
-                   re.I)
+                   r"use (this|it)|i'?m ready|we'?re ready|sounds good|looks good|yes let'?s|ship it|"
+                   r"tbd|to be (figured|determined)|figure (it|that|this)? ?out|not sure|"
+                   r"don'?t know|unsure|no idea)\b", re.I)
 
 
 async def turn(llm_json, *, said: str, history: list[dict], budget_left: int) -> dict:

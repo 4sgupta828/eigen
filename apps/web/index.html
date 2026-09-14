@@ -565,12 +565,15 @@
   .th-said .th-body p{margin:.15rem 0;}
   .th-said .th-body p:first-child{margin-top:0;}
   .th-said .th-body p:last-child{margin-bottom:0;}
-  .th-turn{display:flex;gap:.55rem;align-items:flex-start;font-size:.9rem;line-height:1.6;}
+  .th-turn{display:flex;flex-wrap:wrap;gap:.55rem;align-items:flex-start;font-size:.9rem;line-height:1.6;}
   .th-turn .th-who{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;
     padding:.18rem .45rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);
     flex:none;margin-top:.15rem;min-width:4.2rem;text-align:center;}
   .th-turn[data-role="agent"] .th-who{color:var(--gold);border-color:currentColor;}
   .th-turn .th-said{flex:1 1 12rem;min-width:0;overflow-wrap:anywhere;}
+  /* A turn's payload (the working-thesis card, evidence, ask) wraps to its OWN full-width row below the
+     who/said line — never a flex sibling that squishes the text. */
+  .th-turn > .th-landed,.th-turn > .th-sides,.th-turn > .th-ask{flex:1 0 100%;min-width:0;}
   .th-move{font-family:var(--mono);font-size:.58rem;letter-spacing:.07em;text-transform:uppercase;
     padding:.12rem .4rem;border-radius:999px;border:1px solid var(--hair);color:var(--dim);}
   .th-move[data-m="attacked"]{color:#b4544a;border-color:currentColor;}
