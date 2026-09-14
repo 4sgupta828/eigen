@@ -326,10 +326,10 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
 
     @r.post("/thesis/sample/simple")
     async def tl_sample_simple():
-        """GenSimpleThesis — a plausible startup idea at HIGH-SCHOOL PROJECT level (plain language, an
-        everyday area, something a student could actually build and test). Separate from the main sample
-        so schools can use the platform without VC framing. No auth, no persistence. OpenAI-only (same as
-        the main sample), 502 if OpenAI is unconfigured."""
+        """GenSimpleThesis — an ISEF/CSEF-caliber high-school SCIENCE-FAIR research project (novel,
+        differentiated, falsifiable, and feasible for a motivated student), across all ISEF categories,
+        not just software. Separate from the main investor sample so schools can use the platform. No
+        auth, no persistence. OpenAI-only (same as the main sample), 502 if OpenAI is unconfigured."""
         t = await gen.sample_thesis_simple(_openai_only_llm_json())
         if not t:
             raise HTTPException(status_code=502, detail="could not generate an idea just now — try again")

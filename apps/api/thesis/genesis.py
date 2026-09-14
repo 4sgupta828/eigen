@@ -206,48 +206,69 @@ async def sample_thesis(llm_json, *, sector: str = "") -> str:
         return ""
 
 
-# ---------------------------------------------------------------- GenSimpleThesis (high-school level)
-# A SEPARATE, gentler generator so a high-school class can use the platform: everyday domains a teenager
-# actually sees, plain language, a project a student could realistically build and test — never VC jargon
-# or deep market/regulatory knowledge. Still a real, specific, falsifiable idea (who it helps, what it is,
-# why it might work), just accessible. Kept apart from sample_thesis so the main (investor) flow is
-# untouched. Runs on the OpenAI seam like the main sample (the endpoint wires it).
-_SIMPLE_SECTORS = ("school and studying", "sports and fitness", "food and cooking", "the local community",
-                   "the environment and recycling", "money and saving", "art, music and hobbies",
-                   "helping older neighbours", "pets and animals", "getting around town",
-                   "phone apps students would use", "small local businesses")
+# ---------------------------------------------------------------- GenSimpleThesis (ISEF / CSEF level)
+# A SEPARATE generator so a high-school student can enter a genuine SCIENCE-FAIR research project — the
+# calibre that stands out and wins at ISEF (International Science & Engineering Fair) / CSEF (state fair):
+# novel, differentiated, rigorous, and falsifiable, yet buildable by a motivated teenager with accessible
+# tools (a school/home lab, low-cost sensors and microcontrollers, public datasets, open-source software,
+# a local university lab). NOT a startup pitch and NOT a trivial "build an app" idea. Kept apart from
+# sample_thesis so the investor flow is untouched. Runs on the OpenAI seam (the endpoint wires it) — the
+# strong model is needed to reach into a real research frontier and avoid the overdone fair clichés.
+# The category seed spans ALL ISEF categories, not just software, so ideas range across the sciences.
+_SIMPLE_SECTORS = ("biochemistry", "cellular and molecular biology", "microbiology", "biomedical and health sciences",
+                   "biomedical engineering", "translational medicine", "chemistry", "materials science",
+                   "environmental engineering", "earth and environmental science", "plant sciences",
+                   "computational biology and bioinformatics", "physics and astronomy", "mathematics",
+                   "robotics and intelligent machines", "embedded systems", "energy and sustainable materials",
+                   "engineering mechanics", "systems software / machine learning", "behavioral and social sciences",
+                   "animal sciences", "neuroscience")
 
-_SAMPLE_SIMPLE_SYSTEM = """You help a HIGH-SCHOOL student pick ONE startup / project idea for a class
-project. Invent one idea in the named everyday area that a motivated teenager could realistically build,
-try, and learn from — a school club, a simple app or website, a small product, or a neighbourhood service.
+_SAMPLE_SIMPLE_SYSTEM = """You are a veteran ISEF (International Science & Engineering Fair) grand-award judge
+and research mentor. Invent ONE genuinely competition-caliber science-fair PROJECT in the named ISEF
+category — the kind that wins at CSEF/ISEF because it is NOVEL, DIFFERENTIATED, and rigorous, yet a
+motivated high-school student could actually execute. Do the work in order:
 
-RULES:
-- PLAIN, friendly language a 15-year-old understands. NO business or investor jargon (no "TAM", "wedge",
-  "go-to-market", "moat", "incumbent", "B2B"). No sci-fi, no world-changing hype.
-- Concrete and SPECIFIC: a real everyday problem a student notices, a clear idea to solve it, exactly WHO
-  it helps, and one plain reason it might work. Small enough to actually try.
-- It must be a real claim you could TEST — something that could turn out to be wrong — not a vague wish.
-- 3-5 short sentences of flowing prose. No labels, no bullet lists.
+1. RECALL what floods this category every year — the overdone, done-to-death projects a judge sees a
+   hundred times (e.g. "does music/caffeine affect plant growth", baking-soda volcanoes, a basic solar
+   oven, "which paper towel is most absorbent", a generic CNN on a Kaggle dataset). List them so you can
+   deliberately AVOID them; the obvious project is disqualifying here.
+2. Reach for the RESEARCH FRONTIER a student can still touch: a specific recent shift, an underused
+   low-cost technique, a public dataset or open tool, an accessible assay or sensor, a cheap material —
+   the angle that makes real researchers say "that's clever, and no one his age is doing it."
+3. Write the PROJECT as a dense, flowing paragraph (about 6-9 sentences) that a bright 16-year-old and a
+   judge both understand — accessible but rigorous, never dumbed down and never jargon for its own sake.
+   Cover, in order: the specific RESEARCH QUESTION and a falsifiable HYPOTHESIS; the NOVEL, DIFFERENTIATED
+   angle and exactly why it beats the standard projects; a concrete, FEASIBLE method a student could run
+   with realistic resources (name the technique / dataset / material / instrument / measurement, and how
+   the result would confirm or refute the hypothesis); and why it MATTERS (the real scientific or
+   real-world significance a judge rewards). Specific nouns only — real assays, organisms, materials,
+   datasets, algorithms, measurements — no vague wishes, no hype, no "revolutionary". State it flatly
+   enough that the experiment could come out NEGATIVE.
 
 Return ONE JSON object exactly:
-{"idea": "<a few words naming the idea>",
- "thesis": "<3-5 plain sentences: the everyday problem, the idea, who it helps, and why it might work>"}
+{"category": "<the ISEF category>",
+ "overdone": ["<clichéd projects in this category you are deliberately NOT proposing>"],
+ "novelty": "<the specific differentiated angle that makes this stand out to judges>",
+ "thesis": "<the ~6-9 sentence project: research question, falsifiable hypothesis, novel angle, feasible method, and why it matters>"}
 Output ONLY the JSON object."""
 
-_SIMPLE_THESIS_CAP = 900
+_SIMPLE_THESIS_CAP = 1600
 
 
 async def sample_thesis_simple(llm_json, *, area: str = "") -> str:
-    """A simple, high-school-project-level thesis — the GenSimpleThesis button. Plain language, everyday
-    area, something a student could actually build and test. -> the thesis, or '' on failure (endpoint
-    answers 502). Separate from sample_thesis; the endpoint wires it to the OpenAI seam."""
+    """An ISEF/CSEF-caliber high-school research PROJECT — the GenSimpleThesis button. Novel, differentiated,
+    falsifiable, and feasible for a motivated student; spans all ISEF categories, not just software. The
+    model discovers first (recall the overdone projects → reach the frontier) then writes the project; we
+    return the project statement, bounded to survive the downstream cap. -> the project, or '' on failure
+    (endpoint answers 502). Separate from sample_thesis; the endpoint wires it to the OpenAI seam."""
     if llm_json is None:
         return ""
     area = area or random.choice(_SIMPLE_SECTORS)
     try:
         raw = await llm_json(_SAMPLE_SIMPLE_SYSTEM,
-                             f"AREA: {area}\nInvent one simple, specific, testable project idea a high-school "
-                             "student could build in this area, in plain language. Return the JSON.")
+                             f"ISEF CATEGORY: {area}\nRecall the overdone projects in this category, then invent one "
+                             "novel, differentiated, competition-winning project a high-school student could actually "
+                             "run. Return the JSON.")
         d = raw if isinstance(raw, dict) else json.loads(raw)
         d = d or {}
         return _clip_sentence(str(d.get("thesis") or d.get("text") or "").strip(), _SIMPLE_THESIS_CAP)
