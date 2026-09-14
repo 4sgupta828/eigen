@@ -191,17 +191,20 @@ test("genesis shows the UPDATED thesis every turn with a Use button — no form"
   assert.doesNotMatch(ready, /id="th-proposed"|textarea/);     // no editable form — the chat is the interface
 });
 
-test("the thesis card redlines what changed since the previous turn", () => {
+test("the thesis card offers a redline of changes since the PREVIOUS turn, hidden by default", () => {
   const {api} = loadThesisModule();
   const prev = "Mid-market 3PLs will pay for route planning.";
   const curr = "Mid-market 3PLs (40-200 trucks) will pay for automated route planning.";
   const html = api.payloadHtml({ready: false, proposed_thesis: curr}, prev);
-  assert.match(html, /<ins>\(40-200/);                       // the added words are wrapped in <ins>
-  assert.match(html, /<ins>automated/);
-  assert.match(html, /th-redline-key/);                    // the added/removed key shows
-  // no previous thesis → plain, no redline markup
+  assert.match(html, /th-landed-q th-clean/);              // the clean thesis is what shows by default
+  assert.match(html, /th-redline-toggle/);                 // a toggle to reveal changes
+  assert.match(html, /th-redline"[^>]*hidden/);            // the redline block is hidden by default
+  assert.match(html, /changes since last turn/);           // labelled as since-last-turn, not since-beginning
+  assert.match(html, /<ins>\(40-200/);                      // additions wrapped when revealed
+  // no previous thesis → no redline block, no toggle
   const first = api.payloadHtml({ready: false, proposed_thesis: curr}, "");
-  assert.doesNotMatch(first, /<ins>|<del>/);
+  assert.doesNotMatch(first, /th-redline-toggle|<ins>|<del>/);
+  assert.match(first, /th-landed-q th-clean/);
 });
 
 test("the landing offers a one-click 'generate a plausible thesis' button wired to /thesis/sample", () => {

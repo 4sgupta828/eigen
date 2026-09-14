@@ -540,9 +540,13 @@
   .th-landed-q ins{text-decoration:none;background:color-mix(in srgb,var(--verified) 20%,transparent);
     color:var(--ink);border-radius:3px;padding:0 .05em;box-shadow:inset 0 -1px 0 var(--verified);}
   .th-landed-q del{color:var(--dim);opacity:.7;text-decoration:line-through;text-decoration-color:#b4544a;}
-  .th-redline-key{margin-left:.6rem;font:400 .6rem/1 var(--mono);letter-spacing:.04em;text-transform:none;}
+  .th-redline-toggle{margin-left:auto;font:400 .64rem/1 var(--mono);letter-spacing:.03em;cursor:pointer;
+    background:transparent;border:1px solid var(--hair);border-radius:999px;color:var(--muted);padding:.25rem .6rem;}
+  .th-redline-toggle:hover{color:var(--ink);border-color:var(--gold);}
+  .th-redline-key{display:block;margin-bottom:.35rem;font:400 .6rem/1.4 var(--mono);letter-spacing:.03em;color:var(--dim);text-transform:none;}
   .th-redline-key ins{text-decoration:none;background:color-mix(in srgb,var(--verified) 20%,transparent);border-radius:3px;padding:0 .25em;}
-  .th-redline-key del{color:var(--dim);text-decoration:line-through;text-decoration-color:#b4544a;margin-left:.3rem;}
+  .th-redline-key del{text-decoration:line-through;text-decoration-color:#b4544a;margin-left:.3rem;}
+  .th-landed-h{display:flex;align-items:center;gap:.5rem;}
   .th-landed-row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-top:.7rem;}
   .th-landed .th-use{font-family:var(--mono);font-size:.72rem;padding:.5rem 1rem;border-radius:999px;
     border:1px solid var(--gold);background:var(--gold);color:var(--on-accent);cursor:pointer;min-height:44px;font-weight:600;}
@@ -11955,13 +11959,16 @@ async function openShare(token){
     // button always available — and REDLINE what changed since the previous turn so the evolution is
     // visible. The author refines it in the chat, or uses it whenever it's good enough.
     if(pay.proposed_thesis){
-      const body = (prevThesis && prevThesis !== pay.proposed_thesis)
-        ? redlineThesis(prevThesis, pay.proposed_thesis) : esc2(pay.proposed_thesis);
+      const changed = prevThesis && prevThesis !== pay.proposed_thesis;
       out += '<div class="th-landed' + (pay.ready ? " ready" : "") + '">'
         + '<div class="th-landed-h">' + (pay.ready ? "The thesis I’d test" : "Working thesis")
-        + (prevThesis && prevThesis !== pay.proposed_thesis ? '<span class="th-redline-key">'
-            + '<ins>added</ins> <del>removed</del></span>' : "") + "</div>"
-        + '<blockquote class="th-landed-q">' + body + "</blockquote>"
+        // Redline is OFF by default (a big rewrite of redlines is noise). A toggle reveals the diff
+        // from the PREVIOUS turn only.
+        + (changed ? '<button type="button" class="th-redline-toggle" aria-pressed="false">⇄ show changes</button>' : "")
+        + "</div>"
+        + '<blockquote class="th-landed-q th-clean">' + esc2(pay.proposed_thesis) + "</blockquote>"
+        + (changed ? '<blockquote class="th-landed-q th-redline" hidden><span class="th-redline-key">changes since last turn: '
+            + '<ins>added</ins> <del>removed</del></span>' + redlineThesis(prevThesis, pay.proposed_thesis) + "</blockquote>" : "")
         + '<div class="th-landed-row"><button type="button" class="th-use" id="th-use">Use this thesis →</button>'
         + '<span class="th-landed-hint">' + (pay.ready ? "or keep refining it below." : "keep refining below, or use it now.") + "</span></div></div>";
     }
@@ -12172,6 +12179,17 @@ async function openShare(token){
       if(ledger) ledger.hidden = true;
       const use = document.getElementById("th-use");
       if(use) use.addEventListener("click", confirmThesis);
+      const tog = document.querySelector("#th-loi .th-redline-toggle, #th-conv .th-redline-toggle")
+                  || document.querySelector(".th-redline-toggle");
+      if(tog) tog.addEventListener("click", () => {
+        const card = tog.closest(".th-landed"); if(!card) return;
+        const clean = card.querySelector(".th-landed-q.th-clean");
+        const red = card.querySelector(".th-landed-q.th-redline"); if(!red || !clean) return;
+        const showing = !red.hidden;
+        red.hidden = showing; clean.hidden = !showing;
+        tog.textContent = showing ? "⇄ show changes" : "⇄ hide changes";
+        tog.setAttribute("aria-pressed", showing ? "false" : "true");
+      });
       return;
     }
 
