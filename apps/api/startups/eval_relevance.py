@@ -87,7 +87,11 @@ async def run(base: str, mode: str, deployed: bool, compiled: bool = False) -> N
         for c in cases:
             q, expected, thin = c["query"], c["expected"], set(c.get("thin") or [])
             if compiled:
-                rows = await _search_compiled(client, base, q, mode)
+                try:
+                    rows = await _search_compiled(client, base, q, mode)
+                except Exception as e:   # noqa: BLE001 — one case's timeout must not sink the whole aggregate
+                    print(f"  {q!r:44} ERROR {type(e).__name__} — counted as all-absent")
+                    rows = []
                 r = _ranks(rows, expected)
                 base_ranks.append({"query": q, "ranks": r, "thin": list(thin)})
                 exp_ranks.append({"query": q, "ranks": r, "thin": list(thin)})
