@@ -194,35 +194,25 @@ def build_contract(out: dict, *, coverage: dict | None = None, value_counts: dic
     prefer = _clean_map(out.get("prefer"), numeric_ok=False)
     avoid = _clean_map(out.get("avoid"), numeric_ok=False)
     exclude = _clean_map(out.get("must_not"), numeric_ok=False)
-    # An AREA the brief did not name is an approximation, and an approximation must not filter.
-    # "Ecommerce Startups" compiled to a hard tech_area=consumer, which is not what ecommerce means:
-    # it excluded every ecommerce company filed under enterprise software and admitted every consumer
-    # company that sells nothing online. The vocabulary is coarse on purpose; when the brief's own
-    # word is not in it, the nearest area ranks instead of filtering and the words do the work.
-    if brief and must.get("tech_area"):
-        named = [v for v in must["tech_area"] if area_named_in(brief, v)]
-        approximated = [v for v in must["tech_area"] if v not in named]
-        if approximated:
-            if named:
-                must["tech_area"] = named
-            else:
-                must.pop("tech_area")
-            for v in approximated:
-                prefer.setdefault("tech_area", [])
-                if v not in prefer["tech_area"]:
-                    prefer["tech_area"].append(v)
-            notes.append("No exact area for this — ranking by "
-                         + ", ".join(v.replace("_", " ") for v in approximated) + " instead of filtering")
-
-    # The mirror of the rule above: an area the brief NAMES OUTRIGHT must not be lost. "insurtech
-    # startups" came back with no tech_area at all, so nothing was filtered and all 17,613 companies
-    # were merely ranked. Restoring it only when the model gave none, and only for terms of art that
-    # name one sector and nothing else, so a brief that merely mentions "sales" is untouched.
-    if brief and not must.get("tech_area"):
-        outright = areas_named_outright(brief)
-        if len(outright) == 1:
-            must["tech_area"] = outright
-            notes.append("Filtering by " + outright[0].replace("_", " ") + " — your brief named it")
+    # TECH AREA RANKS, IT DOES NOT FILTER (compiled briefs only; a chip the user taps on the rail is a
+    # deliberate hard filter and bypasses this compiler). The vocabulary is coarse and companies scatter
+    # across adjacent areas — an "agentic ai" company is filed under ai_infra or security as often as
+    # agents — so a hard tech_area must silently drops exactly the relevant companies (measured on prod:
+    # decawork (ai_infra) and multifactor (security) both absent from "agentic ai"). Now that query
+    # expansion carries the semantic intent onto the dense leg and the blind judge cleans the head,
+    # ranking by area beats filtering by it. So every area the brief implies — the model's, plus any term
+    # of art it named outright that the model missed — becomes a PREFER, never a must. (An area is also a
+    # `soft_must` facet, so even a user's rail chip only excludes a DIFFERENT known area, never a blank.)
+    if brief:
+        areas = list(must.pop("tech_area", []) or [])
+        outright = areas_named_outright(brief) if len(areas_named_outright(brief)) == 1 else []
+        for v in outright:
+            if v not in areas:
+                areas.append(v)
+        if areas:
+            prefer["tech_area"] = sorted(set(prefer.get("tech_area", [])) | set(areas))
+            notes.append("Ranking by " + ", ".join(v.replace("_", " ") for v in areas)
+                         + " — area ranks results, it doesn't filter them out (tap the chip to filter)")
 
     # a STAGE only when the brief names one — the model tends to assume "startups" means seed / series A
     if brief and not brief_names_a_stage(brief):
@@ -401,5 +391,11 @@ async def compile_brief(llm_json, text: str, *, coverage: dict | None = None, va
     lex = apply_lexicon(c, plan)
     if lex:
         notes = (notes + lex)[:8]
+    # tech_area RANKS, never filters, for a typed brief — even when the lexicon read it straight from the
+    # words (apply_lexicon would otherwise harden it). A rail chip is the user's own hard filter and never
+    # passes through here.
+    if c.must.get("tech_area"):
+        areas = c.must.pop("tech_area")
+        c.prefer["tech_area"] = sorted(set(c.prefer.get("tech_area", [])) | set(areas))
     notes += settle_text(c, text, plan)
     return c, notes

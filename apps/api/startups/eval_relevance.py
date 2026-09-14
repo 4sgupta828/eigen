@@ -59,9 +59,24 @@ async def _search(client: httpx.AsyncClient, base: str, text: str, mode: str) ->
     return resp.json().get("rows", []) or []
 
 
-async def run(base: str, mode: str, deployed: bool) -> None:
+async def _search_compiled(client: httpx.AsyncClient, base: str, query: str, mode: str) -> list[dict]:
+    """The REAL user path: compile the brief into a contract (musts, prefers), then search it. Measures
+    #2b (compile policy) end to end — a hard tech_area must that excludes adjacent-area companies shows up
+    here where the bare-query eval cannot see it."""
+    cr = await client.post(f"{base}/startups/compile", json={"text": query}, timeout=60)
+    cr.raise_for_status()
+    contract = (cr.json() or {}).get("contract") or {"text": query}
+    contract["merge"] = {"mode": mode}
+    contract["limit"] = 60
+    resp = await client.post(f"{base}/startups/evaluate", json={"contract": contract}, timeout=90)
+    resp.raise_for_status()
+    return resp.json().get("rows", []) or []
+
+
+async def run(base: str, mode: str, deployed: bool, compiled: bool = False) -> None:
     gold = json.loads(GOLD.read_text())
     cases = gold["cases"]
+    deployed = deployed or compiled   # compiled mode measures the endpoint as-is (compile happens server-side)
     llm_json = None if deployed else pipeline.Providers.from_env().llm_json
     if not deployed and llm_json is None:
         raise SystemExit("no LLM configured for expansion; run under `railway run -s eigen-api` or pass --deployed")
@@ -71,6 +86,14 @@ async def run(base: str, mode: str, deployed: bool) -> None:
     async with httpx.AsyncClient() as client:
         for c in cases:
             q, expected, thin = c["query"], c["expected"], set(c.get("thin") or [])
+            if compiled:
+                rows = await _search_compiled(client, base, q, mode)
+                r = _ranks(rows, expected)
+                base_ranks.append({"query": q, "ranks": r, "thin": list(thin)})
+                exp_ranks.append({"query": q, "ranks": r, "thin": list(thin)})
+                miss = [d for d in expected if r[d] is None]
+                print(f"  {q!r:44} recall@60={sum(1 for v in r.values() if v)}/{len(expected)}  absent={miss}")
+                continue
             base_rows = await _search(client, base, q, mode)
             br = _ranks(base_rows, expected)
             base_ranks.append({"query": q, "ranks": br, "thin": list(thin)})
@@ -112,8 +135,9 @@ def main() -> None:
     ap.add_argument("--base", default=os.environ.get("EIGEN_EVAL_BASE", "http://127.0.0.1:8000"))
     ap.add_argument("--mode", default="single", choices=["single", "merged"])
     ap.add_argument("--deployed", action="store_true", help="measure the endpoint as-is (no local expansion)")
+    ap.add_argument("--compiled", action="store_true", help="real path: compile each brief -> contract -> search (end to end)")
     args = ap.parse_args()
-    asyncio.run(run(args.base, args.mode, args.deployed))
+    asyncio.run(run(args.base, args.mode, args.deployed, args.compiled))
 
 
 if __name__ == "__main__":
