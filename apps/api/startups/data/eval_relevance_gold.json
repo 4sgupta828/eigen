@@ -1,0 +1,1051 @@
+{
+  "_about": "Golden relevance set for startup search. Each case is an investor-vocabulary QUERY and the set of company domains that a human agrees are relevant and SHOULD appear in the top results. `thin` marks companies whose own one-liner uses different words than the query \u2014 the vocabulary-gap cases query expansion is meant to rescue. Non-thin entries are regression controls. All domains verified present in the prod corpus 2026-09-14. Metric: recall@K and mean-reciprocal-rank of the expected set. Grow this set; do not prune a case just because it fails.",
+  "cases": [
+    {
+      "query": "agentic ai",
+      "expected": [
+        "decawork.ai",
+        "multifactor.com",
+        "throxy.com"
+      ],
+      "thin": [
+        "decawork.ai"
+      ],
+      "note": "decawork frames itself as 'approve AI actions' \u2014 never says agentic"
+    },
+    {
+      "query": "authorization and security for AI agents",
+      "expected": [
+        "decawork.ai",
+        "multifactor.com"
+      ],
+      "thin": [
+        "decawork.ai"
+      ],
+      "note": "the task-security-auth query the owner reported"
+    },
+    {
+      "query": "governance and guardrails for autonomous AI agents",
+      "expected": [
+        "decawork.ai",
+        "multifactor.com"
+      ],
+      "thin": [
+        "decawork.ai"
+      ],
+      "note": "pure category vocabulary; neither company uses these words"
+    },
+    {
+      "query": "software for construction companies",
+      "expected": [
+        "concordmaterials.com",
+        "vobi.com.br",
+        "equipmentshare.com",
+        "autositu.com",
+        "subvysion.com"
+      ],
+      "thin": [
+        "autositu.com",
+        "subvysion.com"
+      ],
+      "note": "autositu='AI OS for the built world', subvysion='rovers mapping underground utilities'"
+    },
+    {
+      "query": "ai customer support agents",
+      "expected": [
+        "gominimal.ai",
+        "firstsupport.ai",
+        "dataland.io",
+        "samora.ai"
+      ],
+      "thin": [],
+      "note": "well-worded control \u2014 must not regress"
+    },
+    {
+      "query": "automated software testing tools",
+      "expected": [
+        "dime.io",
+        "dev-tools.ai",
+        "docketqa.com",
+        "preflight.com",
+        "getdockup.com"
+      ],
+      "thin": [
+        "getdockup.com"
+      ],
+      "note": "getdockup='on demand ephemeral environments' \u2014 testing is implied, not named"
+    },
+    {
+      "query": "cloud security platform",
+      "expected": [
+        "matano.dev",
+        "cloudanix.com",
+        "ciphercloud.com",
+        "caution.co"
+      ],
+      "thin": [
+        "caution.co"
+      ],
+      "note": "caution='hosting for software you cant afford to have hacked' \u2014 never says security"
+    },
+    {
+      "query": "payments infrastructure",
+      "expected": [
+        "balancedpayments.com",
+        "paystack.com",
+        "apollofirst.xyz",
+        "tankpayments.com",
+        "panelytic.com"
+      ],
+      "thin": [
+        "panelytic.com"
+      ],
+      "note": "panelytic='payment infrastructure for machines' \u2014 control-heavy case"
+    },
+    {
+      "query": "ai code review",
+      "expected": [
+        "cubic.dev",
+        "codeball.ai",
+        "pullrequest.com",
+        "tryluke.dev",
+        "squire.ai",
+        "second.dev"
+      ],
+      "thin": [
+        "squire.ai",
+        "second.dev"
+      ],
+      "sector": "dev_productivity",
+      "type": "category",
+      "note": "cubic/codeball/pullrequest/tryluke all say 'code review' explicitly. squire.ai ('Never code alone.') and second.dev ('AI-Native Enterprise Codebase Maintenance') are code-review/pairing tools whose one_liners share no query words."
+    },
+    {
+      "query": "ai coding copilot",
+      "expected": [
+        "double.bot",
+        "sweep.dev",
+        "compyle.ai",
+        "aide.dev"
+      ],
+      "thin": [],
+      "sector": "dev_productivity",
+      "type": "precise",
+      "note": "Regression guard: query words closely match one_liners (double.bot 'AI coding copilot', sweep.dev 'best AI coding assistant', compyle.ai 'coding agent', aide.dev 'AI-native IDE'). These should rank well; no vocabulary gap intended."
+    },
+    {
+      "query": "picks and shovels for AI",
+      "expected": [
+        "scale.com",
+        "replicate.com",
+        "daft.ai",
+        "lancedb.com",
+        "sf-tensor.com",
+        "withmetis.ai"
+      ],
+      "thin": [
+        "scale.com",
+        "replicate.com",
+        "daft.ai"
+      ],
+      "sector": "ml_infra",
+      "type": "thematic",
+      "note": "Investment-thesis metaphor for AI infra enablers. Every match is thin by construction (no shared vocabulary): scale ('infrastructure to accelerate AI'), replicate ('Run ML models in cloud'), daft ('AI data engine'), lancedb (vectordb), sf-tensor ('Infrastructure for AI labs'), withmetis ('Infrastructure to build reliable agents')."
+    },
+    {
+      "query": "modern data stack",
+      "expected": [
+        "turntable.so",
+        "getdot.ai",
+        "citusdata.com",
+        "peerdb.io",
+        "scratchdata.com",
+        "daft.ai"
+      ],
+      "thin": [
+        "citusdata.com",
+        "peerdb.io"
+      ],
+      "sector": "data_infra",
+      "type": "thematic",
+      "note": "Category-thesis phrase for the analytics/data-tooling stack. citusdata ('Real-time. Big data. PostgreSQL') and peerdb ('native ETL for Postgres') are core data-stack infra but describe themselves in Postgres/ETL terms, not 'data stack'."
+    },
+    {
+      "query": "cut our cloud bill",
+      "expected": [
+        "cloudthread.io",
+        "infracost.io",
+        "understudylabs.com",
+        "dashdive.com",
+        "pump.co"
+      ],
+      "thin": [
+        "pump.co"
+      ],
+      "sector": "dev_productivity",
+      "type": "problem",
+      "note": "Problem-oriented FinOps query. cloudthread ('Eliminate Cloud Waste'), infracost ('Find & Fix Cloud Cost Issues'), understudy ('cuts LLM bills'), dashdive ('Break down cloud costs') are on-vocab. pump.co ('The Costco for cloud') is thin: pure metaphor, no cost/bill token."
+    },
+    {
+      "query": "vector database",
+      "expected": [
+        "lancedb.com",
+        "helix-db.com",
+        "lantern.dev",
+        "paradedb.com",
+        "activeloop.ai",
+        "ecliptor.ai"
+      ],
+      "thin": [
+        "activeloop.ai",
+        "ecliptor.ai"
+      ],
+      "sector": "data_infra",
+      "type": "category",
+      "note": "lancedb/helix-db/lantern/paradedb all name vector DB. activeloop ('Database for AI') and ecliptor ('AI and Embeddings.') are vector/embedding stores whose one_liners avoid the phrase."
+    },
+    {
+      "query": "RAG infrastructure",
+      "expected": [
+        "superpowered.ai",
+        "trieve.ai",
+        "ecliptor.ai",
+        "lancedb.com",
+        "shaped.ai"
+      ],
+      "thin": [
+        "superpowered.ai",
+        "ecliptor.ai",
+        "lancedb.com"
+      ],
+      "sector": "ai_agents",
+      "type": "thematic",
+      "note": "Jargon acronym query. trieve names 'RAG' directly. superpowered spells out 'Retrieval Augmented Generation' (acronym gap), ecliptor ('AI and Embeddings.') and lancedb (vectordb) are RAG building blocks that never use the term."
+    },
+    {
+      "query": "mlops platform",
+      "expected": [
+        "mlop.ai",
+        "scout.ml",
+        "poplarml.com",
+        "evidentlyai.com",
+        "replicate.com",
+        "preloop.com"
+      ],
+      "thin": [
+        "mlop.ai",
+        "replicate.com"
+      ],
+      "sector": "ml_infra",
+      "type": "category",
+      "note": "MLOps category. scout.ml ('CI/CD for ML'), poplarml ('Deploy ML Models'), evidently ('monitoring for ML models'), preloop ('scripts into production ML') are clearer matches. mlop.ai ('Experiment tracking') and replicate ('Run ML models in the cloud') are MLOps core but never say 'mlops'."
+    },
+    {
+      "query": "no-code app builder",
+      "expected": [
+        "blitznocode.com",
+        "jetadmin.io",
+        "thunkable.com",
+        "weweb.io",
+        "glideapps.com",
+        "draftbit.com"
+      ],
+      "thin": [
+        "glideapps.com",
+        "draftbit.com"
+      ],
+      "sector": "dev_productivity",
+      "type": "category",
+      "note": "blitznocode/jetadmin/thunkable/weweb say 'no-code'. glideapps ('spreadsheets into beautiful, intelligent apps') and draftbit ('Build mobile apps visually') are no-code builders described without the 'no-code' token."
+    },
+    {
+      "query": "offensive security",
+      "expected": [
+        "escape.tech",
+        "codeant.ai",
+        "tridentsecurity.io",
+        "cyble.com",
+        "cymmetria.com"
+      ],
+      "thin": [
+        "cyble.com",
+        "cymmetria.com"
+      ],
+      "sector": "cybersecurity",
+      "type": "thematic",
+      "note": "escape.tech, codeant, tridentsecurity all say 'offensive security'. cyble ('AI-Native Security') and cymmetria ('Shifting the asymmetry of cyber security') are offensive/adversarial-security plays whose wording diverges from the query."
+    },
+    {
+      "query": "AI-powered code review platform",
+      "expected": [
+        "cubic.dev",
+        "codeball.ai",
+        "tryluke.dev"
+      ],
+      "thin": [],
+      "sector": "dev_productivity",
+      "type": "precise",
+      "note": "Regression guard: near-verbatim to one_liners (cubic 'AI-powered code review platform', codeball 'AI-Powered Code Review', tryluke 'Code review platform'). Must rank at top; no vocabulary gap."
+    },
+    {
+      "query": "spend management",
+      "expected": [
+        "brex.com",
+        "cardda.com",
+        "kodo.com",
+        "volopay.com",
+        "boyahq.com",
+        "emburse.com"
+      ],
+      "thin": [
+        "emburse.com"
+      ],
+      "sector": "fintech",
+      "type": "category",
+      "note": "Investor category. emburse says 'Expense management and AP automation' (expense/AP vocab, not 'spend') - vocab-gap anchor."
+    },
+    {
+      "query": "embedded finance",
+      "expected": [
+        "getanchor.co",
+        "lendflow.com",
+        "treasuryprime.com",
+        "increase.com",
+        "onefin.in"
+      ],
+      "thin": [
+        "increase.com",
+        "onefin.in"
+      ],
+      "sector": "payments",
+      "type": "thematic",
+      "note": "increase.com ('API-first banking for ambitious technology companies') and onefin.in ('Shopify for Financial Services') are embedded-finance plays with no 'embedded' wording."
+    },
+    {
+      "query": "underwriting automation",
+      "expected": [
+        "herondata.io",
+        "kita.ai",
+        "ruleset.ai",
+        "benoble.io",
+        "inscribe.ai"
+      ],
+      "thin": [
+        "benoble.io",
+        "ruleset.ai"
+      ],
+      "sector": "banking/lending",
+      "type": "problem",
+      "note": "herondata literally 'Underwriting automation'. benoble.io ('Risk decisioning platform') and ruleset.ai ('SaaS Decision Engine for Lenders') are underwriting/decisioning with no 'underwriting' word."
+    },
+    {
+      "query": "digital bank for small businesses",
+      "expected": [
+        "kapital.mx",
+        "delt.ai",
+        "seed.co",
+        "spendruby.com",
+        "contasimples.com"
+      ],
+      "thin": [
+        "contasimples.com"
+      ],
+      "sector": "banking/lending",
+      "type": "business_model",
+      "note": "SMB neobank business model. contasimples.com ('All-in-one financial platform for latam Startups and SMBs') serves SMBs but never says bank/neobank."
+    },
+    {
+      "query": "stablecoin payments",
+      "expected": [
+        "blindpay.com",
+        "onconsul.com",
+        "infinite.dev",
+        "slash.com",
+        "peg.money"
+      ],
+      "thin": [],
+      "sector": "crypto/web3/blockchain",
+      "type": "precise",
+      "note": "Control: all one_liners contain 'stablecoin'. Should rank high."
+    },
+    {
+      "query": "defi infrastructure",
+      "expected": [
+        "rainmaker.nyc",
+        "taofi.com",
+        "fordefi.com",
+        "unifold.io"
+      ],
+      "thin": [
+        "fordefi.com",
+        "unifold.io"
+      ],
+      "sector": "crypto/web3/blockchain",
+      "type": "thematic",
+      "note": "fordefi.com ('secure on-chain finance strategy with self-custody') and unifold.io ('Multi-chain deposit and payment infrastructure') are DeFi infra but omit the term 'defi'."
+    },
+    {
+      "query": "embedded insurance",
+      "expected": [
+        "tint.ai",
+        "covie.com",
+        "obieinsurance.com"
+      ],
+      "thin": [
+        "covie.com",
+        "obieinsurance.com"
+      ],
+      "sector": "insurance/insurtech",
+      "type": "thematic",
+      "note": "tint.ai literally 'embed insurance'. covie.com ('Programmatic building blocks for transacting with insurance') and obieinsurance.com ('Moving Investment Property Insurance Forward') are insurtech with no 'embedded'."
+    },
+    {
+      "query": "property management software",
+      "expected": [
+        "guesty.com",
+        "atlia.com",
+        "averyiq.com",
+        "prohost.ai",
+        "entercastle.com"
+      ],
+      "thin": [
+        "entercastle.com"
+      ],
+      "sector": "real estate/proptech",
+      "type": "category",
+      "note": "entercastle.com ('manages rental homes using automation and on-demand labor') is property management but describes the outcome, not the category term."
+    },
+    {
+      "query": "commercial real estate technology",
+      "expected": [
+        "propexo.com",
+        "proprise.ai",
+        "realpact.ai",
+        "cambio.ai",
+        "propreturns.com"
+      ],
+      "thin": [
+        "proprise.ai"
+      ],
+      "sector": "real estate/proptech",
+      "type": "thematic",
+      "note": "proprise.ai ('The AI platform for CRE investment teams') uses the abbreviation CRE rather than spelling out commercial real estate."
+    },
+    {
+      "query": "robo-advisor",
+      "expected": [
+        "hedgehog.app",
+        "getfinvest.com",
+        "becomeautonomous.com",
+        "fintual.com",
+        "mahaana.com"
+      ],
+      "thin": [
+        "getfinvest.com",
+        "becomeautonomous.com",
+        "fintual.com"
+      ],
+      "sector": "wealth/treasury/accounting",
+      "type": "category",
+      "note": "Flagship vocab-gap case. Only hedgehog.app says 'Robo-adviser'. getfinvest ('AI Wealth Manager'), becomeautonomous ('Superintelligent financial advisor'), fintual ('Wealth manager') are automated advisors with no 'robo'."
+    },
+    {
+      "query": "corporate treasury and idle cash management",
+      "expected": [
+        "arpari.com",
+        "levo.mx",
+        "moderntreasury.com",
+        "tesorio.com",
+        "multis.com"
+      ],
+      "thin": [
+        "moderntreasury.com",
+        "tesorio.com"
+      ],
+      "sector": "wealth/treasury/accounting",
+      "type": "problem",
+      "note": "arpari/levo/multis say 'treasury management'. moderntreasury.com ('Payment operations tools for money movement') and tesorio.com ('cash flow performance platform') are treasury/cash tooling with different wording."
+    },
+    {
+      "query": "AI drug discovery",
+      "expected": [
+        "1910.ai",
+        "wondertx.ai",
+        "harmonicdiscovery.com",
+        "sequencebio.com"
+      ],
+      "thin": [
+        "harmonicdiscovery.com"
+      ],
+      "sector": "biotech",
+      "type": "category",
+      "note": "1910.ai/wondertx.ai name AI+drugs explicitly; harmonicdiscovery says 'Multi-targeted therapeutics to treat complex diseases' (no AI/discovery words) = vocab gap; sequencebio 'true signals of disease to power drugs'."
+    },
+    {
+      "query": "at-home diagnostics",
+      "expected": [
+        "scanwellhealth.com",
+        "innamed.com",
+        "lucirahealth.com",
+        "delee.co"
+      ],
+      "thin": [
+        "lucirahealth.com"
+      ],
+      "sector": "medical-devices",
+      "type": "category",
+      "note": "scanwell 'at-home diagnostics' + innamed 'At-home blood testing' are precise anchors; lucirahealth 'infectious disease test kits' never says at-home/diagnostics = vocab gap; delee at-home blood cancer test."
+    },
+    {
+      "query": "direct air capture",
+      "expected": [
+        "heimdalccu.com",
+        "noya.co",
+        "airmyne.com"
+      ],
+      "thin": [
+        "airmyne.com"
+      ],
+      "sector": "climate",
+      "type": "category",
+      "note": "heimdal 'direct air carbon capture' + noya 'direct air capture' precise; airmyne 'remove carbon dioxide from air at industrial scale' describes DAC without the term = vocab gap."
+    },
+    {
+      "query": "picks and shovels for the energy transition",
+      "expected": [
+        "gridware.io",
+        "moxionpower.com",
+        "gbatteries.com",
+        "duranium.co",
+        "maplematerials.com"
+      ],
+      "thin": [
+        "duranium.co",
+        "maplematerials.com",
+        "gbatteries.com"
+      ],
+      "sector": "energy",
+      "type": "thematic",
+      "note": "Investor thesis language; NO company uses these words. duranium 'Reshoring critical metal production', maplematerials 'CO2 into battery-grade graphite', gbatteries 'li-ion charge ultra fast' are enabling-infra plays = strong recall-headroom / vocab gap."
+    },
+    {
+      "query": "small modular reactors",
+      "expected": [
+        "oklo.com",
+        "apolloatomics.com",
+        "atomarine.co"
+      ],
+      "thin": [
+        "oklo.com",
+        "atomarine.co"
+      ],
+      "sector": "energy",
+      "type": "thematic",
+      "note": "apolloatomics 'most compact nuclear reactors' near-match; oklo 'always on power from advanced fission power plants' and atomarine 'Floating nuclear powered data centers at sea' never say SMR = vocab gap."
+    },
+    {
+      "query": "fusion energy",
+      "expected": [
+        "helionenergy.com",
+        "maritimefusion.com",
+        "zephyrfusion.com"
+      ],
+      "thin": [],
+      "sector": "energy",
+      "type": "precise",
+      "note": "Regression control: all three one_liners contain 'fusion'; helion 'fusion power plant', maritimefusion 'Fusion reactors for ships'."
+    },
+    {
+      "query": "humanoid robots",
+      "expected": [
+        "piggyrobotics.com",
+        "kscale.dev",
+        "thesislabs.ai",
+        "os3robotics.com",
+        "norirobotics.com"
+      ],
+      "thin": [],
+      "sector": "robotics",
+      "type": "precise",
+      "note": "Regression control: every one_liner literally says 'humanoid robot(s)'. Dense cluster \u2014 good precise guard."
+    },
+    {
+      "query": "warehouse automation",
+      "expected": [
+        "autopallet.bot",
+        "corvus-robotics.com",
+        "yondu.ai"
+      ],
+      "thin": [
+        "yondu.ai"
+      ],
+      "sector": "robotics",
+      "type": "problem",
+      "note": "autopallet 'robots that move boxes in warehouses' + corvus 'drones to help warehouses scan inventory' match; yondu 'Robots to Automate Fulfillment' is warehouse automation in different words = vocab gap."
+    },
+    {
+      "query": "robotaxi",
+      "expected": [
+        "passenger.ai",
+        "getcruise.com",
+        "auro.ai",
+        "marsauto.com"
+      ],
+      "thin": [
+        "marsauto.com"
+      ],
+      "sector": "robotics",
+      "type": "category",
+      "note": "passenger.ai 'robotaxi operations' precise; getcruise/auro 'self-driving cars'/'autonomous shuttles' adjacent; marsauto 'Autonomous trucks for long-haul freight' is autonomy but not passenger robotaxi = vocab/subject gap."
+    },
+    {
+      "query": "counter-drone defense",
+      "expected": [
+        "guardianrf.com",
+        "perseusdefense.com",
+        "arlo1.com"
+      ],
+      "thin": [
+        "perseusdefense.com",
+        "arlo1.com"
+      ],
+      "sector": "defense",
+      "type": "problem",
+      "note": "guardianrf 'Drone detection for US defense' near-match; perseusdefense 'Golden Dome for Drones' (metaphor) and arlo1 'Track drones and missiles without radars' never say counter-drone/counter-UAS = jargon vocab gap."
+    },
+    {
+      "query": "satellite constellations",
+      "expected": [
+        "basalt.space",
+        "albaorbital.com",
+        "astranis.com",
+        "arraylabs.io",
+        "reditus.space"
+      ],
+      "thin": [
+        "arraylabs.io",
+        "reditus.space"
+      ],
+      "sector": "space",
+      "type": "thematic",
+      "note": "basalt 'Constellations as a Service' precise; astranis/albaorbital 'satellites'; arraylabs 'satellites to create a real-time 3D map' and reditus 'Reusable Satellites' don't use 'constellation' = vocab gap."
+    },
+    {
+      "query": "custom silicon",
+      "expected": [
+        "visiblsemi.com",
+        "synapsesemi.org",
+        "silimate.com",
+        "inversionsemi.com",
+        "remicro.com"
+      ],
+      "thin": [
+        "silimate.com"
+      ],
+      "sector": "hardware",
+      "type": "category",
+      "note": "visiblsemi 'Custom silicon for power electronics' precise; remicro 'lowest-power silicon'; silimate 'agents for chip design and debug' is a chip-design tool, different words = vocab gap."
+    },
+    {
+      "query": "AI for materials discovery",
+      "expected": [
+        "osium.ai",
+        "83sciences.ai",
+        "discoveredmaterials.com",
+        "yonedalabs.com",
+        "rasyn.ai"
+      ],
+      "thin": [
+        "yonedalabs.com",
+        "rasyn.ai"
+      ],
+      "sector": "materials",
+      "type": "thematic",
+      "note": "osium 'materials innovation with AI', 83sciences 'AI-native materials discovery', discoveredmaterials 'AI scientists to discover materials' precise; yonedalabs 'Foundation Model for Chemical Manufacturing' and rasyn 'Making chemicals 100,000x faster' = vocab gap."
+    },
+    {
+      "query": "quantum computing",
+      "expected": [
+        "rigetti.com",
+        "auroraq.com"
+      ],
+      "thin": [],
+      "sector": "quantum",
+      "type": "category",
+      "note": "SPARSE sector: only rigetti 'Quantum coherent supercomputing' and auroraq 'first practical integrated quantum computer' returned real one_liners; most quantum hits were SEC Form D shells with no website. Kept to 2 verified anchors rather than invent."
+    },
+    {
+      "query": "ecommerce storefront platform",
+      "expected": [
+        "shopify.com",
+        "bigcommerce.com",
+        "nextstore.com",
+        "cartpanda.com",
+        "cococart.co"
+      ],
+      "thin": [
+        "cartpanda.com",
+        "cococart.co"
+      ],
+      "sector": "ecommerce",
+      "type": "category",
+      "note": "Storefront/online-store platforms. cartpanda ('Global online sales platform') and cococart ('Empowering local businesses to sell online') describe the same thing in different words."
+    },
+    {
+      "query": "one-click checkout",
+      "expected": [
+        "heycanopy.com",
+        "comprarapida.co",
+        "selfycart.com",
+        "closera.com"
+      ],
+      "thin": [
+        "closera.com"
+      ],
+      "sector": "ecommerce",
+      "type": "precise",
+      "note": "Regression guard: heycanopy ('1-click checkout'), comprarapida ('One-click checkout') match query words exactly. closera ('AI Shopping Agent') is checkout-adjacent but different words."
+    },
+    {
+      "query": "multichannel selling for online sellers",
+      "expected": [
+        "vendoo.co",
+        "branch8.com",
+        "omnidock.com",
+        "shipmates.app"
+      ],
+      "thin": [
+        "shipmates.app",
+        "omnidock.com"
+      ],
+      "sector": "ecommerce",
+      "type": "business_model",
+      "note": "List/manage products across marketplaces. vendoo ('multiple platforms') and branch8 match; omnidock ('OS for global e-commerce expansion') and shipmates ('shipping platform for online merchants') are relevant but off-vocabulary."
+    },
+    {
+      "query": "sales enablement and revenue intelligence",
+      "expected": [
+        "usehindsight.com",
+        "silkchart.com",
+        "salesgraph.com",
+        "demodesk.com",
+        "avina.io"
+      ],
+      "thin": [
+        "avina.io",
+        "salesgraph.com"
+      ],
+      "sector": "martech",
+      "type": "thematic",
+      "note": "Tools that coach reps and surface deal signals. avina ('GTM signals engine') and salesgraph ('revenue agents that move enterprise deals') are relevant but never say 'enablement'."
+    },
+    {
+      "query": "ad campaign optimization for performance marketers",
+      "expected": [
+        "optilly.com",
+        "plai.io",
+        "kuhcoon.com",
+        "perfectaudience.com"
+      ],
+      "thin": [
+        "perfectaudience.com"
+      ],
+      "sector": "martech",
+      "type": "problem",
+      "note": "Optimizing paid ad spend. optilly/plai/kuhcoon say 'optimize'. perfectaudience ('self-service display advertising') is the same buyer but different wording."
+    },
+    {
+      "query": "creator monetization",
+      "expected": [
+        "buymeacoffee.com",
+        "gigs.live",
+        "hub.la",
+        "beacons.ai",
+        "trykarat.com"
+      ],
+      "thin": [
+        "hub.la",
+        "beacons.ai",
+        "trykarat.com"
+      ],
+      "sector": "gaming/media/creator",
+      "type": "thematic",
+      "note": "Helping creators earn. buymeacoffee/gigs say monetize; hub.la ('sell courses and subscriptions'), beacons ('all-in-one business platform for content creators'), trykarat ('financial services for creators') are relevant but off-vocabulary."
+    },
+    {
+      "query": "AI recruiting and candidate screening",
+      "expected": [
+        "talentropy.ai",
+        "lightscreen.ai",
+        "alex.com",
+        "searchlight.ai",
+        "sorce.jobs"
+      ],
+      "thin": [
+        "searchlight.ai",
+        "sorce.jobs"
+      ],
+      "sector": "HR tech/recruiting",
+      "type": "category",
+      "note": "AI-driven hiring/screening. talentropy/lightscreen/alex match; searchlight ('improving quality of hire') and sorce ('Tinder for jobs') are recruiting but different words."
+    },
+    {
+      "query": "global payroll and employer of record",
+      "expected": [
+        "myworkpay.com",
+        "nohq.com",
+        "shorpay.com",
+        "getontop.com",
+        "zeal.com"
+      ],
+      "thin": [
+        "getontop.com",
+        "zeal.com"
+      ],
+      "sector": "HR tech/payroll",
+      "type": "business_model",
+      "note": "Cross-border payroll/EOR. myworkpay names EOR, nohq/shorpay name international payroll; getontop ('hiring and payments for the global workforce') and zeal ('Modern payroll') are relevant with different framing."
+    },
+    {
+      "query": "contract lifecycle management with AI",
+      "expected": [
+        "draftwise.com",
+        "dioptra.ai",
+        "pincites.com",
+        "spellbook.legal",
+        "tryabel.com"
+      ],
+      "thin": [
+        "tryabel.com",
+        "spellbook.legal"
+      ],
+      "sector": "legaltech",
+      "type": "thematic",
+      "note": "AI over contracts. draftwise/dioptra/pincites name contract review/negotiation; tryabel ('document review for litigation') and spellbook (no one_liner, known contract-AI) are relevant but off-phrase."
+    },
+    {
+      "query": "compliance automation for financial services",
+      "expected": [
+        "complif.com",
+        "cardamon.ai",
+        "kobaltlabs.com",
+        "regology.com",
+        "regbase.com"
+      ],
+      "thin": [
+        "regbase.com",
+        "regology.com"
+      ],
+      "sector": "compliance/regtech",
+      "type": "category",
+      "note": "Compliance tooling for finance. complif/cardamon/kobaltlabs name financial compliance; regbase ('Automating Corporate Compliance') and regology ('AI Agents for Regulatory Compliance') are relevant but not finance-specific in wording."
+    },
+    {
+      "query": "user-generated content gaming platforms",
+      "expected": [
+        "playabl.ai",
+        "pocketworlds.com",
+        "dreamcraft.com",
+        "playmultiverse.com",
+        "rune.ai"
+      ],
+      "thin": [
+        "rune.ai",
+        "dreamcraft.com"
+      ],
+      "sector": "gaming/media/creator",
+      "type": "thematic",
+      "note": "Platforms where players/creators build games. playabl ('TikTok for User-generated Games') matches; dreamcraft ('anyone create and monetize video games') and rune ('play multiplayer games with your friends') are relevant but never say UGC."
+    },
+    {
+      "query": "AI calorie and nutrition tracking apps",
+      "expected": [
+        "snapcalorie.com",
+        "napkinmath.club",
+        "fitia.app",
+        "rex.fit",
+        "nori.ai"
+      ],
+      "thin": [
+        "nori.ai"
+      ],
+      "sector": "consumer apps",
+      "type": "problem",
+      "note": "Consumer nutrition tracking. snapcalorie/napkinmath/fitia/rex name nutrition tracking; nori ('AI health coach in your pocket') covers nutrition but with generic health framing."
+    },
+    {
+      "query": "freight transportation management system software",
+      "expected": [
+        "freterium.com",
+        "skydropx.com",
+        "keychainlogistics.com",
+        "chrt.com",
+        "nuvocargo.com",
+        "bluecargo.io"
+      ],
+      "thin": [],
+      "sector": "logistics",
+      "type": "category",
+      "note": "Straight category probe. freterium/skydropx use 'transport/logistic management'; chrt is 'logistics platform for time-critical shipping'; bluecargo is 'automated freight transactions'."
+    },
+    {
+      "query": "AI copilots that replace human back-office labor in logistics and trucking",
+      "expected": [
+        "burthq.com",
+        "arnata.com",
+        "lumari.ai",
+        "tiriel.ai",
+        "hemut.com"
+      ],
+      "thin": [
+        "hemut.com"
+      ],
+      "sector": "logistics",
+      "type": "thematic",
+      "note": "Investor 'AI labor' thesis. burthq='AI teammates for logistics', arnata='AI workers for the logistics industry', lumari='AI Digital Workers for Supply Chain', tiriel='AI workforce for freight dispatch'. THIN: hemut one-liner is 'AI-powered operating system for trucking companies' \u2014 no labor/back-office wording."
+    },
+    {
+      "query": "digital marketplace matching truckers with available loads",
+      "expected": [
+        "fleetworks.ai",
+        "rome.ai",
+        "peer-freight.com",
+        "lanesurf.com"
+      ],
+      "thin": [
+        "lanesurf.com"
+      ],
+      "sector": "mobility",
+      "type": "business_model",
+      "note": "Marketplace/network business-model query. fleetworks='marketplace matching trucks with jobs', rome='marketplace for truckers', peer-freight='AI-native freight brokerage'. THIN: lanesurf='Book any load in 10 minutes' \u2014 relevant but no marketplace/trucker vocab."
+    },
+    {
+      "query": "robots that automate the physical labor of picking and moving goods in warehouses",
+      "expected": [
+        "autopallet.bot",
+        "inloop-robotics.com",
+        "tryremy.ai",
+        "manifoldindustries.ai",
+        "powerhouseai.com"
+      ],
+      "thin": [],
+      "sector": "logistics",
+      "type": "problem",
+      "note": "Problem-oriented (physical warehouse labor). autopallet='robots that move boxes in warehouses', inloop='robotic arms that pick and pack', tryremy='automating dexterous tasks in warehouses', manifold='robotic labor for the supply chain', powerhouseai='warehouse automation'."
+    },
+    {
+      "query": "K-12 online tutoring and virtual schooling platforms",
+      "expected": [
+        "kidato.com",
+        "edu.vn",
+        "outschool.com",
+        "coderhouse.com",
+        "flintk12.com"
+      ],
+      "thin": [],
+      "sector": "edtech",
+      "type": "category",
+      "note": "kidato='Online school for K12', edu.vn='live after-school tutoring to K-12', outschool='live online learning platform kids 3-18', coderhouse='online live education'. THIN: flintk12='Personalized learning built for schools' \u2014 K12 relevant but no tutoring/school-platform phrasing matching query."
+    },
+    {
+      "query": "AI tutors delivering individualized instruction to each student",
+      "expected": [
+        "studdy.ai",
+        "ello.com",
+        "generallearning.com",
+        "excellence-ai.com",
+        "tegore.ai"
+      ],
+      "thin": [],
+      "sector": "edtech",
+      "type": "thematic",
+      "note": "Personalized-AI-education thesis. studdy='AI math tutor for every student', ello='building the world's first 1:1 AI teacher', generallearning='AI tutors for students', excellence-ai='AI tutor', tegore='AI-powered math tutor'."
+    },
+    {
+      "query": "farm robots for autonomous harvesting and weeding",
+      "expected": [
+        "fourgrowers.com",
+        "redbarnrobotics.com",
+        "bearflagrobotics.com",
+        "tryoctapulse.com"
+      ],
+      "thin": [],
+      "sector": "agtech",
+      "type": "category",
+      "note": "fourgrowers='robotic harvesting and analytics', redbarnrobotics='a Roomba for weeds on a farm', tryoctapulse='CV and robotics ... in fish farms'. THIN: bearflagrobotics='Autonomous driving technology for farm tractors' \u2014 farm robotics but no harvest/weed wording."
+    },
+    {
+      "query": "alternative proteins and the future of food",
+      "expected": [
+        "gfi.org",
+        "ordinaryseafood.com",
+        "sperofoods.co",
+        "planet-a-foods.com",
+        "inevitabletech.com",
+        "currentfoods.com"
+      ],
+      "thin": [
+        "currentfoods.com"
+      ],
+      "sector": "agtech",
+      "type": "thematic",
+      "note": "Alt-protein macro thesis. gfi='alternative proteins no longer alternative', ordinaryseafood='what Impossible did for meat', sperofoods='dairy reinvented from plants', planet-a-foods='next generation food ingredient'. THIN: currentfoods='Impossible foods of seafood' \u2014 no protein/alternative vocab."
+    },
+    {
+      "query": "electric fleet vehicles and charging infrastructure for commercial operators",
+      "expected": [
+        "statiq.in",
+        "curocharging.com",
+        "ridecell.com",
+        "flotthq.com",
+        "robodock.tech"
+      ],
+      "thin": [
+        "robodock.tech"
+      ],
+      "sector": "mobility",
+      "type": "multifacet",
+      "note": "Multi-facet prose (EV + charging + fleet + commercial). statiq='India's Largest EV charging network', curocharging='Electric fleets park and charge', ridecell='Fleet Intelligence Platform', flotthq='OS for vehicle fleet management'. THIN: robodock='robots that run autonomous depots for autonomous fleets' \u2014 fleet-adjacent, very different words."
+    },
+    {
+      "query": "vertical operating-system software for real estate brokerages",
+      "expected": [
+        "realpact.ai",
+        "proprise.ai",
+        "henry.ai",
+        "travoai.com",
+        "propexo.com"
+      ],
+      "thin": [],
+      "sector": "proptech",
+      "type": "business_model",
+      "note": "Vertical-SaaS business-model query. realpact='AI-native OS for Real Estate Brokerages', proprise='AI platform for CRE investment teams', henry='Automating Deal Decks for CRE Brokers', travoai='the brokerage that never sleeps', propexo='Plaid for Commercial Real Estate'."
+    },
+    {
+      "query": "reshoring and rebuilding the American industrial manufacturing base",
+      "expected": [
+        "provenmetal.com",
+        "advancedmetalresearch.com",
+        "rmfg.com",
+        "antropi.world"
+      ],
+      "thin": [],
+      "sector": "manufacturing",
+      "type": "thematic",
+      "note": "American-dynamism / reshoring thesis. provenmetal='AI-native electronics manufacturing for the American industrial base', advancedmetalresearch='Machine intelligence for American Welding', antropi='Autonomous CNC factories'. THIN: rmfg='Advanced Contract MFG for fast moving hardware' \u2014 domestic-manufacturing relevant, no reshoring/American vocab."
+    },
+    {
+      "query": "software for government procurement and public-sector workflows",
+      "expected": [
+        "hazelai.com",
+        "govguard.com",
+        "goveagle.com",
+        "senecagov.com"
+      ],
+      "thin": [],
+      "sector": "govtech",
+      "type": "precise",
+      "note": "Precise control / regression guard \u2014 vocab matches closely. hazelai='AI-enabled procurement for government', govguard='Automating Government Workflows', goveagle='AI for Government Contractors', senecagov='service request management software' for constituents."
+    }
+  ]
+}

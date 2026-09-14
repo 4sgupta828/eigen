@@ -323,33 +323,37 @@ def test_an_area_the_brief_did_not_name_ranks_instead_of_filtering():
     c, notes = cp.build_contract({"text": "ecommerce startups", "must": {"tech_area": ["consumer"]}},
                                  coverage={"tech_area": 0.5},
                                  value_counts={"tech_area": {"consumer": 900}}, brief="Ecommerce Startups")
-    assert "consumer" not in (c.must.get("tech_area") or [])
+    # POLICY (2026-09-14): tech_area RANKS, never FILTERS, for a typed brief — see test_areas. Both the
+    # model's approximation (consumer) and the brief's own word (ecommerce) land in prefer, never must.
+    assert "tech_area" not in c.must
     assert "consumer" in c.prefer.get("tech_area", [])
-    assert "ecommerce" in (c.must.get("tech_area") or []) + c.prefer.get("tech_area", [])
-    assert any("instead of filtering" in n for n in notes)
+    assert "ecommerce" in c.prefer.get("tech_area", [])
+    assert any("ranks" in n for n in notes)
 
 
-def test_the_brief_s_own_area_filters_once_the_index_holds_it():
-    """The same brief, with the index actually carrying ecommerce companies: now it filters."""
+def test_the_brief_s_own_area_ranks_even_once_the_index_holds_it():
+    """The same brief, index carrying ecommerce companies: it RANKS by area, it does not hard-filter."""
     c, _ = cp.build_contract({"text": "ecommerce startups", "must": {}},
                              coverage={"tech_area": 0.5},
                              value_counts={"tech_area": {"ecommerce": 216}}, brief="Ecommerce Startups")
-    assert c.must.get("tech_area") == ["ecommerce"]
+    assert "tech_area" not in c.must and c.prefer.get("tech_area") == ["ecommerce"]
 
 
-def test_an_area_the_brief_did_name_still_filters():
+def test_an_area_the_brief_did_name_ranks_not_filters():
     c, notes = cp.build_contract({"text": "robotics startups", "must": {"tech_area": ["robotics"]}},
                                  coverage={"tech_area": 0.5},
                                  value_counts={"tech_area": {"robotics": 300}}, brief="robotics startups")
-    assert c.must.get("tech_area") == ["robotics"] and not any("ranks results" in n for n in notes)
+    assert "tech_area" not in c.must and c.prefer.get("tech_area") == ["robotics"]
+    assert any("ranks" in n for n in notes)
 
 
-def test_the_named_area_survives_when_one_of_several_was_approximated():
+def test_named_and_approximated_areas_both_rank():
     c, _ = cp.build_contract({"text": "fintech and ecommerce", "must": {"tech_area": ["fintech", "consumer"]}},
                              coverage={"tech_area": 0.5},
                              value_counts={"tech_area": {"fintech": 500, "consumer": 900}},
                              brief="fintech and ecommerce startups")
-    assert c.must.get("tech_area") == ["fintech"] and "consumer" in c.prefer.get("tech_area", [])
+    assert "tech_area" not in c.must
+    assert {"fintech", "consumer"} <= set(c.prefer.get("tech_area", []))
 
 
 def test_a_state_comes_from_the_hq_and_only_then_from_a_filing():

@@ -56,13 +56,17 @@ def test_a_word_boundary_is_required():
     assert areas_for("Our development platform ships cropped images to developers.") == []
 
 
-def test_an_area_the_brief_names_outright_is_never_lost():
-    """"insurtech startups" came back with no tech_area at all, so nothing was filtered and all
-    17,613 companies were merely ranked."""
+def test_an_area_the_brief_names_outright_ranks_and_is_never_lost():
+    """POLICY (2026-09-14): tech_area RANKS, it does not FILTER, for a typed brief. The area a brief names
+    outright ("insurtech") must not be lost — but it goes to PREFER, not a hard must. The coarse vocabulary
+    scatters companies across adjacent areas (an agent-auth company filed under ai_infra/security), so a
+    hard tech_area filter drops exactly the relevant ones; with query expansion + the blind judge, ranking
+    by area beats filtering by it. A rail chip the user taps is still a hard filter (it bypasses compile)."""
     import api.startups.compile as cp
     c, notes = cp.build_contract({"text": "insurtech startups", "must": {}}, brief="insurtech startups")
-    assert c.must.get("tech_area") == ["insurance"]
-    assert any("named it" in n for n in notes)
+    assert "tech_area" not in c.must                      # never a hard filter from a typed brief
+    assert c.prefer.get("tech_area") == ["insurance"]     # ranks instead
+    assert any("ranks" in n for n in notes)
 
 
 def test_a_brief_that_merely_mentions_a_broad_word_is_untouched():

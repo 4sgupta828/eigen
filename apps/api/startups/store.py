@@ -14,7 +14,7 @@ from datetime import date, datetime, timezone
 
 from eigen_kernel.facets import UNKNOWN, FacetSchema, FacetType
 
-from .schema import KIND, SCHEMA
+from .schema import KIND, SCHEMA, SOFT_MUST_KEYS
 
 _DDL = """
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -550,7 +550,13 @@ class StartupStore:
                     continue
                 args.append(key); ki = len(args)
                 args.append(vals); vi = len(args)
-                cl.append(f"EXISTS (SELECT 1 FROM su_fact f WHERE f.company_id = c.id AND f.key = ${ki} AND f.value = ANY(${vi}))")
+                have = f"EXISTS (SELECT 1 FROM su_fact f WHERE f.company_id = c.id AND f.key = ${ki} AND f.value = ANY(${vi}))"
+                if key in SOFT_MUST_KEYS:
+                    # a descriptive facet known for a minority of the corpus: admit the value OR no value at all
+                    # (unknown is not a non-match), but still exclude a company whose known value is different.
+                    cl.append(f"({have} OR NOT EXISTS (SELECT 1 FROM su_fact f WHERE f.company_id = c.id AND f.key = ${ki}))")
+                else:
+                    cl.append(have)
         for key, vals in (exclude or {}).items():
             vals = [str(v) for v in (vals or []) if str(v)]
             if self._schema.key(key) is None or not vals:
@@ -628,12 +634,19 @@ class StartupStore:
             return await self._rows(conn, list(sims), sims)
 
     async def hybrid(self, kind: str, text: str, must: dict, *, cap: int = 400, exclude: dict | None = None,
-                     embed=None, k: int = 60) -> tuple[list[dict], dict]:
+                     embed=None, dense_text: str | None = None, k: int = 60) -> tuple[list[dict], dict]:
         """Both legs, reciprocal-rank-fused — the same shape the investor store uses.
 
         RRF rather than a score blend because cosine similarity and `ts_rank` are not on comparable
         scales; rank is the only thing the two legs agree on. The fused score is mapped back onto `sim`
         so the kernel evaluator, which knows nothing about fusion, ranks exactly as it did with one leg.
+
+        `dense_text`, when given, is a HyDE expansion of the query (see query_expand.py): a description of
+        the KIND of company sought, in the vocabulary a range of founders would use. It runs as a THIRD,
+        dense-only leg fused alongside the raw dense and lexical legs — so a company that words itself
+        differently ("approve AI actions" vs. "agentic ai") enters the pool, while the raw dense and the
+        LITERAL keyword leg keep precise queries precise. Measured: feeding the expansion to the keyword
+        leg too drifted precise queries badly, so the expansion touches only the dense side.
         """
         from eigen_kernel.facets.contract_search import rrf_fuse
         legs: dict = {}
@@ -643,6 +656,11 @@ class StartupStore:
                 legs["semantic"] = await self.semantic(kind, text, must, cap=cap, exclude=exclude, embed=embed)
             except Exception as e:      # noqa: BLE001 — an embedding outage degrades to keyword, never a 500
                 diag["degraded"] = f"embeddings unavailable ({type(e).__name__}): keyword only"
+            if dense_text and dense_text != text and "semantic" in legs:
+                try:
+                    legs["semantic_expanded"] = await self.semantic(kind, dense_text, must, cap=cap, exclude=exclude, embed=embed)
+                except Exception:       # noqa: BLE001 — the expansion is a bonus leg; its failure keeps the raw legs
+                    pass
         try:
             legs["keyword"] = await self.keyword(kind, text, must, cap=cap, exclude=exclude)
         except Exception:               # noqa: BLE001 — a malformed tsquery must not fail a search
