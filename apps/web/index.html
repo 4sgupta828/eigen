@@ -521,6 +521,9 @@
     background:rgba(var(--gold-rgb),.06);color:var(--gold);}
   .th-sample-btn:hover{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
   .th-sample-btn:disabled{opacity:.6;cursor:default;}
+  /* GenSimpleThesis sits beside the main sample; gap when side-by-side, wraps to its own line on phones. */
+  .th-sample-simple{margin-left:.5rem;}
+  @media (max-width:560px){ .th-sample-simple{margin-left:0;} }
   /* The discussion thread is the interface — visible, not folded away. */
   .th-thread{margin:.2rem 0 1rem;}
   .th-thread[hidden]{display:none;}
@@ -11591,6 +11594,8 @@ async function openShare(token){
     const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = introHtml();
     const samp = document.getElementById("th-sample");
     if(samp) samp.addEventListener("click", () => sampleThesis(samp));
+    const sampSimple = document.getElementById("th-sample-simple");
+    if(sampSimple) sampSimple.addEventListener("click", () => genSimpleThesis(sampSimple));
     conv().innerHTML = "";
     const thread = document.getElementById("th-thread"); if(thread) thread.hidden = true;
     const ledger = document.getElementById("th-ledger"); if(ledger) ledger.hidden = true;
@@ -11665,6 +11670,22 @@ async function openShare(token){
     }catch(e){
       note().textContent = e.message || String(e);
       if(btn){ btn.disabled = false; btn.textContent = "🎲 Generate a plausible thesis to try"; }
+    }
+  }
+
+  // GenSimpleThesis — a separate, gentler generator for high-school-level projects (own endpoint, plain
+  // language). Seeds the same intake conversation so a student can refine it, but it is its own button.
+  async function genSimpleThesis(btn){
+    if(STATE.busy) return;
+    if(btn){ btn.disabled = true; btn.textContent = "🎓 Generating…"; }
+    try{
+      const r = await fetch("/thesis/sample/simple", {method: "POST", headers: hdrs()});
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok || !d.thesis) throw new Error(d.detail || "could not generate one — try again");
+      await submit(d.thesis);   // start the genesis conversation with the simple idea
+    }catch(e){
+      note().textContent = e.message || String(e);
+      if(btn){ btn.disabled = false; btn.textContent = "🎓 GenSimpleThesis"; }
     }
   }
 
@@ -11868,6 +11889,8 @@ async function openShare(token){
       + '<p class="th-intro-cta">↑ Type your thesis in the box above to begin '
       + '<span class="th-intro-or">— or —</span></p>'
       + '<button type="button" class="th-sample-btn" id="th-sample">🎲 Generate a plausible thesis to try</button>'
+      + '<button type="button" class="th-sample-btn th-sample-simple" id="th-sample-simple" '
+      + 'title="A simpler idea at high-school project level — for students">🎓 GenSimpleThesis</button>'
       + "</div>";
   }
 
