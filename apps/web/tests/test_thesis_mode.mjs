@@ -172,14 +172,17 @@ test("phase is derived from the doc: draft → ready → tested", () => {
   assert.equal(api.phaseOf({claims: [{rung: "x"}], research_status: "completed"}), "tested");
 });
 
-test("genesis shows an editable proposed thesis with a Use button", () => {
+test("genesis is a conversation: the agent's turn shows the synthesised thesis + one Use button when ready", () => {
   const {api} = loadThesisModule();
-  const html = api.genesisHtml({proposed_thesis: "Mid-market firms will pay for X.",
-                                turns: [{role: "agent", payload: {questions: ["Who buys it?"], ready: false}}]});
-  assert.match(html, /id="th-proposed"/);
-  assert.match(html, /Mid-market firms will pay for X\./);
-  assert.match(html, /id="th-use"/);
-  assert.match(html, /Who buys it\?/);            // the clarifying question is surfaced as a chip
+  // Not ready yet → the turn is pure conversation, no confirm affordance, no editable form.
+  const talking = api.payloadHtml({ready: false, proposed_thesis: ""});
+  assert.doesNotMatch(talking, /th-landed|th-use|th-proposed/);
+  // Ready → the synthesised thesis is shown with a single "Use this thesis" button (no editable box).
+  const landed = api.payloadHtml({ready: true, proposed_thesis: "Mid-market 3PLs will pay for X, displacing spreadsheets."});
+  assert.match(landed, /th-landed/);
+  assert.match(landed, /Mid-market 3PLs will pay for X, displacing spreadsheets\./);
+  assert.match(landed, /id="th-use"/);
+  assert.doesNotMatch(landed, /id="th-proposed"|textarea/);     // no form — the chat is the interface
 });
 
 test("the pre-test brief shows the thesis, not an empty 'Ready to test' decision", () => {

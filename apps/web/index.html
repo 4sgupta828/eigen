@@ -518,32 +518,18 @@
     margin:.2rem 0 .7rem;padding-bottom:.5rem;border-bottom:1px solid var(--hair);}
   .th-hint{font-size:.76rem;color:var(--dim);line-height:1.55;margin:.15rem 0 .1rem;flex-basis:100%;}
   /* Genesis: the proposed thesis the user confirms before anything is decomposed. */
-  .th-propose{margin:.55rem 0 1rem;border:1px solid var(--hair);border-radius:16px;padding:1rem;
-    background:linear-gradient(145deg,color-mix(in srgb,var(--gold) 7%,var(--panel)),var(--panel));}
-  .th-propose h3{font:600 .62rem/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase;
-    color:var(--dim);margin:0 0 .5rem;}
-  .th-propose textarea{width:100%;box-sizing:border-box;font:inherit;font-size:.98rem;line-height:1.5;
-    padding:.6rem .7rem;border:1px solid var(--hair);border-radius:10px;background:var(--panel2);
-    color:var(--ink);resize:vertical;min-height:3.4rem;}
-  .th-propose textarea:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
-  .th-propose .th-propose-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;align-items:center;}
-  .th-propose .th-use{font-family:var(--mono);font-size:.72rem;padding:.5rem 1rem;border-radius:999px;
-    border:1px solid var(--gold);background:var(--gold);color:#fff;cursor:pointer;min-height:44px;font-weight:600;}
-  .th-propose .th-use:hover{filter:brightness(1.06);}
-  .th-propose .th-qs{margin:.6rem 0 0;display:flex;flex-wrap:wrap;gap:.4rem;}
-  .th-propose .th-q-chip{font-size:.78rem;color:var(--ink);background:var(--panel2);border:1px solid var(--hair);
-    border-radius:999px;padding:.3rem .7rem;cursor:pointer;min-height:36px;}
-  .th-propose .th-q-chip:hover{border-color:var(--gold);color:var(--gold);}
-  .th-propose .th-ready{font-size:.76rem;color:var(--dim);margin:.5rem 0 0;line-height:1.5;}
-  .th-propose .th-ready[data-grade="blocked"]{color:var(--gap);}
-  .th-propose .th-ready[data-grade="ready"]{color:var(--verified);}
-  .th-propose .th-assumes{margin:.7rem 0 0;padding:.6rem .75rem;border-left:2px solid rgba(var(--gold-rgb),.4);
-    background:rgba(var(--gold-rgb),.05);border-radius:0 8px 8px 0;}
-  .th-propose .th-assumes-h{font:600 .62rem/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase;
-    color:var(--gold);margin:0 0 .3rem;}
-  .th-propose .th-assumes ul{margin:0;padding-left:1.1rem;display:grid;gap:.2rem;}
-  .th-propose .th-assumes li{font-size:.82rem;line-height:1.5;color:var(--ink);}
-  .th-propose .th-assumes li::marker{color:var(--gold);}
+  /* Genesis: the conversation IS the interface. When the chat lands, the agent's turn shows the
+     synthesised thesis + one confirm button — the "landed" card below. */
+  .th-landed{margin:.6rem 0 .2rem;border:1px solid color-mix(in srgb,var(--gold) 30%,var(--hair));
+    border-radius:14px;padding:.8rem .9rem;
+    background:linear-gradient(145deg,color-mix(in srgb,var(--gold) 8%,var(--panel)),var(--panel));}
+  .th-landed-h{font:600 .62rem/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin:0 0 .4rem;}
+  .th-landed-q{margin:0;font:500 1.02rem/1.5 var(--serif);color:var(--ink);border-left:2px solid var(--gold);padding-left:.7rem;}
+  .th-landed-row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-top:.7rem;}
+  .th-landed .th-use{font-family:var(--mono);font-size:.72rem;padding:.5rem 1rem;border-radius:999px;
+    border:1px solid var(--gold);background:var(--gold);color:var(--on-accent);cursor:pointer;min-height:44px;font-weight:600;}
+  .th-landed .th-use:hover{filter:brightness(1.06);}
+  .th-landed-hint{font-size:.76rem;color:var(--dim);}
   /* Testing phase: progress only, no half-painted brief. */
   .th-testing{margin:.6rem 0 1rem;border:1px solid var(--hair);border-radius:16px;padding:1.1rem;
     background:var(--panel);text-align:center;}
@@ -11630,9 +11616,8 @@ async function openShare(token){
   // Commit the thesis the USER accepted — the only decomposition. Projects + approves the cost first.
   async function confirmThesis(){
     if(STATE.busy) return;
-    const box = document.getElementById("th-proposed");
-    const chosen = ((box && box.value) || STATE.proposed || "").trim();
-    if(chosen.length < 12){ note().textContent = "State the thesis as a full sentence first."; return; }
+    const chosen = (STATE.proposed || "").trim();
+    if(chosen.length < 12){ note().textContent = "Let's shape the thesis a little more first."; return; }
     STATE.busy = true; note().textContent = "";
     // Committing the thesis is free and instant — no cost prompt. (It seeds the fixed aspect ladder used
     // as evidence buckets; the only priced step is running a line of inquiry, gated there.)
@@ -11889,6 +11874,14 @@ async function openShare(token){
   function payloadHtml(pay){
     if(!pay) return "";
     let out = "";
+    // Genesis: when the conversation has landed, the agent's turn carries the SYNTHESISED thesis and a
+    // single confirm button — no form, no editable box. The author owns it: confirm, or keep talking.
+    if(pay.ready && pay.proposed_thesis){
+      out += '<div class="th-landed"><div class="th-landed-h">The thesis I’d test</div>'
+        + '<blockquote class="th-landed-q">' + esc2(pay.proposed_thesis) + "</blockquote>"
+        + '<div class="th-landed-row"><button type="button" class="th-use" id="th-use">Use this thesis →</button>'
+        + '<span class="th-landed-hint">or keep refining it in the chat below.</span></div></div>';
+    }
     if((pay.evidence || []).length)
       out += '<div class="th-sides">' + pay.evidence.map(evHtml).join("") + "</div>";
     if(pay.question){
@@ -12073,12 +12066,15 @@ async function openShare(token){
 
     const ledger = document.getElementById("th-ledger");
 
-    // DRAFT (genesis): the proposed thesis to confirm + the conversation. No claims, no brief yet.
+    // DRAFT (genesis): a pure CONVERSATION. The chat in #th-conv IS the interface — the agent draws the
+    // thesis out one question at a time and, when it lands, its turn shows the synthesised thesis + a
+    // single "Use this thesis" button (payloadHtml). No form, no editable box.
     if(phase === "draft"){
-      takes().innerHTML = genesisHtml(d);
-      wireGenesis();
+      takes().innerHTML = "";
       acts().innerHTML = "";
       if(ledger) ledger.hidden = true;
+      const use = document.getElementById("th-use");
+      if(use) use.addEventListener("click", confirmThesis);
       return;
     }
 
@@ -12103,41 +12099,6 @@ async function openShare(token){
   }
 
   // The proposed thesis, editable, with "Use this thesis" (the only decomposition) + any clarifiers.
-  function genesisHtml(d){
-    const proposed = STATE.proposed || d.proposed_thesis || d.thesis || "";
-    const lastAgent = [...(d.turns || [])].reverse().find(t => t.role === "agent");
-    const pay = (lastAgent && lastAgent.payload) || {};
-    const qs = pay.questions || [];
-    const grade = pay.status || "";                       // ready | needs_sharpening | blocked
-    const assumptions = pay.assumptions || [];
-    const ready = !(lastAgent && lastAgent.payload) || pay.ready !== false;
-    // The grader's read of the draft — a sharp thesis is a falsifiable claim, not a topic.
-    const hint = grade === "blocked"
-        ? "This is still a topic, not a thesis — name the buyer and the claim you'd test."
-        : (ready ? "Falsifiable and specific enough to test. Use it, or keep sharpening."
-                 : "Sharpen the missing piece above, or answer a question — then use it.");
-    return '<section class="th-propose" aria-label="Proposed thesis">'
-      + "<h3>Proposed thesis — edit it, then use it</h3>"
-      + '<textarea id="th-proposed" rows="2" aria-label="Proposed thesis">' + esc2(proposed) + "</textarea>"
-      + (qs.length ? '<div class="th-qs">' + qs.map(qq =>
-          '<button type="button" class="th-q-chip" data-q="' + esc2(qq) + '">' + esc2(qq) + "</button>").join("") + "</div>" : "")
-      + (assumptions.length ? '<div class="th-assumes"><div class="th-assumes-h">This thesis rests on — worth testing:</div><ul>'
-          + assumptions.map(a => "<li>" + esc2(a) + "</li>").join("") + "</ul></div>" : "")
-      + '<div class="th-propose-row"><button type="button" class="th-use" id="th-use">Use this thesis →</button>'
-      + '<span class="th-ready" data-grade="' + esc2(grade) + '">' + esc2(hint) + "</span></div>"
-      + "</section>";
-  }
-
-  function wireGenesis(){
-    const use = document.getElementById("th-use");
-    if(use) use.addEventListener("click", confirmThesis);
-    // Clicking a clarifying question focuses the composer so the user can answer it in their own words.
-    takes().querySelectorAll(".th-q-chip").forEach(b => b.addEventListener("click", () => {
-      const composer = document.getElementById("q");
-      if(composer){ composer.focus(); }
-    }));
-  }
-
   // Before a test: show the thesis, then the lines of inquiry drafted below.
   function pretestHtml(d){
     return '<section class="th-decision" aria-label="Thesis, ready to test">'
@@ -12731,7 +12692,7 @@ async function openShare(token){
 
   window.TH = {submit, enter, reset, open, startTest, render, confirmThesis,
     __test:{ownerHeaders, thesisUrl, parseThesisHash, canMutate, decisionHtml, linkEvidence,
-            newThesisHash, fmtBody, turnHtml, introHtml, phaseOf, genesisHtml, pretestHtml,
+            newThesisHash, fmtBody, turnHtml, introHtml, phaseOf, payloadHtml, pretestHtml,
             contextHtml, inqHtml, qnHtml, LENS, segmentOf, expertQueryFor, insightsHtml,
             _setState: (patch) => Object.assign(STATE, patch),
             claimHtml: (c, focused, owner, answers) => { STATE.answers = answers || {}; return claimHtml(c, focused, owner); }}};

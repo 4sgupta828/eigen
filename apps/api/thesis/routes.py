@@ -281,23 +281,21 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             await tstore.add_turn(pool, thesis_id, role="user", text=said)
         turns = d.get("turns") or []
         used = sum(1 for t in turns if t.get("role") == "agent" and t.get("move") == "genesis")
-        # Two-model genesis: the partner (default) proposes; a DIFFERENT seam (strong/cross-family)
-        # grades readiness — the partner cannot rubber-stamp its own vague thesis.
+        # A conversational intake turn (factra's genesis_intake pattern): natural chat, one question at a
+        # time, the model owns `ready`. Only when it lands do we SYNTHESISE the whole conversation into a
+        # clean falsifiable thesis (strong model for that money step) — the author still confirms it.
         got = await gen.turn(_llm_json(), said=said, history=turns,
-                             budget_left=max(0, gen.GENESIS_BUDGET - used),
-                             validator_llm=_strong_llm_json())
-        proposed = got.get("proposed_thesis") or d.get("proposed_thesis") or d.get("thesis") or ""
-        await tstore.set_proposed_thesis(pool, thesis_id, proposed)
-        reply = got.get("reply") or ("" if got.get("ready") else "Tell me a little more.")
-        assumptions = got.get("assumptions") or []
-        if reply or got.get("questions") or assumptions:
-            await tstore.add_turn(pool, thesis_id, role="agent", move="genesis", text=reply,
-                                  payload={"questions": got.get("questions") or [],
-                                           "proposed_thesis": proposed, "ready": bool(got.get("ready")),
-                                           "status": got.get("status") or "", "assumptions": assumptions})
-        return {"status": "ok", "reply": reply, "proposed_thesis": proposed,
-                "questions": got.get("questions") or [], "ready": bool(got.get("ready")),
-                "grade": got.get("status") or "", "assumptions": assumptions,
+                             budget_left=max(0, gen.GENESIS_BUDGET - used))
+        ready = bool(got.get("ready"))
+        reply = got.get("reply") or ("Ready when you are." if ready else "Tell me a little more.")
+        proposed = d.get("proposed_thesis") or d.get("thesis") or ""
+        if ready:
+            proposed = await gen.synthesize(_strong_llm_json(), history=turns, said=said) or proposed
+            await tstore.set_proposed_thesis(pool, thesis_id, proposed)
+        await tstore.add_turn(pool, thesis_id, role="agent", move="genesis", text=reply,
+                              payload={"ready": ready, "proposed_thesis": proposed if ready else ""})
+        return {"status": "ok", "reply": reply, "ready": ready,
+                "proposed_thesis": proposed if ready else "",
                 "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
                                            owner_token=x_thesis_owner)}
 
