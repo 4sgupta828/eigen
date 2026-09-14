@@ -72,6 +72,17 @@ async def test_sample_thesis_swallows_a_bad_model():
 
 
 @pytest.mark.asyncio
+async def test_sample_thesis_keeps_a_detailed_thesis_up_to_the_raised_cap():
+    # The sample is now a DETAILED (~250-300 word) thesis; the proposed-thesis path bound was raised
+    # from 600 to THESIS_CAP (2000, matching commit) so it is no longer clipped to a one-liner.
+    detailed = "Word " * 700               # ~3500 chars of whole sentences, far over the old 600 cap
+    detailed = ". ".join(detailed.split()) + "."
+    out = await genesis.sample_thesis(_llm({"thesis": detailed}))
+    assert 600 < len(out) <= genesis.THESIS_CAP
+    assert out.endswith(".") and " " not in out[-3:]   # clipped on a sentence boundary, never mid-word
+
+
+@pytest.mark.asyncio
 async def test_follow_up_reasons_over_all_selected_claims_evidence():
     from api.thesis import converse
     captured = {}

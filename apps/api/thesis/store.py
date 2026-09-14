@@ -380,12 +380,14 @@ async def set_verdict(pool, thesis_id: str, rung: str, verdict: str, note: str =
 
 
 async def set_proposed_thesis(pool, thesis_id: str, proposed: str) -> None:
-    """The genesis agent's current best one-sentence thesis. Draft-only; overwritten each turn."""
+    """The genesis agent's current best thesis, draft-only, overwritten each turn. `proposed_thesis` is
+    an unbounded `text` column; the 2000-char cap matches commit_claims (the ceiling when this becomes
+    the committed thesis) so a detailed sample/genesis thesis survives the whole draft path uncut."""
     await ensure_schema(pool)
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE ts_thesis SET proposed_thesis = $2, updated_at = now() WHERE id = $1",
-            thesis_id, (proposed or "")[:600])
+            thesis_id, (proposed or "")[:2000])
 
 
 async def claims_tested_by_run(pool, thesis_id: str, run_id: str) -> set[str]:
