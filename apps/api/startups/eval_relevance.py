@@ -73,7 +73,7 @@ async def run(base: str, mode: str, deployed: bool) -> None:
             q, expected, thin = c["query"], c["expected"], set(c.get("thin") or [])
             base_rows = await _search(client, base, q, mode)
             br = _ranks(base_rows, expected)
-            base_ranks.append({"query": q, "ranks": br})
+            base_ranks.append({"query": q, "ranks": br, "thin": list(thin)})
 
             if deployed:
                 er = br
@@ -81,7 +81,7 @@ async def run(base: str, mode: str, deployed: bool) -> None:
                 expanded = await expand_query(llm_json, q)
                 exp_rows = await _search(client, base, expanded or q, mode) if expanded else base_rows
                 er = _ranks(exp_rows, expected)
-            exp_ranks.append({"query": q, "ranks": er})
+            exp_ranks.append({"query": q, "ranks": er, "thin": list(thin)})
 
             print(f"\n=== {q!r}  ({'deployed' if deployed else 'baseline vs expanded'}, mode={mode}) ===")
             for d in expected:
