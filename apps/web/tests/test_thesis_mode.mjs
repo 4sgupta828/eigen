@@ -191,6 +191,19 @@ test("genesis shows the UPDATED thesis every turn with a Use button — no form"
   assert.doesNotMatch(ready, /id="th-proposed"|textarea/);     // no editable form — the chat is the interface
 });
 
+test("the thesis card redlines what changed since the previous turn", () => {
+  const {api} = loadThesisModule();
+  const prev = "Mid-market 3PLs will pay for route planning.";
+  const curr = "Mid-market 3PLs (40-200 trucks) will pay for automated route planning.";
+  const html = api.payloadHtml({ready: false, proposed_thesis: curr}, prev);
+  assert.match(html, /<ins>\(40-200/);                       // the added words are wrapped in <ins>
+  assert.match(html, /<ins>automated/);
+  assert.match(html, /th-redline-key/);                    // the added/removed key shows
+  // no previous thesis → plain, no redline markup
+  const first = api.payloadHtml({ready: false, proposed_thesis: curr}, "");
+  assert.doesNotMatch(first, /<ins>|<del>/);
+});
+
 test("the landing offers a one-click 'generate a plausible thesis' button wired to /thesis/sample", () => {
   const {api} = loadThesisModule();
   const html = api.introHtml();
