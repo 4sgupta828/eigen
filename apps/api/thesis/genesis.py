@@ -134,7 +134,7 @@ async def turn(llm_json, *, said: str, history: list[dict], budget_left: int,
         d = raw if isinstance(raw, dict) else json.loads(raw)
     except Exception:      # noqa: BLE001 — a genesis turn never blocks the author
         return {"reply": "", "proposed_thesis": "", "ready": True, "memory": mem, "thought": ""}
-    thesis = str(d.get("thesis") or "").strip()[:600]
+    thesis = str(d.get("thesis") or "").strip()[:THESIS_CAP]   # same bound as the seed + commit path
     reply = str(d.get("reply") or "").strip()[:1600]   # room for a substantive analyst reply
     ready = bool(d.get("ready")) or done
     # Updated memory carried forward; fall back to prior memory for any field the model dropped.
@@ -148,24 +148,72 @@ async def turn(llm_json, *, said: str, history: list[dict], budget_left: int,
             "thought": str(d.get("thought") or "").strip()[:600]}
 
 
-_SAMPLE_SYSTEM = """You invent ONE plausible, specific, FALSIFIABLE early-stage startup thesis that a VC
-would actually diligence — realistic and grounded in how the named market really works, never sci-fi.
-Name the PRODUCT, a SPECIFIC buyer segment (never "companies"/"enterprises"), the SUBSTITUTE it displaces,
-and a MECHANISM (a "because ..." — a threshold, cost crossover, or shift). One or two sentences, stated
-flatly enough that evidence could prove it FALSE. Return ONE JSON object: {"thesis": "..."}."""
+# A sample thesis is a one-click SEED for the genesis conversation, not a committed thesis. Downstream it
+# is dropped in as the first author turn, stored via set_proposed_thesis, and rendered as a chat bubble.
+# We want it genuinely DETAILED (~250-300 words), so the whole proposed-thesis path shares one bound —
+# THESIS_CAP — aligned to the committed-thesis ceiling (commit_claims / set_proposed_thesis / turn all
+# cap here); the `thesis`/`proposed_thesis` DB columns are unbounded `text`, and `decompose` reads the
+# full text, so a detailed thesis survives end-to-end without silent truncation. Novelty is forced by
+# making the model do the discovery first (scan the consensus, name the wedge) as required JSON fields
+# before it may write the thesis; that reasoning shapes the output, then is discarded.
+THESIS_CAP = 2000
+_SAMPLE_THESIS_CAP = THESIS_CAP
+
+_SAMPLE_SYSTEM = """You are a contrarian venture partner inventing ONE early-stage thesis worth
+diligencing in the named sector — SPECIFIC, FALSIFIABLE, and genuinely NON-OBVIOUS. Realistic and
+grounded in how the market actually works today, never sci-fi and never a trend-piece platitude. Do the
+work in order:
+
+1. SCAN the sector for the CONSENSUS takes — the theses a generalist pitches first. List them so you can
+   deliberately AVOID them; the obvious thesis is a failure here.
+2. Find the WEDGE the consensus misses: a specific emerging shift, a mispriced constraint, a threshold
+   about to be crossed, a regulation taking effect, or a buyer whose behaviour is changing. Name the real
+   mechanism, not a vibe.
+3. Write the THESIS on that wedge as a DETAILED, dense argument in FLOWING PROSE — never labelled fields
+   or headers like "Product:" / "Buyer:". About 6-10 sentences (~250-300 words) that lay out, in order:
+   the specific non-obvious WEDGE and why the consensus misses it; the PRODUCT; the SPECIFIC buyer
+   segment (never "companies" or "enterprises"); the incumbent or SUBSTITUTE it displaces and why that
+   substitute is losing; the MECHANISM (a "because ..." — a threshold, cost crossover, or behaviour
+   shift); WHY NOW (the concrete change making it possible/urgent now); and the one or two LOAD-BEARING
+   ASSUMPTIONS the whole thesis rests on. Dense with the real nouns of the market — actual segments,
+   standards, regulations, incumbents, cost structures, adoption barriers. State it flatly enough that
+   evidence could prove it FALSE. No hedging ("may", "could"), no flattery, no filler, no bullet lists.
+
+Return ONE JSON object exactly:
+{"consensus": ["<obvious takes you are deliberately NOT proposing>"],
+ "wedge": "<the specific non-obvious shift/mechanism you are betting on>",
+ "thesis": "<the detailed ~6-10 sentence falsifiable thesis: wedge, product, specific buyer, substitute, mechanism, why now, load-bearing assumptions>"}
+Output ONLY the JSON object."""
 
 
 async def sample_thesis(llm_json, *, sector: str = "") -> str:
-    """A fresh, realistic, falsifiable startup thesis from the model's parametric knowledge — a
-    one-click way to try the intake. Varied by a random sector seed. -> the sentence, or '' on failure."""
+    """A fresh, realistic, falsifiable, NON-OBVIOUS startup thesis from the model's parametric knowledge —
+    a one-click seed for the intake conversation. Varied by a random sector. The model discovers first
+    (consensus → wedge) and then writes a detailed thesis; we return only the thesis statement (the seed),
+    bounded so it survives the downstream set_proposed_thesis cap unchanged. -> the thesis, or '' on
+    failure (no model, bad JSON) so the endpoint can answer 502 rather than fabricate."""
     if llm_json is None:
         return ""
     sector = sector or random.choice(_SECTORS)
     try:
         raw = await llm_json(_SAMPLE_SYSTEM,
-                             f"SECTOR: {sector}\nInvent one fresh, specific thesis in this sector now. "
-                             "Return the JSON.")
+                             f"SECTOR: {sector}\nScan the consensus, find the non-obvious wedge, then "
+                             "write the detailed falsifiable thesis on that wedge. Return the JSON.")
         d = raw if isinstance(raw, dict) else json.loads(raw)
-        return str((d or {}).get("thesis") or d.get("text") or "").strip()[:600]
+        d = d or {}
+        return _clip_sentence(str(d.get("thesis") or d.get("text") or "").strip(), _SAMPLE_THESIS_CAP)
     except Exception:      # noqa: BLE001 — a helper; a failure just means no sample this click
         return ""
+
+
+def _clip_sentence(text: str, cap: int) -> str:
+    """Bound `text` to `cap` chars WITHOUT cutting mid-word: trim back to the last sentence end (or, if
+    none, the last space) so the seed never ends on a truncated fragment."""
+    if len(text) <= cap:
+        return text
+    head = text[:cap]
+    cut = max(head.rfind(". "), head.rfind("! "), head.rfind("? "))
+    if cut >= cap // 2:
+        return head[:cut + 1].strip()
+    sp = head.rfind(" ")
+    return (head[:sp] if sp >= cap // 2 else head).strip()
