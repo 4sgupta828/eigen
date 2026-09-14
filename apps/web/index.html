@@ -535,6 +535,15 @@
     border-radius:999px;padding:.3rem .7rem;cursor:pointer;min-height:36px;}
   .th-propose .th-q-chip:hover{border-color:var(--gold);color:var(--gold);}
   .th-propose .th-ready{font-size:.76rem;color:var(--dim);margin:.5rem 0 0;line-height:1.5;}
+  .th-propose .th-ready[data-grade="blocked"]{color:var(--gap);}
+  .th-propose .th-ready[data-grade="ready"]{color:var(--verified);}
+  .th-propose .th-assumes{margin:.7rem 0 0;padding:.6rem .75rem;border-left:2px solid rgba(var(--gold-rgb),.4);
+    background:rgba(var(--gold-rgb),.05);border-radius:0 8px 8px 0;}
+  .th-propose .th-assumes-h{font:600 .62rem/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase;
+    color:var(--gold);margin:0 0 .3rem;}
+  .th-propose .th-assumes ul{margin:0;padding-left:1.1rem;display:grid;gap:.2rem;}
+  .th-propose .th-assumes li{font-size:.82rem;line-height:1.5;color:var(--ink);}
+  .th-propose .th-assumes li::marker{color:var(--gold);}
   /* Testing phase: progress only, no half-painted brief. */
   .th-testing{margin:.6rem 0 1rem;border:1px solid var(--hair);border-radius:16px;padding:1.1rem;
     background:var(--panel);text-align:center;}
@@ -12097,17 +12106,25 @@ async function openShare(token){
   function genesisHtml(d){
     const proposed = STATE.proposed || d.proposed_thesis || d.thesis || "";
     const lastAgent = [...(d.turns || [])].reverse().find(t => t.role === "agent");
-    const qs = (lastAgent && lastAgent.payload && lastAgent.payload.questions) || [];
-    const ready = !(lastAgent && lastAgent.payload) || lastAgent.payload.ready !== false;
+    const pay = (lastAgent && lastAgent.payload) || {};
+    const qs = pay.questions || [];
+    const grade = pay.status || "";                       // ready | needs_sharpening | blocked
+    const assumptions = pay.assumptions || [];
+    const ready = !(lastAgent && lastAgent.payload) || pay.ready !== false;
+    // The grader's read of the draft — a sharp thesis is a falsifiable claim, not a topic.
+    const hint = grade === "blocked"
+        ? "This is still a topic, not a thesis — name the buyer and the claim you'd test."
+        : (ready ? "Falsifiable and specific enough to test. Use it, or keep sharpening."
+                 : "Sharpen the missing piece above, or answer a question — then use it.");
     return '<section class="th-propose" aria-label="Proposed thesis">'
       + "<h3>Proposed thesis — edit it, then use it</h3>"
       + '<textarea id="th-proposed" rows="2" aria-label="Proposed thesis">' + esc2(proposed) + "</textarea>"
       + (qs.length ? '<div class="th-qs">' + qs.map(qq =>
           '<button type="button" class="th-q-chip" data-q="' + esc2(qq) + '">' + esc2(qq) + "</button>").join("") + "</div>" : "")
+      + (assumptions.length ? '<div class="th-assumes"><div class="th-assumes-h">This thesis rests on — worth testing:</div><ul>'
+          + assumptions.map(a => "<li>" + esc2(a) + "</li>").join("") + "</ul></div>" : "")
       + '<div class="th-propose-row"><button type="button" class="th-use" id="th-use">Use this thesis →</button>'
-      + '<span class="th-ready">' + (ready
-          ? "Looks concrete. Use it to build the claim ladder, or keep refining."
-          : "Add the missing piece above, or answer a question — then use it.") + "</span></div>"
+      + '<span class="th-ready" data-grade="' + esc2(grade) + '">' + esc2(hint) + "</span></div>"
       + "</section>";
   }
 

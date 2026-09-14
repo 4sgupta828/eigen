@@ -281,17 +281,23 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             await tstore.add_turn(pool, thesis_id, role="user", text=said)
         turns = d.get("turns") or []
         used = sum(1 for t in turns if t.get("role") == "agent" and t.get("move") == "genesis")
+        # Two-model genesis: the partner (default) proposes; a DIFFERENT seam (strong/cross-family)
+        # grades readiness — the partner cannot rubber-stamp its own vague thesis.
         got = await gen.turn(_llm_json(), said=said, history=turns,
-                             budget_left=max(0, gen.GENESIS_BUDGET - used))
+                             budget_left=max(0, gen.GENESIS_BUDGET - used),
+                             validator_llm=_strong_llm_json())
         proposed = got.get("proposed_thesis") or d.get("proposed_thesis") or d.get("thesis") or ""
         await tstore.set_proposed_thesis(pool, thesis_id, proposed)
         reply = got.get("reply") or ("" if got.get("ready") else "Tell me a little more.")
-        if reply or got.get("questions"):
+        assumptions = got.get("assumptions") or []
+        if reply or got.get("questions") or assumptions:
             await tstore.add_turn(pool, thesis_id, role="agent", move="genesis", text=reply,
                                   payload={"questions": got.get("questions") or [],
-                                           "proposed_thesis": proposed, "ready": bool(got.get("ready"))})
+                                           "proposed_thesis": proposed, "ready": bool(got.get("ready")),
+                                           "status": got.get("status") or "", "assumptions": assumptions})
         return {"status": "ok", "reply": reply, "proposed_thesis": proposed,
                 "questions": got.get("questions") or [], "ready": bool(got.get("ready")),
+                "grade": got.get("status") or "", "assumptions": assumptions,
                 "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
                                            owner_token=x_thesis_owner)}
 
