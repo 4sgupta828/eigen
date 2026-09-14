@@ -11,6 +11,7 @@ ownership on a resolved user id instead of a raw bearer token.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import hashlib
 import hmac
@@ -217,9 +218,32 @@ class SpendCapError(RuntimeError):
     pass
 
 
+_SCHEMA_READY = False
+_SCHEMA_LOCK = asyncio.Lock()
+
+
 async def ensure_schema(pool) -> None:
-    async with pool.acquire() as conn:
-        await conn.execute(_DDL)
+    """Run the DDL ONCE per process, serialized. Running the full 40-statement DDL on every store call
+    (as this used to) took ALTER/CREATE-INDEX locks on every table each request — and once ts_transcript
+    added a FK to ts_thesis, two concurrent requests (e.g. add_turn + GET) deadlocked on those DDL locks.
+    The DDL is idempotent (IF NOT EXISTS), so doing it once at first use is correct and lock-free after."""
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    async with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
+            return
+        last = None
+        for _ in range(3):        # a rare cross-worker startup collision on the idempotent DDL → retry
+            try:
+                async with pool.acquire() as conn:
+                    await conn.execute(_DDL)
+                _SCHEMA_READY = True
+                return
+            except Exception as exc:      # noqa: BLE001
+                last = exc
+                await asyncio.sleep(0.4)
+        raise last
 
 
 def _j(v):
