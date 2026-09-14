@@ -299,6 +299,16 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
                                            owner_token=x_thesis_owner)}
 
+    @r.post("/thesis/sample")
+    async def tl_sample():
+        """Generate ONE plausible, realistic, falsifiable startup thesis (from the model's parametric
+        knowledge, varied by a random sector) — a one-click way to try the intake conversation. No auth,
+        no persistence; a tiny LLM call. Strong model for a genuinely realistic thesis."""
+        t = await gen.sample_thesis(_strong_llm_json())
+        if not t:
+            raise HTTPException(status_code=502, detail="could not generate a thesis just now — try again")
+        return {"status": "ok", "thesis": t}
+
     @r.post("/thesis/{thesis_id}/confirm")
     async def tl_confirm(thesis_id: str, body: ConfirmIn, authorization: str = Header(default=""),
                          x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):

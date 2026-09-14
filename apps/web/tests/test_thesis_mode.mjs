@@ -185,6 +185,23 @@ test("genesis is a conversation: the agent's turn shows the synthesised thesis +
   assert.doesNotMatch(landed, /id="th-proposed"|textarea/);     // no form — the chat is the interface
 });
 
+test("the landing offers a one-click 'generate a plausible thesis' button wired to /thesis/sample", () => {
+  const {api} = loadThesisModule();
+  const html = api.introHtml();
+  assert.match(html, /id="th-sample"/);
+  assert.match(html, /Generate a plausible thesis/);
+  assert.match(SRC, /function sampleThesis\(/);
+  assert.match(SRC, /\/thesis\/sample"/);
+  assert.match(SRC, /await submit\(d\.thesis\)/);   // the generated thesis starts the genesis chat
+});
+
+test("genesis docks the composer (ChatGPT-style) once the conversation starts", () => {
+  // draft + turns → body.chatting so the composer pins to the bottom and the thread scrolls above it
+  assert.match(SRC, /const genesisChat = phase === "draft" && turns\.length > 0/);
+  assert.match(SRC, /classList\.toggle\("chatting", genesisChat\)/);
+  assert.match(SRC, /body\[data-mode="thesis"\]\.chatting \.th-main\{padding-bottom/);
+});
+
 test("the pre-test brief shows the thesis, not an empty 'Ready to test' decision", () => {
   const {api} = loadThesisModule();
   const html = api.pretestHtml({thesis: "A concrete thesis.", is_owner: true,

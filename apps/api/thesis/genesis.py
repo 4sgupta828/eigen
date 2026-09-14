@@ -15,6 +15,14 @@ trap them) and the fact that nothing commits until the HUMAN confirms the synthe
 from __future__ import annotations
 
 import json
+import random
+
+# Sectors to seed a varied sample thesis, so "generate a plausible thesis" isn't the same idea twice.
+_SECTORS = ("AI infrastructure", "developer tools", "climate / energy", "biotech / drug discovery",
+            "fintech / payments", "robotics / automation", "logistics / supply chain",
+            "healthcare delivery", "cybersecurity", "advanced materials / manufacturing",
+            "space / geospatial", "agriculture / food", "legal / compliance tech", "construction tech",
+            "semiconductors", "vertical SaaS", "data infrastructure")
 
 # Turns of natural conversation before code stops and lets the author proceed with what they have.
 # It's a real dialogue now, so the ceiling is generous but bounded.
@@ -105,3 +113,26 @@ async def synthesize(llm_json, *, history: list[dict], said: str = "") -> str:
     except Exception:      # noqa: BLE001 — fall back to the author's own words
         return fallback
     return (text or fallback)[:600]
+
+
+_SAMPLE_SYSTEM = """You invent ONE plausible, specific, FALSIFIABLE early-stage startup thesis that a VC
+would actually diligence — realistic and grounded in how the named market really works, never sci-fi.
+Name the PRODUCT, a SPECIFIC buyer segment (never "companies"/"enterprises"), the SUBSTITUTE it displaces,
+and a MECHANISM (a "because ..." — a threshold, cost crossover, or shift). One or two sentences, stated
+flatly enough that evidence could prove it FALSE. Return ONE JSON object: {"thesis": "..."}."""
+
+
+async def sample_thesis(llm_json, *, sector: str = "") -> str:
+    """A fresh, realistic, falsifiable startup thesis from the model's parametric knowledge — a
+    one-click way to try the intake. Varied by a random sector seed. -> the sentence, or '' on failure."""
+    if llm_json is None:
+        return ""
+    sector = sector or random.choice(_SECTORS)
+    try:
+        raw = await llm_json(_SAMPLE_SYSTEM,
+                             f"SECTOR: {sector}\nInvent one fresh, specific thesis in this sector now. "
+                             "Return the JSON.")
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+        return str((d or {}).get("thesis") or d.get("text") or "").strip()[:600]
+    except Exception:      # noqa: BLE001 — a helper; a failure just means no sample this click
+        return ""

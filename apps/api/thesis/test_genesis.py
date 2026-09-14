@@ -94,3 +94,17 @@ async def test_follow_up_no_model_points_at_evidence_without_fabricating():
                                    claims=[{"rung": "problem_exists", "evidence": []}],
                                    said="what does this say?", history=[])
     assert "evidence" in out["reply"].lower()   # deterministic, points at the shown evidence
+
+
+@pytest.mark.asyncio
+async def test_sample_thesis_generates_a_sentence_and_is_safe_without_a_model():
+    out = await genesis.sample_thesis(_llm({"thesis": "Mid-market clinics will pay for X, displacing Y."}))
+    assert out.startswith("Mid-market clinics will pay")
+    assert await genesis.sample_thesis(None) == ""       # no model → nothing (never fabricate blindly)
+
+
+@pytest.mark.asyncio
+async def test_sample_thesis_swallows_a_bad_model():
+    async def boom(_s, _u):
+        raise ValueError("down")
+    assert await genesis.sample_thesis(boom) == ""
