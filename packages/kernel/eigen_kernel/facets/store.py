@@ -38,6 +38,8 @@ def matches_must(row: dict, must: dict | None, schema: FacetSchema) -> bool:
         if not want_l:
             continue
         if not have:
+            if k.soft_must:      # absence is unknown, not a mismatch — a different KNOWN value still fails below
+                continue
             return False
         if k.type is FacetType.hierarchical:
             if not any(schema.contains(key, h, w) for h in have for w in want_l):

@@ -36,6 +36,9 @@ class FacetKey:
     via: str = ""                          # facet-through-relation: this key is read off the related entity named by `via`
     navigable: bool = True                 # rendered in the rail and counted
     top_n: int = 12                        # set / long-tail keys: how many values the counts keep
+    soft_must: bool = False                # a must on this key admits a row with NO value for it (absence is
+                                           # unknown, not a mismatch) — fail-safe filtering over sparse facets;
+                                           # a DIFFERENT known value still fails. Set by the vertical's schema.
 
     def __post_init__(self) -> None:
         if self.type in (FacetType.categorical, FacetType.ordinal) and not self.values:

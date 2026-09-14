@@ -73,10 +73,10 @@ SCHEMA = FacetSchema(keys=(
                        "gaming_media = games, creator tools, entertainment; agtech_food = agriculture, food, "
                        "restaurants; crypto_web3; mobility = automotive, fleets, aviation; manufacturing = industrial "
                        "and factory software; govtech = public sector. A company can be both (a payments API for "
-                       "online stores is fintech AND ecommerce)")),
-    FacetKey(key="customer", type=FacetType.categorical, kinds=C, label="Customer", values=CUSTOMERS,
+                       "online stores is fintech AND ecommerce)"), soft_must=True),
+    FacetKey(key="customer", type=FacetType.categorical, kinds=C, label="Customer", values=CUSTOMERS, soft_must=True,
              guidance="who buys: enterprise, smb, developer, consumer, government — as the text states or clearly implies"),
-    FacetKey(key="business_model", type=FacetType.categorical, kinds=C, label="Business model", values=BUSINESS_MODELS,
+    FacetKey(key="business_model", type=FacetType.categorical, kinds=C, label="Business model", values=BUSINESS_MODELS, soft_must=True,
              guidance="how they charge, only when the text says (pricing page, 'usage-based', 'marketplace', hardware sales, open core)"),
     FacetKey(key="status", type=FacetType.categorical, kinds=C, label="Status", values=STATUSES, guidance="acquired when the pages say acquired / joining / has joined another company; shut_down when they say closed or wound down; public when listed; else active"),
     # ---- backers and programs ----
@@ -122,8 +122,9 @@ LOW_COVERAGE_DEFAULT_PREFER = ("arr",)
 # that the company is a non-match ("unknown is never a 'no'" — the evidence-typed discipline). A company with a
 # DIFFERENT known value is still excluded; the unknown majority stays in the pool and is ranked by the words.
 # Deliberate structural filters (program, investor, stage, metro, country, status) are NOT softened — a must
-# there is the user drawing a hard line, and absence reasonably excludes.
-SOFT_MUST_KEYS = ("tech_area", "customer", "business_model")
+# there is the user drawing a hard line, and absence reasonably excludes. The flag lives on the FacetKey
+# (soft_must=True) so the kernel's matches_must and the store's _must_sql read one source of truth.
+SOFT_MUST_KEYS = tuple(k.key for k in SCHEMA.keys if getattr(k, "soft_must", False))
 
 WEIGHTS = FacetWeights(
     prefer={"program": 0.15, "lead_investor": 0.15, "investor": 0.10, "tech_area": 0.12, "founder_prior_company": 0.12,
