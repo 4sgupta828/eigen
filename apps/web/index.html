@@ -530,6 +530,8 @@
   /* Genesis: the proposed thesis the user confirms before anything is decomposed. */
   /* Genesis: the conversation IS the interface. When the chat lands, the agent's turn shows the
      synthesised thesis + one confirm button — the "landed" card below. */
+  .th-landed.ready{border-color:color-mix(in srgb,var(--verified) 55%,var(--hair));
+    background:linear-gradient(145deg,color-mix(in srgb,var(--verified) 8%,var(--panel)),var(--panel));}
   .th-landed{margin:.6rem 0 .2rem;border:1px solid color-mix(in srgb,var(--gold) 30%,var(--hair));
     border-radius:14px;padding:.8rem .9rem;
     background:linear-gradient(145deg,color-mix(in srgb,var(--gold) 8%,var(--panel)),var(--panel));}
@@ -11920,13 +11922,14 @@ async function openShare(token){
   function payloadHtml(pay){
     if(!pay) return "";
     let out = "";
-    // Genesis: when the conversation has landed, the agent's turn carries the SYNTHESISED thesis and a
-    // single confirm button — no form, no editable box. The author owns it: confirm, or keep talking.
-    if(pay.ready && pay.proposed_thesis){
-      out += '<div class="th-landed"><div class="th-landed-h">The thesis I’d test</div>'
+    // Genesis: the agent restates the UPDATED thesis every turn. Show it as a live card with a confirm
+    // button always available — the author refines it in the chat, or uses it whenever it's good enough.
+    if(pay.proposed_thesis){
+      out += '<div class="th-landed' + (pay.ready ? " ready" : "") + '">'
+        + '<div class="th-landed-h">' + (pay.ready ? "The thesis I’d test" : "Working thesis") + "</div>"
         + '<blockquote class="th-landed-q">' + esc2(pay.proposed_thesis) + "</blockquote>"
         + '<div class="th-landed-row"><button type="button" class="th-use" id="th-use">Use this thesis →</button>'
-        + '<span class="th-landed-hint">or keep refining it in the chat below.</span></div></div>';
+        + '<span class="th-landed-hint">' + (pay.ready ? "or keep refining it below." : "keep refining below, or use it now.") + "</span></div></div>";
     }
     if((pay.evidence || []).length)
       out += '<div class="th-sides">' + pay.evidence.map(evHtml).join("") + "</div>";

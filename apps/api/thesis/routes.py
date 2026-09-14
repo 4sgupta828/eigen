@@ -284,19 +284,20 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         # A conversational intake turn (factra's genesis_intake pattern): natural chat, one question at a
         # time, the model owns `ready`. Only when it lands do we SYNTHESISE the whole conversation into a
         # clean falsifiable thesis (strong model for that money step) — the author still confirms it.
-        got = await gen.turn(_llm_json(), said=said, history=turns,
+        # The strong model runs the refinement turn (better judgment: it restates the full updated thesis
+        # and proposes concrete refinements rather than open questions). It maintains proposed_thesis
+        # every turn, so there is no separate synthesis step.
+        got = await gen.turn(_strong_llm_json(), said=said, history=turns,
                              budget_left=max(0, gen.GENESIS_BUDGET - used))
         ready = bool(got.get("ready"))
         reply = got.get("reply") or ("Ready when you are." if ready else "Tell me a little more.")
-        proposed = d.get("proposed_thesis") or d.get("thesis") or ""
-        if ready:
-            proposed = await gen.synthesize(_strong_llm_json(), history=turns, said=said,
-                                            fallback=d.get("thesis") or proposed) or proposed
+        # The agent's updated thesis this turn; keep the last good one if the model returned none.
+        proposed = got.get("proposed_thesis") or d.get("proposed_thesis") or d.get("thesis") or ""
+        if proposed:
             await tstore.set_proposed_thesis(pool, thesis_id, proposed)
         await tstore.add_turn(pool, thesis_id, role="agent", move="genesis", text=reply,
-                              payload={"ready": ready, "proposed_thesis": proposed if ready else ""})
-        return {"status": "ok", "reply": reply, "ready": ready,
-                "proposed_thesis": proposed if ready else "",
+                              payload={"ready": ready, "proposed_thesis": proposed})
+        return {"status": "ok", "reply": reply, "ready": ready, "proposed_thesis": proposed,
                 "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
                                            owner_token=x_thesis_owner)}
 

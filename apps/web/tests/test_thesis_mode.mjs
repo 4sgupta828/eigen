@@ -174,17 +174,21 @@ test("phase is derived from the doc: draft → ready → tested", () => {
   assert.equal(api.phaseOf({claims: [{rung: "x"}], research_status: "completed"}), "tested");
 });
 
-test("genesis is a conversation: the agent's turn shows the synthesised thesis + one Use button when ready", () => {
+test("genesis shows the UPDATED thesis every turn with a Use button — no form", () => {
   const {api} = loadThesisModule();
-  // Not ready yet → the turn is pure conversation, no confirm affordance, no editable form.
-  const talking = api.payloadHtml({ready: false, proposed_thesis: ""});
-  assert.doesNotMatch(talking, /th-landed|th-use|th-proposed/);
-  // Ready → the synthesised thesis is shown with a single "Use this thesis" button (no editable box).
-  const landed = api.payloadHtml({ready: true, proposed_thesis: "Mid-market 3PLs will pay for X, displacing spreadsheets."});
-  assert.match(landed, /th-landed/);
-  assert.match(landed, /Mid-market 3PLs will pay for X, displacing spreadsheets\./);
-  assert.match(landed, /id="th-use"/);
-  assert.doesNotMatch(landed, /id="th-proposed"|textarea/);     // no form — the chat is the interface
+  // No thesis yet → nothing.
+  assert.doesNotMatch(api.payloadHtml({ready: false, proposed_thesis: ""}), /th-landed|th-use|th-proposed/);
+  // A working thesis mid-conversation → the live card + Use button (not gated on ready).
+  const working = api.payloadHtml({ready: false, proposed_thesis: "Mid-market 3PLs will pay for X."});
+  assert.match(working, /th-landed/);
+  assert.match(working, /Working thesis/);
+  assert.match(working, /id="th-use"/);
+  assert.match(working, /Mid-market 3PLs will pay for X\./);
+  // Ready → the same card, emphasised.
+  const ready = api.payloadHtml({ready: true, proposed_thesis: "Mid-market 3PLs will pay for X."});
+  assert.match(ready, /th-landed ready/);
+  assert.match(ready, /The thesis I\u2019d test|The thesis I.d test/);
+  assert.doesNotMatch(ready, /id="th-proposed"|textarea/);     // no editable form — the chat is the interface
 });
 
 test("the landing offers a one-click 'generate a plausible thesis' button wired to /thesis/sample", () => {

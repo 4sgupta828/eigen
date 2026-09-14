@@ -12,55 +12,47 @@ def _llm(out):
 
 
 @pytest.mark.asyncio
-async def test_turn_converses_and_the_model_owns_ready():
-    # A real conversational turn: the model replies and decides readiness itself (factra's pattern).
-    r = await genesis.turn(_llm({"reply": "Who signs the cheque — which segment?", "ready": False}),
-                           said="a routing tool for logistics", history=[], budget_left=6)
+async def test_turn_restates_the_thesis_and_proposes_a_refinement_every_turn():
+    out = {"thesis": "Mid-market SaaS security teams will pay for goal-scoped agent authorization, "
+                     "displacing RBAC/ABAC, because agents change resource scope mid-task.",
+           "reply": "Is the buyer the security team or platform-eng? If platform-eng, the wedge is CI/CD agents.",
+           "ready": False}
+    r = await genesis.turn(_llm(out), said="agent authorization vs RBAC", history=[], budget_left=6)
+    assert r["proposed_thesis"].startswith("Mid-market SaaS security teams")   # full thesis every turn
+    assert "platform-eng" in r["reply"]                                        # a concrete refinement, not open
     assert r["ready"] is False
-    assert "which segment" in r["reply"].lower()
 
 
 @pytest.mark.asyncio
-async def test_turn_ready_when_the_model_says_ready():
-    r = await genesis.turn(_llm({"reply": "Ready — I'll draft the questions.", "ready": True}),
-                           said="mid-market 3PLs, displacing spreadsheets", history=[], budget_left=6)
-    assert r["ready"] is True and "ready" in r["reply"].lower()
+async def test_explicit_proceed_signal_flips_ready_even_if_the_model_hesitates():
+    out = {"thesis": "A specific falsifiable thesis.", "reply": "one more angle?", "ready": False}
+    r = await genesis.turn(_llm(out), said="looks good, proceed", history=[{"role": "user", "text": "x"}],
+                           budget_left=6)
+    assert r["ready"] is True                     # code honours "proceed" even when the model says false
+    assert r["proposed_thesis"] == "A specific falsifiable thesis."
 
 
 @pytest.mark.asyncio
-async def test_no_model_or_spent_budget_never_traps_the_author():
-    assert (await genesis.turn(None, said="an idea", history=[], budget_left=6))["ready"] is True
-    r = await genesis.turn(_llm({"reply": "more?", "ready": False}), said="x", history=[], budget_left=0)
-    assert r["ready"] is True                     # budget spent ⇒ proceed, do not keep asking
-
-
-@pytest.mark.asyncio
-async def test_bad_json_falls_open_ready():
+async def test_no_model_or_spent_budget_or_bad_json_never_traps_the_author():
+    assert (await genesis.turn(None, said="idea", history=[], budget_left=6))["ready"] is True
+    assert (await genesis.turn(_llm({"x": 1}), said="idea", history=[], budget_left=0))["ready"] is True
     async def boom(_s, _u):
-        raise ValueError("model returned junk")
-    r = await genesis.turn(boom, said="an idea", history=[], budget_left=3)
-    assert r["ready"] is True
+        raise ValueError("junk")
+    assert (await genesis.turn(boom, said="idea", history=[], budget_left=3))["ready"] is True
 
 
 @pytest.mark.asyncio
-async def test_synthesize_lands_one_clean_sentence_from_the_whole_conversation():
-    history = [{"role": "user", "text": "route planning saas"},
-               {"role": "agent", "text": "For whom?"},
-               {"role": "user", "text": "mid-market 3PLs, they use spreadsheets today"}]
-    synth = _llm("Mid-market 3PLs will pay for automated route re-planning, displacing spreadsheet "
-                 "dispatch, because planner labour cost exceeds the software above ~40 trucks.")
-    out = await genesis.synthesize(synth, history=history, said="")
-    assert out.startswith("Mid-market 3PLs will pay")
-    assert "spreadsheet" in out
+async def test_sample_thesis_generates_a_sentence_and_is_safe_without_a_model():
+    out = await genesis.sample_thesis(_llm({"thesis": "Mid-market clinics will pay for X, displacing Y."}))
+    assert out.startswith("Mid-market clinics will pay")
+    assert await genesis.sample_thesis(None) == ""
 
 
 @pytest.mark.asyncio
-async def test_synthesize_tolerates_a_json_wrapper_and_falls_back_without_a_model():
-    out = await genesis.synthesize(_llm({"thesis": "A clean sentence."}), history=[], said="raw idea")
-    assert out == "A clean sentence."                       # unwrapped from JSON if the model wraps it
-    # No model → the author's own words stand (never fabricate a thesis).
-    fb = await genesis.synthesize(None, history=[{"role": "user", "text": "my raw thesis words"}], said="")
-    assert fb == "my raw thesis words"
+async def test_sample_thesis_swallows_a_bad_model():
+    async def boom(_s, _u):
+        raise ValueError("down")
+    assert await genesis.sample_thesis(boom) == ""
 
 
 @pytest.mark.asyncio
