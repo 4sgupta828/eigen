@@ -127,6 +127,24 @@ class TranscriptIn(BaseModel):
     transcript: str = ""
 
 
+class SaveExpertIn(BaseModel):
+    name: str = ""
+    url: str = ""              # public profile — never a guessed one
+    firm: str = ""
+    role: str = ""
+    headline: str = ""
+    source: str = "manual"     # exa | pdl | manual
+
+
+class InquiryTranscriptIn(BaseModel):
+    expert_name: str = ""
+    expert_url: str = ""       # public profile of who you spoke with
+    firm: str = ""
+    role: str = ""
+    transcript: str = ""
+    save_to_roster: bool = True   # also add this person to the cross-thesis expert map
+
+
 class PeopleSearchIn(BaseModel):
     query: str = ""            # freeform expertise query (Exa's semantic leg)
     max_results: int = 10
@@ -925,6 +943,89 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             out.append({"name": p.name, "profile_url": p.profile_url, "headline": p.headline,
                         "org": p.org, "relevance": p.relevance, "provider": p.provider})
         return {"status": "ok", "query": q, "candidates": out}
+
+    # ---- Expert roster (a personal, cross-thesis map) -------------------------------------------
+    @r.get("/experts/roster")
+    async def tl_roster(authorization: str = Header(default="")):
+        """The owner's saved experts — a cross-thesis map. Experts found while validating one thesis
+        stay available to the next."""
+        owner = await _owner(authorization)
+        return {"status": "ok", "experts": await tstore.list_experts(await pool_of(), owner)}
+
+    @r.post("/experts/roster")
+    async def tl_roster_save(body: SaveExpertIn, authorization: str = Header(default="")):
+        """Save one expert to the roster (from a search result or by hand). Dedups on the profile URL."""
+        owner = await _owner(authorization)
+        if not (body.name or "").strip() and not (body.url or "").strip():
+            raise HTTPException(status_code=400, detail="an expert needs at least a name or a profile URL")
+        eid = await tstore.save_expert(await pool_of(), owner, name=body.name, url=body.url,
+                                       firm=body.firm, role=body.role, headline=body.headline,
+                                       source=body.source or "manual")
+        return {"status": "ok", "id": eid}
+
+    @r.delete("/experts/roster/{expert_id}")
+    async def tl_roster_remove(expert_id: str, authorization: str = Header(default="")):
+        owner = await _owner(authorization)
+        n = await tstore.remove_expert(await pool_of(), owner, expert_id)
+        return {"status": "ok", "removed": n}
+
+    # ---- Per-line-of-inquiry transcript -> verbatim-gated insights -------------------------------
+    @r.get("/thesis/{thesis_id}/transcripts")
+    async def tl_inquiry_transcripts(thesis_id: str, authorization: str = Header(default=""),
+                                     x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Saved expert-call transcripts + their extracted insights, grouped by line of inquiry. The raw
+        transcript body is owner-only (never returned here); a shared view sees the insights, not the paste."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner)
+        rows = await tstore.list_transcripts(pool, thesis_id, include_raw=False)
+        if not d.get("is_owner"):
+            rows = []                       # transcripts are private to the owner
+        by_line: dict[str, list] = {}
+        for row in rows:
+            row["tally"] = tx.insight_tally(row.get("insights") or [])
+            by_line.setdefault(row.get("inquiry_key") or "", []).append(row)
+        return {"status": "ok", "by_line": by_line}
+
+    @r.post("/thesis/{thesis_id}/inquiry/{inquiry_key}/transcript")
+    async def tl_inquiry_transcript(thesis_id: str, inquiry_key: str, body: InquiryTranscriptIn,
+                                    authorization: str = Header(default=""),
+                                    x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Close the loop on a LINE OF INQUIRY: an expert-call transcript → chunked, VERBATIM-gated
+        insights, each tagged validates|invalidates|context toward this line's questions and tied to the
+        expert (name + public URL). Saved and, optionally, the expert added to the cross-thesis roster.
+        Owner-only; the raw transcript never leaves the owner's view. Expert opinion is 'stated' — it is
+        shown as a validate/invalidate tally, never allowed to settle the line (the sentiment discipline)."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if not (body.transcript or "").strip():
+            raise HTTPException(status_code=400, detail="paste the call transcript")
+        qs = [q for q in await tstore.list_questions(pool, thesis_id) if q.get("inquiry_key") == inquiry_key]
+        if not qs:
+            raise HTTPException(status_code=404, detail="no such line of inquiry")
+        name = qs[0].get("inquiry_name") or inquiry_key
+        framing = qs[0].get("inquiry_framing") or ""
+        subject = " ".join(str(v) for v in (d.get("subject") or {}).values())
+        insights = await tx.extract_insights(_llm_json(), transcript=body.transcript, inquiry_name=name,
+                                             framing=framing, questions=[q["text"] for q in qs],
+                                             thesis=d.get("thesis") or "", subject=subject)
+        expert_id = ""
+        if body.save_to_roster and ((body.expert_name or "").strip() or (body.expert_url or "").strip()):
+            expert_id = await tstore.save_expert(pool, await _owner(authorization), name=body.expert_name,
+                                                 url=body.expert_url, firm=body.firm, role=body.role,
+                                                 headline="", source="manual")
+        tid = await tstore.add_transcript(pool, thesis_id, inquiry_key, expert_id=expert_id,
+                                          expert_name=body.expert_name, expert_url=body.expert_url,
+                                          firm=body.firm, role=body.role, transcript=body.transcript,
+                                          insights=insights)
+        return {"status": "ok", "id": tid, "inquiry_key": inquiry_key, "expert_id": expert_id,
+                "insights": insights, "tally": tx.insight_tally(insights),
+                "note": "" if insights else "Nothing in that transcript could be tied verbatim to this line."}
+
+    @r.delete("/thesis/{thesis_id}/transcript/{transcript_id}")
+    async def tl_inquiry_transcript_remove(thesis_id: str, transcript_id: str,
+                                           authorization: str = Header(default=""),
+                                           x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        n = await tstore.remove_transcript(pool, thesis_id, transcript_id)
+        return {"status": "ok", "removed": n}
 
     @r.get("/thesis/{thesis_id}/inquiry/status")
     async def tl_inquiry_status(thesis_id: str, run: str = "",

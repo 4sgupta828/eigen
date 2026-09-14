@@ -169,6 +169,43 @@ CREATE TABLE IF NOT EXISTS ts_run (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_ts_run_one_active
     ON ts_run (thesis_id) WHERE state IN ('approved', 'running');
+
+-- The expert ROSTER — a personal, cross-thesis map of the people you've found and talked to. Keyed on
+-- owner_id (the authenticated user): experts discovered while validating one thesis stay available to
+-- the next. `url` is their public profile; a call transcript (below) references the expert saved here.
+CREATE TABLE IF NOT EXISTS ts_expert (
+    id          text PRIMARY KEY,
+    owner_id    text NOT NULL DEFAULT '',
+    name        text NOT NULL,
+    url         text NOT NULL DEFAULT '',   -- public profile (LinkedIn, homepage) — never a guessed one
+    firm        text NOT NULL DEFAULT '',   -- for independence: two accounts from one firm are one account
+    role        text NOT NULL DEFAULT '',   -- buyer / operator / advisor …
+    headline    text NOT NULL DEFAULT '',
+    source      text NOT NULL DEFAULT '',   -- exa | pdl | manual
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_ts_expert_owner ON ts_expert (owner_id, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_ts_expert_owner_url ON ts_expert (owner_id, url) WHERE url <> '';
+
+-- An expert-call TRANSCRIPT attached to one LINE OF INQUIRY, with its verbatim-gated INSIGHTS. Each
+-- insight is a quote the expert actually said, tagged validates|invalidates|context toward the line's
+-- questions — expert opinion is 'stated', informative but never controlling (the sentiment discipline).
+-- Owner-only: the raw transcript never leaves the owner's view.
+CREATE TABLE IF NOT EXISTS ts_transcript (
+    id          text PRIMARY KEY,
+    thesis_id   text NOT NULL REFERENCES ts_thesis(id) ON DELETE CASCADE,
+    inquiry_key text NOT NULL,
+    expert_id   text NOT NULL DEFAULT '',   -- ts_expert.id when saved to the roster, else ''
+    expert_name text NOT NULL DEFAULT '',
+    expert_url  text NOT NULL DEFAULT '',
+    firm        text NOT NULL DEFAULT '',
+    role        text NOT NULL DEFAULT '',
+    transcript  text NOT NULL DEFAULT '',   -- the raw paste, owner-only
+    insights    jsonb NOT NULL DEFAULT '[]',
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_ts_transcript_inq ON ts_transcript (thesis_id, inquiry_key, created_at DESC);
 """
 
 
@@ -685,3 +722,101 @@ def active_question_hash(questions: list[dict]) -> str:
     new run while the superseded answers stay put."""
     parts = sorted(f"{q.get('id','')}:{q.get('target','')}" for q in (questions or []))
     return _hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:24]
+
+
+# ---- Expert roster (global, per owner) + per-line-of-inquiry transcripts --------------------------
+
+def _expert_out(row) -> dict:
+    d = {k: row[k] for k in row.keys()}
+    for k in ("created_at", "updated_at"):
+        if k in d and hasattr(d[k], "isoformat"):
+            d[k] = d[k].isoformat()
+    return d
+
+
+async def save_expert(pool, owner_id: str, *, name: str, url: str = "", firm: str = "",
+                      role: str = "", headline: str = "", source: str = "manual") -> str:
+    """Upsert one expert into the owner's roster. Dedups on (owner_id, url) when a url is present, so
+    saving the same profile twice updates rather than duplicates. Returns the expert id."""
+    await ensure_schema(pool)
+    eid = uuid.uuid4().hex[:16]
+    async with pool.acquire() as conn:
+        if url:
+            existing = await conn.fetchrow(
+                "SELECT id FROM ts_expert WHERE owner_id = $1 AND url = $2", owner_id, url)
+            if existing:
+                await conn.execute(
+                    """UPDATE ts_expert SET name=$3, firm=$4, role=$5, headline=$6, source=$7,
+                           updated_at=now() WHERE owner_id=$1 AND url=$2""",
+                    owner_id, url, name[:200], firm[:200], role[:120], headline[:400], source[:40])
+                return str(existing["id"])
+        await conn.execute(
+            """INSERT INTO ts_expert (id, owner_id, name, url, firm, role, headline, source)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""",
+            eid, owner_id, name[:200], url[:600], firm[:200], role[:120], headline[:400], source[:40])
+    return eid
+
+
+async def list_experts(pool, owner_id: str) -> list[dict]:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM ts_expert WHERE owner_id = $1 ORDER BY updated_at DESC LIMIT 500", owner_id)
+    return [_expert_out(r) for r in rows]
+
+
+async def remove_expert(pool, owner_id: str, expert_id: str) -> int:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        res = await conn.execute(
+            "DELETE FROM ts_expert WHERE owner_id = $1 AND id = $2", owner_id, expert_id)
+    return int((res or "DELETE 0").split()[-1])
+
+
+async def add_transcript(pool, thesis_id: str, inquiry_key: str, *, expert_id: str = "",
+                         expert_name: str = "", expert_url: str = "", firm: str = "", role: str = "",
+                         transcript: str = "", insights: list[dict] | None = None) -> str:
+    """Save one expert-call transcript + its extracted insights against a line of inquiry."""
+    await ensure_schema(pool)
+    tid = uuid.uuid4().hex[:16]
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO ts_transcript (id, thesis_id, inquiry_key, expert_id, expert_name,
+                   expert_url, firm, role, transcript, insights)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)""",
+            tid, thesis_id, inquiry_key, expert_id, expert_name[:200], expert_url[:600],
+            firm[:200], role[:120], (transcript or "")[:60000], json.dumps(insights or []))
+    return tid
+
+
+async def list_transcripts(pool, thesis_id: str, inquiry_key: str = "",
+                           *, include_raw: bool = False) -> list[dict]:
+    """Transcripts for a thesis (optionally one line of inquiry). `include_raw` returns the raw paste —
+    owner-only; the default omits it so a shared view never carries the transcript body."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        if inquiry_key:
+            rows = await conn.fetch(
+                """SELECT * FROM ts_transcript WHERE thesis_id = $1 AND inquiry_key = $2
+                   ORDER BY created_at DESC""", thesis_id, inquiry_key)
+        else:
+            rows = await conn.fetch(
+                "SELECT * FROM ts_transcript WHERE thesis_id = $1 ORDER BY created_at DESC", thesis_id)
+    out = []
+    for r in rows:
+        d = {k: r[k] for k in r.keys()}
+        d["insights"] = _j(d.get("insights")) or []
+        if "created_at" in d and hasattr(d["created_at"], "isoformat"):
+            d["created_at"] = d["created_at"].isoformat()
+        if not include_raw:
+            d.pop("transcript", None)
+        out.append(d)
+    return out
+
+
+async def remove_transcript(pool, thesis_id: str, transcript_id: str) -> int:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        res = await conn.execute(
+            "DELETE FROM ts_transcript WHERE thesis_id = $1 AND id = $2", thesis_id, transcript_id)
+    return int((res or "DELETE 0").split()[-1])

@@ -70,6 +70,74 @@ async def extract_call_points(llm_json, *, transcript: str, aspect_prompt: str, 
     return out
 
 
+_INSIGHTS_SYSTEM = """You extract what an expert said on a diligence call that bears on a LINE OF INQUIRY
+in a startup thesis. Return ONLY points the speaker actually asserted about THIS thesis's subject — not
+about peers or the industry in general, and not your own inference. For each point:
+- "quote": a VERBATIM span copied exactly from the transcript (character-for-character; do NOT paraphrase).
+- "insight": one sentence of what it means for the thesis.
+- "stance": "validates" if it supports the thesis / this line of inquiry, "invalidates" if it argues
+  against it, "context" if it is relevant background that does neither.
+- "refers_to": the exact text of the question (from the list given) it bears on most, or "" if none.
+Only include points that clearly bear on this line of inquiry. Output ONLY a JSON object."""
+
+_STANCES = ("validates", "invalidates", "context")
+
+
+async def extract_insights(llm_json, *, transcript: str, inquiry_name: str, framing: str,
+                           questions: list[str], thesis: str, subject: str = "") -> list[dict]:
+    """-> [{quote, insight, stance, refers_to}] for a LINE OF INQUIRY. Same verbatim-span gate as
+    extract_call_points (a quote must appear character-for-character in the transcript) — an expert's
+    words, not a paraphrase. Stance maps each point to validates|invalidates|context for the thesis.
+    Never raises; [] when there is no model or nothing gated survives."""
+    if llm_json is None or not (transcript or "").strip():
+        return []
+    words = transcript.split()
+    chunks = [" ".join(words[i:i + CHUNK_WORDS]) for i in range(0, len(words), CHUNK_WORDS)] or [transcript]
+    hay = _norm(transcript)
+    qlist = "\n".join(f"- {q}" for q in (questions or []) if q) or "- (no specific questions)"
+    out: list[dict] = []
+    seen: set = set()
+    for chunk in chunks:
+        user = (f"THESIS: {thesis}\nSUBJECT: {subject}\nLINE OF INQUIRY: {inquiry_name}\n"
+                f"WHAT IT TESTS: {framing}\nQUESTIONS IN THIS LINE:\n{qlist}\n\n"
+                f"TRANSCRIPT:\n{chunk}\n\n"
+                'Return {"points": [{"quote": "...", "insight": "...", '
+                '"stance": "validates|invalidates|context", "refers_to": "..."}]}.')
+        try:
+            raw = await llm_json(_INSIGHTS_SYSTEM, user)
+            d = raw if isinstance(raw, dict) else json.loads(raw)
+            pts = d.get("points") or []
+        except Exception:      # noqa: BLE001 — extraction never blocks; a bad chunk contributes nothing
+            pts = []
+        for p in pts:
+            quote = str((p or {}).get("quote") or "").strip()
+            stance = str((p or {}).get("stance") or "").strip().lower()
+            if stance not in _STANCES:
+                stance = "context"
+            if not quote or _norm(quote) not in hay:        # VERBATIM-span gate — the quote must be real
+                continue
+            k = _norm(quote)[:120]
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append({"quote": quote[:600], "insight": str((p or {}).get("insight") or "").strip()[:300],
+                        "stance": stance, "refers_to": str((p or {}).get("refers_to") or "").strip()[:300]})
+            if len(out) >= MAX_POINTS:
+                return out
+    return out
+
+
+def insight_tally(insights: list[dict]) -> dict:
+    """Count validates/invalidates/context across a line's insights — a quick read of which way the
+    expert calls point, WITHOUT ever letting them settle the line (expert opinion is 'stated', not
+    controlling; the corpus/web evidence run still owns the verdict)."""
+    t = {s: 0 for s in _STANCES}
+    for i in insights or []:
+        s = str((i or {}).get("stance") or "context").lower()
+        t[s if s in t else "context"] += 1
+    return t
+
+
 def call_status(call_rows: list[dict]) -> tuple[str, str]:
     """(verdict, note) for a call_only aspect from its `call` evidence. Independence keyed per person AND
     firm — three employees of one buyer are ONE account. One account is `primary_research_needed`; a

@@ -718,6 +718,58 @@
     background:var(--panel);padding:1rem 1.05rem 1.1rem;}
   .th-experts-h{font:600 1.05rem/1.2 var(--serif);color:var(--ink);margin:0 0 .2rem;}
   .th-experts-intro{margin:0 0 .8rem;font-size:.84rem;line-height:1.55;color:var(--dim);}
+  /* Per-line-of-inquiry expert loop: ask an expert + upload a transcript + the extracted insights. */
+  .th-exp-bar{display:flex;flex-wrap:wrap;gap:.5rem;margin:.7rem 0 .2rem;}
+  .th-exp-ask,.th-exp-up{font-family:var(--mono);font-size:.7rem;letter-spacing:.02em;cursor:pointer;
+    border:1px solid var(--hair);border-radius:999px;padding:.32rem .7rem;background:transparent;color:var(--dim);}
+  .th-exp-ask{color:var(--gold);border-color:rgba(var(--gold-rgb),.45);}
+  .th-exp-ask:hover{color:var(--on-accent);background:var(--gold);border-color:var(--gold);}
+  .th-exp-up:hover{color:var(--ink);border-color:var(--ink);}
+  .th-tx-form{margin:.6rem 0 .2rem;padding:.7rem;border:1px dashed var(--hair);border-radius:12px;background:var(--panel);}
+  .th-tx-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem;margin-bottom:.45rem;}
+  .th-tx-in,.th-tx-transcript{width:100%;box-sizing:border-box;border:1px solid var(--hair);border-radius:8px;
+    padding:.45rem .55rem;background:var(--bg);color:var(--ink);font-size:.84rem;font-family:inherit;}
+  .th-tx-transcript{resize:vertical;line-height:1.5;}
+  .th-tx-acts{display:flex;flex-wrap:wrap;gap:.55rem;align-items:center;margin-top:.5rem;}
+  .th-tx-submit{font-family:var(--mono);font-size:.72rem;cursor:pointer;border:0;border-radius:8px;
+    padding:.4rem .8rem;background:var(--gold);color:var(--on-accent);}
+  .th-tx-submit:hover{background:var(--gold-strong);}
+  .th-tx-submit:disabled{opacity:.6;cursor:default;}
+  .th-tx-consent{font-size:.7rem;color:var(--dim);}
+  .th-ins-wrap{margin:.7rem 0 .2rem;}
+  .th-ins-h{font-family:var(--mono);font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;color:var(--gold);margin:0 0 .35rem;}
+  .th-ins-card{border:1px solid var(--hair);border-radius:12px;padding:.6rem .7rem;margin-bottom:.5rem;background:var(--panel);}
+  .th-ins-head{display:flex;flex-wrap:wrap;gap:.35rem .6rem;align-items:baseline;font-size:.82rem;color:var(--ink);margin-bottom:.4rem;}
+  .th-ins-link{color:var(--gold);}
+  .th-ins-del{margin-left:auto;border:0;background:transparent;color:var(--dim);cursor:pointer;font-size:.9rem;line-height:1;}
+  .th-ins-del:hover{color:#b4544a;}
+  .th-ins-tally{font-family:var(--mono);font-size:.62rem;letter-spacing:.03em;border-radius:999px;padding:.08rem .45rem;}
+  .th-ins-tally[data-s="validates"]{color:var(--verified);background:color-mix(in srgb,var(--verified) 12%,transparent);}
+  .th-ins-tally[data-s="invalidates"]{color:#b4544a;background:color-mix(in srgb,#b4544a 12%,transparent);}
+  .th-ins-tally[data-s="context"]{color:var(--dim);background:color-mix(in srgb,var(--dim) 12%,transparent);}
+  .th-ins{display:flex;gap:.5rem;align-items:flex-start;padding:.4rem 0;border-top:1px solid var(--hair);}
+  .th-ins:first-of-type{border-top:0;}
+  .th-ins-stance{flex:none;font-family:var(--mono);font-size:.6rem;letter-spacing:.03em;text-transform:uppercase;
+    border-radius:6px;padding:.12rem .4rem;margin-top:.1rem;}
+  .th-ins-stance[data-s="validates"]{color:var(--verified);border:1px solid color-mix(in srgb,var(--verified) 45%,var(--hair));}
+  .th-ins-stance[data-s="invalidates"]{color:#b4544a;border:1px solid color-mix(in srgb,#b4544a 45%,var(--hair));}
+  .th-ins-stance[data-s="context"]{color:var(--dim);border:1px solid var(--hair);}
+  .th-ins-body{flex:1;min-width:0;}
+  .th-ins-note{font-size:.86rem;line-height:1.5;color:var(--ink);}
+  .th-ins-q{margin:.25rem 0 0;padding-left:.6rem;border-left:2px solid var(--hair);font-size:.8rem;
+    line-height:1.5;color:var(--dim);font-style:italic;}
+  .th-ins-ref{font-size:.72rem;color:var(--dim);margin-top:.2rem;}
+  .th-ins-empty{font-size:.82rem;color:var(--dim);margin:.2rem 0 0;}
+  /* Experts tab: the saved roster + save/remove controls. */
+  .ex-roster-wrap{margin:0 0 1rem;}
+  .ex-roster-h{font-family:var(--mono);font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;color:var(--gold);margin:0 0 .4rem;}
+  .ex-card.ex-saved{border-color:color-mix(in srgb,var(--gold) 30%,var(--hair));}
+  .ex-save,.ex-del{font-family:var(--mono);font-size:.66rem;cursor:pointer;border:1px solid var(--hair);
+    border-radius:999px;padding:.2rem .55rem;background:transparent;color:var(--gold);}
+  .ex-save:hover{color:var(--on-accent);background:var(--gold);border-color:var(--gold);}
+  .ex-save:disabled{opacity:.6;cursor:default;}
+  .ex-del{color:var(--dim);}
+  .ex-del:hover{color:#b4544a;border-color:#b4544a;}
   .th-ea{border-top:1px solid var(--hair);padding:.8rem 0 .2rem;}
   .th-ea:first-of-type{border-top:0;}
   .th-ea-head{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.3rem;}
@@ -12036,9 +12088,9 @@ async function openShare(token){
       ? '<button type="button" id="th-share">Copy read-only link</button>' : "";
     const sh = document.getElementById("th-share");
     if(sh) sh.addEventListener("click", () => shareThesis(sh));
-    takes().innerHTML = pretestHtml(d) + '<div id="th-loi"></div><div id="th-experts"></div>';
+    takes().innerHTML = pretestHtml(d) + '<div id="th-loi"></div>';
     loadInquiries();
-    loadExperts();
+    loadTranscripts();
   }
 
   // The proposed thesis, editable, with "Use this thesis" (the only decomposition) + any clarifiers.
@@ -12185,135 +12237,89 @@ async function openShare(token){
     }catch(e){ host.innerHTML = '<p class="th-note">' + esc2(e.message || String(e)) + "</p>"; }
   }
 
-  // Phase 0 Expert mode — "Who to ask / what to ask". For the aspects no document can settle
-  // (call_only), surface the role to ask, the questions to put to them, and anyone already named in
-  // the evidence. No provider yet: pure decision support from what the thesis holds.
+  // Expert loop, per LINE OF INQUIRY. "Ask an expert about this line" hands a query to the Experts tab;
+  // an uploaded transcript becomes verbatim-gated insights (validates / invalidates / context) tied to
+  // this line's questions and to the expert (name + public URL), saved privately and to the roster.
   function segmentOf(d){ return Object.values((d && d.subject) || {}).map(String).join(" ").trim(); }
-  // Local copy — the global one lives in another module's IIFE and is not in this closure's scope, so
-  // referencing it here threw and loadExperts silently swallowed it, leaving the "Who to ask" panel blank.
-  function thLinkedinUrl(name, company, title){
-    const bits = [name, company, (title || "").split(" ").slice(0, 3).join(" ")].filter(Boolean);
-    return "https://www.google.com/search?q=" + encodeURIComponent(bits.join(" ").slice(0, 160) + " linkedin");
+
+  // A people-search query for one line of inquiry: the subject + what the line tests, in plain nouns.
+  function expertQueryFor(inq){
+    const seg = segmentOf(STATE.doc);
+    const q = (inq.name || "") + " — " + (inq.framing || "");
+    return ((seg ? seg + ": " : "") + q).slice(0, 200);
   }
 
-  async function loadExperts(){
-    const host = document.getElementById("th-experts"); if(!host) return;
+  function askExpert(inqKey){
+    const inq = (STATE.inquiries || []).find(i => i.key === inqKey); if(!inq) return;
+    if(window.EX && EX.searchFor) EX.searchFor(expertQueryFor(inq));
+  }
+
+  // Saved transcripts + insights, grouped by line of inquiry (owner-only). Re-renders the lines in place.
+  async function loadTranscripts(){
     try{
-      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/experts", {headers: hdrs()});
-      if(!r.ok){ host.innerHTML = ""; return; }
-      STATE.experts = (await r.json()).aspects || [];
-      renderExperts();
-    }catch(e){ host.innerHTML = ""; }   // decision support is additive; never block the thesis view
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/transcripts", {headers: hdrs()});
+      STATE.transcripts = r.ok ? ((await r.json()).by_line || {}) : {};
+    }catch(e){ STATE.transcripts = {}; }
+    if(document.getElementById("th-loi")) renderInquiries();
   }
 
-  function outreachText(aspect, d){
-    const qs = (aspect.questions || []).slice(0, 3).map(q => "  • " + q).join("\n");
-    return "Hi — I'm doing diligence on " + (segmentOf(d) || "this space")
-      + " and would value 20 minutes with someone close to it. I'm trying to understand:\n\n"
-      + qs + "\n\nWould you be open to a short call? Happy to work around your schedule.";
-  }
+  const STANCE_LABEL = {validates: "validates", invalidates: "invalidates", context: "context"};
 
-  function renderExperts(){
-    const host = document.getElementById("th-experts"); if(!host) return;
-    const aspects = (STATE.experts || []).filter(a => (a.roles || []).length);
-    if(!aspects.length){ host.innerHTML = ""; return; }
-    const d = STATE.doc, seg = segmentOf(d);
-    const cardFor = a => {
-      const roleLabels = (a.roles || []).map(r => esc2(r.label)).join(" or ");
-      const qs = '<ul class="th-ea-qs">' + (a.questions || []).map(q => "<li>" + esc2(q) + "</li>").join("") + "</ul>";
-      const cands = (a.candidates || []).map(c => {
-        const art = (c.artifacts || [])[0] || {};
-        const li = '<a href="' + esc2(thLinkedinUrl(c.name, seg, c.role)) + '" target="_blank" rel="noopener" class="th-ea-find">find on LinkedIn ↗</a>';
-        const src = art.url ? ' · <a href="' + esc2(art.url) + '" target="_blank" rel="noopener">' + esc2(art.title || "source") + " ↗</a>" : "";
-        return '<div class="th-ea-cand"><span class="th-ea-name">' + esc2(c.name) + "</span>"
-          + '<span class="th-ea-why">' + esc2(c.why || "") + src + "</span>" + li + "</div>";
-      }).join("");
-      const body = cands || ('<p class="th-ea-guide">' + esc2(a.guidance || "")
-        + ' <a href="' + esc2(thLinkedinUrl("", seg, roleLabels)) + '" target="_blank" rel="noopener" class="th-ea-find">search LinkedIn ↗</a></p>');
-      // Logged expert calls (Phase 3): each a gated, verbatim call point that moves the verdict.
-      const calls = (a.calls || []).length ? '<div class="th-ea-calls"><div class="th-ea-found-h">Expert calls logged</div>'
-        + a.calls.map(cl => '<div class="th-ea-call" data-rel="' + esc2(cl.relation || "") + '">'
-            + '<blockquote>' + esc2(cl.quote || "") + "</blockquote>"
-            + '<span class="th-ea-callby">— ' + esc2(cl.said_by || "source")
-            + (cl.said_role ? ", " + esc2(cl.said_role) : "") + (cl.firm ? ", " + esc2(cl.firm) : "")
-            + " · " + esc2(cl.relation || "") + "</span></div>").join("")
-        + (a.verdict_note ? '<p class="th-ea-note">' + esc2(a.verdict_note) + "</p>" : "") + "</div>" : "";
-      return '<div class="th-ea"><div class="th-ea-head"><b>' + esc2(a.prompt) + "</b>"
-        + '<span class="th-aspect-v" data-v="' + esc2(a.verdict || "open") + '">' + esc2(verdictWord(a.verdict || "open")) + "</span></div>"
-        + '<div class="th-ea-role">Ask ' + roleLabels + " — what to ask:</div>" + qs + body + calls
-        + '<div id="th-ea-found-' + esc2(a.key) + '" class="th-ea-found"></div>'
-        + '<div class="th-ea-acts">'
-        + (canMutate(d) ? '<button type="button" class="th-ea-find-btn" data-key="' + esc2(a.key)
-            + '">⌕ Find experts on the web</button>'
-            + '<button type="button" class="th-ea-log-btn" data-key="' + esc2(a.key) + '">＋ Log an expert call</button>' : "")
-        + '<button type="button" class="th-ea-copy" data-key="' + esc2(a.key) + '">Copy outreach message</button>'
-        + "</div>"
-        + '<div id="th-ea-form-' + esc2(a.key) + '" class="th-ea-form" hidden>'
-        + '<div class="th-ea-form-row"><input type="text" class="th-ea-in" data-f="said_by" placeholder="Who you spoke with (name)">'
-        + '<input type="text" class="th-ea-in" data-f="firm" placeholder="Their firm (for independence)">'
-        + '<input type="text" class="th-ea-in" data-f="said_role" placeholder="Role: buyer / operator / advisor"></div>'
-        + '<textarea class="th-ea-transcript" data-f="transcript" rows="5" placeholder="Paste the call transcript. We keep only points quoted verbatim and tie them to this aspect. Calls are private to you."></textarea>'
-        + '<div class="th-ea-form-acts"><button type="button" class="th-ea-submit" data-key="' + esc2(a.key)
-        + '">Extract call points</button><span class="th-ea-consent">You confirm you may share this content (no NDA/internal recordings).</span></div></div>';
+  function insightsHtml(inqKey){
+    const rows = (STATE.transcripts || {})[inqKey] || [];
+    if(!rows.length) return "";
+    const cardFor = t => {
+      const who = esc2(t.expert_name || "an expert")
+        + (t.expert_url ? ' <a href="' + esc2(t.expert_url) + '" target="_blank" rel="noopener" class="th-ins-link">profile ↗</a>' : "")
+        + (t.firm ? " · " + esc2(t.firm) : "");
+      const tally = t.tally || {};
+      const tallyHtml = ["validates", "invalidates", "context"].filter(k => tally[k])
+        .map(k => '<span class="th-ins-tally" data-s="' + k + '">' + tally[k] + " " + STANCE_LABEL[k] + "</span>").join("");
+      const items = (t.insights || []).map(i => '<div class="th-ins" data-s="' + esc2(i.stance || "context") + '">'
+        + '<span class="th-ins-stance" data-s="' + esc2(i.stance || "context") + '">' + esc2(STANCE_LABEL[i.stance] || "context") + "</span>"
+        + '<div class="th-ins-body"><div class="th-ins-note">' + esc2(i.insight || "") + "</div>"
+        + '<blockquote class="th-ins-q">' + esc2(i.quote || "") + "</blockquote>"
+        + (i.refers_to ? '<div class="th-ins-ref">re: ' + esc2(i.refers_to) + "</div>" : "") + "</div></div>").join("");
+      return '<div class="th-ins-card"><div class="th-ins-head">' + who + " " + tallyHtml
+        + '<button type="button" class="th-ins-del" data-tid="' + esc2(t.id) + '" title="Remove this transcript">✕</button></div>'
+        + (items || '<p class="th-ins-empty">No verbatim insight could be tied to this line.</p>') + "</div>";
     };
-    host.innerHTML = '<section class="th-experts-wrap"><div class="th-experts-h">Who to ask</div>'
-      + '<p class="th-experts-intro">These aspects can’t be settled from the record — they need a person. '
-      + "Here’s who to ask, what to ask, and anyone already named in the evidence.</p>"
-      + aspects.map(cardFor).join("") + "</section>";
-    host.querySelectorAll(".th-ea-copy").forEach(b => b.addEventListener("click", () => {
-      const a = (STATE.experts || []).find(x => x.key === b.dataset.key); if(!a) return;
-      const txt = outreachText(a, STATE.doc);
-      try{ navigator.clipboard.writeText(txt); b.textContent = "Copied ✓"; setTimeout(() => { b.textContent = "Copy outreach message"; }, 1600); }
-      catch(e){ window.prompt("Copy this outreach message:", txt); }
-    }));
-    host.querySelectorAll(".th-ea-find-btn").forEach(b => b.addEventListener("click", () => discoverExperts(b.dataset.key, b)));
-    host.querySelectorAll(".th-ea-log-btn").forEach(b => b.addEventListener("click", () => {
-      const f = document.getElementById("th-ea-form-" + b.dataset.key); if(f) f.hidden = !f.hidden;
-    }));
-    host.querySelectorAll(".th-ea-submit").forEach(b => b.addEventListener("click", () => logCall(b.dataset.key, b)));
+    return '<div class="th-ins-wrap"><div class="th-ins-h">Expert insights</div>' + rows.map(cardFor).join("") + "</div>";
   }
 
-  // Phase 3: paste a call transcript → gated, verbatim call evidence that moves the call_only verdict.
-  async function logCall(aspectKey, btn){
-    const form = document.getElementById("th-ea-form-" + aspectKey); if(!form) return;
+  function transcriptFormHtml(inqKey){
+    return '<div id="th-tx-form-' + esc2(inqKey) + '" class="th-tx-form" hidden>'
+      + '<div class="th-tx-row"><input type="text" class="th-tx-in" data-f="expert_name" placeholder="Expert name">'
+      + '<input type="text" class="th-tx-in" data-f="expert_url" placeholder="Profile URL (LinkedIn / homepage)">'
+      + '<input type="text" class="th-tx-in" data-f="firm" placeholder="Firm (for independence)">'
+      + '<input type="text" class="th-tx-in" data-f="role" placeholder="Role: buyer / operator / advisor"></div>'
+      + '<textarea class="th-tx-transcript" data-f="transcript" rows="5" placeholder="Paste the call transcript. We keep only points quoted verbatim, tag each validates / invalidates / context toward this line, and save it privately."></textarea>'
+      + '<div class="th-tx-acts"><button type="button" class="th-tx-submit" data-key="' + esc2(inqKey) + '">Extract insights</button>'
+      + '<span class="th-tx-consent">You confirm you may share this content (no NDA / internal recordings).</span></div></div>';
+  }
+
+  async function uploadTranscript(inqKey, btn){
+    const form = document.getElementById("th-tx-form-" + inqKey); if(!form) return;
     const val = f => (form.querySelector('[data-f="' + f + '"]') || {}).value || "";
     const transcript = val("transcript").trim();
     if(transcript.length < 40){ note().textContent = "Paste the call transcript first."; return; }
     if(btn){ btn.disabled = true; btn.textContent = "Extracting…"; }
     try{
-      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/experts/transcript",
-        {method: "POST", headers: hdrs(), body: JSON.stringify({aspect_key: aspectKey,
-          said_by: val("said_by").trim(), said_role: val("said_role").trim(),
-          firm: val("firm").trim(), transcript: transcript})});
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiry/" + encodeURIComponent(inqKey) + "/transcript",
+        {method: "POST", headers: hdrs(), body: JSON.stringify({expert_name: val("expert_name").trim(),
+          expert_url: val("expert_url").trim(), firm: val("firm").trim(), role: val("role").trim(),
+          transcript: transcript, save_to_roster: true})});
       const d = await r.json().catch(() => ({}));
       if(!r.ok) throw new Error(d.detail || "could not process the transcript");
-      if(!(d.points || []).length){ note().textContent = d.note || "Nothing tied verbatim to this aspect."; }
-      await loadExperts();   // re-render with the new call points + updated verdict
-    }catch(e){ note().textContent = e.message || String(e); if(btn){ btn.disabled = false; btn.textContent = "Extract call points"; } }
+      if(!(d.insights || []).length) note().textContent = d.note || "Nothing tied verbatim to this line.";
+      await loadTranscripts();
+    }catch(e){ note().textContent = e.message || String(e); if(btn){ btn.disabled = false; btn.textContent = "Extract insights"; } }
   }
 
-  // Phase 1: discover experts for one call_only aspect via the people leg (Exa public-web profiles).
-  // Explicit user action (it spends); results are public profile links to reach out to, never evidence.
-  async function discoverExperts(aspectKey, btn){
-    const box = document.getElementById("th-ea-found-" + aspectKey); if(!box) return;
-    if(btn){ btn.disabled = true; btn.textContent = "Searching…"; }
-    box.innerHTML = '<p class="th-run-prog"><span class="su-spin"></span> <span>searching public profiles…</span></p>';
-    try{
-      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/experts/discover",
-                            {method: "POST", headers: hdrs(), body: JSON.stringify({aspect_key: aspectKey})});
-      const d = await r.json().catch(() => ({}));
-      if(!r.ok) throw new Error(d.detail || "could not search");
-      const found = d.candidates || [];
-      if(!found.length){
-        box.innerHTML = '<p class="th-ea-guide">No public profiles surfaced for this one — try the LinkedIn search above, or refine the thesis segment.</p>';
-      }else{
-        box.innerHTML = '<div class="th-ea-found-h">Discovered on the web (public profiles — signal, not evidence)</div>'
-          + found.map(p => '<div class="th-ea-cand"><span class="th-ea-name">' + esc2(p.name) + "</span>"
-            + '<span class="th-ea-why">' + esc2(p.headline || "") + (p.role ? " · " + esc2(p.role) : "") + "</span>"
-            + '<a href="' + esc2(p.profile_url) + '" target="_blank" rel="noopener" class="th-ea-find">open profile ↗</a></div>').join("");
-      }
-    }catch(e){ box.innerHTML = '<p class="th-note">' + esc2(e.message || String(e)) + "</p>"; }
-    finally{ if(btn){ btn.disabled = false; btn.textContent = "⌕ Find experts on the web"; } }
+  async function removeTranscript(tid){
+    try{ await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/transcript/" + encodeURIComponent(tid),
+      {method: "DELETE", headers: hdrs()}); }catch(e){}
+    await loadTranscripts();
   }
 
   function renderInquiries(){
@@ -12382,12 +12388,22 @@ async function openShare(token){
         + (answered < qs.length ? '<button type="button" class="th-inq-del" data-del="' + esc2(inq.key)
             + '" title="Delete this line’s drafted questions">Delete line</button>' : "")
         + "</div>";
-    const isOpen = running || (openKeys && openKeys.has(inq.key)) || (!openKeys && answered);
+    // Expert loop for this line: ask an expert (hands the line to the Experts tab) + upload a call
+    // transcript (verbatim-gated insights). Owner-only; independent of whether the line has been run.
+    const expertBar = (owner && !running)
+      ? '<div class="th-exp-bar"><button type="button" class="th-exp-ask" data-ask="' + esc2(inq.key)
+        + '">◉ Ask an expert about this line</button>'
+        + '<button type="button" class="th-exp-up" data-up="' + esc2(inq.key)
+        + '">＋ Upload expert transcript</button></div>'
+      : "";
+    const isOpen = running || (openKeys && openKeys.has(inq.key)) || (!openKeys && answered)
+      || !!((STATE.transcripts || {})[inq.key] || []).length;
     return '<details class="th-inq" data-key="' + esc2(inq.key) + '"' + (isOpen ? " open" : "")
       + '><summary class="th-inq-head"><div class="th-inq-titlewrap"><h3>' + esc2(inq.name) + "</h3>"
       + '<p class="th-inq-framing">' + esc2(inq.framing) + "</p></div>"
       + '<span class="th-inq-open">' + answered + "/" + qs.length + "</span></summary>"
-      + '<div class="th-inq-body">' + runRow + aspects + "</div></details>";
+      + '<div class="th-inq-body">' + runRow + aspects + expertBar
+      + (owner ? transcriptFormHtml(inq.key) : "") + insightsHtml(inq.key) + "</div></details>";
   }
 
   // A grounded answer, factra-style: the prose in readable paragraphs with inline [n] footnotes that
@@ -12501,6 +12517,14 @@ async function openShare(token){
     host.querySelectorAll("[data-add]").forEach(b => b.addEventListener("click", () => {
       const [ik, ak] = b.dataset.add.split("|"); addQuestion(ik, ak);
     }));
+    // Expert loop, per line: ask an expert (hand-off to the Experts tab), toggle + submit a transcript.
+    host.querySelectorAll("[data-ask]").forEach(b => b.addEventListener("click",
+      e => { e.preventDefault(); askExpert(b.dataset.ask); }));
+    host.querySelectorAll("[data-up]").forEach(b => b.addEventListener("click", () => {
+      const f = document.getElementById("th-tx-form-" + b.dataset.up); if(f) f.hidden = !f.hidden;
+    }));
+    host.querySelectorAll(".th-tx-submit").forEach(b => b.addEventListener("click", () => uploadTranscript(b.dataset.key, b)));
+    host.querySelectorAll(".th-ins-del").forEach(b => b.addEventListener("click", () => removeTranscript(b.dataset.tid)));
     // A footnote [n] scrolls to its evidence item within the SAME question card (desktop hover is
     // wired globally on .ref[data-n]); on tap it jumps to the source and flashes it.
     host.querySelectorAll("sup.ref[data-n]").forEach(ref => {
@@ -12628,7 +12652,6 @@ async function openShare(token){
           try{ const ir2 = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries", {headers: hdrs()});
                if(ir2.ok) STATE.inquiries = (await ir2.json()).inquiries || STATE.inquiries; }catch(e){ }
           renderInquiries();
-          loadExperts();   // new evidence may name new people to ask — refresh the "Who to ask" panel
           return;
         }
         if(s.state === "failed" || s.state === "none" || s.stage === "stalled"){
@@ -12692,7 +12715,7 @@ async function openShare(token){
   window.TH = {submit, enter, reset, open, startTest, render, confirmThesis,
     __test:{ownerHeaders, thesisUrl, parseThesisHash, canMutate, decisionHtml, linkEvidence,
             newThesisHash, fmtBody, turnHtml, introHtml, phaseOf, genesisHtml, pretestHtml,
-            contextHtml, inqHtml, qnHtml, LENS, outreachText, segmentOf,
+            contextHtml, inqHtml, qnHtml, LENS, segmentOf, expertQueryFor, insightsHtml,
             _setState: (patch) => Object.assign(STATE, patch),
             claimHtml: (c, focused, owner, answers) => { STATE.answers = answers || {}; return claimHtml(c, focused, owner); }}};
 })();
@@ -12719,8 +12742,9 @@ async function openShare(token){
     return '<div class="ex-intro"><h2>Find an expert</h2>'
       + "<p>Two ways, used together: describe who you need in the box above (semantic search), and/or "
       + "set <b>precise filters</b> below — title, seniority, company, <b>past company</b>, skills, "
-      + "location. Results are <b>public signal</b> to reach out to, not evidence. To tie what an expert "
-      + "says back to a thesis, use <b>Test Thesis → Who to ask</b>.</p></div>"
+      + "location. Results are <b>public signal</b> to reach out to, not evidence. Save the people you'll "
+      + "talk to; then attach their call transcripts to a line of inquiry in <b>Test Thesis</b>.</p></div>"
+      + '<div id="ex-roster"></div>'
       + '<div class="ex-filters"><div class="ex-filters-h">Precise filters</div>'
       + '<div class="ex-filters-grid">'
       + FX.map(([k, ph]) => '<input type="text" class="ex-fx" data-fx="' + k + '" placeholder="' + esc(ph) + '">').join("")
@@ -12730,10 +12754,16 @@ async function openShare(token){
   }
 
   function resultsEl(){ return document.getElementById("ex-results"); }
+  function rosterEl(){ return document.getElementById("ex-roster"); }
   function readFilters(){
     const f = {};
     document.querySelectorAll("#ex-body .ex-fx").forEach(i => { const v = (i.value || "").trim(); if(v) f[i.dataset.fx] = v; });
     return f;
+  }
+  function authHeaders(){
+    const h = {"Content-Type": "application/json"};
+    try{ if(window.USER && USER.token) h["Authorization"] = "Bearer " + USER.token; }catch(e){}
+    return h;
   }
 
   function enter(){
@@ -12742,15 +12772,53 @@ async function openShare(token){
     const go = document.getElementById("ex-go"); if(go) go.addEventListener("click", () => search());
     document.querySelectorAll("#ex-body .ex-fx").forEach(i => i.addEventListener("keydown",
       e => { if(e.key === "Enter"){ e.preventDefault(); search(); } }));
+    loadRoster();
+  }
+
+  // The saved-expert MAP: people you've kept, reusable across every thesis. Rendered above the search.
+  async function loadRoster(){
+    const box = rosterEl(); if(!box) return;
+    try{
+      const r = await fetch("/experts/roster", {headers: authHeaders()});
+      if(!r.ok){ box.innerHTML = ""; return; }
+      const experts = (await r.json()).experts || [];
+      if(!experts.length){ box.innerHTML = ""; return; }
+      box.innerHTML = '<div class="ex-roster-wrap"><div class="ex-roster-h">Your experts ('
+        + experts.length + ")</div><div class=\"ex-grid\">"
+        + experts.map(e => {
+            const link = e.url ? '<a class="ex-open" href="' + esc(e.url) + '" target="_blank" rel="noopener">profile ↗</a>' : "";
+            const meta = [e.role, e.firm].filter(Boolean).map(esc).join(" · ");
+            return '<div class="ex-card ex-saved"><span class="ex-name">' + esc(e.name || "Unnamed") + "</span>"
+              + '<span class="ex-head">' + esc(e.headline || "") + (meta ? (e.headline ? " · " : "") + meta : "") + "</span>"
+              + link + '<button type="button" class="ex-del" data-id="' + esc(e.id) + '" title="Remove from roster">remove</button></div>';
+          }).join("") + "</div></div>";
+      box.querySelectorAll(".ex-del").forEach(b => b.addEventListener("click", async () => {
+        try{ await fetch("/experts/roster/" + encodeURIComponent(b.dataset.id), {method: "DELETE", headers: authHeaders()}); }catch(e){}
+        loadRoster();
+      }));
+    }catch(e){ box.innerHTML = ""; }
+  }
+
+  async function saveToRoster(p, btn){
+    if(btn){ btn.disabled = true; btn.textContent = "saving…"; }
+    try{
+      const r = await fetch("/experts/roster", {method: "POST", headers: authHeaders(),
+        body: JSON.stringify({name: p.name || "", url: p.profile_url || "", firm: p.org || "",
+          headline: p.headline || "", source: p.provider || "manual"})});
+      if(!r.ok) throw new Error("could not save");
+      if(btn){ btn.textContent = "saved ✓"; }
+      loadRoster();
+    }catch(e){ if(btn){ btn.disabled = false; btn.textContent = "＋ Save"; } }
   }
 
   function cardFor(p){
     const li = p.profile_url
       ? '<a class="ex-open" href="' + esc(p.profile_url) + '" target="_blank" rel="noopener">open profile ↗</a>' : "";
     const via = p.provider ? '<span class="ex-via" data-p="' + esc(p.provider) + '">' + esc(p.provider) + "</span>" : "";
+    const save = '<button type="button" class="ex-save" data-p="' + esc(JSON.stringify(p)) + '">＋ Save</button>';
     return '<div class="ex-card"><span class="ex-name">' + esc(p.name || "Unnamed") + "</span>"
       + '<span class="ex-head">' + esc(p.headline || "") + (p.org ? " · " + esc(p.org) : "") + "</span>"
-      + via + li + "</div>";
+      + via + li + save + "</div>";
   }
 
   async function search(query){
@@ -12783,13 +12851,26 @@ async function openShare(token){
           + (found.length === 1 ? "" : "s") + (desc ? " for " + esc(desc) : "")
           + " — public signal to reach out to, not evidence.</p>"
           + '<div class="ex-grid">' + found.map(cardFor).join("") + "</div>";
+        resultsEl().querySelectorAll(".ex-save").forEach(b => b.addEventListener("click", () => {
+          let p = {}; try{ p = JSON.parse(b.dataset.p); }catch(e){}
+          saveToRoster(p, b);
+        }));
       }
     }catch(e){ if(resultsEl()) resultsEl().innerHTML = '<p class="th-note">' + esc(e.message || String(e)) + "</p>"; }
     finally{ BUSY = false; }
   }
 
+  // Jump into Experts mode with a query already in the box and run it — the "Ask an expert about this
+  // line of inquiry" hand-off from Test Thesis. setMode clears the box, so we set it AFTER the switch.
+  function searchFor(query){
+    try{ setMode("experts"); }catch(e){}
+    const box = document.getElementById("q");
+    if(box){ box.value = query || ""; if(typeof autoGrow === "function") autoGrow(); }
+    if((query || "").trim()) search(query);
+  }
+
   function reset(){ enter(); }
-  window.EX = {enter, search, reset};
+  window.EX = {enter, search, reset, searchFor, loadRoster};
 })();
 </script>
 </body>

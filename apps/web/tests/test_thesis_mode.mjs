@@ -322,50 +322,68 @@ test("an explicit run/re-run sends a fresh idempotency key so it is not deduped 
   assert.match(SRC, /function freshRunKey\(/);
 });
 
-test("Phase 0 Expert mode: the ready/tested view surfaces a 'Who to ask' panel", () => {
-  // the render branch injects the container and loads it; the endpoint + copy handler are wired
-  assert.match(SRC, /id="th-loi"><\/div><div id="th-experts"><\/div>/);
-  assert.match(SRC, /loadExperts\(\);/);
-  assert.match(SRC, /\/experts"/);
-  assert.match(SRC, /Who to ask/);
-  assert.match(SRC, /class="th-ea-copy"/);            // copyable outreach
+test("The 'Who to ask' panel is gone; the per-line expert loop replaces it", () => {
+  // The bottom aspect-scoped panel and its container/functions are removed.
+  assert.doesNotMatch(SRC, /id="th-experts"/);
+  assert.doesNotMatch(SRC, /async function loadExperts\(/);
+  assert.doesNotMatch(SRC, /async function discoverExperts\(/);
+  assert.doesNotMatch(SRC, /async function logCall\(/);
+  // The ready/tested view now loads saved transcripts instead.
+  assert.match(SRC, /id="th-loi"><\/div>/);
+  assert.match(SRC, /loadTranscripts\(\);/);
 });
 
-test("outreach message is built from the aspect's questions and the thesis segment", () => {
+test("Every line of inquiry offers 'Ask an expert' and 'Upload transcript'", () => {
+  assert.match(SRC, /Ask an expert about this line/);
+  assert.match(SRC, /Upload expert transcript/);
+  assert.match(SRC, /data-ask="/);
+  assert.match(SRC, /data-up="/);
+  assert.match(SRC, /askExpert\(b\.dataset\.ask\)/);       // hand-off wired
+  assert.match(SRC, /function askExpert\(/);
+});
+
+test("Ask-an-expert builds a people query from the line's subject + framing", () => {
   const {api} = loadThesisModule();
-  const d = {subject: {segment: "mid-market 3PLs"}};
-  const aspect = {key: "willingness_to_pay", questions: [
-    "Would you allocate budget for continuous inventory tracking?",
-    "What do you pay today for cycle counting?"]};
-  const txt = api.outreachText(aspect, d);
-  assert.match(txt, /mid-market 3PLs/);               // the segment
-  assert.match(txt, /Would you allocate budget/);      // the questions become the ask
-  assert.match(txt, /open to a short call/);           // it's a call request
-  assert.equal(api.segmentOf(d), "mid-market 3PLs");
+  api._setState({doc: {subject: {segment: "mid-market 3PLs"}}});
+  const q = api.expertQueryFor({name: "Switching costs", framing: "How locked-in are buyers?"});
+  assert.match(q, /mid-market 3PLs/);          // the subject
+  assert.match(q, /Switching costs/);          // the line's name
+  assert.match(q, /locked-in/);                // what it tests
+  assert.equal(api.segmentOf({subject: {segment: "mid-market 3PLs"}}), "mid-market 3PLs");
 });
 
-test("Phase 1: the Who-to-ask panel offers web discovery per call_only aspect", () => {
-  assert.match(SRC, /class="th-ea-find-btn"/);
-  assert.match(SRC, /\/experts\/discover"/);
-  assert.match(SRC, /async function discoverExperts\(/);
-  assert.match(SRC, /public profiles.*signal, not evidence/i);   // discovered ≠ evidence, labeled
+test("The per-line transcript posts to the inquiry endpoint and consents", () => {
+  assert.match(SRC, /\/inquiry\/" \+ encodeURIComponent\(inqKey\) \+ "\/transcript/);
+  assert.match(SRC, /class="th-tx-transcript"/);
+  assert.match(SRC, /async function uploadTranscript\(/);
+  assert.match(SRC, /no NDA \/ internal recordings/);      // consent copy
+  assert.match(SRC, /save_to_roster: true/);               // also saved to the roster
 });
 
-test("Phase 3: an aspect can log an expert-call transcript that becomes gated call evidence", () => {
-  assert.match(SRC, /class="th-ea-log-btn"/);
-  assert.match(SRC, /async function logCall\(/);
-  assert.match(SRC, /\/experts\/transcript"/);
-  assert.match(SRC, /class="th-ea-transcript"/);
-  assert.match(SRC, /Calls are private to you/);           // privacy copy
-  assert.match(SRC, /no NDA\/internal recordings/);        // consent copy
+test("Insights render with a validates/invalidates/context stance and the expert URL", () => {
+  const {api} = loadThesisModule();
+  api._setState({transcripts: {inq1: [{
+    id: "tx1", expert_name: "Dana Ops", expert_url: "https://linkedin.com/in/dana", firm: "Acme",
+    tally: {validates: 1, invalidates: 1},
+    insights: [{quote: "we would not switch lightly", insight: "high lock-in", stance: "validates", refers_to: "How locked-in?"},
+               {quote: "pricing keeps climbing", insight: "price pressure", stance: "invalidates", refers_to: ""}]}]}});
+  const html = api.insightsHtml("inq1");
+  assert.match(html, /Dana Ops/);
+  assert.match(html, /https:\/\/linkedin\.com\/in\/dana/);   // the expert URL is shown
+  assert.match(html, /data-s="validates"/);
+  assert.match(html, /data-s="invalidates"/);
+  assert.match(html, /high lock-in/);
+  assert.equal(api.insightsHtml("nope"), "");                 // no transcripts → nothing
 });
 
-test("Experts is a first-class mode: its own tab, body, and standalone search", () => {
+test("Experts mode is first-class, with a saved roster and jump-in search", () => {
   assert.match(MARKUP, /id="expertsTab"[^>]*data-mode|id="expertsTab"/);
   assert.match(MARKUP, /<section id="expertsbody"/);
-  assert.match(SRC, /window.EX = \{enter, search, reset\}/);
+  assert.match(SRC, /window.EX = \{enter, search, reset, searchFor, loadRoster\}/);
   assert.match(SRC, /APP_MODE === "experts"/);          // submit + reset route to EX
   assert.match(SRC, /\/experts\/search"/);              // standalone endpoint, no thesis
+  assert.match(SRC, /\/experts\/roster"/);              // the saved-expert map
+  assert.match(SRC, /function searchFor\(/);            // the Ask-an-expert hand-off target
   assert.match(SRC, /exbtn = \$\("#expertsTab"\)/);      // shown by applyModeTabs
   assert.match(SRC, /mode === "experts" && THESIS_ENABLED/);  // gated + allowed in setMode
 });

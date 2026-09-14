@@ -42,3 +42,45 @@ def test_call_status_is_conservative_on_independence():
     # conflicting accounts → open, never a false settle
     assert tx.call_status([C("A", "Acme", "supports"), C("B", "Globex", "contradicts"),
                            C("C", "Initech", "supports")])[0] in ("open", "supported")
+
+
+@pytest.mark.asyncio
+async def test_extract_insights_gates_verbatim_and_maps_stance():
+    from api.thesis import transcript as tx
+    transcript = ("Interviewer: How painful is the switch? Expert: Honestly ripping out our vector "
+                  "database would take two quarters and we would not do it lightly. But the pricing "
+                  "keeps climbing every renewal.")
+    async def llm(system, user):
+        return {"points": [
+            {"quote": "ripping out our vector database would take two quarters",
+             "insight": "High switching cost", "stance": "validates", "refers_to": "How high are switching costs?"},
+            {"quote": "the pricing keeps climbing every renewal",
+             "insight": "Pricing pressure", "stance": "invalidates", "refers_to": "Is pricing stable?"},
+            {"quote": "THIS WAS NEVER SAID IN THE CALL", "insight": "hallucinated", "stance": "validates", "refers_to": ""},
+            {"quote": "we would not do it lightly", "insight": "reluctance", "stance": "bogus-stance", "refers_to": ""},
+        ]}
+    got = await tx.extract_insights(llm, transcript=transcript, inquiry_name="Switching costs",
+                                    framing="Test lock-in", questions=["How high are switching costs?"],
+                                    thesis="Vector DB has a moat")
+    quotes = [g["quote"] for g in got]
+    assert "ripping out our vector database would take two quarters" in quotes
+    assert "the pricing keeps climbing every renewal" in quotes
+    assert "THIS WAS NEVER SAID IN THE CALL" not in quotes      # verbatim gate drops the hallucination
+    stances = {g["quote"]: g["stance"] for g in got}
+    assert stances["ripping out our vector database would take two quarters"] == "validates"
+    assert stances["the pricing keeps climbing every renewal"] == "invalidates"
+    assert stances["we would not do it lightly"] == "context"   # unknown stance → context (fail-safe)
+
+
+@pytest.mark.asyncio
+async def test_extract_insights_safe_without_a_model():
+    from api.thesis import transcript as tx
+    assert await tx.extract_insights(None, transcript="x", inquiry_name="", framing="",
+                                     questions=[], thesis="") == []
+
+
+def test_insight_tally_counts_stances():
+    from api.thesis import transcript as tx
+    t = tx.insight_tally([{"stance": "validates"}, {"stance": "validates"},
+                          {"stance": "invalidates"}, {"stance": "weird"}, {}])
+    assert t == {"validates": 2, "invalidates": 1, "context": 2}   # weird + missing → context
