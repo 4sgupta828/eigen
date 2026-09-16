@@ -473,3 +473,13 @@ test("the Collective Take renders ONE decision-flow flowchart from the inquiry v
   assert.match(SRC, /not investment advice/);            // honest: a reading, human owns the decision
   assert.match(SRC, /inqs\.length < 2\) return ""/);     // no diagram for a trivial (<2 node) thesis
 });
+
+test("genesis draft offers auto-improve + a backtrackable version timeline", () => {
+  assert.match(SRC, /function improveThesis\(/);          // agent self-improves the thesis
+  assert.match(SRC, /fetch\("\/thesis\/" \+ encodeURIComponent\(STATE\.id\) \+ "\/improve"/);
+  assert.match(SRC, /function revertThesis\(/);           // backtrack to an earlier version
+  assert.match(SRC, /"\/revert"/);
+  assert.match(SRC, /function versionsHtml\(/);           // the version timeline
+  assert.match(SRC, /Improve my thesis/);
+  assert.match(SRC, /vs\.length < 2\) return ""/);        // no timeline until there's something to backtrack to
+});
