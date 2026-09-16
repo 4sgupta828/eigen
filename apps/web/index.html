@@ -1032,15 +1032,27 @@
   .th-comp-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.7rem;}
   .th-comp-card{border:1px solid var(--hair);border-top:3px solid var(--gold);border-radius:10px;
     padding:.6rem .7rem;background:var(--card,var(--panel,#fff));}
-  .th-comp-name{margin:0 0 .45rem;font:600 .98rem/1.2 var(--serif);color:var(--ink);}
+  .th-comp-name{margin:0 0 .35rem;font:600 1rem/1.2 var(--serif);color:var(--ink);
+    display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;}
   .th-comp-you{font-family:var(--mono);font-size:.58rem;letter-spacing:.04em;text-transform:uppercase;
-    color:var(--on-accent);background:var(--gold);border-radius:999px;padding:.1rem .4rem;vertical-align:middle;}
-  .th-comp-dim{margin:.35rem 0;font-size:.82rem;line-height:1.45;}
-  .th-comp-dk{display:block;font-family:var(--mono);font-size:.6rem;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--on-accent);background:var(--gold);border-radius:999px;padding:.1rem .4rem;}
+  .th-comp-lead{font-size:.84rem;line-height:1.45;color:var(--ink);margin:0 0 .5rem;}
+  /* Stats as compact chips — funding/customers/investors/traction at a glance, not a paragraph. */
+  .th-comp-stats{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 .5rem;}
+  .th-comp-stat{font-size:.74rem;line-height:1.3;color:var(--ink);background:var(--panel2,var(--bg));
+    border:1px solid var(--hair);border-radius:8px;padding:.2rem .45rem;max-width:100%;overflow:hidden;
+    text-overflow:ellipsis;}
+  .th-comp-stat-k{display:block;font-family:var(--mono);font-size:.54rem;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--dim);}
+  .th-comp-dims{display:grid;gap:.3rem;}
+  .th-comp-dim{display:grid;grid-template-columns:5.2rem 1fr;gap:.5rem;font-size:.8rem;line-height:1.4;
+    align-items:baseline;}
+  .th-comp-dk{font-family:var(--mono);font-size:.56rem;letter-spacing:.03em;text-transform:uppercase;
     color:var(--dim);}
-  .th-comp-dv{color:var(--ink);}
-  .th-comp-src{font-family:var(--mono);font-size:.6rem;color:var(--gold);text-decoration:none;white-space:nowrap;}
+  .th-comp-dv{color:var(--ink);min-width:0;}
+  .th-comp-src{font-size:.72rem;color:var(--gold);text-decoration:none;white-space:nowrap;margin-left:.1rem;}
   .th-comp-src:hover{text-decoration:underline;}
+  @media (max-width:560px){ .th-comp-dim{grid-template-columns:1fr;gap:0;} }
   .th-comp-tablewrap{margin:.7rem 0 0;}
   .th-comp-tablewrap > summary{cursor:pointer;font-family:var(--mono);font-size:.7rem;color:var(--dim);
     list-style:none;padding:.3rem 0;}
@@ -12809,21 +12821,25 @@ async function openShare(token){
     const totalUnrun = inqs.reduce((n, i) => n + (i.questions || []).filter(q => !q.target_status).length, 0);
     // The global bar: run every line of inquiry at once → build the Pitch Deck + Collective Take, and
     // (once findings exist) rebuild those two from the existing findings for free. Redraft/Clear stay.
-    const runAllBtn = (owner && !running && (totalUnrun > 0 || anyAnswered))
-      ? '<button type="button" class="th-run th-run-all" id="th-run-all">'
-        + (anyAnswered && totalUnrun === 0 ? "Rebuild the take"
-           : "Run all lines of inquiry") + "</button>"
-      : "";
-    // Priority LEVELS (assigned at generation): run P0 (crux) first, then add layers. Small & precise.
+    // Rebuild the take when everything's already answered; otherwise the LEVEL buttons below do the runs.
+    const runAllBtn = (owner && !running && anyAnswered && totalUnrun === 0)
+      ? '<button type="button" class="th-run th-run-all" id="th-run-all">Rebuild the take</button>' : "";
+    // Priority LEVELS (assigned at generation): one button per level — run P0, then P0+P1, then P0+P1+P2,
+    // … each cumulative and precise. The top level equals every un-answered question.
     const allq = inqs.flatMap(i => i.questions || []);
     const unrunAtLvl = (lvl) => allq.filter(q => !q.target_status && Number(q.priority == null ? 1 : q.priority) <= lvl).length;
-    const p0 = unrunAtLvl(0), p1 = unrunAtLvl(1);
-    const runP0Btn = (owner && !running && p0 > 0)
-      ? '<button type="button" class="th-run" id="th-run-crit" data-lvl="0" title="Run only the P0 crux '
-        + 'questions — the few that most decide fund/pass">Run P0 critical (' + p0 + ")</button>" : "";
-    const runP1Btn = (owner && !running && p1 > p0)
-      ? '<button type="button" class="th-inq-add" id="th-run-p1" data-lvl="1" title="Run P0 + P1 for more '
-        + 'coverage">Run P0–P1 (' + p1 + ")</button>" : "";
+    let levelBtns = "";
+    if(owner && !running && totalUnrun > 0){
+      const maxLvl = Math.max(0, ...allq.filter(q => !q.target_status).map(q => Number(q.priority == null ? 1 : q.priority)));
+      for(let L = 0; L <= maxLvl; L++){
+        const n = unrunAtLvl(L);
+        if(!n || (L > 0 && n === unrunAtLvl(L - 1))) continue;   // skip empty levels / levels that add nothing
+        const label = L === 0 ? "Run P0 critical (" + n + ")" : "Run P0–P" + L + " (" + n + ")";
+        const cls = L === 0 ? "th-run" : "th-inq-add";
+        levelBtns += '<button type="button" class="' + cls + ' th-run-lvl" data-lvl="' + L
+          + '" title="Run every un-answered question at priority P' + L + ' or higher">' + label + "</button>";
+      }
+    }
     const resynthBtn = (owner && !running && anyAnswered && totalUnrun > 0)
       ? '<button type="button" class="th-inq-add" id="th-resynth">Rebuild take from findings</button>' : "";
     // The Pitch Deck is a SEPARATE, on-demand artifact — generate it after the take exists.
@@ -12840,8 +12856,8 @@ async function openShare(token){
       ? '<button type="button" class="th-inq-add" id="th-redraft">Redraft all questions</button>'
         + '<button type="button" class="th-inq-add th-inq-del" id="th-clear">Clear all &amp; start fresh</button>'
       : "";
-    const bar = (runAllBtn || runP0Btn || runP1Btn || resynthBtn || deckBtn || compBtn || draftBar)
-      ? '<div class="th-loi-bar">' + runAllBtn + runP0Btn + runP1Btn + resynthBtn + deckBtn + compBtn + draftBar + "</div>" : "";
+    const bar = (levelBtns || runAllBtn || resynthBtn || deckBtn || compBtn || draftBar)
+      ? '<div class="th-loi-bar">' + levelBtns + runAllBtn + resynthBtn + deckBtn + compBtn + draftBar + "</div>" : "";
     const synthProg = (running && STATE.inqRun.competitive)
       ? '<div class="th-run-prog th-synth-prog"><span class="su-spin"></span> <span>Researching the '
         + "competitive landscape — identifying the players and profiling each…</span></div>"
@@ -12855,8 +12871,8 @@ async function openShare(token){
       + inqs.map(i => inqHtml(i, openKeys)).join("") + "</div>";
     const ra = document.getElementById("th-run-all");
     if(ra) ra.addEventListener("click", () => (anyAnswered && totalUnrun === 0) ? resynthesize() : runAllInquiries());
-    const rc = document.getElementById("th-run-crit"); if(rc) rc.addEventListener("click", () => runCriticalSubset(0));
-    const r1 = document.getElementById("th-run-p1"); if(r1) r1.addEventListener("click", () => runCriticalSubset(1));
+    host.querySelectorAll(".th-run-lvl").forEach(b =>
+      b.addEventListener("click", () => runCriticalSubset(Number(b.dataset.lvl))));
     const gd = document.getElementById("th-gen-deck"); if(gd) gd.addEventListener("click", generateDeck);
     const cr = document.getElementById("th-comp-research"); if(cr) cr.addEventListener("click", researchCompetitive);
     const rs = document.getElementById("th-resynth"); if(rs) rs.addEventListener("click", resynthesize);
@@ -12968,19 +12984,31 @@ async function openShare(token){
     const players = comp.players || [];
     if(!players.length && (comp.rows || []).length) return legacyCompTable(comp);   // old shape
     if(!cols.length || !players.length) return "";
+    const labelOf = (k) => (cols.find(c => c.key === k) || {}).label || k;
     const cards = players.map(p => {
-      const dims = cols.map(c => {
-        const cell = (p.cells || {})[c.key];
-        if(!cell || !(cell.text || "").trim()) return "";
-        const src = cell.source_url
-          ? ' <a class="th-comp-src" href="' + esc2(cell.source_url) + '" target="_blank" rel="noopener" '
-            + 'title="' + esc2(cell.source_title || "") + '">source</a>' : "";
-        return '<div class="th-comp-dim"><span class="th-comp-dk">' + esc2(c.label || c.key) + "</span>"
-          + '<span class="th-comp-dv">' + esc2(cell.text) + src + "</span></div>";
-      }).filter(Boolean).join("");
+      const cell = (k) => (p.cells || {})[k];
+      const has = (k) => { const cc = cell(k); return cc && (cc.text || "").trim(); };
+      const srcIcon = (cc) => cc.source_url
+        ? '<a class="th-comp-src" href="' + esc2(cc.source_url) + '" target="_blank" rel="noopener" '
+          + 'title="' + esc2(cc.source_title || "source") + '">↗</a>' : "";
+      const val = (k, max) => { const cc = cell(k); const t = (cc.text || "").trim();
+        const shown = t.length > max ? esc2(t.slice(0, max).replace(/\s+\S*$/, "")) + "…" : esc2(t);
+        return '<span title="' + esc2(t) + '">' + shown + "</span> " + srcIcon(cc); };
+      // Lead: the central idea in one line. Stats: funding/customers/investors/traction as compact chips.
+      // The rest: short labeled lines. Everything truncated with the full text on hover — no wall of text.
+      const lead = has("central_idea") ? '<div class="th-comp-lead">' + val("central_idea", 150) + "</div>" : "";
+      const statKeys = ["funding", "customers", "investors", "traction"].filter(has);
+      const stats = statKeys.length ? '<div class="th-comp-stats">' + statKeys.map(k =>
+        '<span class="th-comp-stat"><span class="th-comp-stat-k">' + esc2(labelOf(k)) + "</span>"
+        + val(k, 44) + "</span>").join("") + "</div>" : "";
+      const narr = cols.map(c => c.key).filter(k =>
+        k !== "central_idea" && statKeys.indexOf(k) < 0 && has(k));
+      const dims = narr.length ? '<div class="th-comp-dims">' + narr.map(k =>
+        '<div class="th-comp-dim"><span class="th-comp-dk">' + esc2(labelOf(k)) + "</span>"
+        + '<span class="th-comp-dv">' + val(k, 130) + "</span></div>").join("") + "</div>" : "";
+      const body = (lead || stats || dims) || '<div class="th-cell-empty">Not found in the open record.</div>';
       return '<div class="th-comp-card"><h5 class="th-comp-name">' + esc2(p.name)
-        + (p.is_subject ? ' <span class="th-comp-you">thesis</span>' : "") + "</h5>"
-        + (dims || '<div class="th-cell-empty">Not found in the open record.</div>') + "</div>";
+        + (p.is_subject ? ' <span class="th-comp-you">thesis</span>' : "") + "</h5>" + body + "</div>";
     }).join("");
     const head = "<tr><th>Player</th>" + cols.map(c => "<th>" + esc2(c.label || c.key) + "</th>").join("") + "</tr>";
     const trows = players.map(p => "<tr><th scope=\"row\">" + esc2(p.name) + "</th>"

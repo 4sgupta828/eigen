@@ -489,10 +489,12 @@ test("genesis draft offers auto-improve + a backtrackable version timeline", () 
 });
 
 test("the LoI bar offers priority-level runs, a separate deck, and competitive research", () => {
-  assert.match(SRC, /function runCriticalSubset\(level\)/);   // priority-level run
+  assert.match(SRC, /function runCriticalSubset\(level\)/);   // priority-level run (any level)
   assert.match(SRC, /\/inquiries\/run_critical/);
   assert.match(SRC, /Run P0 critical/);                       // P0 crux run
-  assert.match(SRC, /runCriticalSubset\(1\)/);                // P0+P1 layer
+  assert.match(SRC, /"Run P0–P" \+ L/);                       // dynamic P0+P1, P0+P1+P2, … buttons
+  assert.match(SRC, /th-run-lvl/);
+  assert.match(SRC, /runCriticalSubset\(Number\(b\.dataset\.lvl\)\)/);
   assert.match(SRC, /function generateDeck\(/);               // deck is its own on-demand action
   assert.match(SRC, /"\/deck"/);
   assert.match(SRC, /Generate pitch deck/);
