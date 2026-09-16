@@ -63,35 +63,43 @@ async def _load_findings(pool, thesis_id: str, profile) -> tuple[str, str, list[
 
 
 async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=None) -> dict:
-    """Compose + persist the Pitch Deck, Collective Take, and Competitive Analysis for a thesis. Returns
-    {"deck": {...}, "take": {...}, "competitive": {...}, "findings": <n>}. With no findings yet, persists
-    empty artifacts so the UI shows an honest 'run a line of inquiry first', never stale content.
+    """Compose + persist the COLLECTIVE TAKE (the integrated diligence read). Returns
+    {"take": {...}, "findings": <n>}. With no findings yet, persists an empty take.
 
-    `take_llm_json`: the deep-thinking (reasoning) seam for the Collective Take; falls back to `llm_json`
-    when not supplied. The take alone reasons second-order across every finding, so it gets the stronger
-    reasoner; the deck + matrix stay on the faster seam."""
+    The Pitch Deck (synthesize_deck) and the Competitive landscape (competitive.research_landscape) are
+    now SEPARATE, independently-triggered artifacts — a run/rebuild produces the take, and the user
+    generates the deck (and researches competitors) on demand afterward. So this never overwrites a deck
+    the user asked for, and the take is the fast, always-current synthesis after a run.
+
+    `take_llm_json`: the deep-thinking (reasoning) seam; falls back to `llm_json` when not supplied."""
     take_llm = take_llm_json or llm_json
-    deck_dir, deck_secs = profile.pitch_deck_spec()
     take_dir, take_secs = profile.collective_take_spec()
     thesis, subject, findings = await _load_findings(pool, thesis_id, profile)
-    # The COMPETITIVE landscape is NO LONGER built here: it is its own gated, web-researched artifact
-    # (apps/api/thesis/competitive.py via POST /competitive/research), so re-synthesis never overwrites a
-    # researched landscape with an empty passive matrix. synthesize_all owns only the deck + take.
     if not findings:
-        deck_obj, take_obj = _empty_deck(deck_secs), _empty_take(take_secs)
-        await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
+        take_obj = _empty_take(take_secs)
         await tstore.set_collective_take(pool, thesis_id, take_obj)
-        return {"deck": deck_obj, "take": take_obj, "findings": 0}
-
-    deck = await compose_over_findings(llm_json, directive=deck_dir, sections=list(deck_secs),
-                                       findings=findings, decision=thesis, layout="bullets")
+        return {"take": take_obj, "findings": 0}
     take = await compose_memo(take_llm, directive=take_dir, sections=list(take_secs),
                               findings=findings, decision=thesis, answer_chars=2400)
     now = int(time.time())
     n = len(findings)
-    deck_obj = {"sections": deck, "empty": False, "generated_at": now, "findings": n}
     take_obj = {"bottom_line": take.get("bottom_line") or {"text": "", "markers": ""},
                 "sections": take.get("sections") or [], "empty": False, "generated_at": now, "findings": n}
-    await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
     await tstore.set_collective_take(pool, thesis_id, take_obj)
-    return {"deck": deck_obj, "take": take_obj, "findings": n}
+    return {"take": take_obj, "findings": n}
+
+
+async def synthesize_deck(pool, thesis_id: str, profile, llm_json) -> dict:
+    """Compose + persist the Startup Pitch Deck — a SEPARATE, on-demand artifact, generated after the
+    Collective Take exists. -> {"deck": {...}, "findings": <n>}."""
+    deck_dir, deck_secs = profile.pitch_deck_spec()
+    thesis, _subject, findings = await _load_findings(pool, thesis_id, profile)
+    if not findings:
+        deck_obj = _empty_deck(deck_secs)
+        await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
+        return {"deck": deck_obj, "findings": 0}
+    deck = await compose_over_findings(llm_json, directive=deck_dir, sections=list(deck_secs),
+                                       findings=findings, decision=thesis, layout="bullets")
+    deck_obj = {"sections": deck, "empty": False, "generated_at": int(time.time()), "findings": len(findings)}
+    await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
+    return {"deck": deck_obj, "findings": len(findings)}

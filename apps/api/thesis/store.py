@@ -182,6 +182,10 @@ CREATE INDEX IF NOT EXISTS ix_ts_question_inq ON ts_question (thesis_id, inquiry
 ALTER TABLE ts_question ADD COLUMN IF NOT EXISTS inquiry_name text NOT NULL DEFAULT '';
 ALTER TABLE ts_question ADD COLUMN IF NOT EXISTS inquiry_framing text NOT NULL DEFAULT '';
 ALTER TABLE ts_question ADD COLUMN IF NOT EXISTS inquiry_order int NOT NULL DEFAULT 0;
+-- Priority LEVEL, assigned at generation with full context: 0 = P0 (critical crux, run first), 1 = P1,
+-- 2 = P2 … Higher levels are incremental coverage. The critical-subset run is simply priority = 0; a
+-- user runs deeper levels for more coverage. Default 1 so an un-prioritized question is mid, not a crux.
+ALTER TABLE ts_question ADD COLUMN IF NOT EXISTS priority int NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS ts_run (
     id              text PRIMARY KEY,
@@ -799,11 +803,13 @@ async def set_inquiries(pool, thesis_id: str, inquiries: list[dict]) -> None:
             for i, q in enumerate(inq.get("questions") or []):
                 await conn.execute(
                     """INSERT INTO ts_question (id, thesis_id, inquiry_key, aspect_key, kind, text,
-                           target, polarity, sort_order, inquiry_name, inquiry_framing, inquiry_order)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)""",
+                           target, polarity, sort_order, inquiry_name, inquiry_framing, inquiry_order,
+                           priority)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",
                     uuid.uuid4().hex[:16], thesis_id, inq["key"], q["dimension"], q["kind"],
                     q["text"][:400], q["target"][:400], int(q.get("polarity", 1)), i,
-                    (inq.get("name") or "")[:120], (inq.get("framing") or "")[:200], order)
+                    (inq.get("name") or "")[:120], (inq.get("framing") or "")[:200], order,
+                    max(0, int(q.get("priority", 1))))
             order += 1
 
 

@@ -102,6 +102,7 @@ class ResearchStartIn(BaseModel):
     max_usd: float = 0.0
     idempotency_key: str = ""
     web: bool = True
+    level: int = 0             # critical-subset run: 0 = P0 only, 1 = P0+P1, 2 = P0+P1+P2 … (priority level)
 
 
 class RunIn(BaseModel):
@@ -1279,6 +1280,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         else:
             inquiries = await _dec.generate_inquiries(
                 _strong_llm_json(), decision=decision, aspects=aspects, directive=directive, frame=fr)
+        # Mark each question's PRIORITY LEVEL now, with full thesis context (P0 crux / P1 / P2) — so the
+        # critical-subset run is just "priority == 0", precise and never re-ranked (owner direction).
+        await prio.assign_priorities(profile, inquiries, thesis=decision, llm_json=_strong_llm_json())
         await tstore.set_inquiries(pool, thesis_id, inquiries)
         return await tl_inquiries(thesis_id, authorization, x_thesis_owner)
 
@@ -1462,8 +1466,18 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         qs = await tstore.list_questions(pool, thesis_id)
         if not qs:
             raise HTTPException(status_code=409, detail="draft the questions first")
-        subset = await prio.select_subset(_profile(), _evidence_questions(_profile(), qs),
-                                          thesis=_d.get("thesis") or "", llm_json=_strong_llm_json(), cap=12)
+        # Priority levels are assigned at GENERATION (P0/P1/P2). The critical-subset run just filters by
+        # level (0 = P0 crux, 1 = P0+P1, …) — no re-ranking. Fall back to runtime ranking only for older
+        # theses generated before priorities existed (everything defaulted to level 1 with no P0).
+        lvl = max(0, int(body.level or 0))
+        evidence_qs = _evidence_questions(_profile(), qs)
+        unrun = [q for q in evidence_qs if not q.get("target_status")]
+        has_p0 = any(int(q.get("priority", 1)) == 0 for q in evidence_qs)
+        if has_p0:
+            subset = [q for q in unrun if int(q.get("priority", 1)) <= lvl]
+        else:
+            subset = await prio.select_subset(_profile(), evidence_qs,
+                                              thesis=_d.get("thesis") or "", llm_json=_strong_llm_json(), cap=12)
         if not subset:
             result = await _synthesize(thesis_id)     # nothing to run (all answered) → free re-synth
             return {"status": "synthesized", "findings": result.get("findings", 0)}
@@ -1489,13 +1503,24 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     @r.post("/thesis/{thesis_id}/synthesize")
     async def tl_synthesize(thesis_id: str, authorization: str = Header(default=""),
                             x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
-        """Rebuild the Pitch Deck + Collective Take from the EXISTING findings — no research, no spend
-        beyond the two grounded synthesis calls. Backs the 'Rebuild deck & take' button."""
+        """Rebuild the Collective Take from the EXISTING findings — no research, no spend beyond the one
+        grounded synthesis call. The Pitch Deck (/deck) and Competitive landscape are separate artifacts,
+        generated on demand and returned as-is here."""
         pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
         result = await _synthesize(thesis_id)
-        # Competitive is a separate researched artifact (not rebuilt here) — return the existing one as-is.
-        return {"status": "ok", "deck": result.get("deck"), "take": result.get("take"),
+        return {"status": "ok", "take": result.get("take"), "deck": _d.get("pitch_deck") or {},
                 "competitive": _d.get("competitive") or {}, "findings": result.get("findings", 0)}
+
+    @r.post("/thesis/{thesis_id}/deck")
+    async def tl_deck(thesis_id: str, authorization: str = Header(default=""),
+                      x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Generate the Startup Pitch Deck from the existing findings — a SEPARATE, on-demand artifact
+        (owner direction), available after the Collective Take exists. Free (one grounded synth call)."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if _profile() is None:
+            raise HTTPException(status_code=409, detail="no decision profile is configured")
+        result = await syn.synthesize_deck(pool, thesis_id, _profile(), _strong_llm_json())
+        return {"status": "ok", "deck": result.get("deck"), "findings": result.get("findings", 0)}
 
     async def _run_competitive(thesis_id: str, run_id: str):
         """Research the competitive landscape (open web) and store it — a background run so the request
