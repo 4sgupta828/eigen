@@ -47,6 +47,22 @@ async def test_synthesize_grounds_and_gates_citations():
 
 
 @pytest.mark.asyncio
+async def test_synthesize_adds_a_grounded_strategic_read_and_gates_it():
+    async def llm(system, user):
+        return {"layout": "prose",
+                "sentences": [{"text": "Two vendors ship this feature.", "evidence_ids": ["e1"]}],
+                "read": [
+                    {"text": "That crowding makes the wedge the crux of the fund decision.", "evidence_ids": ["e1"]},
+                    {"text": "Ungrounded speculation about the future.", "evidence_ids": ["nope"]}]}
+    synth = make_synthesize(llm)
+    out = await synth(_q("Is the field crowded?"),
+                      [{"id": "e1", "quote": "two vendors ship it", "register": "stated"}])
+    assert "Strategic read" in out                                  # the decision-relevant read renders
+    assert "wedge the crux of the fund decision" in out and "[[e:e1]]" in out
+    assert "Ungrounded speculation" not in out                      # a read sentence citing a bad id is dropped
+
+
+@pytest.mark.asyncio
 async def test_synthesize_returns_empty_only_without_a_model():
     synth = make_synthesize(None)
     assert await synth(_q("t"), [{"id": "e1"}]) == ""      # no model → no prose (verdict stands alone)

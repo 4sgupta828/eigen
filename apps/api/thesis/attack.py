@@ -21,7 +21,8 @@ from .schema import (
     UNSETTLEABLE, is_signal_only, register_of,
 )
 
-MAX_PER_SIDE = 8      # was 6; reformulation surfaces ~8 distinct sources, let more reach synthesis
+MAX_PER_SIDE = 10     # was 8; more reformulated angles + the full red-team surface more distinct sources,
+#                       so let more of them reach synthesis (a single-source answer is a failure)
 MAX_PER_QUERY = 8
 
 
@@ -437,6 +438,12 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
     cap = _int_env("EIGEN_THESIS_MAX_PER_SIDE", MAX_PER_SIDE)
     per_source_cap = _int_env("EIGEN_THESIS_PER_SOURCE", 2)
     papers_cap = _int_env("EIGEN_THESIS_PAPERS_SUPPLEMENT", 3)
+    # How many web ANGLES to run per side. A single answer must not rest on a single source: the FOR leg
+    # runs several reformulated angles, and — the fix for thin, one-sided answers — the AGAINST (red-team)
+    # leg runs MULTIPLE disconfirming angles too, not just one. Each angle is a distinct search that
+    # surfaces distinct sources; the per_source_cap (≤2 per domain) then keeps the kept set diverse.
+    n_for_q = _int_env("EIGEN_THESIS_WEB_FOR_QUERIES", 4)
+    n_against_q = _int_env("EIGEN_THESIS_WEB_AGAINST_QUERIES", 3)
     retr["research_relevant"] = papers_relevant
     ev_web: list[dict] = []
     ev_papers: list[dict] = []
@@ -444,7 +451,7 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
 
     # --- PRIMARY: the open web ---
     if web_client is not None and retrieve:
-        for fq in for_queries[:3]:
+        for fq in for_queries[:n_for_q]:
             got = await _web(web_client, fq, SIDE_FOR, terms)
             web_qs += 1
             ev_web.extend(got)
@@ -452,10 +459,13 @@ async def attack_claim(dsn: str, *, claim: str, settleable: str, judge_llm=None,
             _note(fq, "web", got, got)
             if len(ev_web) >= cap:
                 break
-        if against_qs:
-            got = await _web(web_client, against_qs[0], SIDE_AGAINST, terms)
+        for aq in against_qs[:n_against_q]:          # MULTIPLE red-team angles, not just against_qs[0]
+            got = await _web(web_client, aq, SIDE_AGAINST, terms)
             web_qs += 1
             ev_against.extend(got)
+            retr["web_against_raw"] = retr.get("web_against_raw", 0) + len(got)
+            if len(ev_against) >= cap:
+                break
 
     # --- SUPPLEMENT: research papers, ONLY when the claim is one the literature settles ---
     if dsn and retrieve and papers_relevant:

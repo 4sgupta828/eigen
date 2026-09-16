@@ -464,3 +464,12 @@ test("thesis intro offers 'Discover a published thesis to start from' → seeds 
   assert.match(SRC, /Start a thesis from this/);       // per-result CTA
   assert.match(SRC, /interpretation — not a fact/);    // honest register on every thesis card
 });
+
+test("the Collective Take renders ONE decision-flow flowchart from the inquiry verdicts", () => {
+  assert.match(SRC, /function takeFlowSvg\(/);            // the single flowchart builder
+  assert.match(SRC, /\+ takeFlowSvg\(\)/);               // wired into the take, next to the BLUF
+  assert.match(SRC, /marker-end="url\(#th-ah\)"/);       // it is a flowchart — arrowed connectors
+  assert.match(SRC, /th-flow-dia/);                       // with a decision diamond
+  assert.match(SRC, /not investment advice/);            // honest: a reading, human owns the decision
+  assert.match(SRC, /inqs\.length < 2\) return ""/);     // no diagram for a trivial (<2 node) thesis
+});

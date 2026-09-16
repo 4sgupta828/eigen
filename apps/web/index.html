@@ -974,6 +974,24 @@
     line-height:1.6;color:var(--ink);font-weight:500;}
   .th-memo-grounded p{margin:.35rem 0;font-size:.85rem;line-height:1.6;color:var(--ink);}
   .th-memo-grounded p:first-of-type{margin-top:0;}
+  /* The single decision-flow flowchart (SVG), rendered from the inquiry verdicts. */
+  .th-flow{margin:.7rem .95rem .2rem;}
+  .th-flow-cap{font-family:var(--mono);font-size:.68rem;letter-spacing:.02em;color:var(--dim);
+    margin:0 0 .4rem;line-height:1.4;}
+  .th-flow-svg{max-width:100%;height:auto;display:block;color:var(--ink);}
+  .th-flow-box{fill:var(--card,var(--panel,#fff));stroke:var(--hair);stroke-width:1.5;}
+  .th-flow-start{stroke:var(--gold);stroke-width:2;}
+  .th-flow-dia{fill:var(--bg,transparent);stroke:var(--muted);stroke-width:1.5;}
+  .th-flow-t{fill:currentColor;font-family:var(--mono);}
+  .th-flow-tb{font-size:12px;font-weight:700;letter-spacing:.04em;}
+  .th-flow-name{font-size:12px;font-weight:600;}
+  .th-flow-verd{font-size:11px;text-transform:capitalize;}
+  .th-flow-lean{font-size:13px;font-weight:700;letter-spacing:.02em;}
+  .th-flow-sub{font-size:10px;fill:var(--dim);}
+  .th-flow-arrow{stroke:var(--muted);stroke-width:1.6;}
+  .th-flow-ah{fill:var(--muted);}
+  .th-flow-foot{font-family:var(--mono);font-size:.64rem;color:var(--dim);margin:.35rem 0 0;line-height:1.4;}
+  @media (max-width:560px){ .th-flow{margin:.7rem .7rem .2rem;overflow-x:auto;} }
   .th-reasons{display:grid;gap:.4rem;margin:.5rem 0 .2rem;}
   .th-reason{display:flex;gap:.5rem;align-items:flex-start;padding:.4rem .55rem;border-radius:8px;
     background:var(--bg,transparent);border:1px solid var(--hair);font-size:.83rem;line-height:1.55;}
@@ -12788,6 +12806,95 @@ async function openShare(token){
       + head + "</thead><tbody>" + body + "</tbody></table></div>";
   }
 
+  // The ONE decision-flow diagram: Thesis → each line of inquiry (coloured by how the record left it) →
+  // how the evidence leans. Built entirely from the inquiry verdicts already on the client — no server,
+  // no spend. It makes the critical decision legible at a glance, next to the Collective Take's read.
+  function flowVerdictColor(v){
+    if(v === "contradicted") return "#c0392b";                 // red — the record argues against it
+    if(v === "supported") return "#2e7d5b";                    // green — the record supports it
+    if(v === "unsettleable") return "#8a8a8a";                 // grey — only a person can settle it
+    return "#b5762a";                                          // amber — open / under-tested
+  }
+  function inqRollupVerdict(inq){
+    const vs = (inq.aspects || []).map(a => a.verdict || "open");
+    if(vs.includes("contradicted")) return "contradicted";
+    if(vs.length && vs.every(v => v === "supported")) return "supported";
+    if(vs.includes("supported")) return "mixed";
+    if(vs.length && vs.every(v => v === "unsettleable")) return "unsettleable";
+    return "open";
+  }
+  function rollupColor(v){ return v === "mixed" ? "#b5762a" : flowVerdictColor(v); }
+
+  function takeFlowSvg(){
+    const inqs = (STATE.inquiries || []).filter(i => (i.aspects || []).length);
+    if(inqs.length < 2) return "";                             // a flow needs at least a couple of nodes
+    const rolls = inqs.map(inqRollupVerdict);
+    const lean = rolls.includes("contradicted")
+        ? {t: "Leans PASS", d: "contradicted on ≥1 aspect", c: "#c0392b"}
+      : (rolls.every(v => v === "supported")
+        ? {t: "Leans FUND", d: "supported across every line", c: "#2e7d5b"}
+      : {t: "CONTINUE diligence", d: "mixed / still under-tested", c: "#b5762a"});
+    const esc3 = (s) => esc2(String(s || ""));
+    // A top-to-bottom FLOWCHART: a start terminal (the thesis), one process step per line of inquiry
+    // connected by down-arrows, a decision diamond, then the outcome terminal — coloured by the record.
+    const W = 360, Wn = 316, x = (W - Wn) / 2, cx = W / 2;
+    const startH = 44, stepH = 50, diaH = 64, outH = 56, arrow = 24;
+    let y = 6;
+    const parts = [];
+    const arrowTo = (y1, y2) => '<line x1="' + cx + '" y1="' + y1 + '" x2="' + cx + '" y2="' + (y2 - 1)
+      + '" class="th-flow-arrow" marker-end="url(#th-ah)"/>';
+    // start terminal (pill)
+    const sy = y;
+    parts.push('<rect x="' + x + '" y="' + sy + '" width="' + Wn + '" height="' + startH + '" rx="'
+      + (startH / 2) + '" class="th-flow-box th-flow-start"/>'
+      + '<text x="' + cx + '" y="' + (sy + startH / 2 + 4) + '" text-anchor="middle" '
+      + 'class="th-flow-t th-flow-tb">THESIS UNDER TEST</text>');
+    y = sy + startH;
+    // one process step per line of inquiry
+    inqs.forEach((inq, i) => {
+      const ay = y; y += arrow; const by = y; const col = rollupColor(rolls[i]);
+      parts.push(arrowTo(ay, by));
+      parts.push('<rect x="' + x + '" y="' + by + '" width="' + Wn + '" height="' + stepH + '" rx="8" '
+        + 'class="th-flow-box" style="stroke:' + col + '"/>'
+        + '<rect x="' + x + '" y="' + by + '" width="5" height="' + stepH + '" rx="0" style="fill:' + col + '"/>'
+        + '<text x="' + (x + 16) + '" y="' + (by + 21) + '" class="th-flow-t th-flow-name">'
+        + esc3((inq.name || inq.key || "").slice(0, 42)) + '</text>'
+        + '<text x="' + (x + 16) + '" y="' + (by + 39) + '" class="th-flow-t th-flow-verd" '
+        + 'style="fill:' + col + '">▸ ' + esc3(verdictWord(rolls[i])) + '</text>');
+      y = by + stepH;
+    });
+    // decision diamond
+    const ady = y; y += arrow; const dy = y; const dcx = cx, dcy = dy + diaH / 2, dhw = 150, dhh = diaH / 2;
+    parts.push(arrowTo(ady, dy));
+    parts.push('<polygon points="' + dcx + ',' + dy + ' ' + (dcx + dhw) + ',' + dcy + ' ' + dcx + ','
+      + (dy + diaH) + ' ' + (dcx - dhw) + ',' + dcy + '" class="th-flow-box th-flow-dia"/>'
+      + '<text x="' + dcx + '" y="' + (dcy - 3) + '" text-anchor="middle" class="th-flow-t th-flow-verd">'
+      + 'Where does the</text>'
+      + '<text x="' + dcx + '" y="' + (dcy + 13) + '" text-anchor="middle" class="th-flow-t th-flow-verd">'
+      + 'evidence point?</text>');
+    y = dy + diaH;
+    // outcome terminal (pill)
+    const oay = y; y += arrow; const oy = y;
+    parts.push(arrowTo(oay, oy));
+    parts.push('<rect x="' + x + '" y="' + oy + '" width="' + Wn + '" height="' + outH + '" rx="'
+      + (outH / 2) + '" class="th-flow-box" style="stroke:' + lean.c + ';stroke-width:2.5"/>'
+      + '<text x="' + cx + '" y="' + (oy + 23) + '" text-anchor="middle" class="th-flow-t th-flow-lean" '
+      + 'style="fill:' + lean.c + '">' + esc3(lean.t) + '</text>'
+      + '<text x="' + cx + '" y="' + (oy + 41) + '" text-anchor="middle" class="th-flow-t th-flow-sub">'
+      + esc3(lean.d) + '</text>');
+    const H = oy + outH + 6;
+    return '<div class="th-flow"><div class="th-flow-cap">Decision flow — the thesis, each line of '
+      + 'inquiry and how the record left it, to where the evidence leans</div>'
+      + '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" '
+      + 'aria-label="Flowchart: thesis, through each line of inquiry and its verdict, to how the evidence '
+      + 'leans" class="th-flow-svg" xmlns="http://www.w3.org/2000/svg">'
+      + '<defs><marker id="th-ah" markerWidth="9" markerHeight="9" refX="4.5" refY="4.5" orient="auto">'
+      + '<path d="M1 1 L8 4.5 L1 8 Z" class="th-flow-ah"/></marker></defs>'
+      + parts.join("")
+      + '</svg><div class="th-flow-foot">A reading of the evidence, not investment advice — the human '
+      + 'owns the decision.</div></div>';
+  }
+
   function deckAndTakeHtml(){
     const take = STATE.take, deck = STATE.deck, comp = STATE.competitive;
     const hasTake = take && !take.empty && (((take.bottom_line || {}).text || "").trim()
@@ -12806,6 +12913,7 @@ async function openShare(token){
         + '<span class="th-synth-note">the integrated diligence read — facts + reasoning across every finding</span></summary>'
         + '<div class="th-take-body">'
         + ((bl.text || "").trim() ? '<div class="th-memo-bluf">' + c.ref((bl.text || "") + " " + (bl.markers || "")) + "</div>" : "")
+        + takeFlowSvg()
         + secs + c.footnotes() + "</div></details>";
     }
     if(hasComp){
