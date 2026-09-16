@@ -465,13 +465,15 @@ test("thesis intro offers 'Discover a published thesis to start from' → seeds 
   assert.match(SRC, /interpretation — not a fact/);    // honest register on every thesis card
 });
 
-test("the Collective Take renders ONE decision-flow flowchart from the inquiry verdicts", () => {
-  assert.match(SRC, /function takeFlowSvg\(/);            // the single flowchart builder
-  assert.match(SRC, /\+ takeFlowSvg\(\)/);               // wired into the take, next to the BLUF
-  assert.match(SRC, /marker-end="url\(#th-ah\)"/);       // it is a flowchart — arrowed connectors
-  assert.match(SRC, /th-flow-dia/);                       // with a decision diamond
-  assert.match(SRC, /not investment advice/);            // honest: a reading, human owns the decision
-  assert.match(SRC, /inqs\.length < 2\) return ""/);     // no diagram for a trivial (<2 node) thesis
+test("the Collective Take renders a reasoning FLOW over the whole take, not a shallow verdict picture", () => {
+  assert.match(SRC, /function takeReasoningFlow\(take, c\)/);   // builds from the take's own reasoning blocks
+  assert.match(SRC, /\+ takeReasoningFlow\(take, c\)/);         // wired into the take, next to the BLUF
+  assert.match(SRC, /blocks\("assumption"\)/);                 // stage: what must be true
+  assert.match(SRC, /blocks\("tension"\)\.concat\(blocks\("gap"\)\)/);  // stage: what the evidence shows
+  assert.match(SRC, /blocks\("implication"\)/);                // stage: what it implies
+  assert.match(SRC, /blocks\("what_would_change_this"\)/);     // stage: what would change the read
+  assert.match(SRC, /th-rf-bluf/);                             // the BLUF is the converging "read"
+  assert.match(SRC, /not investment advice/);                  // honest: a reading, human owns the decision
 });
 
 test("genesis draft offers auto-improve + a backtrackable version timeline", () => {
