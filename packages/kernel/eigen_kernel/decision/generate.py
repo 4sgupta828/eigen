@@ -1,10 +1,19 @@
-"""Decision-level question generation + clustering — the factra move.
+"""Decision-level question generation + clustering — the factra move, made systematic (panel 2026-09-16).
 
-Instead of asking a fixed question per fixed aspect, one agent reads the whole DECISION and generates
-thesis-native questions that COVER it, then clusters them into named lines of inquiry. The coverage
-CONTRACT is still the profile's aspect set (the rubric): code guarantees every aspect is addressed by at
-least one question (Rule 18 — the model authors thesis-specific wording and clusters; code enforces that
-nothing in the contract is dropped). Domain-free: the rubric and the directive come from the profile.
+One agent reads the whole DECISION and generates thesis-native questions that COVER it, clustered into
+named lines of inquiry. The kernel then makes the set SYSTEMATIC without reading a single domain word:
+
+  1. allocate_budget — a frame-weighted, global-target soft budget per aspect (budget.py). Depth follows
+     THIS decision's risk density, not a flat ceiling; every aspect keeps a floor of 1.
+  2. score + select — rank each question by how tightly it binds to the frame's assumptions/risks, keep
+     the best up to each aspect's budget, drop near-duplicates (select.py). Selection, never a hard gate:
+     a dimension is trimmed for precision, never emptied.
+  3. coverage floor — any aspect the model (after selection) left with nothing is filled by a SECOND
+     thesis-native pass, the raw aspect prompt only as a last resort. No filler is manufactured to reach
+     a budget the model could not fill — the unused share was already reallocated in step 1.
+
+The coverage CONTRACT is still the profile's aspect set; the rubric and directive come from the profile.
+Domain-free throughout.
 """
 from __future__ import annotations
 
@@ -12,9 +21,10 @@ import json
 import re
 
 from .types import Aspect, Question, QuestionKind
+from .budget import allocate_budget, DEFAULT_TOTAL
+from .select import score_questions, select_for_aspect
 
-MAX_QUESTIONS = 24          # a ceiling on the whole set, so cost stays bounded
-MAX_PER_DIMENSION = 4
+MAX_QUESTIONS = 40         # a hard safety ceiling on the whole set; the allocator's `total` is the real knob
 
 
 def _slug(name: str) -> str:
@@ -42,6 +52,11 @@ def _coerce_question(item: dict, valid_dims: set) -> dict | None:
         return None
     pol = -1 if str(item.get("polarity")) in ("-1", "-", "against", "contradict") else 1
     return {"dimension": dim, "kind": kind.value, "text": text[:400], "target": target[:400], "polarity": pol}
+
+
+def _as_question(q: dict) -> Question:
+    return Question(kind=QuestionKind(q["kind"]), text=q["text"], target=q["target"],
+                    polarity=q["polarity"], dimension=q["dimension"])
 
 
 def _frame_block(frame: dict | None) -> str:
@@ -72,12 +87,14 @@ def _frame_block(frame: dict | None) -> str:
 
 
 async def generate_inquiries(llm_json, *, decision: str, aspects: tuple[Aspect, ...],
-                             directive: str, frame: dict | None = None) -> list[dict]:
+                             directive: str, frame: dict | None = None,
+                             total: int = DEFAULT_TOTAL, embed=None) -> list[dict]:
     """-> [{key, name, framing, questions:[{dimension,kind,text,target,polarity}]}]. Never raises.
-    Thesis-native questions + clusters from the model; code guarantees every aspect is covered.
+    Thesis-native questions + clusters from the model; the kernel makes the set systematic:
+    frame-weighted per-aspect budgets, relevance ranking, de-dup, and a guaranteed coverage floor.
 
-    When `frame` (from frame.py) is supplied, its assumptions/risks become the SUBSTANCE the questions
-    interrogate — that is where depth comes from — while the aspect rubric drops to a coverage floor."""
+    `total` is the global question budget (a smaller number = a shallower pass). `embed(texts)->vectors`
+    sharpens relevance + de-dup on paraphrase; omitted, both fall back to lexical."""
     valid = {a.key for a in aspects}
     if llm_json is None:
         return _fallback(aspects)
@@ -109,31 +126,61 @@ async def generate_inquiries(llm_json, *, decision: str, aspects: tuple[Aspect, 
     except Exception:      # noqa: BLE001 — generation never blocks; fall open to full coverage
         clusters = []
 
-    out: list[dict] = []
-    seen_dims: set = set()
-    total = 0
+    # ── Flatten to a global list, remembering each question's cluster, so selection can be per-DIMENSION
+    #    (a dimension may be split across clusters) while output stays per-CLUSTER (the card shape). ─────
+    cluster_meta: list[dict] = []          # {key, name, framing} per surviving cluster slot
+    coerced: list[dict] = []               # global question dicts
+    q_of_cluster: list[int] = []           # cluster index per global question
     for c in clusters:
         name = str((c or {}).get("name") or "").strip()
         if not name:
             continue
-        per_dim: dict = {}
-        qs = []
+        ci = len(cluster_meta)
+        cluster_meta.append({"key": _slug(name), "name": name[:120],
+                             "framing": str(c.get("framing") or "").strip()[:200]})
         for item in (c.get("questions") or []):
             q = _coerce_question(item, valid)
-            if not q:
-                continue
-            per_dim[q["dimension"]] = per_dim.get(q["dimension"], 0) + 1
-            if per_dim[q["dimension"]] > MAX_PER_DIMENSION or total >= MAX_QUESTIONS:
-                continue
-            qs.append(q); seen_dims.add(q["dimension"]); total += 1
+            if q:
+                coerced.append(q); q_of_cluster.append(ci)
+
+    if not coerced:
+        return _fallback(aspects)
+
+    # ── Systematic selection: budget → score → keep the best per aspect up to budget, floor 1. ──────────
+    budget = allocate_budget(aspects, frame, total=min(total, MAX_QUESTIONS))
+    questions = [_as_question(q) for q in coerced]
+    scores, embed_vecs = score_questions(questions, frame, embed=embed)
+    gi_of = {id(q): i for i, q in enumerate(questions)}
+    kept_gis: set[int] = set()
+    for a in aspects:
+        gis = [i for i, q in enumerate(coerced) if q["dimension"] == a.key]
+        if not gis:
+            continue
+        picked = select_for_aspect([questions[i] for i in gis], [scores[i] for i in gis],
+                                   budget=max(1, budget.get(a.key, 1)), floor=1,
+                                   embed_vecs=embed_vecs, indices=gis)
+        kept_gis.update(gi_of[id(q)] for q in picked)
+
+    # Hard safety ceiling on the whole set (the allocator's total normally binds first): keep the
+    # highest-relevance, required-lens-first questions if somehow over.
+    if len(kept_gis) > MAX_QUESTIONS:
+        ranked = sorted(kept_gis, key=lambda i: (0 if questions[i].kind in
+                        (QuestionKind.SEEK_SUPPORT, QuestionKind.SEEK_CONTRADICTION) else 1, -scores[i]))
+        kept_gis = set(ranked[:MAX_QUESTIONS])
+
+    # ── Rebuild the clusters from the kept questions (preserve names/framing; drop empty clusters). ─────
+    out: list[dict] = []
+    seen_dims: set = set()
+    for ci, meta in enumerate(cluster_meta):
+        qs = [coerced[gi] for gi in range(len(coerced)) if gi in kept_gis and q_of_cluster[gi] == ci]
         if qs:
-            out.append({"key": _slug(name), "name": name[:120],
-                        "framing": str(c.get("framing") or "").strip()[:200], "questions": qs})
+            out.append({**meta, "questions": qs})
+            seen_dims.update(q["dimension"] for q in qs)
     if not out:
         return _fallback(aspects)
-    # Coverage gate: any contract dimension the model missed is added so the thesis is never left with a
-    # blind spot — but phrased THESIS-NATIVELY (a second pass), not as the raw rubric prompt, so the
-    # gap-fill never reintroduces the generic questions the frame step exists to avoid.
+
+    # ── Coverage floor: any contract dimension left with nothing is filled thesis-natively (a second
+    #    pass), the raw rubric prompt only as a last resort — never the generic default. ────────────────
     missing = [a for a in aspects if a.key not in seen_dims]
     if missing:
         gap_qs = await _gapfill(llm_json, decision=decision, missing=missing,

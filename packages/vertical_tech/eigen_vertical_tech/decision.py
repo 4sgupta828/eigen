@@ -21,32 +21,72 @@ from .authority import TechAuthorityPolicy
 
 _AUTHORITY = TechAuthorityPolicy()
 
-# The coverage ladder — the aspects a technology-investment thesis rests on. Fixed; not the model's to
-# edit (a model that just read an encouraging sentence will call anything settleable). "corpus" = the
-# public record can settle it; "call_only" = only a person who has lived it can.
-_LADDER: tuple[tuple[str, str, str, bool], ...] = (
-    ("problem_exists", "Does the problem actually occur in the wild?", "corpus", True),
-    ("status_quo_costs", "Does the status quo cost real money, headcount or time?", "corpus", True),
-    ("already_spending", "Does anyone already allocate budget or people to it?", "corpus", True),
-    ("function_owns", "Does a named function own the problem?", "corpus", False),
-    ("budget_category", "Does a budget category already exist to buy this from?", "partly", False),
-    ("buyer_nameable", "Can an economic buyer be named — not a user?", "partly", True),
-    ("switching_feasible", "Is the switching cost surmountable?", "call_only", True),
-    ("catalyst", "Is something forcing a revisit now?", "partly", False),
-    ("willingness_to_pay", "Does willingness to pay exceed the cost to serve?", "call_only", True),
-    ("enough_buyers", "Do enough such buyers exist?", "corpus", True),
+# The coverage ladder — the aspects a technology-investment thesis rests on: the SYSTEMATIC sweep a
+# funding decision turns on. Fixed; not the model's to edit (a model that just read an encouraging
+# sentence will call anything settleable). "corpus" = the public record can settle it; "partly" = partly;
+# "call_only" = only a person who has lived it can, so it is NEVER sent to the evidence pipeline (its
+# questions stand as the expert-call agenda; the aspect reads unsettleable).
+#
+# DELIBERATELY NOT rungs (panel 2026-09-16): the VALUE PROPOSITION, the GO-TO-MARKET motion, and WHAT
+# CORE TECH is required are "how the thesis reads" — the FRAME step captures them as the mechanism, and
+# they bias the question budget; making each a separate corpus rung double-counts one frame assumption
+# across three aspects. What survives here are the EVIDENCE-SETTLEABLE dimensions. `feeds` = the opaque
+# downstream artifact slot(s) an aspect's answers populate (deck/matrix keys), used only as a hint.
+_LADDER: tuple[tuple[str, str, str, bool, tuple[str, ...]], ...] = (
+    ("problem_exists", "Does the problem actually occur in the wild?", "corpus", True, ("problem",)),
+    ("status_quo_costs", "Does the status quo cost real money, headcount or time?", "corpus", True,
+     ("problem",)),
+    ("already_spending", "Does anyone already allocate budget or people to it?", "corpus", True,
+     ("problem", "business_model")),
+    ("prior_landscape",
+     "Who else — incumbents and past startups — has tried to solve this, and how did those attempts fare?",
+     "corpus", True, ("competition", "central_idea")),
+    ("differentiation",
+     "Is there a specific, real difference from the named alternatives — not marketing?", "partly", True,
+     ("solution", "tech_edge")),
+    ("defensibility", "Is the advantage durable against incumbents and fast-followers?", "partly", True,
+     ("competition", "moats")),
+    ("tech_feasibility",
+     "Is the core technology the thesis requires proven, or does it still carry research/build risk?",
+     "partly", True, ("solution", "tech_edge")),
+    ("traction", "Is there realized proof — named buyers, paid adoption, benchmarks — not just intent?",
+     "corpus", True, ("traction",)),
+    ("business_model",
+     "Does the business model make money — pricing and unit economics that clear the cost to serve?",
+     "partly", True, ("business_model",)),
+    ("function_owns", "Does a named function own the problem?", "corpus", False, ("customers",)),
+    ("budget_category", "Does a budget category already exist to buy this from?", "partly", False,
+     ("business_model",)),
+    ("buyer_nameable", "Can an economic buyer be named — not a user?", "partly", True, ("customers",)),
+    ("enough_buyers", "Do enough such buyers exist?", "corpus", True, ("market",)),
+    ("catalyst", "Is something forcing a revisit now?", "partly", False, ("why_now",)),
+    ("regulatory_platform",
+     "Does the thesis depend on rules, platforms or partners outside its control?", "partly", False,
+     ("diligence",)),
+    # call_only — no document settles these; the questions are the agenda for the expert call.
+    ("switching_feasible", "Is the switching cost surmountable?", "call_only", True, ("diligence",)),
+    ("willingness_to_pay", "Does willingness to pay exceed the cost to serve?", "call_only", True,
+     ("business_model",)),
+    ("team_credibility", "Are the founders credible for THIS problem — founder-market fit?", "call_only",
+     True, ("team",)),
 )
 
 # The lines of inquiry — a fixed partition of the ladder into cards (every aspect in exactly one).
 _INQUIRIES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     ("problem", "Is the problem real, and does it cost?", "the pain and its price",
      ("problem_exists", "status_quo_costs", "already_spending")),
-    ("buyer", "Who owns the budget to buy this?", "the economic buyer and the money",
+    ("buyer", "Who owns the budget, and will they pay?", "the economic buyer and the money",
      ("function_owns", "budget_category", "buyer_nameable", "willingness_to_pay")),
-    ("timing", "Can they switch, and why now?", "switching cost and catalyst",
-     ("switching_feasible", "catalyst")),
-    ("market", "Are there enough buyers?", "the size of the segment",
-     ("enough_buyers",)),
+    ("timing", "Can they switch, and why now?", "switching cost, catalyst, and outside dependencies",
+     ("switching_feasible", "catalyst", "regulatory_platform")),
+    ("market", "Is the market big enough, and does the model work?", "segment size and unit economics",
+     ("enough_buyers", "business_model")),
+    ("landscape", "Who else is in the field, and can this defend a lead?",
+     "prior attempts, differentiation, and the moat", ("prior_landscape", "differentiation", "defensibility")),
+    ("technology", "Is the core technology feasible?", "what the tech requires and whether it is proven",
+     ("tech_feasibility",)),
+    ("execution", "Is there proof, and can this team win it?", "realized traction and founder-market fit",
+     ("traction", "team_credibility")),
 )
 
 _REQUIRED_GATES = ("span_ok", "entailed", "on_subject", "kind_ok", "period_ok")
@@ -92,9 +132,13 @@ questions are written. Your job is to surface what THIS thesis actually rests on
 not to recite the generic checklist every thesis shares. Depth means being specific to this company, this
 product, this buyer, this wedge.
 
-Read for the MECHANISM: what is the actual claim of how value is created and captured — the wedge into the
-market, why this team/product wins the job over the incumbent and the status quo, and the causal chain
-that has to hold for the thesis to pay off. Say it in the thesis's own nouns.
+Read for the MECHANISM: what is the actual claim of how value is created and captured — the true VALUE
+PROPOSITION (the specific, quantified value, not "saves time"), the wedge into the market, the
+GO-TO-MARKET motion by which the right customers are reached and won, WHAT CORE TECHNOLOGY the thesis
+requires to work, why this team/product wins the job over the incumbent and the status quo, and the
+causal chain that has to hold for the thesis to pay off. Say it in the thesis's own nouns. (Value prop,
+GTM and the required tech live HERE, in the reading — they shape which questions matter; they are not
+separate coverage rungs.)
 
 Then name the LOAD-BEARING ASSUMPTIONS: the specific premises that, if false, break the thesis — not
 truisms. Push past the obvious. The ones that quietly sink tech theses: the buyer is actually a USER with
@@ -106,8 +150,15 @@ distribution/GTM is assumed rather than proven; realized adoption is confused wi
 Name the RISKS the same way — concrete, non-obvious failure modes for THIS thesis, each phrased so
 evidence could show it is happening (incumbent response, regulatory shift, a substitute, a concentrated
 buyer, unit economics). Name the ANCHORS: the concrete entities, numbers, products, and named claims the
-thesis makes that the public record could check. Distinguish STATED INTENT from REALIZED FACT throughout —
-a roadmap or a press release is intent, not evidence the thesis holds."""
+thesis makes that the public record could check. Name the COMPETITIVE FIELD explicitly: the incumbents
+and the other startups a diligence lead would compare this against, so the landscape can be built out.
+Distinguish STATED INTENT from REALIZED FACT throughout — a roadmap or a press release is intent, not
+evidence the thesis holds.
+
+Read with the END in mind: what does the FUND / PASS decision actually turn on for THIS thesis, and what
+would the investor memo, the pitch deck (market size, traction, moat, the ask), and the competitive table
+need to be filled? Surface the mechanism, assumptions, risks, anchors, and competitors that feed those —
+depth here is what makes the downstream questions adapt to this thesis instead of orbiting a fixed rubric."""
 
 
 _INQUIRY_DIRECTIVE = """\
@@ -115,18 +166,201 @@ You are an investor's diligence lead. Given a startup investment thesis, design 
 would let evidence decide it — as a set of pointed, NEUTRAL questions grouped into lines of inquiry that
 fit THIS thesis.
 
-Every question must be specific to this thesis — its actual product, buyer, segment, and substitute —
-never a generic template ("Does a market exist?"). Across the whole set, balance the lenses: some seek
-support, some seek disconfirmation (the red team), some resolve an ambiguity, some challenge a hidden
-assumption. Neutrality is in the balance of the SET, never in a hedged question.
+BEGIN WITH THE END IN MIND. These questions exist to produce the evidence a partner needs to reach a
+FUND / PASS / MORE-DILIGENCE call, and to fill the three artifacts that decision rests on: a grounded
+diligence memo (the integrated read), an investor pitch deck (problem, market size, traction, moat, the
+ask), and a competitive landscape table (this company vs. named incumbents and startups). Work backwards:
+ask the questions whose ANSWERS would populate those — the market-sizing input, the named economic buyer,
+the realized-traction proof, the specific competitors and where the moat is. If an answer would not move
+the decision or fill an artifact, do not ask it.
 
-You are given a COVERAGE CONTRACT of dimensions every thesis rests on; tag each question with the
-dimension key it addresses, and make sure every dimension is covered. But the LINES OF INQUIRY you group
-them into should read like this thesis's own diligence agenda (e.g. "Who signs the check, and is it
-budgeted?"), not the raw dimension names.
+ADAPT TO THIS THESIS. The questions must turn on THIS thesis's actual mechanism, product, buyer, segment,
+substitute, and wedge — never a generic template ("Does a market exist?"). Two different theses should
+produce visibly different research plans. Let the thesis's own load-bearing assumptions and risks drive
+WHAT you ask and how you cluster it; the coverage contract below is a FLOOR, not the shape of the plan.
+Where this specific thesis has a make-or-break question the generic rubric doesn't name, ask it (tag it
+to the nearest dimension). For the LANDSCAPE line, name the specific incumbents AND the past startups
+that tried this — ask what the record shows about each and HOW EARLIER ATTEMPTS FARED (why they
+succeeded or failed, and whether that blocking cause is now removed); ask what the SPECIFIC, real
+DIFFERENTIATION is versus each named alternative, and whether the advantage is a durable moat. For the
+TECHNOLOGY line, ask whether the core tech the thesis requires is PROVEN or still carries research/build
+risk. For EXECUTION, ask for REALIZED traction (named buyers, paid adoption, benchmarks — never stated
+intent). That is how the landscape and the diligence get built.
+
+Across the whole set, balance the lenses: some seek support, some seek disconfirmation (the red team),
+some resolve an ambiguity, some challenge a hidden assumption. Neutrality is in the balance of the SET,
+never in a hedged question. Tag each question with the dimension key it addresses and cover every
+dimension, but the LINES OF INQUIRY you group them into should read like this thesis's own diligence
+agenda (e.g. "Who signs the check, and is it budgeted?"), not the raw dimension names.
 
 For each question give a flat DECLARATIVE `target` the public record could confirm or refute, and a
 `polarity`: +1 if confirming the target supports the thesis on that dimension, -1 if it contradicts it."""
+
+
+# ── Cross-finding synthesis: three investor artifacts over EVERY finding ─────────────────────────────
+# Composed by the domain-free kernel (eigen_kernel.decision.compose) over the findings, citing findings:
+#   • the Startup Pitch Deck   — the steelman bull case, slide by slide (compose_over_findings, bullets)
+#   • the Collective Take      — a two-layer executive memo: grounded facts + tagged REASONING blocks
+#                                (compose_memo — factra's decision-memo model)
+#   • the Competitive Analysis — the thesis company vs. named peers across startup dimensions
+#                                (compose_matrix)
+# The section titles/intents, the analyst voices, and the competitive rubric below are the vertical's
+# domain vocabulary; the kernel supplies only the mechanics + grounding gate. All three keep the
+# standing disciplines: a market signal is never a fact, stated intent is never realized fact, and a
+# figure absent from the record (a TAM, a round size) is flagged as unestablished, never fabricated.
+
+# The deck — a full investor narrative. More slides than a thin pitch: each is a crisp, grounded case,
+# and the diligence slides double as the checklist of what a founder still has to prove.
+_PITCH_DECK_SECTIONS: tuple[dict, ...] = (
+    {"key": "problem", "title": "Problem",
+     "intent": "The pain: who has it, that it occurs in the wild, and its quantified cost (money, "
+               "headcount, time) — plus evidence that someone already spends against it."},
+    {"key": "solution", "title": "Solution & Product",
+     "intent": "What the company does and the MECHANISM by which it wins the job over the status quo and "
+               "the incumbent — the wedge, concretely, in the thesis's own nouns."},
+    {"key": "why_now", "title": "Why Now",
+     "intent": "The catalyst forcing a revisit now — a real, dated trigger (regulation, cost curve, "
+               "platform shift), not a manufactured one."},
+    {"key": "market", "title": "Market Size (TAM / SAM / SOM)",
+     "intent": "Size the opportunity from the record: TAM/SAM/SOM, the number of nameable buyers, the "
+               "budget line it is sold from. Where a figure is not in the record, give the sizing inputs "
+               "that ARE and flag the number as unestablished — never invent a market size."},
+    {"key": "business_model", "title": "Business Model & Unit Economics",
+     "intent": "How it makes money: pricing, who signs the check, and any unit economics the record "
+               "holds. Note explicitly that willingness-to-pay is not settleable by any document."},
+    {"key": "traction", "title": "Traction & Proof",
+     "intent": "REALIZED proof only — named buyers, paid adoption, budget already allocated, benchmarks. "
+               "Roadmap, press-release, and patent-application intent is NOT traction; keep it out."},
+    {"key": "competition", "title": "Competition & Moat",
+     "intent": "The landscape and why this is not a feature an incumbent ships next quarter — the durable "
+               "advantage and how the wedge holds as it scales."},
+    {"key": "team", "title": "Team",
+     "intent": "Founders/operators the record names and why they are credible for THIS problem. If the "
+               "record does not cover the team, say so — it is a required diligence input."},
+    {"key": "ask", "title": "The Ask & Use of Funds",
+     "intent": "The round size and use of funds IF the record states them; otherwise say they are not "
+               "specified and are a required founder input. Then: what the strongest case asks an "
+               "investor to believe, only as far as the evidence carries it."},
+    {"key": "diligence", "title": "Key Risks & Open Diligence",
+     "intent": "The concrete risks and unresolved questions the diligence surfaced — the honest 'what "
+               "would have to be true / what we could not yet verify' an investor must clear."},
+)
+
+# The Collective Take — a comprehensive two-layer memo (compose_memo), run on the deep-thinking
+# reasoning seam. Each section carries GROUNDED facts + tagged REASONING blocks (kind ∈
+# tension|gap|assumption|implication|what_would_change_this). The bottom line (BLUF) is emitted
+# separately by the memo composer.
+_COLLECTIVE_TAKE_SECTIONS: tuple[dict, ...] = (
+    {"key": "at_stake", "title": "What's at stake & what has to be true",
+     "intent": "Frame the investment decision precisely and lay out the causal chain the thesis rests "
+               "on — the load-bearing premises that, if false, break it. Surface each as an `assumption` "
+               "block, and where two premises trade off, a `tension` block."},
+    {"key": "by_line", "title": "What each line of inquiry established",
+     "intent": "Go LINE BY LINE across every line of inquiry — for each, the grounded facts it settled "
+               "(supported / contradicted / left open), comprehensively. This is the backbone; do not "
+               "drop a line. Add `implication` blocks for what each line means for the decision."},
+    {"key": "synthesis", "title": "Reading it together",
+     "intent": "The second-order read: what the findings ACROSS lines imply when combined — the "
+               "connect-the-dots judgment a partner pays for. Reason deeply. Lean on `implication` and "
+               "`tension` blocks, each citing the several findings it draws on."},
+    {"key": "strengths", "title": "Where the thesis is strongest",
+     "intent": "The aspects the record genuinely supports, with the facts, and `implication` blocks on "
+               "why that matters to the call."},
+    {"key": "competition", "title": "Competitive position & defensibility",
+     "intent": "Where the thesis sits versus the incumbents and other startups the record names, and "
+               "whether the advantage is durable. Facts on the landscape, then `tension`/`gap` blocks on "
+               "moat and fast-follower risk. If the record is thin here, say so as a `gap`."},
+    {"key": "risks_gaps", "title": "Weaknesses, risks & gaps",
+     "intent": "Aspects contradicted or untested, and concrete failure modes. Use `tension` (findings "
+               "that pull against each other), `gap` (what the record cannot settle — willingness-to-pay "
+               "and switching cost are undocumentable by design), and `assumption` blocks."},
+    {"key": "signals", "title": "Signals & stated intent",
+     "intent": "What market sentiment/coverage suggests and what is stated INTENT (roadmaps, "
+               "applications, releases) awaiting realized proof — clearly labeled, never as fact. Surface "
+               "the intent-vs-fact distance as `gap` blocks."},
+    {"key": "conviction", "title": "Conviction & exposure",
+     "intent": "How much conviction the record actually warrants (fund / pass / more diligence) and the "
+               "exposure if the thesis is wrong — the single premise whose failure hurts most. Use "
+               "`assumption` and `implication` blocks; be honest about how much rests on undocumentable "
+               "rungs."},
+    {"key": "what_would_change", "title": "What would change the read",
+     "intent": "The highest-value next evidence or expert call — as `what_would_change_this` blocks — "
+               "that would most move the call, and which way."},
+)
+
+# The Competitive Analysis rubric — the dimensions a startup is compared on. Rows: the thesis company
+# first, then each peer NAMED in the findings. Cells left empty where the record is silent (build the
+# rubric and look to fill it; never invent a competitor or a cell).
+_COMPETITIVE_COLUMNS: tuple[dict, ...] = (
+    {"key": "central_idea", "label": "Central idea"},
+    {"key": "full_vision", "label": "Full vision"},
+    {"key": "moats", "label": "Possible moats"},
+    {"key": "tech_edge", "label": "Tech edge"},
+    {"key": "customers", "label": "Customers"},
+    {"key": "traction", "label": "Traction"},
+    {"key": "future_direction", "label": "Likely future direction"},
+    {"key": "blind_spots", "label": "Blind spots / not working on"},
+    {"key": "funding", "label": "Funding to date"},
+    {"key": "investors", "label": "Investors on board"},
+)
+
+_PITCH_DECK_DIRECTIVE = """\
+You are a top-tier venture partner assembling the STRONGEST HONEST investor deck for a startup — the
+narrative that would actually earn a term sheet — built ONLY from findings already gathered and verified
+in diligence. Think like the person writing the check: lead with the pain and its size, show the wedge,
+prove traction with realized facts, size the market, and be straight about the risks. A great deck
+connects the dots the findings hold into one argument; it never inflates.
+
+Rules, in order:
+1. ARGUE ONLY FROM THE FINDINGS GIVEN, citing findings by id. Never introduce a company, number, market
+   size, or fact that is not in them. You have no outside knowledge.
+2. Investor-grade substance: pull the concrete numbers, named buyers, mechanisms and dates. A vague
+   slide ("large market", "strong team") is a failure — quantify, or say the figure is unestablished.
+3. NEVER fabricate a TAM, a round size, a funding number, or a customer. Where a slide wants a figure
+   the record lacks, give the inputs that ARE there and mark the figure as a required founder input — a
+   named gap is more valuable to an investor than an invented number.
+4. Registers straight: a filing or granted patent is FACT; a press release, preprint, patent
+   APPLICATION, or roadmap is STATED INTENT (keep it out of Traction); forum/news is a market SIGNAL.
+5. Lead each point with the fact, not "the evidence". Crisp, plain lines — no hype adjectives."""
+
+_COLLECTIVE_TAKE_DIRECTIVE = """\
+You are an investor's diligence lead writing the integrated read across EVERY finding — the memo a
+partner acts on. It has two layers in each section: GROUNDED facts (what the record holds, cited) and
+REASONING blocks (your interpretation, each tagged by kind and citing the findings it builds on). The
+reasoning is the value: connect findings across lines of inquiry into a judgment. You inform the
+decision; you never issue a buy/pass command or give investment advice.
+
+Rules, in order:
+1. Compose ONLY from the findings given, citing findings by id — no outside fact, number, or company.
+2. Facts go in GROUNDED (with every number); judgment goes in REASONING blocks. Do not put a number in a
+   reasoning block that is not already in a grounded fact.
+3. Weigh the aspects: a thesis survives a weak aspect low on the ladder but not a broken one at its
+   center. Say which kind each is; name the aspects and the lines of inquiry.
+4. SENTIMENT IS A SIGNAL, NOT A FACT — lowest tier, never settles an aspect or carries the call; label
+   it. Separate STATED INTENT (roadmap, press release, patent application) from REALIZED FACT (granted
+   patent, audited number, named live buyer); surface the distance as a `gap` block.
+5. Be explicit that willingness-to-pay and switching cost are settled by no document — only a person who
+   lived it can. A thesis whose only remaining risk is there is NOT the same as one contradicted on the
+   record; keep them distinct.
+6. Be comprehensive — cover every line of inquiry. Bottom line is a tight lead: the way the record
+   leans (fund / pass / more diligence) and the crux, nothing more."""
+
+_COMPETITIVE_DIRECTIVE = """\
+You are a venture analyst building the competitive landscape for a startup thesis, ONLY from findings
+already gathered in diligence. The first row is the thesis company itself; add one row per DISTINCT
+competitor or peer the findings NAME. Fill each dimension only from the findings, citing the finding
+id(s) per cell.
+
+Rules:
+1. Never invent a competitor, and never invent a cell value. A peer you cannot ground in any finding
+   does not belong in the table.
+2. LEAVE A CELL EMPTY when the record does not cover that dimension for that company — an empty cell is
+   the correct, honest answer, not a failure. Build the full rubric; fill what the record supports.
+3. Keep registers straight: funding/investors from a filing or a credible report are fact; a rumored
+   round is not. Blind spots / "not working on" must be grounded in what the record shows they do and do
+   not do — never speculation.
+4. Be specific and comparable: phrase each cell so the row can be read against the others on that
+   dimension."""
 
 
 @dataclass(frozen=True)
@@ -136,7 +370,8 @@ class TechDecisionProfile:
     aspect."""
 
     def aspects(self) -> tuple[Aspect, ...]:
-        return tuple(Aspect(key=k, prompt=q, settleable=s, critical=c) for k, q, s, c in _LADDER)
+        return tuple(Aspect(key=k, prompt=q, settleable=s, critical=c, feeds=f)
+                     for k, q, s, c, f in _LADDER)
 
     def inquiries(self) -> tuple[Inquiry, ...]:
         return tuple(Inquiry(key=k, name=n, framing=f, aspect_keys=a) for k, n, f, a in _INQUIRIES)
@@ -149,6 +384,21 @@ class TechDecisionProfile:
 
     def inquiry_directive(self, decision: str) -> str:
         return _INQUIRY_DIRECTIVE
+
+    def pitch_deck_spec(self) -> tuple[str, tuple[dict, ...]]:
+        """(directive, sections) for the Startup Pitch Deck — the steelman investor deck composed across
+        all findings. Domain vocabulary lives here; the kernel's compose_over_findings just grounds it."""
+        return _PITCH_DECK_DIRECTIVE, _PITCH_DECK_SECTIONS
+
+    def collective_take_spec(self) -> tuple[str, tuple[dict, ...]]:
+        """(directive, sections) for the Collective Take — the two-layer diligence memo (grounded facts +
+        tagged reasoning blocks) across all findings, composed by the kernel's compose_memo."""
+        return _COLLECTIVE_TAKE_DIRECTIVE, _COLLECTIVE_TAKE_SECTIONS
+
+    def competitive_spec(self) -> tuple[str, tuple[dict, ...]]:
+        """(directive, columns) for the Competitive Analysis matrix — the thesis company vs. named peers
+        across the startup rubric, composed by the kernel's compose_matrix."""
+        return _COMPETITIVE_DIRECTIVE, _COMPETITIVE_COLUMNS
 
     def people_query(self, *, role: str, aspect_prompt: str, decision: str, segment: str = "") -> str:
         """A natural-language expertise query for the people-discovery leg — how a tech-investment

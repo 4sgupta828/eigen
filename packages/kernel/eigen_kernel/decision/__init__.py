@@ -23,9 +23,12 @@ from .profile import DecisionProfile
 from .questions import generate_questions, required_kinds_covered
 from .frame import frame_decision, normalize_frame, is_substantive
 from .generate import generate_inquiries
+from .budget import allocate_budget, aspect_weight, frame_dim_counts, DEFAULT_TOTAL
+from .select import score_questions, select_for_aspect, relevance_scores
 from .aggregate import resolve_signal, aggregate_aspect
 from .run import run_question, run_aspect, run_inquiry
 from .synthesis import sanitize_answer, sanitize_table, NOT_ESTABLISHED
+from .compose import compose_over_findings, compose_memo, compose_matrix, ANALYSIS_KINDS
 
 __all__ = [
     "QuestionKind", "Question", "QuestionStatus", "Aspect", "Inquiry",
@@ -34,7 +37,11 @@ __all__ = [
     "ASPECT_SUPPORT", "ASPECT_CONTRADICTION", "ASPECT_NONE",
     "DecisionProfile", "generate_questions", "required_kinds_covered",
     "frame_decision", "normalize_frame", "is_substantive",
+    "generate_inquiries",
+    "allocate_budget", "aspect_weight", "frame_dim_counts", "DEFAULT_TOTAL",
+    "score_questions", "select_for_aspect", "relevance_scores",
     "resolve_signal", "aggregate_aspect",
     "run_question", "run_aspect", "run_inquiry",
     "sanitize_answer", "sanitize_table", "NOT_ESTABLISHED",
+    "compose_over_findings", "compose_memo", "compose_matrix", "ANALYSIS_KINDS",
 ]
