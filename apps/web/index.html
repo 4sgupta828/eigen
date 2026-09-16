@@ -11857,6 +11857,69 @@ async function openShare(token){
     finally{ STATE.busy = false; renderProgressText(""); }
   }
 
+  // ── Genesis shaping: auto-improve + backtrackable versions ───────────────────────────────────────
+  const _VER_SRC = {genesis: "drafted", directed: "your edit", self_improve: "self-improved",
+                    user_edit: "edited"};
+
+  function versionsHtml(d){
+    const vs = d.versions || [];
+    if(vs.length < 2) return "";                      // nothing to backtrack to yet
+    const rows = vs.slice().reverse().map(v => {
+      const src = _VER_SRC[v.source] || v.source || "version";
+      return '<div class="th-ver' + (v.active ? " active" : "") + '">'
+        + '<div class="th-ver-main"><span class="th-ver-src">' + esc(src) + "</span>"
+        + (v.rationale ? '<div class="th-ver-rat">' + esc(v.rationale) + "</div>" : "")
+        + '<div class="th-ver-txt">' + esc((v.text || "").slice(0, 200)) + "</div></div>"
+        + (v.active ? '<span class="th-ver-cur">current</span>'
+                    : '<button type="button" class="th-ver-revert" data-vid="' + esc(v.id)
+                      + '">Revert</button>')
+        + "</div>";
+    }).join("");
+    return '<details class="th-versions"><summary>⟲ Versions (' + vs.length
+      + ") — backtrack to an earlier thesis</summary>" + rows + "</details>";
+  }
+
+  function draftActionsHtml(d){
+    return '<div class="th-acts" style="margin:0">'
+      + '<button type="button" class="th-improve" id="th-improve" '
+      + 'title="I propose improvement questions, answer them myself, and sharpen the thesis">'
+      + "✨ Improve my thesis</button></div>" + versionsHtml(d);
+  }
+
+  async function improveThesis(){
+    if(STATE.busy) return;
+    STATE.busy = true;
+    const btn = document.getElementById("th-improve");
+    if(btn){ btn.disabled = true; btn.textContent = "Improving…"; }
+    note().textContent = "";
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/improve",
+        {method: "POST", headers: hdrs(), body: JSON.stringify({instruction: ""})});
+      const d = await r.json();
+      if(!r.ok) throw new Error(d.detail || "could not improve the thesis");
+      if(d.thesis) STATE.doc = d.thesis;
+      STATE.proposed = d.proposed_thesis || STATE.proposed;
+      render();
+    }catch(e){ note().textContent = e.message || String(e);
+      if(btn){ btn.disabled = false; btn.textContent = "✨ Improve my thesis"; } }
+    finally{ STATE.busy = false; }
+  }
+
+  async function revertThesis(vid){
+    if(STATE.busy || !vid) return;
+    STATE.busy = true; note().textContent = "";
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/revert",
+        {method: "POST", headers: hdrs(), body: JSON.stringify({version_id: vid})});
+      const d = await r.json();
+      if(!r.ok) throw new Error(d.detail || "could not revert");
+      if(d.thesis) STATE.doc = d.thesis;
+      STATE.proposed = d.proposed_thesis || STATE.proposed;
+      render();
+    }catch(e){ note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; }
+  }
+
   async function open(id, share){
     const parsed = parseThesisHash("#thesis/" + (id || "")
                                   + (share ? "?share=" + encodeURIComponent(share) : ""));
@@ -12412,7 +12475,14 @@ async function openShare(token){
     // single "Use this thesis" button (payloadHtml). No form, no editable box.
     if(phase === "draft"){
       takes().innerHTML = "";
-      acts().innerHTML = "";
+      // Draft actions: let the agent auto-improve the thesis (self-answered questions) and let the
+      // author BACKTRACK to any earlier version. Shown once there's a proposed thesis to act on.
+      const hasThesis = ((d.proposed_thesis || d.thesis || "").trim().length >= 12);
+      acts().innerHTML = (canMutate(d) && hasThesis) ? draftActionsHtml(d) : "";
+      const imp = document.getElementById("th-improve");
+      if(imp) imp.addEventListener("click", improveThesis);
+      acts().querySelectorAll(".th-ver-revert").forEach(b =>
+        b.addEventListener("click", () => revertThesis(b.dataset.vid)));
       if(ledger) ledger.hidden = true;
       const use = document.getElementById("th-use");
       if(use) use.addEventListener("click", confirmThesis);

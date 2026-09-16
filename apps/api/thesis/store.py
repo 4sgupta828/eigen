@@ -347,6 +347,8 @@ async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str
     out["pitch_deck"] = _j(out.get("pitch_deck") or {}) or {}
     out["collective_take"] = _j(out.get("collective_take") or {}) or {}
     out["competitive"] = _j(out.get("competitive") or {}) or {}
+    out["versions"] = _j(out.get("versions") or []) or []           # thesis version timeline (backtrack)
+    out["shaping_prefs"] = _j(out.get("shaping_prefs") or []) or []  # how the author wants it shaped
     for k in ("created_at", "updated_at"):
         out[k] = out[k].isoformat()
     out["is_owner"] = is_owner
