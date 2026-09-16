@@ -1286,6 +1286,23 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         await tstore.set_inquiries(pool, thesis_id, inquiries)
         return await tl_inquiries(thesis_id, authorization, x_thesis_owner)
 
+    @r.post("/thesis/{thesis_id}/inquiries/prioritize")
+    async def tl_prioritize(thesis_id: str, authorization: str = Header(default=""),
+                            x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """(Re)assign P0/P1/P2 priority levels to the CURRENT questions — for a thesis drafted before
+        priorities, or to re-prioritize after edits. One cheap LLM pass; no re-generation, no evidence run."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        profile = _profile()
+        if profile is None:
+            raise HTTPException(status_code=409, detail="no decision profile is configured")
+        qs = await tstore.list_questions(pool, thesis_id)
+        if not qs:
+            raise HTTPException(status_code=409, detail="draft the questions first")
+        await prio.assign_priorities(profile, [{"questions": qs}], thesis=d.get("thesis") or "",
+                                     llm_json=_strong_llm_json())
+        await tstore.set_question_priorities(pool, thesis_id, {q["id"]: q.get("priority", 1) for q in qs})
+        return await tl_inquiries(thesis_id, authorization, x_thesis_owner)
+
     @r.patch("/thesis/{thesis_id}/question/{qid}")
     async def tl_edit_question(thesis_id: str, qid: str, body: QuestionEdit,
                                authorization: str = Header(default=""),

@@ -114,6 +114,14 @@ async def assign_priorities(profile, inquiries: list[dict], *, thesis: str = "",
                     q["priority"] = 1
         except Exception:      # noqa: BLE001 — keep the deterministic levels
             pass
+    # GUARANTEE a P0 set: if nothing ended up P0 (e.g. the model marked everything P1/P2), promote the
+    # top non-call_only questions by deterministic score. A precise critical layer must always exist so
+    # the run surfaces "Run P0" — never collapse to a single P0–P1 button.
+    if not any(q["priority"] == 0 for q in flat):
+        cand = sorted([q for q in flat if q["priority"] != 2 and q["_pscore"] > 0],
+                      key=lambda q: -q["_pscore"])
+        for q in cand[:min(p0_cap, max(1, len(cand)))]:
+            q["priority"] = 0
     for q in flat:
         q.pop("_pscore", None)
 
