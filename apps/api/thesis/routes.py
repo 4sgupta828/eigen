@@ -202,7 +202,9 @@ def project_competitive_cost(max_players: int, *, web_available: bool) -> dict:
 
 
 def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge_llm=None,
-                 user_of=None, tenant: str = "") -> APIRouter:
+                 user_of=None, tenant: str = "", startup_search=None) -> APIRouter:
+    # `startup_search(text, limit) -> [{name, note}]`: our internal Startup Search (hybrid company index),
+    # injected when available so competitive discovery sources direct competitors from our own corpus.
     r = APIRouter()
     tenant = resolve_tenant(tenant)
 
@@ -1552,7 +1554,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             _cdir, cols = profile.competitive_spec()
             land = await compres.research_landscape(
                 _strong_llm_json(), atk._web_client(manifest), thesis=thesis, subject=subject,
-                findings=findings, columns=[dict(c) for c in cols])
+                findings=findings, columns=[dict(c) for c in cols], startup_search=startup_search)
             land["generated_at"] = int(datetime.now(timezone.utc).timestamp())
             await tstore.set_competitive(pool, thesis_id, land)
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
@@ -1606,7 +1608,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         subject = " ".join(str(v) for v in (d.get("subject") or {}).values()).strip()
         cands = await compres.suggest_candidates(
             _strong_llm_json(), atk._web_client(manifest), thesis=d.get("thesis") or "", subject=subject,
-            space=land.get("space") or "", existing=existing)
+            space=land.get("space") or "", existing=existing, startup_search=startup_search)
         return {"status": "ok", "candidates": cands, "space": land.get("space") or subject}
 
     async def _run_competitive_add(thesis_id: str, run_id: str, names: list[str]):

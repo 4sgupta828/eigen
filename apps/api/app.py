@@ -1863,6 +1863,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
     # mounted only behind EIGEN_STARTUP_SEARCH so OFF is a true no-op. docs/specs/startup-search.md.
     from api.startups.routes import startup_search_enabled
     _su_dsn = os.environ.get("EIGEN_CORPUS_DSN")
+    _thesis_su_search = None       # injected into the thesis router so competitive discovery can use our index
     if startup_search_enabled() and _su_dsn:
         from api.startups import pipeline as _su_pipeline
         from api.startups.routes import build_router as _su_router
@@ -1875,6 +1876,28 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
                 _su_state["pool"] = await asyncpg.create_pool(_su_dsn, min_size=1, max_size=4)
             return _su_state["pool"]
         _su_store = _SuStore(_su_pool)
+
+        # Expose our Startup Search to the thesis competitive path: hybrid (semantic + HyDE + keyword)
+        # over the company index → direct competitors from OUR corpus, not just the open web.
+        _su_prov_search = _su_pipeline.Providers.from_env()
+
+        async def _thesis_su_search(text, limit=15):
+            try:
+                from api.startups.query_expand import expand_query
+                dense = await expand_query(_su_prov_search.llm_json, text)
+            except Exception:      # noqa: BLE001 — HyDE is a bonus leg; its failure keeps the raw legs
+                dense = None
+            try:
+                rows, _d = await _su_store.hybrid("startup", text, {}, embed=_su_prov_search.embed,
+                                                  dense_text=dense, cap=max(20, int(limit) * 2))
+            except Exception:      # noqa: BLE001 — an index hiccup falls back to web-only discovery
+                return []
+            out = []
+            for rrow in rows[:int(limit)]:
+                nm = str((rrow or {}).get("name") or "").strip()
+                if nm:
+                    out.append({"name": nm, "note": str((rrow or {}).get("one_liner") or "").strip()})
+            return out
         app.include_router(_su_router(_su_store, _su_pipeline.Providers.from_env(), dsn=_su_dsn,
                                       admin_token=os.environ.get("EIGEN_ADMIN_TOKEN", ""), user_of=_shell_user))
 
@@ -1971,7 +1994,7 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
             _ts_judge = None
         app.include_router(_ts_router(_ts_pool, dsn=_ts_dsn, providers=_ts_providers,
                                       manifest=load_active_vertical(), judge_llm=_ts_judge,
-                                      user_of=_shell_user))
+                                      user_of=_shell_user, startup_search=_thesis_su_search))
 
     # Voices — first-person startup content (founder/investor essays + podcast chapter pointers).
     # A MODE over the existing kernel corpus, not a new store: its rows are ordinary rs_block rows
