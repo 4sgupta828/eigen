@@ -485,3 +485,20 @@ test("genesis draft offers auto-improve + a backtrackable version timeline", () 
   assert.match(SRC, /Improve my thesis/);
   assert.match(SRC, /vs\.length < 2\) return ""/);        // no timeline until there's something to backtrack to
 });
+
+test("the LoI bar offers a critical-subset run and dedicated competitive research", () => {
+  assert.match(SRC, /function runCriticalSubset\(/);
+  assert.match(SRC, /\/inquiries\/run_critical/);
+  assert.match(SRC, /function researchCompetitive\(/);
+  assert.match(SRC, /\/competitive\/research/);
+  assert.match(SRC, /Run the critical subset/);
+  assert.match(SRC, /Research competitive landscape/);
+});
+
+test("the competitive artifact renders per-player cards + an at-a-glance table (not a passive matrix)", () => {
+  assert.match(SRC, /function competitiveHtml\(comp\)/);
+  assert.match(SRC, /th-comp-card/);                    // per-player cards
+  assert.match(SRC, /At-a-glance comparison/);          // the compact summary table
+  assert.match(SRC, /th-comp-src/);                     // each cell links its web source
+  assert.match(SRC, /function legacyCompTable\(/);      // backward-compat with the old matrix shape
+});
