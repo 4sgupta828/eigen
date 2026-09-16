@@ -25,6 +25,7 @@ from .semantic_scholar import SemanticScholarConnector
 from .stackexchange import StackExchangeConnector
 from .expert_feed import ExpertFeedConnector
 from .founder_essay import FounderEssayConnector
+from .investment_thesis import InvestmentThesisConnector
 from .show_notes import ShowNotesConnector
 from .startup_news import StartupNewsConnector
 from .youtube_chapters import YoutubeChaptersConnector
@@ -35,7 +36,8 @@ from .yc import YcConnector
 
 __all__ = ["ArxivConnector", "CompaniesHouseConnector", "CrossrefConnector", "EdgarConnector",
            "EngBlogConnector",
-           "ExpertFeedConnector", "FounderEssayConnector", "ShowNotesConnector",
+           "ExpertFeedConnector", "FounderEssayConnector", "InvestmentThesisConnector",
+           "ShowNotesConnector",
            "StartupNewsConnector",
            "YoutubeChaptersConnector",
            "GdeltConnector", "GithubConnector", "HackerNewsConnector",

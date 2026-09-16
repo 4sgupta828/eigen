@@ -524,6 +524,26 @@
   /* GenSimpleThesis sits beside the main sample; gap when side-by-side, wraps to its own line on phones. */
   .th-sample-simple{margin-left:.5rem;}
   @media (max-width:560px){ .th-sample-simple{margin-left:0;} }
+  /* Discover past theses — a searchable library of published VC theses/analysis to start from. */
+  .th-discover{margin-top:1.1rem;padding-top:.9rem;border-top:1px solid var(--hair);}
+  .th-disc-label{display:block;font-family:var(--mono);font-size:.72rem;letter-spacing:.03em;
+    color:var(--muted);margin:0 0 .45rem;}
+  .th-disc-row{display:flex;gap:.5rem;flex-wrap:wrap;}
+  .th-disc-input{flex:1 1 12rem;min-width:0;min-height:44px;padding:.5rem .8rem;border-radius:999px;
+    border:1px solid var(--hair);background:var(--bg);color:var(--ink);font-size:.95rem;}
+  .th-disc-results{margin-top:.7rem;display:grid;gap:.6rem;}
+  .th-disc-note{font-family:var(--mono);font-size:.75rem;color:var(--muted);margin:.4rem 0;}
+  .th-disc-card{border:1px solid var(--hair);border-radius:12px;padding:.7rem .8rem;background:var(--bg);}
+  .th-disc-head{display:flex;flex-wrap:wrap;gap:.2rem .6rem;align-items:baseline;}
+  .th-disc-title{font:600 1rem/1.3 var(--serif);color:var(--ink);text-decoration:none;}
+  a.th-disc-title:hover{color:var(--gold);text-decoration:underline;}
+  .th-disc-meta{font-family:var(--mono);font-size:.68rem;color:var(--muted);}
+  .th-disc-snip{margin:.35rem 0 .5rem;font-size:.86rem;line-height:1.5;color:var(--ink);}
+  .th-disc-foot{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;}
+  .th-disc-reg{font-family:var(--mono);font-size:.64rem;letter-spacing:.02em;color:var(--muted);
+    border:1px solid var(--hair);border-radius:999px;padding:.15rem .5rem;}
+  .th-disc-start{margin:0;}
+  @media (max-width:560px){ .th-disc-foot{align-items:flex-start;} .th-disc-start{width:100%;} }
   /* The discussion thread is the interface — visible, not folded away. */
   .th-thread{margin:.2rem 0 1rem;}
   .th-thread[hidden]{display:none;}
@@ -11669,6 +11689,11 @@ async function openShare(token){
     if(samp) samp.addEventListener("click", () => sampleThesis(samp));
     const sampSimple = document.getElementById("th-sample-simple");
     if(sampSimple) sampSimple.addEventListener("click", () => genSimpleThesis(sampSimple));
+    const discGo = document.getElementById("th-disc-go");
+    if(discGo) discGo.addEventListener("click", () => discoverTheses());
+    const discQ = document.getElementById("th-disc-q");
+    if(discQ) discQ.addEventListener("keydown", (e) => {
+      if(e.key === "Enter"){ e.preventDefault(); discoverTheses(); } });
     conv().innerHTML = "";
     const thread = document.getElementById("th-thread"); if(thread) thread.hidden = true;
     const ledger = document.getElementById("th-ledger"); if(ledger) ledger.hidden = true;
@@ -11964,7 +11989,63 @@ async function openShare(token){
       + '<button type="button" class="th-sample-btn" id="th-sample">🎲 Generate a plausible thesis to try</button>'
       + '<button type="button" class="th-sample-btn th-sample-simple" id="th-sample-simple" '
       + 'title="A competition-caliber ISEF/CSEF science-fair project idea — for students">🎓 GenSimpleThesis</button>'
+      + '<div class="th-discover">'
+      + '<label class="th-disc-label" for="th-disc-q">🔎 Or discover a published thesis to start from '
+      + '(VC theses, market maps &amp; investor analysis)</label>'
+      + '<div class="th-disc-row">'
+      + '<input type="search" id="th-disc-q" class="th-disc-input" autocomplete="off" '
+      + 'placeholder="e.g. vertical AI agents, defense tech, developer tooling">'
+      + '<button type="button" class="th-sample-btn" id="th-disc-go">Search theses</button>'
+      + '</div>'
+      + '<div class="th-disc-results" id="th-disc-results"></div>'
+      + '</div>'
       + "</div>";
+  }
+
+  async function discoverTheses(){
+    const qEl = document.getElementById("th-disc-q");
+    const box = document.getElementById("th-disc-results");
+    if(!box) return;
+    const query = ((qEl && qEl.value) || "").trim();
+    box.innerHTML = '<p class="th-disc-note">Searching past theses…</p>';
+    try{
+      const r = await fetch("/discover/theses", {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({query, limit: 12})});
+      if(!r.ok) throw new Error("search failed");
+      const res = (await r.json()).results || [];
+      if(!res.length){ box.innerHTML = '<p class="th-disc-note">No theses found — try broader words, '
+        + 'or type your own thesis above.</p>'; return; }
+      box.innerHTML = res.map((t, i) => discCard(t, i)).join("");
+      res.forEach((t, i) => {
+        const b = document.getElementById("th-disc-start-" + i);
+        if(b) b.addEventListener("click", () => submit(discSeed(t)));
+      });
+    }catch(e){ box.innerHTML = '<p class="th-disc-note">Could not search theses right now.</p>'; }
+  }
+
+  function discCard(t, i){
+    const who = [t.firm, t.author].filter(Boolean).join(" · ");
+    const meta = [who, t.year].filter(Boolean).join(" — ");
+    const title = esc2(t.title || "Untitled thesis");
+    return '<div class="th-disc-card"><div class="th-disc-head">'
+      + (t.url ? '<a class="th-disc-title" href="' + esc2(t.url) + '" target="_blank" rel="noopener">'
+                 + title + '</a>'
+               : '<span class="th-disc-title">' + title + '</span>')
+      + (meta ? '<span class="th-disc-meta">' + esc2(meta) + '</span>' : '')
+      + '</div>'
+      + (t.snippet ? '<p class="th-disc-snip">' + esc2(t.snippet) + '</p>' : '')
+      + '<div class="th-disc-foot">'
+      + '<span class="th-disc-reg" title="A named investor\'s interpretation, not an established fact">'
+      + 'interpretation — not a fact</span>'
+      + '<button type="button" class="th-sample-btn th-disc-start" id="th-disc-start-' + i
+      + '">Start a thesis from this →</button></div></div>';
+  }
+
+  function discSeed(t){
+    const who = [t.firm, t.author].filter(Boolean).join(", ");
+    return "I want to test a startup thesis inspired by " + (who ? who + "'s" : "this") + " published "
+      + 'thesis titled "' + (t.title || "") + '". ' + (t.snippet || "")
+      + " Help me sharpen this into a concrete, testable thesis for my own target company and buyer.";
   }
 
   function evHtml(e, inline){

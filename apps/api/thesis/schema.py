@@ -102,6 +102,7 @@ SOURCE_REGISTER = {
     "github": OBSERVED, "huggingface": OBSERVED,
     "arxiv": STATED, "openalex": STATED, "crossref": STATED, "semantic_scholar": STATED,
     "eng_blog": STATED, "founder_essay": STATED, "expert_feed": STATED, "web": STATED,
+    "investment_thesis": STATED,
     "news": STATED, "startup_news": STATED, "gdelt": STATED,
     "hackernews": STATED, "reddit": STATED, "stackexchange": STATED,
     "podcast": STATED, "show_notes": STATED, "youtube_chapters": STATED,

@@ -24,7 +24,8 @@ from .visuals import TECH_VISUALS_PROMPT
 from .authority import TechAuthorityPolicy
 from .connectors import (ArxivConnector, CompaniesHouseConnector, CrossrefConnector, EdgarConnector,
                          EngBlogConnector,
-                         ExpertFeedConnector, FounderEssayConnector, GdeltConnector,
+                         ExpertFeedConnector, FounderEssayConnector, InvestmentThesisConnector,
+                         GdeltConnector,
                          GithubConnector, HackerNewsConnector,
                          HuggingFaceConnector, LobstersConnector, NihReporterConnector, NsfConnector,
                          OpenAlexConnector,
@@ -125,6 +126,10 @@ def build_manifest() -> VerticalManifest:
             # First-person startup content: essays by named founders/investors/operators, and
             # timestamped chapter POINTERS into their podcast episodes (never transcripts we made).
             "founder_essay": FounderEssayConnector(),
+            # Publicly published VC theses / market maps — the library behind "Discover theses".
+            # A distinct corpus slice (source_kind=investment_thesis); a named investor's INTERPRETATION,
+            # never a fact and never controlling (authority discipline unchanged).
+            "investment_thesis": InvestmentThesisConnector(),
             "show_notes": ShowNotesConnector(),
             # The same chapter unit from video: creators write timestamped chapters in the
             # public description, which the keyless channel feed carries. Captions stay untouched.
