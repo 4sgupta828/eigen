@@ -364,12 +364,16 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                                             rationale=res.get("rationale") or "")
         if res.get("shaping_prefs"):
             await tstore.set_shaping_prefs(pool, thesis_id, res["shaping_prefs"])
-        # Log the self-Q&A as an agent turn so the reasoning is visible and part of the record.
+        # Log the self-Q&A as an agent turn so the reasoning is visible and part of the record. Carry the
+        # resulting thesis as `proposed_thesis` so the client renders the working-thesis card on THIS turn
+        # (the card keys on proposed_thesis; without it the thesis appears to vanish after Improve).
+        final_thesis = improved if changed else current
         qa_text = "\n".join(f"Q: {x['q']}\nA: {x['a']}" for x in qa)
         note = (res.get("rationale") or "Improved the thesis.") + ("\n\n" + qa_text if qa_text else "")
         await tstore.add_turn(pool, thesis_id, role="agent", move="improve", text=note,
                               payload={"questions": qa, "rationale": res.get("rationale") or "",
-                                       "improved_thesis": improved if changed else ""})
+                                       "proposed_thesis": final_thesis, "ready": False,
+                                       "memory": {"shaping_prefs": res.get("shaping_prefs") or []}})
         return {"status": "ok", "changed": changed, "questions": qa,
                 "rationale": res.get("rationale") or "", "proposed_thesis": improved or current,
                 "versions": await tstore.list_thesis_versions(pool, thesis_id),
