@@ -115,6 +115,32 @@ async def test_generate_inquiries_is_thesis_native_clustered_and_coverage_gated(
 
 
 @pytest.mark.asyncio
+async def test_generate_by_inquiry_is_focused_per_inquiry_and_covers_every_aspect():
+    # The cookie-cutter fix: each line of inquiry gets its OWN focused, frame-driven call (not one call
+    # spread across the whole contract), and the fixed profile inquiry names are used.
+    from eigen_kernel.decision import generate_by_inquiry
+    p = ToyProfile()
+    seen = []
+    async def llm(system, user):
+        seen.append(user)
+        assert "cookie-cutter" in system.lower() or "rubric restatement" in system.lower()  # anti-generic focus
+        qs = []
+        if "faster" in user:
+            qs.append({"dimension": "faster", "kind": "seek_support",
+                       "text": "Is Route 1 faster at dawn?", "target": "Route 1 is faster at dawn.", "polarity": 1})
+        if "scenic" in user:
+            qs.append({"dimension": "scenic", "kind": "seek_support",
+                       "text": "Are Route 1's cliffs the best view?", "target": "Route 1 has the best cliffs.", "polarity": 1})
+        return {"questions": qs}
+    inqs = await generate_by_inquiry(llm, decision="coastal vs inland", inquiries=p.inquiries(),
+                                     aspects=p.aspects(), directive="x")
+    assert len(seen) == 1                                  # one focused call per profile inquiry (here: 1)
+    assert any(i["name"] == "The trip" for i in inqs)      # uses the fixed profile inquiry name
+    covered = {q["dimension"] for i in inqs for q in i["questions"]}
+    assert covered == {"faster", "scenic"}                 # every aspect covered
+
+
+@pytest.mark.asyncio
 async def test_generate_inquiries_falls_open_to_full_coverage_with_no_model():
     from eigen_kernel.decision import generate_inquiries
     aspects = ToyProfile().aspects()

@@ -17,14 +17,15 @@ Domain-free throughout.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 
-from .types import Aspect, Question, QuestionKind
+from .types import Aspect, Inquiry, Question, QuestionKind
 from .budget import allocate_budget, DEFAULT_TOTAL
 from .select import score_questions, select_for_aspect
 
-MAX_QUESTIONS = 40         # a hard safety ceiling on the whole set; the allocator's `total` is the real knob
+MAX_QUESTIONS = 48         # a hard safety ceiling on the whole set; the allocator's `total` is the real knob
 
 
 def _slug(name: str) -> str:
@@ -192,6 +193,130 @@ async def generate_inquiries(llm_json, *, decision: str, aspects: tuple[Aspect, 
                     "framing": "coverage the drafted lines of inquiry did not reach",
                     "questions": gap_qs + raw})
     return out
+
+
+def _frame_for_aspects(frame: dict | None, keys: set) -> dict | None:
+    """Slice the frame down to the assumptions/risks that bear on THIS inquiry's aspects (untagged ones
+    are kept — they may still be relevant), so a focused generation call sees the substance it needs
+    without the whole thesis's frame diluting it. Keeps the reading + unknowns for context."""
+    if not frame:
+        return frame
+    def keep(items):
+        return [it for it in (items or []) if (it.get("dimension") or "") in keys or not it.get("dimension")]
+    return {"reading": frame.get("reading", ""), "assumptions": keep(frame.get("assumptions")),
+            "risks": keep(frame.get("risks")), "unknowns": frame.get("unknowns") or [],
+            "anchors": frame.get("anchors") or []}
+
+
+_INQUIRY_FOCUS = ("You are drafting questions for ONE line of inquiry of this specific decision — a focused "
+                  "facet, not the whole thing. Go DEEP on it. Every question must turn on THIS decision's "
+                  "OWN specifics — the named entities, products, buyers, numbers, and the assumptions/risks "
+                  "above — never a generic template. A question that could be asked of ANY decision of this "
+                  "kind (a rubric restatement like the dimension prompt itself) is a FAILURE: anchor each to "
+                  "a concrete noun from the decision. Balance the lenses across the set (seek support, seek "
+                  "disconfirmation, resolve an ambiguity, challenge a hidden premise).")
+
+
+async def _gen_one_inquiry(llm_json, *, decision: str, name: str, framing: str,
+                           inq_aspects: tuple[Aspect, ...], directive: str, frame: dict | None) -> list[dict]:
+    """Thesis-native questions for ONE inquiry's aspects. Focused (2–4 aspects) so the model can be
+    specific rather than spreading thin across the whole contract — the fix for generic, cookie-cutter
+    questions. Returns coerced question dicts tagged with their aspect key; [] on any failure."""
+    valid = {a.key for a in inq_aspects}
+    rubric = "\n".join(f"- {a.key}: {a.prompt}"
+                       + (" [only a person can settle this]" if a.settleable == "call_only" else "")
+                       + (" [critical]" if a.critical else "") for a in inq_aspects)
+    fb = _frame_block(_frame_for_aspects(frame, valid))
+    user = (f"DECISION (the thesis to test):\n{decision}\n\n"
+            f"LINE OF INQUIRY: {name}" + (f" — {framing}" if framing else "") + "\n\n"
+            + ((fb + "\n\n") if fb else "")
+            + _INQUIRY_FOCUS + "\n\n"
+            + "DIMENSIONS this line must cover (tag each question with its key in `dimension`):\n" + rubric
+            + "\n\nReturn ONE JSON object: {\"questions\": [{\"dimension\": \"<key>\", \"kind\": "
+            "\"seek_support|seek_contradiction|resolve_ambiguity|challenge_assumption\", \"text\": \"the "
+            "question in THIS thesis's own nouns\", \"target\": \"a flat declarative statement the record "
+            "could confirm or refute\", \"polarity\": 1|-1}]}. polarity is +1 if confirming target "
+            "supports the thesis on that dimension, -1 if it contradicts it. Output ONLY the JSON object.")
+    try:
+        raw = await llm_json(directive + "\n\n" + _INQUIRY_FOCUS, user)
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+        items = d.get("questions") or []
+    except Exception:      # noqa: BLE001 — one inquiry failing never blocks the rest
+        return []
+    out = []
+    for it in items:
+        q = _coerce_question(it, valid)
+        if q:
+            out.append(q)
+    return out
+
+
+async def generate_by_inquiry(llm_json, *, decision: str, inquiries: tuple[Inquiry, ...],
+                              aspects: tuple[Aspect, ...], directive: str, frame: dict | None = None,
+                              total: int = DEFAULT_TOTAL, embed=None) -> list[dict]:
+    """-> [{key, name, framing, questions:[...]}], one entry per PROFILE inquiry (a fixed, coverage-safe
+    partition). Generates each line of inquiry with its OWN focused, frame-driven call — so questions are
+    deep and thesis-native instead of a single call spread thin across the whole contract (the fix for
+    cookie-cutter questions). Per-aspect budget + relevance selection + de-dup still apply; a dimension a
+    focused call missed is gap-filled thesis-natively. Never raises."""
+    if llm_json is None:
+        return _fallback(aspects)
+    by_key = {a.key: a for a in aspects}
+    budget = allocate_budget(aspects, frame, total=min(total, MAX_QUESTIONS))
+    inq_aspects = {inq.key: tuple(by_key[k] for k in inq.aspect_keys if k in by_key) for inq in inquiries}
+
+    raws = await asyncio.gather(*[
+        _gen_one_inquiry(llm_json, decision=decision, name=inq.name, framing=inq.framing,
+                         inq_aspects=inq_aspects[inq.key], directive=directive, frame=frame)
+        for inq in inquiries if inq_aspects[inq.key]], return_exceptions=True)
+
+    out: list[dict] = []
+    covered: set = set()
+    ri = 0
+    for inq in inquiries:
+        if not inq_aspects[inq.key]:
+            continue
+        coerced = raws[ri] if ri < len(raws) and isinstance(raws[ri], list) else []
+        ri += 1
+        questions = [_as_question(q) for q in coerced]
+        scores, embed_vecs = score_questions(questions, frame, embed=embed)
+        gi_of = {id(q): i for i, q in enumerate(questions)}
+        kept: list[dict] = []
+        for a in inq_aspects[inq.key]:
+            gis = [i for i, q in enumerate(coerced) if q["dimension"] == a.key]
+            if not gis:
+                continue
+            picked = select_for_aspect([questions[i] for i in gis], [scores[i] for i in gis],
+                                       budget=max(1, budget.get(a.key, 2)), floor=1,
+                                       embed_vecs=embed_vecs, indices=gis)
+            for q in picked:
+                kept.append(coerced[gi_of[id(q)]]); covered.add(a.key)
+        if kept:
+            out.append({"key": inq.key, "name": inq.name, "framing": inq.framing, "questions": kept})
+
+    # Coverage floor: any aspect no focused call reached is gap-filled thesis-natively into its inquiry.
+    inq_of_aspect = {k: inq for inq in inquiries for k in inq.aspect_keys}
+    missing = [by_key[a.key] for a in aspects if a.key not in covered]
+    if missing:
+        gap = await _gapfill(llm_json, decision=decision, missing=missing, frame=frame,
+                             directive=directive, valid={a.key for a in aspects})
+        filled = {q["dimension"] for q in gap}
+        gap += [{"dimension": a.key, "kind": "seek_support", "text": a.prompt, "target": a.prompt,
+                 "polarity": 1} for a in missing if a.key not in filled]
+        by_inq: dict = {}
+        for q in gap:
+            ik = getattr(inq_of_aspect.get(q["dimension"]), "key", "further-checks")
+            by_inq.setdefault(ik, []).append(q)
+        existing = {o["key"]: o for o in out}
+        for inq in inquiries:
+            qs = by_inq.get(inq.key)
+            if not qs:
+                continue
+            if inq.key in existing:
+                existing[inq.key]["questions"].extend(qs)
+            else:
+                out.append({"key": inq.key, "name": inq.name, "framing": inq.framing, "questions": qs})
+    return out or _fallback(aspects)
 
 
 async def _gapfill(llm_json, *, decision: str, missing, frame: dict | None,

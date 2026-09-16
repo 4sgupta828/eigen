@@ -15,8 +15,10 @@ from __future__ import annotations
 
 from .types import Aspect
 
-DEFAULT_TOTAL = 24     # a full, systematic sweep; the profile/app may pass a smaller total for a shallow pass
-FLOOR = 1              # every aspect is asked at least once — the coverage guarantee
+DEFAULT_TOTAL = 40     # a full, systematic sweep sized for a real contract (~18 aspects × the required-lens
+#                        pair + weighting); the profile/app may pass a smaller total for a shallow pass
+FLOOR = 2              # every aspect gets at least the REQUIRED-lens pair (seek_support + seek_contradiction)
+#                        so no dimension is reduced to a single, unbalanced question — the 360° guarantee
 CAP = 4               # no single aspect may run away with the budget
 
 

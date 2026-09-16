@@ -395,6 +395,8 @@ def test_generate_frames_the_thesis_then_asks_questions_of_the_frame(monkeypatch
     async def fake_list_questions(_pool, tid, inq=""):
         return [r for r in saved["rows"] if not inq or r["inquiry_key"] == inq]
 
+    import re as _re
+    saw["gen_users"] = []
     async def llm_json(system, user):
         if "UNDERSTANDING" in user:                       # the frame step
             saw["frame_user"] = user
@@ -403,15 +405,14 @@ def test_generate_frames_the_thesis_then_asks_questions_of_the_frame(monkeypatch
                                      "dimension": "buyer_nameable"}],
                     "risks": [{"text": "Procurement cycles are 18 months", "dimension": "catalyst"}],
                     "unknowns": [], "anchors": ["hospital procurement"]}
-        if "COVERAGE GAP" in user:                        # the thesis-native gap-fill pass
-            return {"questions": [{"dimension": "enough_buyers", "kind": "seek_support",
-                                   "text": "Do enough hospitals run this procurement model?",
-                                   "target": "Enough hospitals use central procurement.", "polarity": 1}]}
-        saw["gen_user"] = user                            # the MAIN, frame-driven question step
-        return {"inquiries": [{"name": "Who signs the check", "framing": "the buyer",
-            "questions": [{"dimension": "buyer_nameable", "kind": "seek_support",
-                           "text": "Does hospital procurement hold the budget line?",
-                           "target": "Hospital procurement owns the purchase.", "polarity": 1}]}]}
+        # Every generation call (per line of inquiry, and the gap-fill) lists its dimension keys as
+        # "- <key>:"; return one thesis-native question per key so the whole contract is covered.
+        keys = _re.findall(r"^- (\w+):", user, _re.M)
+        if "COVERAGE GAP" not in user:
+            saw["gen_users"].append(user)                 # a MAIN per-inquiry, frame-driven call
+        return {"questions": [{"dimension": k, "kind": "seek_support",
+                               "text": f"Does the record settle {k} for hospital procurement?",
+                               "target": f"The record settles {k}.", "polarity": 1} for k in keys]}
 
     monkeypatch.setattr(routes.tstore, "get", fake_get)
     monkeypatch.setattr(routes.tstore, "set_inquiries", fake_set_inquiries)
@@ -427,11 +428,14 @@ def test_generate_frames_the_thesis_then_asks_questions_of_the_frame(monkeypatch
     assert r.status_code == 200
     # the conversation reached the framing step
     assert "hospital procurement, not to nurses" in saw["frame_user"]
-    # the frame's specific assumption + risk reached the question step (depth, not the raw rubric)
-    assert "Procurement, not nurses, holds the budget" in saw["gen_user"]
-    assert "Procurement cycles are 18 months" in saw["gen_user"]
-    assert "COVERAGE FLOOR" in saw["gen_user"]
-    # coverage floor still enforced across the full rubric
+    # generation is PER LINE OF INQUIRY — several focused calls, not one
+    assert len(saw["gen_users"]) >= 2
+    allgen = "\n".join(saw["gen_users"])
+    # the frame's tagged assumption + risk reached the focused call for their line of inquiry (depth)
+    assert "Procurement, not nurses, holds the budget" in allgen   # buyer_nameable → the buyer inquiry
+    assert "Procurement cycles are 18 months" in allgen            # catalyst → the timing inquiry
+    assert "LINE OF INQUIRY:" in allgen                            # focused per-inquiry prompt, not a rubric dump
+    # coverage still enforced across the full rubric
     inqs = r.json()["inquiries"]
     covered = {a["key"] for i in inqs for a in i["aspects"]}
     assert {a.key for a in TECH_DECISION_PROFILE.aspects()} <= covered

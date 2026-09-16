@@ -1159,9 +1159,18 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             frame = await _dec.frame_decision(
                 _take_llm_json(), decision=decision, context=_framing_context(d),
                 directive=profile.frame_directive(decision), aspects=aspects)
-        inquiries = await _dec.generate_inquiries(
-            _strong_llm_json(), decision=decision, aspects=aspects, directive=directive,
-            frame=(frame if _dec.is_substantive(frame) else None))
+        # Generate PER LINE OF INQUIRY — a focused, frame-driven call for each inquiry's 2–4 aspects, so
+        # questions are deep and thesis-native, not a single call spread thin across the whole contract
+        # (the fix for generic, cookie-cutter questions). Falls back to the whole-thesis generator only if
+        # the profile does not expose a fixed inquiry partition.
+        fr = frame if _dec.is_substantive(frame) else None
+        if hasattr(profile, "inquiries") and profile.inquiries():
+            inquiries = await _dec.generate_by_inquiry(
+                _strong_llm_json(), decision=decision, inquiries=profile.inquiries(), aspects=aspects,
+                directive=directive, frame=fr)
+        else:
+            inquiries = await _dec.generate_inquiries(
+                _strong_llm_json(), decision=decision, aspects=aspects, directive=directive, frame=fr)
         await tstore.set_inquiries(pool, thesis_id, inquiries)
         return await tl_inquiries(thesis_id, authorization, x_thesis_owner)
 
