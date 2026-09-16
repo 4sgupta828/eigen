@@ -454,3 +454,13 @@ test("Experts mode has a precise filters panel (PDL) alongside the semantic box"
   assert.match(SRC, /filters: filters/);              // filters are sent to the endpoint
   assert.match(SRC, /function readFilters\(/);
 });
+
+test("thesis intro offers 'Discover a published thesis to start from' → seeds genesis", () => {
+  // the discovery search box + endpoint are wired into the thesis landing (not a separate mode)
+  assert.match(SRC, /discover a published thesis to start from/i);
+  assert.match(SRC, /id="th-disc-q"/);                 // the search input
+  assert.match(SRC, /fetch\("\/discover\/theses"/);    // hits the discovery endpoint
+  assert.match(SRC, /function discSeed\(/);            // builds a genesis seed from a result
+  assert.match(SRC, /Start a thesis from this/);       // per-result CTA
+  assert.match(SRC, /interpretation — not a fact/);    // honest register on every thesis card
+});

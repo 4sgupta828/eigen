@@ -3796,6 +3796,20 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
         except Exception:   # noqa: BLE001
             return {}
 
+    def _rrf_fuse(*leg_lists, key, k: int = 60):
+        """Reciprocal-rank fusion of several ranked result legs → [(row, fused_rank_index)] sorted best
+        first. Each leg contributes 1/(k+rank); a row seen high in both legs wins. Domain-free, no
+        scores needed — just the ranks each leg returned (the Startup Search relevance lesson)."""
+        scores: dict = {}
+        rows: dict = {}
+        for leg in leg_lists:
+            for rank, row in enumerate(leg):
+                kk = key(row)
+                scores[kk] = scores.get(kk, 0.0) + 1.0 / (k + rank)
+                rows.setdefault(kk, row)
+        ordered = sorted(scores, key=lambda kk: -scores[kk])
+        return [(rows[kk], i) for i, kk in enumerate(ordered)]
+
     @app.post("/admin/corpus/search")
     async def admin_corpus_search(body: dict, x_admin_token: str = Header(default="")) -> dict:
         """Pure retrieval over ingested blocks: mode=keyword (tsv full-text) | semantic (pgvector),
@@ -3845,6 +3859,73 @@ h1{{font-family:var(--display);font-weight:700;font-size:30px;margin:.2rem 0 .1r
                         "content_type": r["content_type"], "source_key": r["source_key"],
                         "facets": f, "url": _doc_url(r["document_id"], f)})
         return {"mode": mode, "count": len(out), "results": out}
+
+    # ── Discover theses — the user-facing search over the INVESTMENT-THESIS corpus slice ──────────────
+    # A library of publicly-published startup theses (VC theses, market maps) + thesis-grade investor
+    # analysis, searchable by keyword AND meaning. Hybrid: a keyword (tsv) leg + a semantic (pgvector)
+    # leg, fused by reciprocal rank — the same lesson the Startup Search relevance work landed (literal
+    # keyword catches names, dense catches intent). Read-only, no LLM, no admin token: it is discovery.
+    # A result is a named investor's INTERPRETATION, never a fact — the card must say so.
+    _THESIS_SLICE = ("investment_thesis", "founder_essay", "expert_feed")   # broad thesis-grade scope
+
+    @app.post("/discover/theses")
+    async def discover_theses(body: dict) -> dict:
+        """Search past startup theses (keyword + semantic, RRF-fused). {query, limit?, tenant?}."""
+        dsn = os.environ.get("EIGEN_CORPUS_DSN")
+        if not dsn:
+            raise HTTPException(status_code=404, detail="no corpus DSN")
+        query = (body.get("query") or "").strip()
+        tenant = (body.get("tenant") or "demo").strip()
+        limit = max(1, min(int(body.get("limit") or 20), 50))
+        slice_sql = "source_key = ANY($2)"
+        import asyncpg
+        conn = await asyncpg.connect(dsn)
+        try:
+            if not query:                       # browse newest theses under the slice
+                rows = await conn.fetch(
+                    f"SELECT document_id, block_id, left(text,1400) AS text, facets, document_title, "
+                    f"content_type, source_key FROM rs_block WHERE tenant_id=$1 AND {slice_sql} "
+                    f"ORDER BY created_at DESC NULLS LAST LIMIT {limit}", tenant, list(_THESIS_SLICE))
+                fused = [(r, i) for i, r in enumerate(rows)]
+            else:
+                # keyword leg
+                kw = await conn.fetch(
+                    f"SELECT document_id, block_id, left(text,1400) AS text, facets, document_title, "
+                    f"content_type, source_key FROM rs_block WHERE tenant_id=$1 AND {slice_sql} "
+                    f"AND tsv @@ plainto_tsquery('english',$3) "
+                    f"ORDER BY ts_rank_cd(tsv, plainto_tsquery('english',$3)) DESC LIMIT {limit*2}",
+                    tenant, list(_THESIS_SLICE), query)
+                # semantic leg
+                if app.state.service is None:
+                    app.state.service = build_default_service()
+                vec = app.state.service.embedder.embed([query])[0]
+                vlit = "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
+                sem = await conn.fetch(
+                    f"SELECT document_id, block_id, left(text,1400) AS text, facets, document_title, "
+                    f"content_type, source_key FROM rs_block WHERE tenant_id=$1 AND {slice_sql} "
+                    f"AND embedding IS NOT NULL ORDER BY embedding <=> $3::vector LIMIT {limit*2}",
+                    tenant, list(_THESIS_SLICE), vlit)
+                fused = _rrf_fuse(kw, sem, key=lambda r: (r["document_id"], r["block_id"]))
+        except Exception as e:      # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"discover error: {e}") from e
+        finally:
+            await conn.close()
+        out, seen_docs = [], set()
+        for r, _rank in fused:
+            if r["document_id"] in seen_docs:      # one card per thesis document, best block wins
+                continue
+            seen_docs.add(r["document_id"])
+            f = _parse_facets(r["facets"])
+            out.append({"document_id": r["document_id"], "title": r["document_title"],
+                        "snippet": _clean_snip(r["text"] or "", 400),
+                        "firm": f.get("firm") or f.get("publication") or "",
+                        "author": f.get("author") or "", "year": f.get("year") or "",
+                        "kind": f.get("thesis_kind") or f.get("source_kind") or "",
+                        "source_key": r["source_key"], "url": _doc_url(r["document_id"], f) or f.get("url", ""),
+                        "register": "interpretation — a named investor's thesis, not an established fact"})
+            if len(out) >= limit:
+                break
+        return {"count": len(out), "results": out}
 
     @app.get("/admin/corpus/document")
     async def admin_corpus_document(document_id: str, tenant: str = "demo",

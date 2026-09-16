@@ -67,9 +67,9 @@ def classify(source_key: str, facets: dict[str, str] | None, title: str = "", te
     # 3b) EXPERT ANALYSIS — a NAMED expert's interpretation/foresight (essays, newsletters, recorded
     # expert/practitioner discussion). Opinion above an unreviewed preprint, below fact-checked press;
     # never controlling. STRUCTURAL: reads the source_kind the connector stamped, judges nothing.
-    if src_kind in ("essay", "newsletter", "expert", "podcast") \
-            or sk in ("expert_feed", "podcast"):
-        return "expert_analysis"
+    if src_kind in ("essay", "newsletter", "expert", "podcast", "investment_thesis") \
+            or sk in ("expert_feed", "podcast", "founder_essay", "investment_thesis"):
+        return "expert_analysis"       # a VC thesis is a named investor's interpretation — never controlling
 
     # 4) ANALYSIS — reputable press / analyst notes.
     if src_kind == "news" or sk in ("reuters", "bloomberg", "ft"):
