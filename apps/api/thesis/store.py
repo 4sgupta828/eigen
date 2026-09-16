@@ -558,6 +558,35 @@ async def set_competitive(pool, thesis_id: str, matrix: dict) -> None:
                            thesis_id, json.dumps(matrix or {}))
 
 
+async def add_competitive_players(pool, thesis_id: str, new_players: list[dict], *,
+                                  space: str = "", columns: list[dict] | None = None) -> int:
+    """Append profiled players to the stored competitive landscape (dedupe by name, keep existing) — so the
+    user can EXPAND the map with '+ Add competitors' without re-researching what's already there. Creates
+    the landscape if none exists yet. -> number of players added."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow("SELECT competitive FROM ts_thesis WHERE id = $1", thesis_id)
+        if row is None:
+            return 0
+        land = _loads(row["competitive"]) or {}
+        players = list(land.get("players") or [])
+        have = {str(p.get("name") or "").strip().lower() for p in players}
+        added = 0
+        for p in (new_players or []):
+            nm = str(p.get("name") or "").strip()
+            if nm and nm.lower() not in have:
+                players.append(p); have.add(nm.lower()); added += 1
+        land["players"] = players
+        land["empty"] = not players
+        if space and not land.get("space"):
+            land["space"] = space
+        if columns and not land.get("columns"):
+            land["columns"] = columns
+        await conn.execute("UPDATE ts_thesis SET competitive = $2::jsonb, updated_at = now() WHERE id = $1",
+                           thesis_id, json.dumps(land))
+    return added
+
+
 async def set_focus(pool, thesis_id: str, rung: str) -> None:
     await ensure_schema(pool)
     async with pool.acquire() as conn:

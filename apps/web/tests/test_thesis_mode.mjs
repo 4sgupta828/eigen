@@ -466,12 +466,14 @@ test("thesis intro offers 'Discover a published thesis to start from' → seeds 
 });
 
 test("the Collective Take renders a reasoning FLOW over the whole take, not a shallow verdict picture", () => {
-  assert.match(SRC, /function takeReasoningFlow\(take, c\)/);   // builds from the take's own reasoning blocks
+  assert.match(SRC, /function takeReasoningFlow\(take, c\)/);   // builds from the take's own sections
   assert.match(SRC, /\+ takeReasoningFlow\(take, c\)/);         // wired into the take, next to the BLUF
-  assert.match(SRC, /blocks\("assumption"\)/);                 // stage: what must be true
-  assert.match(SRC, /blocks\("tension"\)\.concat\(blocks\("gap"\)\)/);  // stage: what the evidence shows
-  assert.match(SRC, /blocks\("implication"\)/);                // stage: what it implies
-  assert.match(SRC, /blocks\("what_would_change_this"\)/);     // stage: what would change the read
+  // section-driven stages (grounded + analysis) so the flow always fills, not just when analysis exists
+  assert.match(SRC, /items\(\["at_stake"\]/);                  // stage: what must be true
+  assert.match(SRC, /items\(\["by_line", "strengths"\]/);      // stage: what the evidence established
+  assert.match(SRC, /items\(\["synthesis", "conviction"\]/);   // stage: what it implies
+  assert.match(SRC, /items\(\["what_would_change"\]/);         // stage: what would change the read
+  assert.match(SRC, /stages\.length < 2\)\{/);                 // thin-take fallback flows every section
   assert.match(SRC, /th-rf-bluf/);                             // the BLUF is the converging "read"
   assert.match(SRC, /not investment advice/);                  // honest: a reading, human owns the decision
 });
