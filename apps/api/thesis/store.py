@@ -813,6 +813,21 @@ async def set_inquiries(pool, thesis_id: str, inquiries: list[dict]) -> None:
             order += 1
 
 
+async def set_question_priorities(pool, thesis_id: str, levels: dict) -> int:
+    """Persist priority LEVELS on existing questions ({qid: level}) — used to (re)assign P0/P1/P2 to a
+    thesis whose questions were drafted before priorities, without regenerating. -> rows updated."""
+    if not levels:
+        return 0
+    await ensure_schema(pool)
+    n = 0
+    async with pool.acquire() as conn, conn.transaction():
+        for qid, lvl in levels.items():
+            n += 1 if await conn.execute(
+                "UPDATE ts_question SET priority=$3 WHERE thesis_id=$1 AND id=$2",
+                thesis_id, str(qid), max(0, int(lvl))) != "UPDATE 0" else 0
+    return n
+
+
 async def list_questions(pool, thesis_id: str, inquiry_key: str = "") -> list[dict]:
     await ensure_schema(pool)
     async with pool.acquire() as conn:

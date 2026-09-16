@@ -12823,15 +12823,22 @@ async function openShare(token){
     const totalUnrun = inqs.reduce((n, i) => n + (i.questions || []).filter(q => !q.target_status).length, 0);
     // The global bar: run every line of inquiry at once → build the Pitch Deck + Collective Take, and
     // (once findings exist) rebuild those two from the existing findings for free. Redraft/Clear stay.
-    // Rebuild the take when everything's already answered; otherwise the LEVEL buttons below do the runs.
-    const runAllBtn = (owner && !running && anyAnswered && totalUnrun === 0)
-      ? '<button type="button" class="th-run th-run-all" id="th-run-all">Rebuild the take</button>' : "";
+    // Run every line at once (catch-all), or rebuild the take when everything's already answered. The
+    // LEVEL buttons below give the precise P0 / P0+P1 / … control when priorities exist.
+    const runAllBtn = (owner && !running && (totalUnrun > 0 || anyAnswered))
+      ? '<button type="button" class="th-inq-add th-run-all" id="th-run-all">'
+        + (anyAnswered && totalUnrun === 0 ? "Rebuild the take" : "Run all lines of inquiry") + "</button>" : "";
     // Priority LEVELS (assigned at generation): one button per level — run P0, then P0+P1, then P0+P1+P2,
     // … each cumulative and precise. The top level equals every un-answered question.
     const allq = inqs.flatMap(i => i.questions || []);
     const unrunAtLvl = (lvl) => allq.filter(q => !q.target_status && Number(q.priority == null ? 1 : q.priority) <= lvl).length;
+    const hasP0 = allq.some(q => !q.target_status && Number(q.priority == null ? 1 : q.priority) === 0);
+    // Backfill priorities for a thesis drafted before them (no P0 yet) — one cheap pass, no re-gen.
+    const prioBtn = (owner && !running && totalUnrun > 0 && !hasP0)
+      ? '<button type="button" class="th-run" id="th-prioritize" title="Assign P0/P1/P2 priority levels '
+        + 'so you can run the critical subset first">Set P0/P1/P2 priorities</button>' : "";
     let levelBtns = "";
-    if(owner && !running && totalUnrun > 0){
+    if(owner && !running && totalUnrun > 0 && hasP0){
       const maxLvl = Math.max(0, ...allq.filter(q => !q.target_status).map(q => Number(q.priority == null ? 1 : q.priority)));
       for(let L = 0; L <= maxLvl; L++){
         const n = unrunAtLvl(L);
@@ -12858,8 +12865,8 @@ async function openShare(token){
       ? '<button type="button" class="th-inq-add" id="th-redraft">Redraft all questions</button>'
         + '<button type="button" class="th-inq-add th-inq-del" id="th-clear">Clear all &amp; start fresh</button>'
       : "";
-    const bar = (levelBtns || runAllBtn || resynthBtn || deckBtn || compBtn || draftBar)
-      ? '<div class="th-loi-bar">' + levelBtns + runAllBtn + resynthBtn + deckBtn + compBtn + draftBar + "</div>" : "";
+    const bar = (prioBtn || levelBtns || runAllBtn || resynthBtn || deckBtn || compBtn || draftBar)
+      ? '<div class="th-loi-bar">' + prioBtn + levelBtns + runAllBtn + resynthBtn + deckBtn + compBtn + draftBar + "</div>" : "";
     const synthProg = (running && STATE.inqRun.competitive)
       ? '<div class="th-run-prog th-synth-prog"><span class="su-spin"></span> <span>Researching the '
         + "competitive landscape — identifying the players and profiling each…</span></div>"
@@ -12875,6 +12882,7 @@ async function openShare(token){
     if(ra) ra.addEventListener("click", () => (anyAnswered && totalUnrun === 0) ? resynthesize() : runAllInquiries());
     host.querySelectorAll(".th-run-lvl").forEach(b =>
       b.addEventListener("click", () => runCriticalSubset(Number(b.dataset.lvl))));
+    const pz = document.getElementById("th-prioritize"); if(pz) pz.addEventListener("click", prioritizeQuestions);
     const gd = document.getElementById("th-gen-deck"); if(gd) gd.addEventListener("click", generateDeck);
     const cr = document.getElementById("th-comp-research"); if(cr) cr.addEventListener("click", researchCompetitive);
     const rs = document.getElementById("th-resynth"); if(rs) rs.addEventListener("click", resynthesize);
@@ -13556,6 +13564,24 @@ async function openShare(token){
       renderInquiries();
       pollInquiry(0);
     }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; }
+  }
+
+  // (Re)assign P0/P1/P2 priority levels to the current questions — for theses drafted before priorities.
+  async function prioritizeQuestions(){
+    if(STATE.busy || STATE.inqRun) return;
+    STATE.busy = true;
+    const btn = document.getElementById("th-prioritize");
+    if(btn){ btn.disabled = true; btn.textContent = "Prioritizing…"; }
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries/prioritize",
+                            {method: "POST", headers: hdrs()});
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok) throw new Error(d.detail || "could not set priorities");
+      STATE.inquiries = d.inquiries || STATE.inquiries;
+      renderInquiries();
+    }catch(e){ note().textContent = e.message || String(e);
+      if(btn){ btn.disabled = false; btn.textContent = "Set P0/P1/P2 priorities"; } }
     finally{ STATE.busy = false; }
   }
 
