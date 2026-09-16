@@ -1046,6 +1046,11 @@
     list-style:none;padding:.3rem 0;}
   .th-comp-tablewrap > summary::-webkit-details-marker{display:none;}
   .th-cell-empty{color:var(--dim);}
+  /* Question priority badge (P0/P1/P2), assigned at generation. */
+  .th-prio{font-family:var(--mono);font-size:.58rem;font-weight:700;letter-spacing:.04em;border-radius:999px;
+    padding:.05rem .4rem;border:1px solid var(--hair);color:var(--dim);margin-right:.35rem;vertical-align:middle;}
+  .th-prio-0{color:var(--on-accent);background:var(--gold);border-color:var(--gold);}
+  .th-prio-1{color:var(--gold);border-color:rgba(var(--gold-rgb),.5);}
   .th-comp-addbar{margin:.7rem 0 .2rem;}
   .th-comp-note{font-family:var(--mono);font-size:.72rem;color:var(--dim);margin:.5rem 0;}
   .th-comp-pick{border:1px solid var(--hair);border-radius:10px;padding:.6rem .7rem;margin:.5rem 0;
@@ -12806,15 +12811,26 @@ async function openShare(token){
     // (once findings exist) rebuild those two from the existing findings for free. Redraft/Clear stay.
     const runAllBtn = (owner && !running && (totalUnrun > 0 || anyAnswered))
       ? '<button type="button" class="th-run th-run-all" id="th-run-all">'
-        + (anyAnswered && totalUnrun === 0 ? "Rebuild the analysis"
-           : "Run all lines of inquiry &amp; synthesize") + "</button>"
+        + (anyAnswered && totalUnrun === 0 ? "Rebuild the take"
+           : "Run all lines of inquiry") + "</button>"
       : "";
-    // Run only the CRITICAL SUBSET (highest-value questions across all lines) — cheaper than run-all.
-    const runCritBtn = (owner && !running && totalUnrun > 0)
-      ? '<button type="button" class="th-inq-add" id="th-run-crit" title="Run only the questions that '
-        + 'most move the fund/pass call — ranked across all lines">Run the critical subset</button>' : "";
+    // Priority LEVELS (assigned at generation): run P0 (crux) first, then add layers. Small & precise.
+    const allq = inqs.flatMap(i => i.questions || []);
+    const unrunAtLvl = (lvl) => allq.filter(q => !q.target_status && Number(q.priority == null ? 1 : q.priority) <= lvl).length;
+    const p0 = unrunAtLvl(0), p1 = unrunAtLvl(1);
+    const runP0Btn = (owner && !running && p0 > 0)
+      ? '<button type="button" class="th-run" id="th-run-crit" data-lvl="0" title="Run only the P0 crux '
+        + 'questions — the few that most decide fund/pass">Run P0 critical (' + p0 + ")</button>" : "";
+    const runP1Btn = (owner && !running && p1 > p0)
+      ? '<button type="button" class="th-inq-add" id="th-run-p1" data-lvl="1" title="Run P0 + P1 for more '
+        + 'coverage">Run P0–P1 (' + p1 + ")</button>" : "";
     const resynthBtn = (owner && !running && anyAnswered && totalUnrun > 0)
-      ? '<button type="button" class="th-inq-add" id="th-resynth">Rebuild analysis from findings</button>' : "";
+      ? '<button type="button" class="th-inq-add" id="th-resynth">Rebuild take from findings</button>' : "";
+    // The Pitch Deck is a SEPARATE, on-demand artifact — generate it after the take exists.
+    const hasDeck = STATE.deck && !STATE.deck.empty && (STATE.deck.sections || []).length;
+    const deckBtn = (owner && !running && anyAnswered)
+      ? '<button type="button" class="th-inq-add" id="th-gen-deck" title="Build the investor pitch deck '
+        + 'from the findings">' + (hasDeck ? "Rebuild pitch deck" : "Generate pitch deck") + "</button>" : "";
     // The competitive landscape is its OWN researched artifact (open-web), a separate gated spend.
     const compBtn = (owner && !running)
       ? '<button type="button" class="th-inq-add" id="th-comp-research" title="Research the market: the '
@@ -12824,8 +12840,8 @@ async function openShare(token){
       ? '<button type="button" class="th-inq-add" id="th-redraft">Redraft all questions</button>'
         + '<button type="button" class="th-inq-add th-inq-del" id="th-clear">Clear all &amp; start fresh</button>'
       : "";
-    const bar = (runAllBtn || runCritBtn || resynthBtn || compBtn || draftBar)
-      ? '<div class="th-loi-bar">' + runAllBtn + runCritBtn + resynthBtn + compBtn + draftBar + "</div>" : "";
+    const bar = (runAllBtn || runP0Btn || runP1Btn || resynthBtn || deckBtn || compBtn || draftBar)
+      ? '<div class="th-loi-bar">' + runAllBtn + runP0Btn + runP1Btn + resynthBtn + deckBtn + compBtn + draftBar + "</div>" : "";
     const synthProg = (running && STATE.inqRun.competitive)
       ? '<div class="th-run-prog th-synth-prog"><span class="su-spin"></span> <span>Researching the '
         + "competitive landscape — identifying the players and profiling each…</span></div>"
@@ -12833,13 +12849,15 @@ async function openShare(token){
       ? '<div class="th-run-prog th-synth-prog"><span class="su-spin"></span> <span>Running '
         + (STATE.inqRun.critical ? "the critical subset" : "all lines of inquiry")
         + (STATE.inqRun.total ? " — " + esc2(String(Math.min(STATE.inqRun.done + 1, STATE.inqRun.total)))
-           + " of " + esc2(String(STATE.inqRun.total)) : "") + ", then synthesizing the deck & take…</span></div>"
+           + " of " + esc2(String(STATE.inqRun.total)) : "") + ", then synthesizing the take…</span></div>"
       : "";
     host.innerHTML = bar + synthProg + deckAndTakeHtml() + '<div class="th-inqs">'
       + inqs.map(i => inqHtml(i, openKeys)).join("") + "</div>";
     const ra = document.getElementById("th-run-all");
     if(ra) ra.addEventListener("click", () => (anyAnswered && totalUnrun === 0) ? resynthesize() : runAllInquiries());
-    const rc = document.getElementById("th-run-crit"); if(rc) rc.addEventListener("click", runCriticalSubset);
+    const rc = document.getElementById("th-run-crit"); if(rc) rc.addEventListener("click", () => runCriticalSubset(0));
+    const r1 = document.getElementById("th-run-p1"); if(r1) r1.addEventListener("click", () => runCriticalSubset(1));
+    const gd = document.getElementById("th-gen-deck"); if(gd) gd.addEventListener("click", generateDeck);
     const cr = document.getElementById("th-comp-research"); if(cr) cr.addEventListener("click", researchCompetitive);
     const rs = document.getElementById("th-resynth"); if(rs) rs.addEventListener("click", resynthesize);
     const rd = document.getElementById("th-redraft"); if(rd) rd.addEventListener("click", generateInquiries);
@@ -13313,8 +13331,12 @@ async function openShare(token){
       + (q.target_status ? "Re-run" : "Run") + ' this question">' + (q.target_status ? "↻" : "▶") + "</button>";
     const lensChip = '<span class="th-lens" data-lens="' + esc2(q.kind) + '"><span class="th-lens-g" aria-hidden="true">'
       + esc2(lens.glyph || "") + "</span>" + esc2(lens.label || q.kind) + "</span>";
+    const pr = Number(q.priority == null ? 1 : q.priority);
+    const prChip = '<span class="th-prio th-prio-' + (pr <= 0 ? "0" : pr === 1 ? "1" : "2") + '" title="'
+      + (pr <= 0 ? "P0 — critical crux" : pr === 1 ? "P1 — important coverage" : "P2 — completeness")
+      + '">P' + (pr <= 0 ? 0 : pr) + "</span>";
     const qline = '<div class="th-qn-q"><span class="th-qn-text">' + esc2(q.text) + "</span>" + run + "</div>"
-      + lensChip;
+      + prChip + lensChip;
     let body = "";
     if(isActive){
       body = '<div class="th-qn-work"><span class="su-spin"></span> researching this question…</div>';
@@ -13432,8 +13454,8 @@ async function openShare(token){
       const max = Number((pj.projection || {}).projected_usd || 0);
       if(!window.confirm("Run all lines of inquiry?\n\n" + unrun + " un-answered question"
           + (unrun === 1 ? "" : "s") + " across every line — against our corpus, the open web, and the "
-          + "red team — then the Collective Take, Startup Pitch Deck, and Competitive Analysis are built "
-          + "across all findings.\n\nProjected maximum: $" + max.toFixed(3))){
+          + "red team — then the Collective Take is built. (Generate the Pitch Deck and research the "
+          + "competitive landscape separately.)\n\nProjected maximum: $" + max.toFixed(3))){
         STATE.busy = false; return;
       }
       const sr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries/run",
@@ -13449,25 +13471,27 @@ async function openShare(token){
     finally{ STATE.busy = false; }
   }
 
-  // Run only the CRITICAL SUBSET — the highest-value questions across all lines (ranked server-side).
-  async function runCriticalSubset(){
+  // Run a PRIORITY LEVEL across all lines: level 0 = P0 crux only, 1 = P0+P1, 2 = P0+P1+P2. Levels are
+  // assigned at generation, so this just filters — precise and small at level 0.
+  async function runCriticalSubset(level){
     if(STATE.busy || STATE.inqRun) return;
+    level = Number(level || 0);
     STATE.busy = true;
     try{
       const pr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries/run_critical",
-                             {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 0, web: true})});
+                             {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 0, web: true, level: level})});
       const pj = await pr.json().catch(() => ({}));
       if(pj.status === "synthesized"){ await loadInquiries(); STATE.busy = false; return; }
       const max = Number((pj.projection || {}).projected_usd || 0);
       const sel = Number(pj.selected || 0);
-      if(!window.confirm("Run the critical subset?\n\n" + sel + " highest-value question"
-          + (sel === 1 ? "" : "s") + " across all lines — the ones that most move the fund/pass call — "
-          + "then rebuild the deck & take.\n\nProjected maximum: $" + max.toFixed(3))){
+      const label = level === 0 ? "P0 (critical)" : ("P0–P" + level);
+      if(!window.confirm("Run " + label + "?\n\n" + sel + " question" + (sel === 1 ? "" : "s")
+          + " — then rebuild the take.\n\nProjected maximum: $" + max.toFixed(3))){
         STATE.busy = false; return;
       }
       const sr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries/run_critical",
                              {method: "POST", headers: hdrs(), body: JSON.stringify(
-                               {max_usd: max, web: true, idempotency_key: freshRunKey("crit")})});
+                               {max_usd: max, web: true, level: level, idempotency_key: freshRunKey("crit" + level)})});
       const started = await sr.json().catch(() => ({}));
       if(started.status === "synthesized"){ await loadInquiries(); STATE.busy = false; return; }
       if(!sr.ok || !started.run) throw new Error(started.detail || "could not start the run");
@@ -13503,7 +13527,25 @@ async function openShare(token){
     finally{ STATE.busy = false; }
   }
 
-  // Rebuild the Pitch Deck + Collective Take from the EXISTING findings — no research, no confirm.
+  // Generate the Pitch Deck on demand (separate from the take) — free, one grounded synth call.
+  async function generateDeck(){
+    if(STATE.busy || STATE.inqRun) return;
+    STATE.busy = true;
+    const btn = document.getElementById("th-gen-deck");
+    if(btn){ btn.disabled = true; btn.textContent = "Building the deck…"; }
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/deck",
+                            {method: "POST", headers: hdrs()});
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok) throw new Error(d.detail || "could not build the pitch deck");
+      STATE.deck = d.deck || STATE.deck;
+      renderInquiries();
+    }catch(e){ note().textContent = e.message || String(e);
+      if(btn){ btn.disabled = false; btn.textContent = "Generate pitch deck"; } }
+    finally{ STATE.busy = false; }
+  }
+
+  // Rebuild the Collective Take from the EXISTING findings — no research, no confirm.
   async function resynthesize(){
     if(STATE.busy || STATE.inqRun) return;
     STATE.busy = true;

@@ -53,3 +53,28 @@ async def test_llm_rank_is_used_when_present_then_falls_back():
     async def boom(_s, _u): raise ValueError("x")
     got2 = await prioritize.select_subset(_P(), rows, thesis="T", llm_json=boom, cap=2)
     assert {q["id"] for q in got2} == {"x", "y"}            # fallback still returns the set
+
+
+@pytest.mark.asyncio
+async def test_assign_priorities_marks_p0_small_and_call_only_p2():
+    # deterministic (no model): critical aspects → P0 (capped), non-critical → P1, call_only → P2
+    inqs = [{"questions": [
+        {"dimension": "problem", "kind": "seek_contradiction", "text": "a"},
+        {"dimension": "moat", "kind": "seek_support", "text": "b"},
+        {"dimension": "catalyst", "kind": "seek_support", "text": "c"},   # non-critical → P1
+        {"dimension": "wtp", "kind": "seek_support", "text": "d"}]}]       # call_only → P2
+    await prioritize.assign_priorities(_P(), inqs, thesis="T", llm_json=None, p0_cap=6)
+    by = {q["text"]: q["priority"] for q in inqs[0]["questions"]}
+    assert by["a"] == 0 and by["b"] == 0        # critical aspects → P0
+    assert by["c"] == 1                          # non-critical → P1
+    assert by["d"] == 2                          # call_only → P2 (routes to a person, never a crux)
+
+
+@pytest.mark.asyncio
+async def test_assign_priorities_caps_p0():
+    # six critical questions but a cap of 2 → only the top 2 stay P0, the rest demote to P1
+    inqs = [{"questions": [{"dimension": "problem", "kind": "seek_contradiction", "text": f"q{i}"}
+                           for i in range(6)]}]
+    await prioritize.assign_priorities(_P(), inqs, thesis="T", llm_json=None, p0_cap=2)
+    n0 = sum(1 for q in inqs[0]["questions"] if q["priority"] == 0)
+    assert n0 == 2

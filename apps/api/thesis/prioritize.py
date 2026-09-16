@@ -56,6 +56,68 @@ async def _llm_rank(llm_json, *, thesis: str, runnable: list[dict]) -> list[str]
         return []
 
 
+async def assign_priorities(profile, inquiries: list[dict], *, thesis: str = "", llm_json=None,
+                            p0_cap: int = 6) -> None:
+    """Mark each generated question with a PRIORITY LEVEL at generation time (mutates the question dicts
+    in place, setting `priority`): 0 = P0 (the few cruxes that most decide fund/pass — kept small),
+    1 = P1 (important coverage), 2 = P2 (completeness). Assigned with full thesis context by the model,
+    with a deterministic fallback (critical aspect + disconfirming lens). So the run never has to re-rank —
+    it just filters by level. call_only questions are P2 (they route to an expert, not an evidence run)."""
+    by_key = _aspect_index(profile)
+    flat = [q for inq in (inquiries or []) for q in (inq.get("questions") or [])]
+    if not flat:
+        return
+
+    def det(q) -> tuple[int, float]:
+        a = by_key.get(q.get("dimension") or q.get("aspect_key"))
+        if a is None or getattr(a, "settleable", "") == _CALL_ONLY:
+            return 2, 0.0
+        base = _score(a, q.get("kind", ""))
+        return (0 if getattr(a, "critical", False) else 1), base
+
+    # Deterministic default level + score for every question.
+    for q in flat:
+        lvl, sc = det(q)
+        q["priority"], q["_pscore"] = lvl, sc
+    # Cap P0 deterministically: keep the top `p0_cap` by score among the provisional P0s; demote the rest.
+    p0 = sorted([q for q in flat if q["priority"] == 0], key=lambda q: -q["_pscore"])
+    for q in p0[p0_cap:]:
+        q["priority"] = 1
+
+    # LLM refine (has the whole thesis + every question): pick the small P0 crux set + the P1 layer.
+    if llm_json is not None:
+        listing = "\n".join(f"[{i}] ({q.get('dimension','')}/{q.get('kind','')}) {q.get('text','')[:180]}"
+                            for i, q in enumerate(flat))
+        system = ("You are an investor's diligence lead assigning PRIORITY LEVELS to research questions for "
+                  "a fund/pass decision. Level 0 = P0: the FEW cruxes whose answers most decide the deal — "
+                  f"keep P0 SMALL and precise (about {p0_cap}, never more). Level 1 = P1: important coverage. "
+                  "Level 2 = P2: completeness. Spread P0 across the decision (don't stack one area). "
+                  'Return ONLY {"levels": {"<index>": 0|1|2, ...}} for the indices given.')
+        user = f"THESIS:\n{thesis}\n\nQUESTIONS (index, dimension/lens, text):\n{listing}\n\nReturn the JSON."
+        try:
+            raw = await llm_json(system, user)
+            d = raw if isinstance(raw, dict) else json.loads(raw)
+            levels = d.get("levels") or {}
+            n_p0 = 0
+            for i, q in enumerate(flat):
+                v = levels.get(str(i), levels.get(i))
+                if v is None:
+                    continue
+                lvl = 0 if str(v) == "0" else (1 if str(v) == "1" else 2)
+                if by_key.get(q.get("dimension")) and getattr(by_key[q["dimension"]], "settleable", "") == _CALL_ONLY:
+                    lvl = 2                       # call_only never a crux — it routes to a person
+                q["priority"] = lvl
+                n_p0 += 1 if lvl == 0 else 0
+            if n_p0 > p0_cap:                     # model over-marked P0 → keep the top by det score
+                over = sorted([q for q in flat if q["priority"] == 0], key=lambda q: -q["_pscore"])
+                for q in over[p0_cap:]:
+                    q["priority"] = 1
+        except Exception:      # noqa: BLE001 — keep the deterministic levels
+            pass
+    for q in flat:
+        q.pop("_pscore", None)
+
+
 async def select_subset(profile, question_rows: list[dict], *, thesis: str = "", llm_json=None,
                         cap: int = 12) -> list[dict]:
     """-> the chosen question ROWS (a subset of `question_rows`) to run. Unanswered, non-call_only

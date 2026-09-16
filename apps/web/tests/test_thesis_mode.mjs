@@ -488,13 +488,17 @@ test("genesis draft offers auto-improve + a backtrackable version timeline", () 
   assert.match(SRC, /vs\.length < 2\) return ""/);        // no timeline until there's something to backtrack to
 });
 
-test("the LoI bar offers a critical-subset run and dedicated competitive research", () => {
-  assert.match(SRC, /function runCriticalSubset\(/);
+test("the LoI bar offers priority-level runs, a separate deck, and competitive research", () => {
+  assert.match(SRC, /function runCriticalSubset\(level\)/);   // priority-level run
   assert.match(SRC, /\/inquiries\/run_critical/);
+  assert.match(SRC, /Run P0 critical/);                       // P0 crux run
+  assert.match(SRC, /runCriticalSubset\(1\)/);                // P0+P1 layer
+  assert.match(SRC, /function generateDeck\(/);               // deck is its own on-demand action
+  assert.match(SRC, /"\/deck"/);
+  assert.match(SRC, /Generate pitch deck/);
   assert.match(SRC, /function researchCompetitive\(/);
-  assert.match(SRC, /\/competitive\/research/);
-  assert.match(SRC, /Run the critical subset/);
   assert.match(SRC, /Research competitive landscape/);
+  assert.match(SRC, /th-prio/);                               // per-question P0/P1/P2 badge
 });
 
 test("the competitive artifact renders per-player cards + an at-a-glance table (not a passive matrix)", () => {
