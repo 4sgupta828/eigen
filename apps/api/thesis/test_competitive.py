@@ -19,15 +19,22 @@ class _Web:
 async def test_research_landscape_identifies_players_and_grounds_cells():
     cols = [{"key": "funding", "label": "Funding"}, {"key": "customers", "label": "Customers"}]
     async def llm(system, user):
-        if "name the SPACE" in system or "Name the SPACE" in system or "name the" in system.lower():
-            return {"space": "vertical AI search", "players": ["Acme", "Acme"]}   # dupe → deduped
+        s = system.lower()
+        if "focused market" in s and "queries" in s:              # _focus_queries
+            return {"focus": "vertical AI search for lawyers", "queries": ["ai legal search competitors"]}
+        if "mapping one focused market" in s:                     # _identify_players (direct-first)
+            return {"players": [{"name": "Acme", "kind": "direct"},
+                                {"name": "Acme", "kind": "direct"},          # dupe → deduped
+                                {"name": "FarAway", "kind": "adjacent"}]}
         return {"cells": {"funding": {"text": "$20M Series A led by Foo", "src": 1},
                           "customers": {"text": "", "src": 1},          # empty → dropped
                           "bogus": {"text": "x", "src": 1}}}            # unknown dim → dropped
     land = await competitive.research_landscape(llm, _Web(), thesis="AI search for lawyers",
                                                 subject="legal AI search", findings=[], columns=cols)
-    assert land["space"] == "vertical AI search"
-    assert len(land["players"]) == 1                       # deduped
+    assert land["space"] == "vertical AI search for lawyers"          # the focus is the market label
+    names = [p["name"] for p in land["players"]]
+    assert names[0] == "Acme"                              # direct first
+    assert names.count("Acme") == 1                        # deduped
     p = land["players"][0]
     assert p["name"] == "Acme" and p["is_subject"] is False
     assert p["cells"]["funding"]["text"].startswith("$20M")

@@ -47,41 +47,85 @@ async def _search(web_client, query: str) -> list[dict]:
     return out
 
 
+async def _focus_queries(llm_json, *, thesis: str, subject: str) -> tuple[str, list[str]]:
+    """(focus, [queries]) — the ONE focused market (the exact JOB + BUYER this thesis competes on) and
+    targeted search queries to find its DIRECT competitors, mixing keyword and natural-language angles so
+    we search by meaning AND by term. Falls back to simple queries with no model."""
+    base = (subject or thesis[:80]).strip()
+    fallback = (base, [f"{base} competitors", f"{base} alternatives", f"companies like {base}"])
+    if llm_json is None:
+        return fallback
+    system = ("You are a venture analyst. From this thesis define the ONE focused market it competes in — "
+              "the exact JOB the product does, for the exact BUYER (NOT the broad category) — and write "
+              "SEARCH QUERIES to find its DIRECT competitors (companies doing that same job for that same "
+              "buyer). Mix short keyword queries with one natural-language 'companies that do X for Y' "
+              'query. Return ONLY {"focus": "<exact job + buyer, one line>", "queries": ["...", ...]} '
+              "(3-5, most precise first).")
+    try:
+        raw = await llm_json(system, f"THESIS:\n{thesis}\n\nSUBJECT: {subject}\n\nReturn the JSON.")
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+        focus = str(d.get("focus") or base).strip()[:200]
+        qs = [str(q).strip()[:160] for q in (d.get("queries") or []) if str(q).strip()][:5]
+        return focus, (qs or fallback[1])
+    except Exception:      # noqa: BLE001
+        return fallback
+
+
+async def _gather_seed(web_client, queries: list[str], *, cap: int = 10) -> list[dict]:
+    """Search several targeted queries (meaning + keyword angles) and merge, deduped by url — better
+    recall of DIRECT players than one generic query."""
+    out, seen = [], set()
+    for q in (queries or [])[:5]:
+        for s in await _search(web_client, q):
+            u = s.get("url") or s.get("title")
+            if u and u not in seen:
+                seen.add(u); out.append(s)
+        if len(out) >= cap:
+            break
+    return out[:cap]
+
+
 async def _identify_players(llm_json, web_client, *, thesis: str, subject: str, findings: list[dict],
                             max_players: int) -> tuple[str, list[str]]:
-    """(space label, [player names]) — the real incumbents + startups in this market. Seeded by an
-    open-web pull and the findings; the model names the players (never invents a market that isn't there)."""
-    seed = await _search(web_client, f"{subject or thesis[:80]} competitors alternatives recently funded emerging startups market map")
-    seed_txt = "\n".join(f"- {s['title']}: {s['text'][:400]}" for s in seed[:6])
+    """(focus label, [player names]) — the real players competing on THIS thesis's exact job, DIRECT
+    competitors first. Seeded by focused, multi-angle web search; the model names the players (never
+    invents), stays tightly on the focus, and adjacents are capped so the map isn't drowned in tangents."""
+    focus, queries = await _focus_queries(llm_json, thesis=thesis, subject=subject)
+    seed = await _gather_seed(web_client, queries, cap=10)
+    seed_txt = "\n".join(f"- {s['title']}: {s['text'][:400]}" for s in seed[:8])
     found = "\n".join(f"- {f.get('answer','')[:300]}" for f in (findings or [])[:12]
                       if "competit" in (f.get("aspect", "") + f.get("question", "")).lower()
                       or f.get("aspect", "").lower().startswith("who else"))
     if llm_json is None:
-        return subject or "", []
-    system = ("You are a venture analyst mapping a market for a FUNDING decision. Given a startup thesis "
-              "and open-web context, name the SPACE and the real players competing in it — the ones that "
-              "most put THIS thesis in perspective for an investor. Prioritize NEW and RELEVANT players: "
-              "recently founded / recently funded startups and fast-growing entrants alongside the "
-              "incumbents that actually matter — not a list of household names for their own sake. Actual "
-              "company names only, no categories, no inventions. Return ONLY "
-              '{"space": "<short label>", "players": ["<company>", ...]} (most decision-relevant first).')
-    user = (f"THESIS:\n{thesis}\n\nSUBJECT: {subject}\n\n"
+        return focus, []
+    system = ("You are a venture analyst mapping ONE focused market for a FUNDING decision. The FOCUS (the "
+              "exact job + buyer this thesis competes on) is given — stay tightly on it. Return the real "
+              "companies competing FOR THAT SAME JOB AND BUYER, DIRECT competitors FIRST. Include an "
+              "ADJACENT player (a substitute or a platform that could clearly enter) ONLY if it is a "
+              "specific, real threat to THIS exact job — at most one or two, and last. EXCLUDE anything "
+              "that merely shares the broad category but not the job/buyer, and anything you are unsure "
+              "competes. Prefer new/recently-funded entrants and the incumbents that actually matter. "
+              'Actual company names only. Return ONLY {"players": [{"name": "...", "kind": '
+              '"direct|adjacent"}, ...]} — direct first.')
+    user = (f"FOCUS (stay on this): {focus}\n\nTHESIS:\n{thesis}\n\n"
             + (f"WHAT DILIGENCE FOUND ABOUT THE FIELD:\n{found}\n\n" if found else "")
             + (f"OPEN-WEB CONTEXT:\n{seed_txt}\n\n" if seed_txt else "")
-            + f"Name up to {max_players} players. Return the JSON.")
+            + f"Name up to {max_players} players, DIRECT first, adjacents capped at 2. Return the JSON.")
     try:
         raw = await llm_json(system, user)
         d = raw if isinstance(raw, dict) else json.loads(raw)
-        space = str(d.get("space") or subject or "").strip()[:120]
-        players = [str(p).strip()[:80] for p in (d.get("players") or []) if str(p).strip()]
-        # de-dupe case-insensitively, cap
-        seen, out = set(), []
-        for p in players:
-            if p.lower() not in seen:
-                seen.add(p.lower()); out.append(p)
-        return space, out[:max_players]
+        items = d.get("players") or []
+        direct, adj, seen = [], [], set()
+        for it in items:
+            nm = str((it if not isinstance(it, dict) else it.get("name")) or "").strip()[:80]
+            if not nm or nm.lower() in seen:
+                continue
+            seen.add(nm.lower())
+            kind = str((it or {}).get("kind") if isinstance(it, dict) else "").strip().lower()
+            (adj if kind == "adjacent" else direct).append(nm)
+        return focus, (direct + adj[:2])[:max_players]     # direct first; adjacents capped
     except Exception:      # noqa: BLE001
-        return subject or "", []
+        return focus, []
 
 
 async def _profile_player(llm_json, web_client, *, name: str, space: str, columns: list[dict]) -> dict:
@@ -128,43 +172,46 @@ async def suggest_candidates(llm_json, web_client, *, thesis: str, subject: str,
     """Propose MORE competitors to analyze — direct and adjacent — that are NOT already in the landscape.
     Cheap: one open-web pull + one LLM call, and it only NAMES candidates (no profiling yet), so the user
     can pick which to spend on. -> [{name, kind: 'direct'|'adjacent', note}]. Never raises."""
-    space = space or subject or thesis[:80]
     have = {str(n).strip().lower() for n in (existing or ()) if str(n).strip()}
-    seed = await _search(web_client, f"{space} recently funded emerging startups new entrants competitors alternatives")
-    seed_txt = "\n".join(f"- {s['title']}: {s['text'][:300]}" for s in seed[:6])
     if llm_json is None:
         return []
-    system = ("You are a venture analyst expanding a competitive map for a FUNDING decision. Propose "
-              "companies to ADD that would most change how an investor sees this deal — both DIRECT "
-              "competitors (same job, same buyer) and ADJACENT ones (substitute, or a larger platform "
-              "that could enter). Prioritize NEW and RELEVANT players: recently founded or recently "
-              "funded startups and fast-growing entrants — not just legacy incumbents everyone knows. "
-              "Favor the ones whose funding, traction, or momentum would put THIS thesis in perspective "
-              "(a well-funded direct rival, a hot recent entrant, an incumbent about to enter). Real "
-              "company names only, never categories or inventions. Return ONLY {\"candidates\": [{\"name\": "
-              "\"...\", \"kind\": \"direct|adjacent\", \"note\": \"who they are + why they matter for the "
-              "funding call (recency/funding/traction)\"}]} (most decision-relevant first).")
+    # Focus tightly on the exact job + buyer, and search multiple targeted angles (meaning + keyword) —
+    # so candidates are DIRECT rivals in one focused area, not a scatter of adjacents.
+    focus, queries = await _focus_queries(llm_json, thesis=thesis, subject=(space or subject))
+    seed = await _gather_seed(web_client, queries + [focus + " competitors"], cap=10)
+    seed_txt = "\n".join(f"- {s['title']}: {s['text'][:300]}" for s in seed[:8])
+    system = ("You are a venture analyst expanding a competitive map for a FUNDING decision, staying on ONE "
+              "focused market. The FOCUS (the exact job + buyer) is given. Propose companies to ADD that "
+              "compete FOR THAT SAME JOB AND BUYER — DIRECT competitors FIRST. Include an ADJACENT one "
+              "(a clear substitute or a platform that could specifically enter) only if it is a real threat "
+              "to THIS exact job — at most a couple, and mark them adjacent. EXCLUDE anything that only "
+              "shares the broad category but not the job/buyer, and anything you are unsure competes — a "
+              "shorter, precise list beats a long, loose one. Prefer new/recently-funded entrants and the "
+              "incumbents that actually matter. Real company names only, never categories or inventions. "
+              "Return ONLY {\"candidates\": [{\"name\": \"...\", \"kind\": \"direct|adjacent\", \"note\": "
+              "\"who they are + why they compete on THIS job (recency/funding/traction)\"}]} — direct first.")
     exist_txt = ", ".join(sorted(have)) or "(none yet)"
-    user = (f"THESIS:\n{thesis}\n\nMARKET: {space}\n\nALREADY IN THE MAP (do NOT repeat): {exist_txt}\n\n"
+    user = (f"FOCUS (stay on this): {focus}\n\nTHESIS:\n{thesis}\n\n"
+            + f"ALREADY IN THE MAP (do NOT repeat): {exist_txt}\n\n"
             + (f"OPEN-WEB CONTEXT:\n{seed_txt}\n\n" if seed_txt else "")
-            + f"Propose up to {max_candidates} NEW candidates. Return the JSON.")
+            + f"Propose up to {max_candidates} NEW candidates, DIRECT first, adjacents last & capped. "
+            + "Return the JSON.")
     try:
         raw = await llm_json(system, user)
         d = raw if isinstance(raw, dict) else json.loads(raw)
         items = d.get("candidates") or []
     except Exception:      # noqa: BLE001
         return []
-    out, seen = [], set(have)
+    direct, adj, seen = [], [], set(have)
     for it in items:
         name = str((it or {}).get("name") or "").strip()[:80]
         if not name or name.lower() in seen:
             continue
         seen.add(name.lower())
         kind = "adjacent" if str((it or {}).get("kind") or "").strip().lower() == "adjacent" else "direct"
-        out.append({"name": name, "kind": kind, "note": str((it or {}).get("note") or "").strip()[:200]})
-        if len(out) >= max_candidates:
-            break
-    return out
+        row = {"name": name, "kind": kind, "note": str((it or {}).get("note") or "").strip()[:200]}
+        (adj if kind == "adjacent" else direct).append(row)
+    return (direct + adj[:3])[:max_candidates]     # direct first; adjacents capped so the list stays focused
 
 
 async def profile_players(llm_json, web_client, *, names, space: str, columns: list[dict]) -> list[dict]:
