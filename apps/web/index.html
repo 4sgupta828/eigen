@@ -1009,6 +1009,9 @@
   .th-rf-card{font-size:.8rem;line-height:1.5;color:var(--ink);border-left:2px solid var(--hair);
     padding:.15rem 0 .15rem .5rem;margin:.35rem 0;}
   .th-rf-bluf{border-left-color:var(--gold);font-weight:500;}
+  .th-rf-kind{display:inline-block;margin-left:.35rem;font-family:var(--mono);font-size:.56rem;
+    letter-spacing:.04em;text-transform:uppercase;color:var(--dim);border:1px solid var(--hair);
+    border-radius:999px;padding:0 .35rem;vertical-align:middle;}
   .th-rf-stage.th-rf-what-must-be-true{border-top-color:#6a7bd0;}
   .th-rf-stage.th-rf-what-the-evidence-shows{border-top-color:#b5762a;}
   .th-rf-stage.th-rf-what-it-implies{border-top-color:#3a9d8f;}
@@ -1043,6 +1046,20 @@
     list-style:none;padding:.3rem 0;}
   .th-comp-tablewrap > summary::-webkit-details-marker{display:none;}
   .th-cell-empty{color:var(--dim);}
+  .th-comp-addbar{margin:.7rem 0 .2rem;}
+  .th-comp-note{font-family:var(--mono);font-size:.72rem;color:var(--dim);margin:.5rem 0;}
+  .th-comp-pick{border:1px solid var(--hair);border-radius:10px;padding:.6rem .7rem;margin:.5rem 0;
+    background:var(--card,var(--panel,#fff));}
+  .th-comp-pick-h{font-family:var(--mono);font-size:.7rem;color:var(--dim);margin:0 0 .5rem;}
+  .th-comp-cand{display:grid;grid-template-columns:auto 1fr;gap:.15rem .5rem;align-items:start;
+    padding:.35rem 0;border-top:1px solid var(--hair);font-size:.85rem;cursor:pointer;}
+  .th-comp-cand input{margin-top:.2rem;grid-row:span 2;min-width:18px;min-height:18px;}
+  .th-comp-cand-n{font-weight:600;color:var(--ink);}
+  .th-comp-cand-note{grid-column:2;font-size:.78rem;color:var(--dim);line-height:1.4;}
+  .th-comp-kind{font-family:var(--mono);font-size:.56rem;letter-spacing:.04em;text-transform:uppercase;
+    border-radius:999px;padding:.05rem .4rem;border:1px solid var(--hair);color:var(--dim);}
+  .th-comp-kind-direct{color:var(--gold);border-color:rgba(var(--gold-rgb),.5);}
+  .th-comp-pick-acts{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;}
   @media (max-width:560px){ .th-comp-cards{grid-template-columns:1fr;} }
   .th-reasons{display:grid;gap:.4rem;margin:.5rem 0 .2rem;}
   .th-reason{display:flex;gap:.5rem;align-items:flex-start;padding:.4rem .55rem;border-radius:8px;
@@ -12829,6 +12846,7 @@ async function openShare(token){
     const cl = document.getElementById("th-clear"); if(cl) cl.addEventListener("click", clearInquiries);
     wireInquiries();
     wireDeckRefs();
+    wireCompetitive();
     window.scrollTo(0, y);
   }
 
@@ -12956,9 +12974,70 @@ async function openShare(token){
       + '<div class="th-tablewrap"><table class="th-table th-comp-table"><thead>' + head
       + "</thead><tbody>" + trows + "</tbody></table></div></details>";
     const cap = comp.space ? '<div class="th-comp-cap">The market — ' + esc2(comp.space) + "</div>" : "";
-    return cap + '<div class="th-comp-cards">' + cards + "</div>" + table
+    const add = canMutate(STATE.doc)
+      ? '<div class="th-comp-addbar"><button type="button" class="th-inq-add" id="th-comp-add">'
+        + "+ Add competitors</button></div><div id=\"th-comp-picker\"></div>" : "";
+    return cap + '<div class="th-comp-cards">' + cards + "</div>" + table + add
       + '<div class="th-flow-foot" style="margin:.5rem 0 0">Open-web market intelligence '
       + "(stated/reported) — verify funding &amp; traction against a primary source.</div>";
+  }
+
+  // '+' expands the map: suggest candidates (direct + adjacent), let the user pick, then profile + append.
+  async function loadCompetitorCandidates(){
+    const picker = document.getElementById("th-comp-picker"); if(!picker) return;
+    picker.innerHTML = '<div class="th-comp-note"><span class="su-spin"></span> finding new & adjacent players…</div>';
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/competitive/candidates",
+                            {method: "POST", headers: hdrs()});
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok) throw new Error(d.detail || "could not find candidates");
+      const cands = d.candidates || [];
+      if(!cands.length){ picker.innerHTML = '<div class="th-comp-note">No new candidates found.</div>'; return; }
+      picker.innerHTML = '<div class="th-comp-pick"><div class="th-comp-pick-h">Pick competitors to analyze '
+        + "&amp; add — direct or adjacent:</div>"
+        + cands.map((x, i) => '<label class="th-comp-cand"><input type="checkbox" data-cand="' + i + '" value="'
+            + esc2(x.name) + '"><span class="th-comp-cand-n">' + esc2(x.name)
+            + ' <span class="th-comp-kind th-comp-kind-' + esc2(x.kind) + '">' + esc2(x.kind) + "</span></span>"
+            + (x.note ? '<span class="th-comp-cand-note">' + esc2(x.note) + "</span>" : "") + "</label>").join("")
+        + '<div class="th-comp-pick-acts"><button type="button" class="th-run" id="th-comp-analyze">'
+        + 'Analyze selected</button><button type="button" class="th-inq-add" id="th-comp-cancel">Cancel</button>'
+        + "</div></div>";
+      const an = document.getElementById("th-comp-analyze");
+      if(an) an.addEventListener("click", analyzeSelectedCompetitors);
+      const cn = document.getElementById("th-comp-cancel");
+      if(cn) cn.addEventListener("click", () => { picker.innerHTML = ""; });
+    }catch(e){ picker.innerHTML = '<div class="th-comp-note">' + esc(e.message || String(e)) + "</div>"; }
+  }
+
+  async function analyzeSelectedCompetitors(){
+    if(STATE.busy || STATE.inqRun) return;
+    const picker = document.getElementById("th-comp-picker");
+    const names = [...(picker ? picker.querySelectorAll("input[data-cand]:checked") : [])].map(el => el.value);
+    if(!names.length){ if(picker) picker.insertAdjacentHTML("beforeend",
+      '<div class="th-comp-note">Select at least one.</div>'); return; }
+    STATE.busy = true;
+    try{
+      const pr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/competitive/add",
+                             {method: "POST", headers: hdrs(), body: JSON.stringify({names: names, max_usd: 0})});
+      const pj = await pr.json().catch(() => ({}));
+      const mx = Number((pj.projection || {}).projected_usd || 0);
+      if(!window.confirm("Analyze " + names.length + " competitor" + (names.length === 1 ? "" : "s")
+          + " and add to the map?\n\nProjected maximum: $" + mx.toFixed(3))){ STATE.busy = false; return; }
+      const sr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/competitive/add",
+                             {method: "POST", headers: hdrs(), body: JSON.stringify(
+                               {names: names, max_usd: mx, idempotency_key: freshRunKey("compadd")})});
+      const started = await sr.json().catch(() => ({}));
+      if(!sr.ok || !started.run) throw new Error(started.detail || "could not start");
+      STATE.inqRun = {competitive: true, run: started.run.id, done: 0, total: 0};
+      renderInquiries();
+      pollInquiry(0);
+    }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; }
+  }
+
+  function wireCompetitive(){
+    const add = document.getElementById("th-comp-add");
+    if(add) add.addEventListener("click", loadCompetitorCandidates);
   }
 
   function legacyCompTable(comp){
@@ -12999,34 +13078,51 @@ async function openShare(token){
   function takeReasoningFlow(take, c){
     const secs = (take && take.sections) || [];
     const bl = (take && take.bottom_line) || {};
-    const blocks = (kind) => secs.flatMap(s => (s.analysis || [])
-      .filter(a => a.kind === kind && (a.text || "").trim()));
-    const cardsFor = (items) => items.map(a =>
-      '<div class="th-rf-card">' + c.ref((a.text || "") + " " + (a.markers || "")) + "</div>").join("");
-    const stage = (title, hint, items) => items.length
-      ? '<div class="th-rf-stage th-rf-' + esc2(title.toLowerCase().replace(/[^a-z]+/g, "-")) + '">'
-        + '<div class="th-rf-h">' + esc2(title) + "</div>"
-        + '<div class="th-rf-hint">' + esc2(hint) + "</div>" + cardsFor(items) + "</div>"
-      : "";
+    const byKey = {}; secs.forEach(s => { byKey[s.key || ""] = s; });
+    // Pull the substance for a group of sections — REASONING blocks first (interpretation), then grounded
+    // facts to guarantee the stage has content even when the model emitted few analysis blocks. Capped.
+    const items = (keys, kinds, cap) => {
+      const a = [], g = [];
+      keys.forEach(k => { const s = byKey[k]; if(!s) return;
+        (s.analysis || []).forEach(x => { if((x.text || "").trim() && (!kinds || kinds.indexOf(x.kind) >= 0)) a.push(x); });
+        (s.grounded || []).forEach(x => { if((x.text || "").trim()) g.push(x); }); });
+      return a.concat(g).slice(0, cap || 3);
+    };
+    const cardsFor = (its) => its.map(x =>
+      '<div class="th-rf-card">' + c.ref((x.text || "") + " " + (x.markers || ""))
+      + (x.kind ? '<span class="th-rf-kind">' + esc2(KIND_LABEL[x.kind] || x.kind) + "</span>" : "")
+      + "</div>").join("");
     const stages = [];
-    const push = (html) => { if(html) stages.push(html); };
-    push(stage("What must be true", "load-bearing assumptions", blocks("assumption")));
-    push(stage("What the evidence shows", "tensions & gaps in the record",
-               blocks("tension").concat(blocks("gap"))));
-    push(stage("What it implies", "the second-order reading", blocks("implication")));
+    const st = (title, hint, cls, its) => { if(its.length) stages.push(
+      '<div class="th-rf-stage ' + cls + '"><div class="th-rf-h">' + esc2(title) + "</div>"
+      + '<div class="th-rf-hint">' + esc2(hint) + "</div>" + cardsFor(its) + "</div>"); };
+    // Map the take's sections into the argument's chain — driven by section content, so it always fills.
+    st("What must be true", "the load-bearing premises", "th-rf-what-must-be-true",
+       items(["at_stake"], null, 3));
+    st("What the evidence established", "across the lines of inquiry", "th-rf-what-the-evidence-shows",
+       items(["by_line", "strengths"], null, 4));
+    st("Tensions, risks & gaps", "where it is contested or unproven", "th-rf-what-the-evidence-shows",
+       items(["risks_gaps", "competition", "signals"], null, 3));
+    st("What it implies", "the second-order read", "th-rf-what-it-implies",
+       items(["synthesis", "conviction"], null, 3));
     if((bl.text || "").trim())
-      push('<div class="th-rf-stage th-rf-read"><div class="th-rf-h">The read</div>'
+      stages.push('<div class="th-rf-stage th-rf-read"><div class="th-rf-h">The read</div>'
         + '<div class="th-rf-hint">where the reasoning converges</div>'
         + '<div class="th-rf-card th-rf-bluf">' + c.ref((bl.text || "") + " " + (bl.markers || "")) + "</div></div>");
-    const change = blocks("what_would_change_this");
-    if(!stages.length) return "";           // no reasoning yet (take not built) — render nothing
+    // Fallback: a thin take with no mapped sections but some content — flow every non-empty section.
+    if(stages.length < 2){
+      secs.forEach(s => st(s.title || s.key, "", "th-rf-what-the-evidence-shows",
+                           items([s.key || ""], null, 2)));
+    }
+    if(stages.length < 2) return "";
+    const change = items(["what_would_change"], null, 4);
     const lean = overallLean();
     const leanChip = lean
       ? '<div class="th-rf-lean" style="border-color:' + lean.c + ';color:' + lean.c + '">'
         + esc2(lean.t) + ' <span>· ' + esc2(lean.d) + "</span></div>" : "";
     const arrow = '<div class="th-rf-arrow" aria-hidden="true">▸</div>';
-    return '<div class="th-rf"><div class="th-rf-cap">How the reasoning flows to the read</div>'
-      + leanChip
+    return '<div class="th-rf"><div class="th-rf-cap">How the reasoning flows to the read — the whole '
+      + "Collective Take at a glance</div>" + leanChip
       + '<div class="th-rf-flow">' + stages.join(arrow) + "</div>"
       + (change.length ? '<div class="th-rf-stage th-rf-change th-rf-wide"><div class="th-rf-h">'
           + "What would change the read</div><div class=\"th-rf-hint\">the highest-value next evidence</div>"

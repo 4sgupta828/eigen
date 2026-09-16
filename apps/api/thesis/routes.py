@@ -126,6 +126,12 @@ class RevertIn(BaseModel):
     version_id: str = ""       # the thesis version to backtrack to
 
 
+class CompetitiveAddIn(BaseModel):
+    names: list[str] = []      # the candidate competitors the user chose to analyze + add
+    max_usd: float = 0.0
+    idempotency_key: str = ""
+
+
 class ExpertDiscoverIn(BaseModel):
     aspect_key: str = ""       # thesis-scoped: discover experts for ONE call_only aspect, not a directory
 
@@ -1543,6 +1549,73 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="running", state="running")
         asyncio.create_task(_run_competitive(thesis_id, run["id"]))
         return {"status": "running", "run": run}
+
+    @r.post("/thesis/{thesis_id}/competitive/candidates")
+    async def tl_competitive_candidates(thesis_id: str, authorization: str = Header(default=""),
+                                        x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Suggest MORE competitors to add — direct + adjacent — that are not already on the map. Cheap
+        (names only, no profiling), so the user picks which to spend on. Backs the '+' expand control."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        profile = _profile()
+        if profile is None:
+            raise HTTPException(status_code=409, detail="no decision profile is configured")
+        land = d.get("competitive") or {}
+        existing = tuple(p.get("name", "") for p in (land.get("players") or []))
+        subject = " ".join(str(v) for v in (d.get("subject") or {}).values()).strip()
+        cands = await compres.suggest_candidates(
+            _strong_llm_json(), atk._web_client(manifest), thesis=d.get("thesis") or "", subject=subject,
+            space=land.get("space") or "", existing=existing)
+        return {"status": "ok", "candidates": cands, "space": land.get("space") or subject}
+
+    async def _run_competitive_add(thesis_id: str, run_id: str, names: list[str]):
+        """Profile the chosen candidates and APPEND them to the landscape — a background run, like the
+        initial research, so existing players are kept and the map just grows."""
+        pool = await pool_of()
+        try:
+            profile = _profile()
+            d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
+            land = (d or {}).get("competitive") or {}
+            subject = " ".join(str(v) for v in ((d or {}).get("subject") or {}).values()).strip()
+            space = land.get("space") or subject or ((d or {}).get("thesis") or "")[:80]
+            _cdir, cols = profile.competitive_spec()
+            cols = [dict(c) for c in cols]
+            players = await compres.profile_players(_strong_llm_json(), atk._web_client(manifest),
+                                                    names=names, space=space, columns=cols)
+            await tstore.add_competitive_players(pool, thesis_id, players, space=space, columns=cols)
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
+                                     state="completed", actual_delta=0.0)
+        except tstore.SpendCapError as exc:
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="cap",
+                                  error={"reason": "approved cost reached", "detail": str(exc)})
+        except Exception as exc:      # noqa: BLE001 — fail closed; existing players untouched
+            import traceback as _tb
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                  error={"reason": "adding competitors failed", "detail": str(exc)[:300],
+                                         "tb": _tb.format_exc()[-800:]})
+
+    @r.post("/thesis/{thesis_id}/competitive/add")
+    async def tl_competitive_add(thesis_id: str, body: CompetitiveAddIn, authorization: str = Header(default=""),
+                                 x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Profile the selected candidate competitors and add them to the landscape — gated per selection,
+        a background run the client polls."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        names = [str(n).strip() for n in (body.names or []) if str(n).strip()][:12]
+        if not names:
+            raise HTTPException(status_code=400, detail="choose at least one competitor to add")
+        projection = project_competitive_cost(len(names), web_available=bool(atk._web_client(manifest)))
+        if projection["projected_usd"] > max(0.0, body.max_usd):
+            return {"status": "refused", "projection": projection, "selected": len(names),
+                    "reason": "Projected cost of profiling the selected competitors exceeds the approved maximum."}
+        key = body.idempotency_key or ("compadd-" + tstore.new_idempotency_key())
+        try:
+            run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
+                                          projected_usd=projection["projected_usd"], approved_usd=body.max_usd,
+                                          metadata={"competitive": True, "questions": [], "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="running", state="running")
+        asyncio.create_task(_run_competitive_add(thesis_id, run["id"], names))
+        return {"status": "running", "run": run, "selected": len(names)}
 
     async def _run_single(thesis_id: str, run_id: str, qid: str, web: bool):
         """Run ONE question (carrying its full thesis+aspect context) and complete the run."""

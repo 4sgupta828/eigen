@@ -51,17 +51,20 @@ async def _identify_players(llm_json, web_client, *, thesis: str, subject: str, 
                             max_players: int) -> tuple[str, list[str]]:
     """(space label, [player names]) — the real incumbents + startups in this market. Seeded by an
     open-web pull and the findings; the model names the players (never invents a market that isn't there)."""
-    seed = await _search(web_client, f"{subject or thesis[:80]} competitors alternatives companies market map")
+    seed = await _search(web_client, f"{subject or thesis[:80]} competitors alternatives recently funded emerging startups market map")
     seed_txt = "\n".join(f"- {s['title']}: {s['text'][:400]}" for s in seed[:6])
     found = "\n".join(f"- {f.get('answer','')[:300]}" for f in (findings or [])[:12]
                       if "competit" in (f.get("aspect", "") + f.get("question", "")).lower()
                       or f.get("aspect", "").lower().startswith("who else"))
     if llm_json is None:
         return subject or "", []
-    system = ("You are a venture analyst mapping a market. Given a startup thesis and open-web context, "
-              "name the SPACE and the real INCUMBENTS and STARTUPS competing in it — actual company names "
-              "only, no categories, no inventions. Return ONLY "
-              '{"space": "<short label>", "players": ["<company>", ...]} (most relevant first).')
+    system = ("You are a venture analyst mapping a market for a FUNDING decision. Given a startup thesis "
+              "and open-web context, name the SPACE and the real players competing in it — the ones that "
+              "most put THIS thesis in perspective for an investor. Prioritize NEW and RELEVANT players: "
+              "recently founded / recently funded startups and fast-growing entrants alongside the "
+              "incumbents that actually matter — not a list of household names for their own sake. Actual "
+              "company names only, no categories, no inventions. Return ONLY "
+              '{"space": "<short label>", "players": ["<company>", ...]} (most decision-relevant first).')
     user = (f"THESIS:\n{thesis}\n\nSUBJECT: {subject}\n\n"
             + (f"WHAT DILIGENCE FOUND ABOUT THE FIELD:\n{found}\n\n" if found else "")
             + (f"OPEN-WEB CONTEXT:\n{seed_txt}\n\n" if seed_txt else "")
@@ -117,6 +120,65 @@ async def _profile_player(llm_json, web_client, *, name: str, space: str, column
             idx = -1
         src = hits[idx] if 0 <= idx < len(hits) else {}
         out[k] = {"text": text, "source_url": src.get("url", ""), "source_title": src.get("title", "")}
+    return out
+
+
+async def suggest_candidates(llm_json, web_client, *, thesis: str, subject: str, space: str = "",
+                             existing: tuple = (), max_candidates: int = 12) -> list[dict]:
+    """Propose MORE competitors to analyze — direct and adjacent — that are NOT already in the landscape.
+    Cheap: one open-web pull + one LLM call, and it only NAMES candidates (no profiling yet), so the user
+    can pick which to spend on. -> [{name, kind: 'direct'|'adjacent', note}]. Never raises."""
+    space = space or subject or thesis[:80]
+    have = {str(n).strip().lower() for n in (existing or ()) if str(n).strip()}
+    seed = await _search(web_client, f"{space} recently funded emerging startups new entrants competitors alternatives")
+    seed_txt = "\n".join(f"- {s['title']}: {s['text'][:300]}" for s in seed[:6])
+    if llm_json is None:
+        return []
+    system = ("You are a venture analyst expanding a competitive map for a FUNDING decision. Propose "
+              "companies to ADD that would most change how an investor sees this deal — both DIRECT "
+              "competitors (same job, same buyer) and ADJACENT ones (substitute, or a larger platform "
+              "that could enter). Prioritize NEW and RELEVANT players: recently founded or recently "
+              "funded startups and fast-growing entrants — not just legacy incumbents everyone knows. "
+              "Favor the ones whose funding, traction, or momentum would put THIS thesis in perspective "
+              "(a well-funded direct rival, a hot recent entrant, an incumbent about to enter). Real "
+              "company names only, never categories or inventions. Return ONLY {\"candidates\": [{\"name\": "
+              "\"...\", \"kind\": \"direct|adjacent\", \"note\": \"who they are + why they matter for the "
+              "funding call (recency/funding/traction)\"}]} (most decision-relevant first).")
+    exist_txt = ", ".join(sorted(have)) or "(none yet)"
+    user = (f"THESIS:\n{thesis}\n\nMARKET: {space}\n\nALREADY IN THE MAP (do NOT repeat): {exist_txt}\n\n"
+            + (f"OPEN-WEB CONTEXT:\n{seed_txt}\n\n" if seed_txt else "")
+            + f"Propose up to {max_candidates} NEW candidates. Return the JSON.")
+    try:
+        raw = await llm_json(system, user)
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+        items = d.get("candidates") or []
+    except Exception:      # noqa: BLE001
+        return []
+    out, seen = [], set(have)
+    for it in items:
+        name = str((it or {}).get("name") or "").strip()[:80]
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        kind = "adjacent" if str((it or {}).get("kind") or "").strip().lower() == "adjacent" else "direct"
+        out.append({"name": name, "kind": kind, "note": str((it or {}).get("note") or "").strip()[:200]})
+        if len(out) >= max_candidates:
+            break
+    return out
+
+
+async def profile_players(llm_json, web_client, *, names, space: str, columns: list[dict]) -> list[dict]:
+    """Profile SPECIFIC named players (the ones the user chose to add) → landscape player rows. Same
+    grounding as the initial research; drops any name it cannot ground on a single dimension. Never raises."""
+    cols = [{"key": str(c["key"]), "label": str(c.get("label") or c["key"])} for c in (columns or [])]
+    out = []
+    for nm in names or []:
+        nm = str(nm).strip()[:80]
+        if not nm:
+            continue
+        cells = await _profile_player(llm_json, web_client, name=nm, space=space, columns=cols)
+        if cells:
+            out.append({"name": nm, "is_subject": False, "cells": cells})
     return out
 
 
