@@ -1024,6 +1024,26 @@
     .th-rf-flow{flex-direction:column;}
     .th-rf-arrow{transform:rotate(90deg);align-self:center;}
   }
+  /* Competitive landscape — per-player cards + an at-a-glance table. */
+  .th-comp-cap{font-family:var(--mono);font-size:.72rem;letter-spacing:.02em;color:var(--dim);margin:.2rem 0 .6rem;}
+  .th-comp-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.7rem;}
+  .th-comp-card{border:1px solid var(--hair);border-top:3px solid var(--gold);border-radius:10px;
+    padding:.6rem .7rem;background:var(--card,var(--panel,#fff));}
+  .th-comp-name{margin:0 0 .45rem;font:600 .98rem/1.2 var(--serif);color:var(--ink);}
+  .th-comp-you{font-family:var(--mono);font-size:.58rem;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--on-accent);background:var(--gold);border-radius:999px;padding:.1rem .4rem;vertical-align:middle;}
+  .th-comp-dim{margin:.35rem 0;font-size:.82rem;line-height:1.45;}
+  .th-comp-dk{display:block;font-family:var(--mono);font-size:.6rem;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--dim);}
+  .th-comp-dv{color:var(--ink);}
+  .th-comp-src{font-family:var(--mono);font-size:.6rem;color:var(--gold);text-decoration:none;white-space:nowrap;}
+  .th-comp-src:hover{text-decoration:underline;}
+  .th-comp-tablewrap{margin:.7rem 0 0;}
+  .th-comp-tablewrap > summary{cursor:pointer;font-family:var(--mono);font-size:.7rem;color:var(--dim);
+    list-style:none;padding:.3rem 0;}
+  .th-comp-tablewrap > summary::-webkit-details-marker{display:none;}
+  .th-cell-empty{color:var(--dim);}
+  @media (max-width:560px){ .th-comp-cards{grid-template-columns:1fr;} }
   .th-reasons{display:grid;gap:.4rem;margin:.5rem 0 .2rem;}
   .th-reason{display:flex;gap:.5rem;align-items:flex-start;padding:.4rem .55rem;border-radius:8px;
     background:var(--bg,transparent);border:1px solid var(--hair);font-size:.83rem;line-height:1.55;}
@@ -12772,23 +12792,38 @@ async function openShare(token){
         + (anyAnswered && totalUnrun === 0 ? "Rebuild the analysis"
            : "Run all lines of inquiry &amp; synthesize") + "</button>"
       : "";
+    // Run only the CRITICAL SUBSET (highest-value questions across all lines) — cheaper than run-all.
+    const runCritBtn = (owner && !running && totalUnrun > 0)
+      ? '<button type="button" class="th-inq-add" id="th-run-crit" title="Run only the questions that '
+        + 'most move the fund/pass call — ranked across all lines">Run the critical subset</button>' : "";
     const resynthBtn = (owner && !running && anyAnswered && totalUnrun > 0)
       ? '<button type="button" class="th-inq-add" id="th-resynth">Rebuild analysis from findings</button>' : "";
+    // The competitive landscape is its OWN researched artifact (open-web), a separate gated spend.
+    const compBtn = (owner && !running)
+      ? '<button type="button" class="th-inq-add" id="th-comp-research" title="Research the market: the '
+        + 'players and how this compares (funding, customers, moats, differentiation)">'
+        + "Research competitive landscape</button>" : "";
     const draftBar = (owner && draftable)
       ? '<button type="button" class="th-inq-add" id="th-redraft">Redraft all questions</button>'
         + '<button type="button" class="th-inq-add th-inq-del" id="th-clear">Clear all &amp; start fresh</button>'
       : "";
-    const bar = (runAllBtn || resynthBtn || draftBar)
-      ? '<div class="th-loi-bar">' + runAllBtn + resynthBtn + draftBar + "</div>" : "";
-    const synthProg = (running && STATE.inqRun.all)
-      ? '<div class="th-run-prog th-synth-prog"><span class="su-spin"></span> <span>Running all lines of inquiry'
+    const bar = (runAllBtn || runCritBtn || resynthBtn || compBtn || draftBar)
+      ? '<div class="th-loi-bar">' + runAllBtn + runCritBtn + resynthBtn + compBtn + draftBar + "</div>" : "";
+    const synthProg = (running && STATE.inqRun.competitive)
+      ? '<div class="th-run-prog th-synth-prog"><span class="su-spin"></span> <span>Researching the '
+        + "competitive landscape — identifying the players and profiling each…</span></div>"
+      : (running && STATE.inqRun.all)
+      ? '<div class="th-run-prog th-synth-prog"><span class="su-spin"></span> <span>Running '
+        + (STATE.inqRun.critical ? "the critical subset" : "all lines of inquiry")
         + (STATE.inqRun.total ? " — " + esc2(String(Math.min(STATE.inqRun.done + 1, STATE.inqRun.total)))
-           + " of " + esc2(String(STATE.inqRun.total)) : "") + ", then synthesizing the deck, take &amp; competitors…</span></div>"
+           + " of " + esc2(String(STATE.inqRun.total)) : "") + ", then synthesizing the deck & take…</span></div>"
       : "";
     host.innerHTML = bar + synthProg + deckAndTakeHtml() + '<div class="th-inqs">'
       + inqs.map(i => inqHtml(i, openKeys)).join("") + "</div>";
     const ra = document.getElementById("th-run-all");
     if(ra) ra.addEventListener("click", () => (anyAnswered && totalUnrun === 0) ? resynthesize() : runAllInquiries());
+    const rc = document.getElementById("th-run-crit"); if(rc) rc.addEventListener("click", runCriticalSubset);
+    const cr = document.getElementById("th-comp-research"); if(cr) cr.addEventListener("click", researchCompetitive);
     const rs = document.getElementById("th-resynth"); if(rs) rs.addEventListener("click", resynthesize);
     const rd = document.getElementById("th-redraft"); if(rd) rd.addEventListener("click", generateInquiries);
     const cl = document.getElementById("th-clear"); if(cl) cl.addEventListener("click", clearInquiries);
@@ -12889,21 +12924,52 @@ async function openShare(token){
     return '<div class="th-synth-sec"><h4 class="th-synth-h">' + esc2(s.title || s.key) + "</h4>" + gbody + rbody + "</div>";
   }
 
-  // The competitive matrix: thesis company (highlighted) + named peers × the rubric; empty cells blank.
-  function competitiveHtml(comp, citer){
+  // The competitive LANDSCAPE: per-player cards (idea, differentiation, moats, tech, customers, traction,
+  // funding, investors — each web-sourced) + a compact at-a-glance table. Backward-compatible with the
+  // old passive {rows} matrix. Cells are open-web market intelligence (stated/reported), never filed fact.
+  function competitiveHtml(comp){
+    const cols = comp.columns || [];
+    const players = comp.players || [];
+    if(!players.length && (comp.rows || []).length) return legacyCompTable(comp);   // old shape
+    if(!cols.length || !players.length) return "";
+    const cards = players.map(p => {
+      const dims = cols.map(c => {
+        const cell = (p.cells || {})[c.key];
+        if(!cell || !(cell.text || "").trim()) return "";
+        const src = cell.source_url
+          ? ' <a class="th-comp-src" href="' + esc2(cell.source_url) + '" target="_blank" rel="noopener" '
+            + 'title="' + esc2(cell.source_title || "") + '">source</a>' : "";
+        return '<div class="th-comp-dim"><span class="th-comp-dk">' + esc2(c.label || c.key) + "</span>"
+          + '<span class="th-comp-dv">' + esc2(cell.text) + src + "</span></div>";
+      }).filter(Boolean).join("");
+      return '<div class="th-comp-card"><h5 class="th-comp-name">' + esc2(p.name)
+        + (p.is_subject ? ' <span class="th-comp-you">thesis</span>' : "") + "</h5>"
+        + (dims || '<div class="th-cell-empty">Not found in the open record.</div>') + "</div>";
+    }).join("");
+    const head = "<tr><th>Player</th>" + cols.map(c => "<th>" + esc2(c.label || c.key) + "</th>").join("") + "</tr>";
+    const trows = players.map(p => "<tr><th scope=\"row\">" + esc2(p.name) + "</th>"
+      + cols.map(c => { const cell = (p.cells || {})[c.key];
+          return "<td>" + (cell && (cell.text || "").trim()
+            ? esc2(cell.text.slice(0, 120)) : '<span class="th-cell-empty">—</span>') + "</td>"; }).join("")
+      + "</tr>").join("");
+    const table = '<details class="th-comp-tablewrap"><summary>At-a-glance comparison</summary>'
+      + '<div class="th-tablewrap"><table class="th-table th-comp-table"><thead>' + head
+      + "</thead><tbody>" + trows + "</tbody></table></div></details>";
+    const cap = comp.space ? '<div class="th-comp-cap">The market — ' + esc2(comp.space) + "</div>" : "";
+    return cap + '<div class="th-comp-cards">' + cards + "</div>" + table
+      + '<div class="th-flow-foot" style="margin:.5rem 0 0">Open-web market intelligence '
+      + "(stated/reported) — verify funding &amp; traction against a primary source.</div>";
+  }
+
+  function legacyCompTable(comp){
     const cols = comp.columns || [], rows = comp.rows || [];
     if(!cols.length || !rows.length) return "";
     const head = "<tr><th>Company</th>" + cols.map(c => "<th>" + esc2(c.label || c.key) + "</th>").join("") + "</tr>";
-    const body = rows.map(r => {
-      const cells = cols.map((c, i) => {
-        const cell = (r.cells || [])[i] || {};
-        return "<td>" + ((cell.text || "").trim()
-          ? citer.ref((cell.text || "") + " " + (cell.markers || ""))
-          : '<span class="th-cell-empty">—</span>') + "</td>";
-      }).join("");
-      return "<tr" + (r.subject ? ' class="th-comp-subject"' : "") + '><th scope="row">' + esc2(r.entity || "")
-        + (r.subject ? ' <span class="th-comp-you">thesis</span>' : "") + "</th>" + cells + "</tr>";
-    }).join("");
+    const body = rows.map(r => "<tr" + (r.subject ? ' class="th-comp-subject"' : "") + '><th scope="row">'
+      + esc2(r.entity || "") + "</th>"
+      + cols.map((c, i) => { const cell = (r.cells || [])[i] || {};
+          return "<td>" + ((cell.text || "").trim() ? esc2(cell.text)
+            : '<span class="th-cell-empty">—</span>') + "</td>"; }).join("") + "</tr>").join("");
     return '<div class="th-tablewrap th-comp-wrap"><table class="th-table th-comp-table"><thead>'
       + head + "</thead><tbody>" + body + "</tbody></table></div>";
   }
@@ -12975,7 +13041,7 @@ async function openShare(token){
       || (take.sections || []).some(s => (s.grounded || []).length || (s.analysis || []).length));
     const hasDeck = deck && !deck.empty && (deck.sections || []).some(s => {
       const p = String(s.prose || "").trim(); return p && !/^not established/i.test(p); });
-    const hasComp = comp && !comp.empty && (comp.rows || []).length;
+    const hasComp = comp && !comp.empty && ((comp.players || []).length || (comp.rows || []).length);
     if(!hasTake && !hasDeck && !hasComp) return "";
     let out = '<div class="th-synth-wrap">';
     if(hasTake){
@@ -12995,7 +13061,7 @@ async function openShare(token){
       out += '<details class="th-synth th-comp" open><summary class="th-synth-sum">'
         + '<span class="th-synth-kicker">Competitive Analysis</span>'
         + '<span class="th-synth-note">the thesis company vs. named peers — blank where the record is silent</span></summary>'
-        + '<div class="th-take-body">' + competitiveHtml(comp, c) + c.footnotes() + "</div></details>";
+        + '<div class="th-take-body">' + competitiveHtml(comp) + "</div></details>";
     }
     if(hasDeck){
       const c = findingCiter();
@@ -13281,6 +13347,60 @@ async function openShare(token){
       if(started.status === "synthesized"){ await loadInquiries(); STATE.busy = false; return; }
       if(!sr.ok || !started.run) throw new Error(started.detail || "could not start the run");
       STATE.inqRun = {all: true, run: started.run.id, done: 0, total: unrun};
+      renderInquiries();
+      pollInquiry(0);
+    }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; }
+  }
+
+  // Run only the CRITICAL SUBSET — the highest-value questions across all lines (ranked server-side).
+  async function runCriticalSubset(){
+    if(STATE.busy || STATE.inqRun) return;
+    STATE.busy = true;
+    try{
+      const pr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries/run_critical",
+                             {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 0, web: true})});
+      const pj = await pr.json().catch(() => ({}));
+      if(pj.status === "synthesized"){ await loadInquiries(); STATE.busy = false; return; }
+      const max = Number((pj.projection || {}).projected_usd || 0);
+      const sel = Number(pj.selected || 0);
+      if(!window.confirm("Run the critical subset?\n\n" + sel + " highest-value question"
+          + (sel === 1 ? "" : "s") + " across all lines — the ones that most move the fund/pass call — "
+          + "then rebuild the deck & take.\n\nProjected maximum: $" + max.toFixed(3))){
+        STATE.busy = false; return;
+      }
+      const sr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries/run_critical",
+                             {method: "POST", headers: hdrs(), body: JSON.stringify(
+                               {max_usd: max, web: true, idempotency_key: freshRunKey("crit")})});
+      const started = await sr.json().catch(() => ({}));
+      if(started.status === "synthesized"){ await loadInquiries(); STATE.busy = false; return; }
+      if(!sr.ok || !started.run) throw new Error(started.detail || "could not start the run");
+      STATE.inqRun = {all: true, critical: true, run: started.run.id, done: 0,
+                      total: Number(started.selected || sel || 0)};
+      renderInquiries();
+      pollInquiry(0);
+    }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; }
+  }
+
+  // Research the competitive landscape (open web) — its own gated spend; polls like an inquiry run.
+  async function researchCompetitive(){
+    if(STATE.busy || STATE.inqRun) return;
+    STATE.busy = true;
+    try{
+      const pr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/competitive/research",
+                             {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 0})});
+      const pj = await pr.json().catch(() => ({}));
+      const max = Number((pj.projection || {}).projected_usd || 0);
+      if(!window.confirm("Research the competitive landscape?\n\nIdentify the players in this market and "
+          + "profile each across funding, customers, moats, tech edge and differentiation — from the open "
+          + "web.\n\nProjected maximum: $" + max.toFixed(3))){ STATE.busy = false; return; }
+      const sr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/competitive/research",
+                             {method: "POST", headers: hdrs(), body: JSON.stringify(
+                               {max_usd: max, idempotency_key: freshRunKey("comp")})});
+      const started = await sr.json().catch(() => ({}));
+      if(!sr.ok || !started.run) throw new Error(started.detail || "could not start competitive research");
+      STATE.inqRun = {competitive: true, run: started.run.id, done: 0, total: 0};
       renderInquiries();
       pollInquiry(0);
     }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e); }

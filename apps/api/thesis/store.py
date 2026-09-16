@@ -876,6 +876,11 @@ async def answer_question(pool, thesis_id: str, qid: str, *, target_status: str,
             thesis_id, qid, target_status, answer[:9000], json.dumps(list(evidence_ids or [])), run_id)
 
 
+def new_idempotency_key() -> str:
+    """A fresh unique run key — for runs (e.g. competitive research) not keyed on a question set."""
+    return uuid.uuid4().hex[:16]
+
+
 def active_question_hash(questions: list[dict]) -> str:
     """The run's idempotency signature — a hash of the active question set (id + target). Re-running the
     SAME set is a no-op (create_run dedups on it); editing any question changes the hash, so it becomes a

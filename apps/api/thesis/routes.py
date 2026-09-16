@@ -22,10 +22,12 @@ from pydantic import BaseModel
 
 from . import argue as arg
 from . import attack as atk
+from . import competitive as compres
 from . import converse as conv
 from . import decompose as dec
 from . import genesis as gen
 from . import people as ppl
+from . import prioritize as prio
 from . import store as tstore
 from . import synth as syn
 from . import transcript as tx
@@ -180,6 +182,16 @@ def project_research_cost(n_claims: int, *, web: bool, web_available: bool) -> d
     }
     return {"claims": n, "components": components,
             "projected_usd": round(sum(components.values()), 4)}
+
+
+def project_competitive_cost(max_players: int, *, web_available: bool) -> dict:
+    """Cost of researching the competitive landscape: one player-identification pull + one profiling pull
+    per player, each an open-web search + an extraction call. Bounded by max_players."""
+    calls = 1 + max(1, int(max_players))                       # identify + one per player
+    web = round(calls * atk.WEB_USD_PER_QUERY, 4) if web_available else 0.0
+    llm = round(calls * 0.003, 4)                              # one extraction call each
+    return {"players": max_players, "components": {"web_search": web, "extraction": llm},
+            "projected_usd": round(web + llm, 4)}
 
 
 def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge_llm=None,
@@ -1372,16 +1384,17 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         return await syn.synthesize_all(pool, thesis_id, _profile(), _strong_llm_json(),
                                         take_llm_json=_take_llm_json())
 
-    async def _run_all(thesis_id: str, run_id: str, web: bool):
-        """Run every un-answered question across ALL lines of inquiry as ONE run, then synthesize the
-        deck + take so both exist the moment the run reports completed. Only unrun/stale questions are
-        driven — a re-click is cheap; a full re-run is still per-line/per-question."""
+    async def _run_all(thesis_id: str, run_id: str, web: bool, todo_rows: list[dict] | None = None):
+        """Run un-answered questions as ONE run, then synthesize the deck + take so both exist the moment
+        the run reports completed. `todo_rows` runs a specific SUBSET (the critical-subset path); when
+        omitted, every un-answered evidence question runs (the run-all path)."""
         pool = await pool_of()
         try:
-            qs = await tstore.list_questions(pool, thesis_id)
-            todo = [q for q in _evidence_questions(_profile(), qs) if not q.get("target_status")]
-            if todo:
-                await _run_question_rows(thesis_id, run_id, todo, web)
+            if todo_rows is None:
+                qs = await tstore.list_questions(pool, thesis_id)
+                todo_rows = [q for q in _evidence_questions(_profile(), qs) if not q.get("target_status")]
+            if todo_rows:
+                await _run_question_rows(thesis_id, run_id, todo_rows, web)
             # Synthesize BEFORE marking completed, so the poll's /inquiries refresh already carries the
             # deck + take (the status endpoint shows this stage while the two calls run).
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="synthesizing",
@@ -1433,6 +1446,40 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         asyncio.create_task(_run_all(thesis_id, run["id"], body.web))
         return {"status": "running", "run": run}
 
+    @r.post("/thesis/{thesis_id}/inquiries/run_critical")
+    async def tl_run_critical(thesis_id: str, body: ResearchStartIn, authorization: str = Header(default=""),
+                              x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Run only the CRITICAL SUBSET across all lines — the questions whose answers would most move the
+        fund/pass call (LLM-ranked, deterministic fallback, coverage floor over critical aspects) — then
+        synthesize. Cheaper than run-all; cost projected + gated over the chosen subset."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        qs = await tstore.list_questions(pool, thesis_id)
+        if not qs:
+            raise HTTPException(status_code=409, detail="draft the questions first")
+        subset = await prio.select_subset(_profile(), _evidence_questions(_profile(), qs),
+                                          thesis=_d.get("thesis") or "", llm_json=_strong_llm_json(), cap=12)
+        if not subset:
+            result = await _synthesize(thesis_id)     # nothing to run (all answered) → free re-synth
+            return {"status": "synthesized", "findings": result.get("findings", 0)}
+        projection = project_research_cost(len(subset), web=body.web,
+                                           web_available=bool(atk._web_client(manifest)))
+        if projection["projected_usd"] > max(0.0, body.max_usd):
+            return {"status": "refused", "projection": projection, "selected": len(subset),
+                    "reason": "Projected cost of the critical subset exceeds the approved maximum."}
+        key = body.idempotency_key or ("crit-" + tstore.active_question_hash(subset))
+        try:
+            run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
+                                          projected_usd=projection["projected_usd"], approved_usd=body.max_usd,
+                                          metadata={"critical": True, "questions": [q["id"] for q in subset],
+                                                    "web": body.web, "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if run.get("state") == "completed":
+            return {"status": "completed", "run": run}
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="running", state="running")
+        asyncio.create_task(_run_all(thesis_id, run["id"], body.web, subset))
+        return {"status": "running", "run": run, "selected": len(subset)}
+
     @r.post("/thesis/{thesis_id}/synthesize")
     async def tl_synthesize(thesis_id: str, authorization: str = Header(default=""),
                             x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
@@ -1440,8 +1487,62 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         beyond the two grounded synthesis calls. Backs the 'Rebuild deck & take' button."""
         pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
         result = await _synthesize(thesis_id)
+        # Competitive is a separate researched artifact (not rebuilt here) — return the existing one as-is.
         return {"status": "ok", "deck": result.get("deck"), "take": result.get("take"),
-                "competitive": result.get("competitive"), "findings": result.get("findings", 0)}
+                "competitive": _d.get("competitive") or {}, "findings": result.get("findings", 0)}
+
+    async def _run_competitive(thesis_id: str, run_id: str):
+        """Research the competitive landscape (open web) and store it — a background run so the request
+        returns immediately and the client polls, like an inquiry run."""
+        pool = await pool_of()
+        try:
+            profile = _profile()
+            d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
+            thesis = (d or {}).get("thesis") or ""
+            subject = " ".join(str(v) for v in ((d or {}).get("subject") or {}).values()).strip()
+            _thesis_txt, _subj, findings = await syn._load_findings(pool, thesis_id, profile)
+            _cdir, cols = profile.competitive_spec()
+            land = await compres.research_landscape(
+                _strong_llm_json(), atk._web_client(manifest), thesis=thesis, subject=subject,
+                findings=findings, columns=[dict(c) for c in cols])
+            land["generated_at"] = int(datetime.now(timezone.utc).timestamp())
+            await tstore.set_competitive(pool, thesis_id, land)
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
+                                     state="completed", actual_delta=0.0)
+        except tstore.SpendCapError as exc:
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="cap",
+                                  error={"reason": "approved cost reached", "detail": str(exc)})
+        except Exception as exc:      # noqa: BLE001 — fail closed; the prior landscape is untouched
+            import traceback as _tb
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                  error={"reason": "competitive research failed", "detail": str(exc)[:300],
+                                         "tb": _tb.format_exc()[-800:]})
+
+    @r.post("/thesis/{thesis_id}/competitive/research")
+    async def tl_competitive_research(thesis_id: str, body: ResearchStartIn,
+                                      authorization: str = Header(default=""),
+                                      x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Research the competitive landscape from the open web — identify the players and profile each
+        across the dimensions that matter. Its own gated spend (projected first), a background run the
+        client polls; stores the landscape the UI renders as player cards + a comparison table."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if _profile() is None:
+            raise HTTPException(status_code=409, detail="no decision profile is configured")
+        projection = project_competitive_cost(compres.MAX_PLAYERS,
+                                               web_available=bool(atk._web_client(manifest)))
+        if projection["projected_usd"] > max(0.0, body.max_usd):
+            return {"status": "refused", "projection": projection,
+                    "reason": "Projected competitive-research cost exceeds the approved maximum."}
+        key = body.idempotency_key or ("comp-" + tstore.new_idempotency_key())
+        try:
+            run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
+                                          projected_usd=projection["projected_usd"], approved_usd=body.max_usd,
+                                          metadata={"competitive": True, "questions": [], "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="running", state="running")
+        asyncio.create_task(_run_competitive(thesis_id, run["id"]))
+        return {"status": "running", "run": run}
 
     async def _run_single(thesis_id: str, run_id: str, qid: str, web: bool):
         """Run ONE question (carrying its full thesis+aspect context) and complete the run."""

@@ -73,30 +73,25 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
     take_llm = take_llm_json or llm_json
     deck_dir, deck_secs = profile.pitch_deck_spec()
     take_dir, take_secs = profile.collective_take_spec()
-    comp_dir, comp_cols = profile.competitive_spec()
     thesis, subject, findings = await _load_findings(pool, thesis_id, profile)
+    # The COMPETITIVE landscape is NO LONGER built here: it is its own gated, web-researched artifact
+    # (apps/api/thesis/competitive.py via POST /competitive/research), so re-synthesis never overwrites a
+    # researched landscape with an empty passive matrix. synthesize_all owns only the deck + take.
     if not findings:
         deck_obj, take_obj = _empty_deck(deck_secs), _empty_take(take_secs)
-        comp_obj = _empty_matrix(comp_cols)
         await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
         await tstore.set_collective_take(pool, thesis_id, take_obj)
-        await tstore.set_competitive(pool, thesis_id, comp_obj)
-        return {"deck": deck_obj, "take": take_obj, "competitive": comp_obj, "findings": 0}
+        return {"deck": deck_obj, "take": take_obj, "findings": 0}
 
     deck = await compose_over_findings(llm_json, directive=deck_dir, sections=list(deck_secs),
                                        findings=findings, decision=thesis, layout="bullets")
     take = await compose_memo(take_llm, directive=take_dir, sections=list(take_secs),
                               findings=findings, decision=thesis, answer_chars=2400)
-    comp = await compose_matrix(llm_json, directive=comp_dir, columns=list(comp_cols),
-                                findings=findings, subject_label=(subject or thesis[:80]), decision=thesis)
     now = int(time.time())
     n = len(findings)
     deck_obj = {"sections": deck, "empty": False, "generated_at": now, "findings": n}
     take_obj = {"bottom_line": take.get("bottom_line") or {"text": "", "markers": ""},
                 "sections": take.get("sections") or [], "empty": False, "generated_at": now, "findings": n}
-    comp_obj = {"columns": comp.get("columns") or [], "rows": comp.get("rows") or [],
-                "empty": False, "generated_at": now, "findings": n}
     await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
     await tstore.set_collective_take(pool, thesis_id, take_obj)
-    await tstore.set_competitive(pool, thesis_id, comp_obj)
-    return {"deck": deck_obj, "take": take_obj, "competitive": comp_obj, "findings": n}
+    return {"deck": deck_obj, "take": take_obj, "findings": n}
