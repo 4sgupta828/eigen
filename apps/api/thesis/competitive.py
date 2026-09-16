@@ -168,7 +168,7 @@ async def _profile_player(llm_json, web_client, *, name: str, space: str, column
 
 
 async def suggest_candidates(llm_json, web_client, *, thesis: str, subject: str, space: str = "",
-                             existing: tuple = (), max_candidates: int = 12) -> list[dict]:
+                             existing: tuple = (), max_candidates: int = 12, startup_search=None) -> list[dict]:
     """Propose MORE competitors to analyze — direct and adjacent — that are NOT already in the landscape.
     Cheap: one open-web pull + one LLM call, and it only NAMES candidates (no profiling yet), so the user
     can pick which to spend on. -> [{name, kind: 'direct'|'adjacent', note}]. Never raises."""
@@ -211,7 +211,15 @@ async def suggest_candidates(llm_json, web_client, *, thesis: str, subject: str,
         kind = "adjacent" if str((it or {}).get("kind") or "").strip().lower() == "adjacent" else "direct"
         row = {"name": name, "kind": kind, "note": str((it or {}).get("note") or "").strip()[:200]}
         (adj if kind == "adjacent" else direct).append(row)
-    return (direct + adj[:3])[:max_candidates]     # direct first; adjacents capped so the list stays focused
+    # OUR internal Startup Search: any indexed company matching the focus is a real, direct candidate —
+    # prepend it (deduped) so corpus-grounded competitors lead over web guesses.
+    picked = {r["name"].lower() for r in direct + adj} | set(have)
+    su_rows = []
+    for nm in await _startup_names(startup_search, focus, max_candidates):
+        if nm.lower() not in picked:
+            picked.add(nm.lower())
+            su_rows.append({"name": nm, "kind": "direct", "note": "in our startup index"})
+    return (su_rows + direct + adj[:3])[:max_candidates]     # our index first, then direct web, then adjacents
 
 
 async def profile_players(llm_json, web_client, *, names, space: str, columns: list[dict]) -> list[dict]:
@@ -229,17 +237,41 @@ async def profile_players(llm_json, web_client, *, names, space: str, columns: l
     return out
 
 
+async def _startup_names(startup_search, text: str, limit: int) -> list[str]:
+    """Company names from OUR internal Startup Search (hybrid semantic+keyword over our company index) —
+    a precise, corpus-grounded source of direct competitors. [] when unavailable. Never raises."""
+    if startup_search is None or not (text or "").strip():
+        return []
+    try:
+        rows = await startup_search(text, limit) or []
+    except Exception:      # noqa: BLE001 — an internal-search hiccup never blocks web discovery
+        return []
+    out, seen = [], set()
+    for r in rows:
+        nm = str((r or {}).get("name") or "").strip()[:80]
+        if nm and nm.lower() not in seen:
+            seen.add(nm.lower()); out.append(nm)
+    return out
+
+
 async def research_landscape(llm_json, web_client, *, thesis: str, subject: str, findings: list[dict],
-                             columns: list[dict], max_players: int = MAX_PLAYERS) -> dict:
+                             columns: list[dict], max_players: int = MAX_PLAYERS, startup_search=None) -> dict:
     """-> {space, columns, players:[{name, is_subject, cells:{key:{text,source_url,source_title}}}],
-    empty}. Row 0 is the thesis company itself (profiled from what the FINDINGS establish, cited to
-    findings); the rest are competitors profiled from the open web. Never raises."""
+    empty}. Players are the direct competitors in the focused market — sourced from OUR internal Startup
+    Search (precise, corpus-grounded) FIRST, then the open web — each profiled and cited. Never raises."""
     cols = [{"key": str(c["key"]), "label": str(c.get("label") or c["key"])} for c in (columns or [])]
-    space, names = await _identify_players(llm_json, web_client, thesis=thesis, subject=subject,
-                                           findings=findings, max_players=max_players)
+    focus, web_names = await _identify_players(llm_json, web_client, thesis=thesis, subject=subject,
+                                               findings=findings, max_players=max_players)
+    # OUR index first (a company that's in our startup corpus IS a real, indexed player), then web recall.
+    su_names = await _startup_names(startup_search, focus, max_players)
+    names, seen = [], set()
+    for nm in su_names + web_names:
+        if nm.lower() not in seen:
+            seen.add(nm.lower()); names.append(nm)
+    names = names[:max_players]
     players = []
     for nm in names:
-        cells = await _profile_player(llm_json, web_client, name=nm, space=space, columns=cols)
+        cells = await _profile_player(llm_json, web_client, name=nm, space=focus, columns=cols)
         if cells:                                   # drop a peer we could not ground on any dimension
             players.append({"name": nm, "is_subject": False, "cells": cells})
-    return {"space": space, "columns": cols, "players": players, "empty": not players}
+    return {"space": focus, "columns": cols, "players": players, "empty": not players}

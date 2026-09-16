@@ -47,3 +47,38 @@ async def test_research_landscape_is_safe_without_a_model_or_web():
     land = await competitive.research_landscape(None, None, thesis="t", subject="s", findings=[],
                                                 columns=[{"key": "funding", "label": "F"}])
     assert land["empty"] is True and land["players"] == []
+
+
+@pytest.mark.asyncio
+async def test_internal_startup_search_names_lead_the_landscape():
+    cols = [{"key": "funding", "label": "Funding"}]
+    async def llm(system, user):
+        s = system.lower()
+        if "focused market" in s and "queries" in s:
+            return {"focus": "legal AI search", "queries": ["legal ai search competitors"]}
+        if "mapping one focused market" in s:
+            return {"players": [{"name": "WebCo", "kind": "direct"}]}
+        return {"cells": {"funding": {"text": "$5M seed", "src": 1}}}
+    async def su(text, limit):
+        return [{"name": "OurCo", "note": "in our index"}, {"name": "WebCo", "note": "dupe"}]
+    land = await competitive.research_landscape(llm, _Web(), thesis="AI search for lawyers",
+                                                subject="legal AI search", findings=[], columns=cols,
+                                                startup_search=su)
+    names = [p["name"] for p in land["players"]]
+    assert names[0] == "OurCo"                 # OUR indexed company leads the map
+    assert "WebCo" in names and names.count("WebCo") == 1   # web recall too, deduped against our index
+
+
+@pytest.mark.asyncio
+async def test_suggest_candidates_prepends_our_index():
+    async def llm(system, user):
+        s = system.lower()
+        if "focused market" in s and "queries" in s:
+            return {"focus": "legal AI search", "queries": ["q"]}
+        return {"candidates": [{"name": "WebRival", "kind": "direct", "note": "n"}]}
+    async def su(text, limit):
+        return [{"name": "IndexRival", "note": "in index"}]
+    got = await competitive.suggest_candidates(llm, _Web(), thesis="t", subject="legal AI search",
+                                               existing=(), startup_search=su)
+    names = [c["name"] for c in got]
+    assert names[0] == "IndexRival" and "WebRival" in names
