@@ -116,6 +116,14 @@ class QuestionEdit(BaseModel):
     target: str = ""
 
 
+class ImproveIn(BaseModel):
+    instruction: str = ""      # optional: "narrow to X" / "foreground the moat" — steers the improve pass
+
+
+class RevertIn(BaseModel):
+    version_id: str = ""       # the thesis version to backtrack to
+
+
 class ExpertDiscoverIn(BaseModel):
     aspect_key: str = ""       # thesis-scoped: discover experts for ONE call_only aspect, not a directory
 
@@ -305,12 +313,90 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         # The agent's current thesis this turn; keep the last good one if the model returned none.
         proposed = got.get("proposed_thesis") or d.get("proposed_thesis") or d.get("thesis") or ""
         memory = got.get("memory") or {}
-        if proposed:
+        # Versioning: if the agent CHANGED the thesis this turn, record a new version (backtrackable);
+        # otherwise just keep the draft text. A change prompted by the author's message is `directed`,
+        # an autonomous sharpen is `genesis`. Shaping memory is persisted so it survives across sessions.
+        prior_text = (d.get("proposed_thesis") or d.get("thesis") or "").strip()
+        if proposed and proposed.strip() != prior_text:
+            await tstore.add_thesis_version(
+                pool, thesis_id, proposed, source=("directed" if said else "genesis"),
+                rationale=got.get("change_rationale") or "")
+        elif proposed:
             await tstore.set_proposed_thesis(pool, thesis_id, proposed)
+        if memory.get("shaping_prefs"):
+            await tstore.set_shaping_prefs(pool, thesis_id, memory["shaping_prefs"])
         await tstore.add_turn(pool, thesis_id, role="agent", move="genesis", text=reply,
-                              payload={"ready": ready, "proposed_thesis": proposed, "memory": memory})
+                              payload={"ready": ready, "proposed_thesis": proposed, "memory": memory,
+                                       "change_rationale": got.get("change_rationale") or ""})
         return {"status": "ok", "reply": reply, "ready": ready, "proposed_thesis": proposed,
-                "memory": memory,
+                "memory": memory, "change_rationale": got.get("change_rationale") or "",
+                "versions": await tstore.list_thesis_versions(pool, thesis_id),
+                "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
+                                           owner_token=x_thesis_owner)}
+
+    @r.post("/thesis/{thesis_id}/improve")
+    async def tl_improve(thesis_id: str, body: ImproveIn, authorization: str = Header(default=""),
+                         x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """The agent improves the thesis for the author: proposes a few improvement questions, ANSWERS
+        them itself, and rewrites the thesis — auto-applied as a new (backtrackable) version. Draft-only:
+        refuses once the thesis is decomposed (edit before you test)."""
+        oid = await _owner(authorization)
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if d.get("claims"):
+            raise HTTPException(status_code=409, detail="this thesis is already decomposed")
+        current = (d.get("proposed_thesis") or d.get("thesis") or "").strip()
+        if not current:
+            raise HTTPException(status_code=409, detail="draft a thesis first")
+        turns = d.get("turns") or []
+        prior_mem = next((t.get("payload", {}).get("memory") for t in reversed(turns)
+                          if t.get("role") == "agent" and t.get("payload", {}).get("memory")), None)
+        # Seed shaping prefs from what genesis has already learned about this author.
+        if not (prior_mem or {}).get("shaping_prefs") and d.get("shaping_prefs"):
+            prior_mem = {**(prior_mem or {}), "shaping_prefs": d.get("shaping_prefs")}
+        res = await gen.improve(_strong_llm_json(), thesis=current, memory=prior_mem,
+                                instruction=body.instruction or "", history=turns)
+        improved = (res.get("improved_thesis") or "").strip()
+        qa = res.get("questions") or []
+        changed = bool(improved) and improved != current
+        if changed:
+            src = "directed" if (body.instruction or "").strip() else "self_improve"
+            await tstore.add_thesis_version(pool, thesis_id, improved, source=src,
+                                            rationale=res.get("rationale") or "")
+        if res.get("shaping_prefs"):
+            await tstore.set_shaping_prefs(pool, thesis_id, res["shaping_prefs"])
+        # Log the self-Q&A as an agent turn so the reasoning is visible and part of the record.
+        qa_text = "\n".join(f"Q: {x['q']}\nA: {x['a']}" for x in qa)
+        note = (res.get("rationale") or "Improved the thesis.") + ("\n\n" + qa_text if qa_text else "")
+        await tstore.add_turn(pool, thesis_id, role="agent", move="improve", text=note,
+                              payload={"questions": qa, "rationale": res.get("rationale") or "",
+                                       "improved_thesis": improved if changed else ""})
+        return {"status": "ok", "changed": changed, "questions": qa,
+                "rationale": res.get("rationale") or "", "proposed_thesis": improved or current,
+                "versions": await tstore.list_thesis_versions(pool, thesis_id),
+                "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
+                                           owner_token=x_thesis_owner)}
+
+    @r.get("/thesis/{thesis_id}/versions")
+    async def tl_versions(thesis_id: str, authorization: str = Header(default=""),
+                          x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """The thesis version timeline (oldest first, active flagged) — the backtrack surface."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner)
+        return {"status": "ok", "versions": await tstore.list_thesis_versions(pool, thesis_id)}
+
+    @r.post("/thesis/{thesis_id}/revert")
+    async def tl_revert(thesis_id: str, body: RevertIn, authorization: str = Header(default=""),
+                        x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Backtrack the thesis to an earlier version. A later edit from here branches (redo differently).
+        Draft-only: refuses once decomposed."""
+        oid = await _owner(authorization)
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if d.get("claims"):
+            raise HTTPException(status_code=409, detail="this thesis is already decomposed")
+        got = await tstore.revert_thesis_version(pool, thesis_id, body.version_id)
+        if got is None:
+            raise HTTPException(status_code=404, detail="no such version")
+        return {"status": "ok", "proposed_thesis": got["text"],
+                "versions": await tstore.list_thesis_versions(pool, thesis_id),
                 "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
                                            owner_token=x_thesis_owner)}
 

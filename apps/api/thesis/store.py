@@ -20,6 +20,19 @@ import uuid
 
 from .schema import OPEN
 
+
+def _loads(v):
+    """asyncpg returns jsonb as a str (or already-decoded) depending on codecs — normalize to Python."""
+    if v is None:
+        return None
+    return json.loads(v) if isinstance(v, str) else v
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
 _DDL = """
 CREATE TABLE IF NOT EXISTS ts_thesis (
     id          text PRIMARY KEY,
@@ -53,6 +66,15 @@ ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS research_status text NOT NULL DEF
 -- The genesis agent's current best one-sentence formalization, before the user confirms it. A thesis
 -- with zero claims is a DRAFT (still in genesis); this holds what "Use this thesis" would commit.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS proposed_thesis text NOT NULL DEFAULT '';
+-- The SEQUENCE of thesis versions, so the author can BACKTRACK to any earlier wording and REDO an update
+-- differently (a new edit from a reverted version branches — parent_id points at where it came from).
+-- Each entry: {id, text, parent_id, source: user_edit|self_improve|directed|genesis, rationale, at}.
+-- `active_version` is the one the current `thesis`/`proposed_thesis` text reflects.
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS versions jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS active_version text NOT NULL DEFAULT '';
+-- The genesis agent's SHAPING MEMORY: how THIS author wants the thesis shaped (priorities, constraints,
+-- style) — carried into every turn + the self-improve loop so the agent understands them over time.
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS shaping_prefs jsonb NOT NULL DEFAULT '[]';
 
 CREATE TABLE IF NOT EXISTS ts_claim (
     thesis_id   text NOT NULL REFERENCES ts_thesis(id) ON DELETE CASCADE,
@@ -342,6 +364,17 @@ async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str
     out["claims"] = [{**{k: c[k] for k in c.keys() if k != "attacked_at"},
                       "attacked": bool(c["attacked_at"]),
                       "evidence": by_rung.get(c["rung"], [])} for c in claims]
+    # Evidence is stored per RUNG (= the profile ASPECT key). The inquiries flow gathers evidence for the
+    # vertical's full aspect set, which is BROADER than the legacy decompose ladder (schema.LADDER) — so
+    # some aspects (e.g. prior_landscape, differentiation, traction) have evidence but no ts_claim row.
+    # Surface that evidence too, or its [[e:id]] citations resolve to nothing on the client (the regression
+    # that made citations vanish on those questions). A synthetic claim carries only the evidence.
+    _covered = {c["rung"] for c in claims}
+    for _rung, _rows in by_rung.items():
+        if _rung and _rung not in _covered:
+            out["claims"].append({"rung": _rung, "claim": "", "settleable": "", "verdict": "open",
+                                  "research_status": "open", "critical": False, "attacked": False,
+                                  "evidence": _rows})
     out["turns"] = ([{"role": r["role"], "move": r["move"], "rung": r["rung"],
                       "rungs": _j(r["rungs"]) if "rungs" in r else [],
                       "text": r["text"], "payload": _j(r["payload"])} for r in turns]
@@ -399,6 +432,73 @@ async def set_proposed_thesis(pool, thesis_id: str, proposed: str) -> None:
         await conn.execute(
             "UPDATE ts_thesis SET proposed_thesis = $2, updated_at = now() WHERE id = $1",
             thesis_id, (proposed or "")[:2000])
+
+
+async def add_thesis_version(pool, thesis_id: str, text: str, *, source: str = "user_edit",
+                             rationale: str = "", parent_id: str = "") -> str:
+    """Append a thesis version and make it active — the unit of backtracking. Sets the DRAFT
+    (`proposed_thesis`) text to it (committing to `thesis` stays the explicit 'Use this thesis' step).
+    `parent_id` records which version this one was derived from; when omitted it chains onto the active
+    one, so a linear edit history and a branch (edit-after-revert) are the same mechanism. -> version id."""
+    text = (text or "").strip()[:2000]
+    if not text:
+        return ""
+    await ensure_schema(pool)
+    vid = uuid.uuid4().hex[:12]
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow("SELECT versions, active_version FROM ts_thesis WHERE id = $1", thesis_id)
+        if row is None:
+            return ""
+        versions = list(_loads(row["versions"]) or [])
+        parent = parent_id or row["active_version"] or ""
+        versions.append({"id": vid, "text": text, "parent_id": parent, "source": source,
+                         "rationale": (rationale or "")[:600], "at": _now_iso()})
+        await conn.execute(
+            "UPDATE ts_thesis SET versions = $2::jsonb, active_version = $3, proposed_thesis = $4, "
+            "updated_at = now() WHERE id = $1",
+            thesis_id, json.dumps(versions[-100:]), vid, text)
+    return vid
+
+
+async def list_thesis_versions(pool, thesis_id: str) -> list[dict]:
+    """The version sequence, oldest first, with the active one flagged — the backtrack timeline."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT versions, active_version FROM ts_thesis WHERE id = $1", thesis_id)
+    if row is None:
+        return []
+    active = row["active_version"] or ""
+    return [{**v, "active": v.get("id") == active} for v in (_loads(row["versions"]) or [])]
+
+
+async def revert_thesis_version(pool, thesis_id: str, version_id: str) -> dict | None:
+    """Backtrack: make an earlier version active again and restore its text as the draft. A later edit
+    from here branches (its parent_id becomes this version). -> {id, text} or None if unknown."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow("SELECT versions FROM ts_thesis WHERE id = $1", thesis_id)
+        if row is None:
+            return None
+        target = next((v for v in (_loads(row["versions"]) or []) if v.get("id") == version_id), None)
+        if target is None:
+            return None
+        await conn.execute(
+            "UPDATE ts_thesis SET active_version = $2, proposed_thesis = $3, updated_at = now() WHERE id = $1",
+            thesis_id, version_id, (target.get("text") or "")[:2000])
+    return {"id": version_id, "text": target.get("text") or ""}
+
+
+async def set_shaping_prefs(pool, thesis_id: str, prefs: list[str]) -> None:
+    """Persist the genesis agent's read of how this author wants the thesis shaped (deduped, capped)."""
+    await ensure_schema(pool)
+    clean = []
+    for p in (prefs or []):
+        s = str(p or "").strip()[:200]
+        if s and s not in clean:
+            clean.append(s)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_thesis SET shaping_prefs = $2::jsonb, updated_at = now() WHERE id = $1",
+                           thesis_id, json.dumps(clean[:12]))
 
 
 async def claims_tested_by_run(pool, thesis_id: str, run_id: str) -> set[str]:
@@ -771,7 +871,7 @@ async def answer_question(pool, thesis_id: str, qid: str, *, target_status: str,
         await conn.execute(
             """UPDATE ts_question SET target_status=$3, answer=$4, evidence_ids=$5::jsonb, run_id=$6
                  WHERE thesis_id=$1 AND id=$2""",
-            thesis_id, qid, target_status, answer[:4000], json.dumps(list(evidence_ids or [])), run_id)
+            thesis_id, qid, target_status, answer[:9000], json.dumps(list(evidence_ids or [])), run_id)
 
 
 def active_question_hash(questions: list[dict]) -> str:

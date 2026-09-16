@@ -49,6 +49,38 @@ async def test_memory_falls_back_to_prior_when_the_model_drops_a_field():
 
 
 @pytest.mark.asyncio
+async def test_turn_carries_shaping_prefs_forward_and_reports_a_change_rationale():
+    out = {"thesis": "T2", "reply": "r", "change_rationale": "narrowed to mid-market per your ask",
+           "shaping_prefs": ["prefers a narrow beachhead"], "ready": False}
+    r = await genesis.turn(_llm(out), said="narrow it to mid-market", history=[{"role": "user", "text": "a"}],
+                           budget_left=6, memory={"shaping_prefs": ["one crisp sentence"]})
+    assert set(r["memory"]["shaping_prefs"]) == {"one crisp sentence", "prefers a narrow beachhead"}  # accumulates
+    assert "narrowed to mid-market" in r["change_rationale"]
+
+
+@pytest.mark.asyncio
+async def test_improve_self_answers_and_rewrites_the_thesis():
+    out = {"questions": [{"q": "Who is the economic buyer?", "a": "The VP of RevOps, who owns the tooling line."},
+                         {"q": "no answer"}],   # dropped: missing `a`
+           "improved_thesis": "RevOps teams at mid-market SaaS will pay for X because Y.",
+           "rationale": "Named the buyer and the mechanism.", "shaping_prefs": ["wants a named buyer"]}
+    r = await genesis.improve(_llm(out), thesis="Companies will pay for X.",
+                              memory={"shaping_prefs": ["falsifiable"]})
+    assert len(r["questions"]) == 1 and r["questions"][0]["a"].startswith("The VP")  # self-answered, junk dropped
+    assert "RevOps" in r["improved_thesis"]
+    assert set(r["shaping_prefs"]) == {"falsifiable", "wants a named buyer"}          # learned + carried
+
+
+@pytest.mark.asyncio
+async def test_improve_never_traps_the_author_without_a_model_or_on_junk():
+    r = await genesis.improve(None, thesis="T")
+    assert r["questions"] == [] and r["improved_thesis"] == ""     # no model → no change, no crash
+    async def boom(_s, _u): raise ValueError("x")
+    r2 = await genesis.improve(boom, thesis="T")
+    assert r2["improved_thesis"] == ""
+
+
+@pytest.mark.asyncio
 async def test_no_model_or_spent_budget_or_bad_json_never_traps_the_author():
     assert (await genesis.turn(None, said="idea", history=[], budget_left=6))["ready"] is True
     assert (await genesis.turn(_llm({"x": 1}), said="idea", history=[], budget_left=0))["ready"] is True

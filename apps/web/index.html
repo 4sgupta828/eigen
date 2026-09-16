@@ -652,6 +652,26 @@
   .th-acts button:hover{border-color:var(--gold);color:var(--gold);}
   .th-acts button:focus-visible,.th-ask-row button:focus-visible,.th-ask-row input:focus-visible,
   .th-ledger > summary:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  .th-improve{border-color:rgba(var(--gold-rgb),.5)!important;background:rgba(var(--gold-rgb),.06)!important;
+    color:var(--gold)!important;}
+  /* Thesis version timeline — backtrack to any earlier wording, redo differently. */
+  .th-versions{margin:.5rem 0;border:1px solid var(--hair);border-radius:10px;overflow:hidden;}
+  .th-versions > summary{cursor:pointer;list-style:none;padding:.5rem .7rem;font-family:var(--mono);
+    font-size:.7rem;color:var(--dim);display:flex;gap:.4rem;align-items:center;}
+  .th-versions > summary::-webkit-details-marker{display:none;}
+  .th-ver{display:flex;gap:.5rem;align-items:flex-start;padding:.5rem .7rem;border-top:1px solid var(--hair);
+    font-size:.8rem;}
+  .th-ver-main{flex:1;min-width:0;}
+  .th-ver-src{font-family:var(--mono);font-size:.6rem;letter-spacing:.03em;text-transform:uppercase;
+    color:var(--dim);}
+  .th-ver-rat{color:var(--ink);line-height:1.45;margin:.1rem 0;}
+  .th-ver-txt{color:var(--dim);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;
+    -webkit-box-orient:vertical;}
+  .th-ver.active .th-ver-src{color:var(--gold);}
+  .th-ver-revert{font-family:var(--mono);font-size:.62rem;padding:.35rem .6rem;border-radius:999px;
+    border:1px solid var(--hair);background:var(--panel2);color:var(--ink);cursor:pointer;white-space:nowrap;min-height:36px;}
+  .th-ver-revert:hover{border-color:var(--gold);color:var(--gold);}
+  .th-ver-cur{font-family:var(--mono);font-size:.6rem;color:var(--gold);white-space:nowrap;align-self:center;}
   @media (max-width:560px){
     .th-decision-grid{grid-template-columns:1fr;}
     .th-turn .th-who{min-width:3.4rem;}
@@ -13023,7 +13043,7 @@ async function openShare(token){
       const n = nById[id];
       return n ? '<sup class="ref" data-n="' + n + '" tabindex="0" role="button" aria-label="source '
         + n + '">' + n + "</sup>" : "";
-    });
+    }).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');   // e.g. the "**Strategic read**" label
   }
 
   function groundedAnswer(q){

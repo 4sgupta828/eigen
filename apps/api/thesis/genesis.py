@@ -53,6 +53,12 @@ EACH TURN, reason then act:
    refinement, resolved ambiguity, valid objection); otherwise return it UNCHANGED, word for word, and
    say why. Push back when the author is wrong.
 5. UPDATE MEMORY: add any new assumptions and open threads; move a thread to resolved once settled.
+6. EXECUTE what the author asks: if they ask you to improve/narrow/broaden/reframe the thesis a certain
+   way, or ask a question, DO it this turn — rewrite the thesis to match (or answer the question) rather
+   than just discussing it. When you change the thesis, say briefly WHY in `change_rationale`.
+7. LEARN HOW THEY WANT IT SHAPED: keep `shaping_prefs` updated with this author's priorities, constraints,
+   and style (e.g. "prefers a narrow beachhead", "wants defensibility foregrounded", "keeps it one crisp
+   sentence") — so every later turn reflects how THEY want to shape it.
 
 `reply` should be substantive — a few sentences when the subarea deserves it (the specifics + your
 follow-up). No filler, flattery, or headings.
@@ -64,9 +70,11 @@ Return ONE JSON object exactly:
 {"thought": "<brief reasoning>",
  "thesis": "<the full current falsifiable thesis sentence, unchanged if this turn didn't warrant a change>",
  "reply": "<your substantive engagement + follow-up>",
+ "change_rationale": "<one line: what you changed in the thesis and why, or '' if unchanged>",
  "assumptions": ["<load-bearing assumptions the thesis rests on>"],
  "open_threads": ["<subareas/questions still to resolve to reach the goal>"],
  "resolved": ["<threads/points now settled>"],
+ "shaping_prefs": ["<how THIS author wants the thesis shaped — priorities, constraints, style>"],
  "ready": true|false}
 Output ONLY the JSON object."""
 
@@ -99,7 +107,7 @@ def _mem(m: dict | None) -> dict:
     def _lst(k, cap):
         return [str(x).strip()[:280] for x in (m.get(k) or []) if str(x).strip()][:cap]
     return {"assumptions": _lst("assumptions", 8), "open_threads": _lst("open_threads", 8),
-            "resolved": _lst("resolved", 14)}
+            "resolved": _lst("resolved", 14), "shaping_prefs": _lst("shaping_prefs", 12)}
 
 
 def _mem_block(m: dict) -> str:
@@ -108,7 +116,9 @@ def _mem_block(m: dict) -> str:
     return ("WORKING MEMORY (carry forward and update):\n"
             f"assumptions the thesis rests on:\n{_fmt(m['assumptions'])}\n"
             f"open threads still to resolve (your goal is to close these):\n{_fmt(m['open_threads'])}\n"
-            f"resolved (do not re-raise):\n{_fmt(m['resolved'])}")
+            f"resolved (do not re-raise):\n{_fmt(m['resolved'])}\n"
+            "HOW THIS AUTHOR WANTS THE THESIS SHAPED (their priorities, constraints, style — respect "
+            f"and keep learning these):\n{_fmt(m['shaping_prefs'])}")
 
 
 async def turn(llm_json, *, said: str, history: list[dict], budget_left: int,
@@ -137,15 +147,79 @@ async def turn(llm_json, *, said: str, history: list[dict], budget_left: int,
     thesis = str(d.get("thesis") or "").strip()[:THESIS_CAP]   # same bound as the seed + commit path
     reply = str(d.get("reply") or "").strip()[:1600]   # room for a substantive analyst reply
     ready = bool(d.get("ready")) or done
-    # Updated memory carried forward; fall back to prior memory for any field the model dropped.
+    # Updated memory carried forward; fall back to prior memory for any field the model dropped. Shaping
+    # prefs ACCUMULATE (union with prior) rather than reset — the agent keeps learning how they want it.
     new_mem = _mem(d)
     for k in ("assumptions", "open_threads", "resolved"):
         if not new_mem[k]:
             new_mem[k] = mem[k]
+    merged_prefs = list(mem["shaping_prefs"])
+    for p in new_mem["shaping_prefs"]:
+        if p not in merged_prefs:
+            merged_prefs.append(p)
+    new_mem["shaping_prefs"] = merged_prefs[:12]
     if not reply:
         reply = "Here's the updated thesis — refine it, or use it to draft the questions."
     return {"reply": reply, "proposed_thesis": thesis, "ready": ready, "memory": new_mem,
+            "change_rationale": str(d.get("change_rationale") or "").strip()[:300],
             "thought": str(d.get("thought") or "").strip()[:600]}
+
+
+_IMPROVE_SYSTEM = """\
+You are a venture partner IMPROVING a startup thesis on the author's behalf — not interrogating them. You
+PROPOSE the few highest-leverage questions whose answers would most sharpen THIS thesis, ANSWER each one
+yourself from your own domain knowledge (name the real segments, mechanisms, numbers, incumbents,
+regulations — be concrete, never "it depends"), and then REWRITE the thesis to fold those answers in.
+
+Rules:
+- 2 to 4 questions. Each `q` is the improvement question; each `a` is your own substantive answer to it.
+- The rewrite must be MORE falsifiable, MORE specific (named buyer, substitute, mechanism, why-now), and
+  MORE defensible — not merely longer. Keep the author's own product and intent; sharpen, don't hijack.
+- RESPECT the author's SHAPING PREFERENCES (given below) and any INSTRUCTION they gave for this pass.
+- If the thesis is already strong on a dimension, don't manufacture a change there.
+
+Return ONE JSON object exactly:
+{"questions": [{"q": "<improvement question>", "a": "<your own concrete answer>"}],
+ "improved_thesis": "<the rewritten, sharper thesis — flowing prose, one to a few sentences>",
+ "rationale": "<<=2 sentences: what you changed and why>",
+ "shaping_prefs": ["<updated read of how this author wants the thesis shaped>"]}
+Output ONLY the JSON object."""
+
+
+async def improve(llm_json, *, thesis: str, memory: dict | None = None, instruction: str = "",
+                  history: list[dict] | None = None) -> dict:
+    """The self-improvement loop: propose a few improvement questions, ANSWER them, and rewrite the thesis.
+    -> {questions:[{q,a}], improved_thesis, rationale, shaping_prefs}. Never raises; returns the thesis
+    unchanged (empty questions) when there is no model or the output is unusable — the caller then makes
+    no new version. `instruction` steers a directed 'improve it this way' pass."""
+    mem = _mem(memory)
+    thesis = (thesis or "").strip()
+    if llm_json is None or not thesis:
+        return {"questions": [], "improved_thesis": "", "rationale": "", "shaping_prefs": mem["shaping_prefs"]}
+    convo = _convo(history or [])
+    prompt = (f"CURRENT THESIS:\n{thesis}\n\n{_mem_block(mem)}\n\n"
+              + (f"RECENT CONVERSATION:\n{convo}\n\n" if history else "")
+              + (f"THE AUTHOR'S INSTRUCTION FOR THIS IMPROVEMENT PASS:\n{instruction}\n\n" if instruction.strip()
+                 else "No specific instruction — make the highest-leverage improvements.\n\n")
+              + "Propose, self-answer, and rewrite now. Return the JSON.")
+    try:
+        raw = await llm_json(_IMPROVE_SYSTEM, prompt)
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+    except Exception:      # noqa: BLE001 — improvement never blocks; caller keeps the current thesis
+        return {"questions": [], "improved_thesis": "", "rationale": "", "shaping_prefs": mem["shaping_prefs"]}
+    qs = []
+    for it in (d.get("questions") or [])[:4]:
+        q = str((it or {}).get("q") or "").strip()[:300]
+        a = str((it or {}).get("a") or "").strip()[:1200]
+        if q and a:
+            qs.append({"q": q, "a": a})
+    improved = str(d.get("improved_thesis") or "").strip()[:THESIS_CAP]
+    prefs = list(mem["shaping_prefs"])
+    for p in [str(x).strip()[:200] for x in (d.get("shaping_prefs") or []) if str(x).strip()]:
+        if p not in prefs:
+            prefs.append(p)
+    return {"questions": qs, "improved_thesis": improved,
+            "rationale": str(d.get("rationale") or "").strip()[:400], "shaping_prefs": prefs[:12]}
 
 
 # A sample thesis is a one-click SEED for the genesis conversation, not a committed thesis. Downstream it
