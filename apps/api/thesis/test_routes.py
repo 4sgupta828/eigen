@@ -715,3 +715,75 @@ def test_experts_search_passes_structured_filters_to_the_people_leg(monkeypatch)
     assert r.status_code == 200 and r.json()["candidates"][0]["name"] == "Dana Ops"
     assert seen["filters"] == {"title": "VP Operations", "past_company": "Amazon", "location": "Texas"}
     assert "VP Operations" in seen["query"]           # filters folded into the Exa query too
+
+
+def _genesis_client(monkeypatch, *, llm, captured):
+    """A router wired for the genesis shaping endpoints: a DRAFT thesis (no claims), a model, and the
+    versioning/turn store functions mocked so we can assert what the endpoints persist."""
+    from types import SimpleNamespace
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    draft = {"id": "t1", "thesis": "", "proposed_thesis": "Companies will pay for X.", "subject": {},
+             "is_owner": True, "claims": [], "turns": [], "versions": captured["versions"], "shaping_prefs": []}
+
+    async def pool_of(): return object()
+    async def user_of(token): return {"id": "user-1"} if token == "Bearer owner" else {}
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token="", trusted=False):
+        return draft if thesis_id == "t1" and (owner_id == "user-1" or owner_token == "owner-cap") else None
+    async def fake_add_version(_pool, tid, text, *, source="", rationale="", parent_id=""):
+        vid = f"v{len(captured['versions']) + 1}"
+        captured["versions"].append({"id": vid, "text": text, "source": source, "rationale": rationale,
+                                     "active": True})
+        return vid
+    async def fake_list(_pool, tid): return captured["versions"]
+    async def fake_revert(_pool, tid, vid):
+        v = next((x for x in captured["versions"] if x["id"] == vid), None)
+        return {"id": vid, "text": v["text"]} if v else None
+    async def fake_prefs(_pool, tid, prefs): captured["prefs"] = prefs
+    async def fake_turn(_pool, tid, *, role, move="", text="", payload=None, **_k):
+        captured["turns"].append({"role": role, "move": move, "text": text, "payload": payload or {}})
+    for name, fn in [("get", fake_get), ("add_thesis_version", fake_add_version),
+                     ("list_thesis_versions", fake_list), ("revert_thesis_version", fake_revert),
+                     ("set_shaping_prefs", fake_prefs), ("add_turn", fake_turn)]:
+        monkeypatch.setattr(routes.tstore, name, fn)
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=SimpleNamespace(llm_json=llm),
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=None,
+                                 web_domains=(), retrieval_sources={}),
+        user_of=user_of, tenant="t"))
+    return TestClient(app)
+
+
+def test_improve_applies_a_version_and_carries_proposed_thesis_for_the_card(monkeypatch):
+    # Regression: after Improve, the working-thesis card vanished because the improve turn stored
+    # `improved_thesis`, but the client card keys on `proposed_thesis`. The turn must carry it.
+    cap = {"versions": [], "turns": [], "prefs": None}
+    async def llm(_system, _user):
+        return {"questions": [{"q": "Who buys?", "a": "The VP of RevOps."}, {"q": "no answer"}],
+                "improved_thesis": "RevOps teams at mid-market SaaS will pay for X because Y.",
+                "rationale": "Named the buyer and mechanism.", "shaping_prefs": ["wants a named buyer"]}
+    c = _genesis_client(monkeypatch, llm=llm, captured=cap)
+    r = c.post("/thesis/t1/improve", json={}, headers={"Authorization": "Bearer owner"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["changed"] is True and "RevOps" in body["proposed_thesis"]
+    assert len(body["questions"]) == 1                       # self-answered, the untyped junk dropped
+    assert len(cap["versions"]) == 1                         # a backtrackable version was created
+    imp = next(t for t in cap["turns"] if t["move"] == "improve")
+    assert imp["payload"]["proposed_thesis"].startswith("RevOps")   # the card renders (the fix)
+    assert cap["prefs"] == ["wants a named buyer"]           # shaping memory persisted
+
+
+def test_versions_and_revert_backtrack_the_thesis(monkeypatch):
+    cap = {"versions": [{"id": "v1", "text": "First wording.", "source": "genesis", "active": False},
+                        {"id": "v2", "text": "Second wording.", "source": "self_improve", "active": True}],
+           "turns": [], "prefs": None}
+    async def llm(_s, _u): return {}
+    c = _genesis_client(monkeypatch, llm=llm, captured=cap)
+    v = c.get("/thesis/t1/versions", headers={"Authorization": "Bearer owner"})
+    assert v.status_code == 200 and len(v.json()["versions"]) == 2
+    r = c.post("/thesis/t1/revert", json={"version_id": "v1"}, headers={"Authorization": "Bearer owner"})
+    assert r.status_code == 200 and r.json()["proposed_thesis"] == "First wording."   # backtracked
+    bad = c.post("/thesis/t1/revert", json={"version_id": "nope"}, headers={"Authorization": "Bearer owner"})
+    assert bad.status_code == 404
