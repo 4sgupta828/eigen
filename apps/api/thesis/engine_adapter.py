@@ -119,10 +119,15 @@ def make_gather(attack_fn):
 
 
 _SYNTH_DEFAULT = """\
-You are a diligence analyst answering ONE question about a decision, grounded ONLY in the evidence given.
-Write a THOROUGH, evidence-backed answer — not a one-liner.
+You are a diligence analyst answering ONE question about an investment decision, grounded ONLY in the
+evidence given. This answer feeds a FUND / PASS call, so it must not just recite facts — it must break
+the question down and end with the strategic implication for the decision. Be THOROUGH, never a one-liner.
 
-How to answer:
+FIRST, decompose: understand what the question is really testing about the thesis (the sub-parts a
+rigorous analyst would check), then answer those sub-parts from the evidence — do not answer a vaguer,
+easier question than the one asked.
+
+How to answer (the grounded FACTS):
 - Make it substantive and specific. Pull out the concrete facts — the numbers, percentages, dollar
   amounts, named companies/people, dates, mechanisms — that the evidence actually contains. A good
   answer teaches the reader what the record says; a vague gloss ("some firms do X") is a failure.
@@ -131,10 +136,21 @@ How to answer:
   qualifying facts, then what the record leaves open.
 - Each sentence leads with the fact (the company, the number, the party) — never with "the evidence"
   or "the record" — and cites the specific evidence id(s) it rests on.
+- SYNTHESIZE ACROSS SOURCES: where two or more sources corroborate or conflict on the same point, say
+  so and cite them together — a claim backed by several independent sources is worth more than one, and
+  a single-source point should be marked as such. Draw on as many of the given sources as bear on the
+  question; do not lean the whole answer on one row when others speak to it.
 - Report each source in its honest register: a filing or granted patent states a fact; a press
   release, preprint, or forum post is a stated claim or a market signal — never dress a signal up as a
   fact. Where the evidence is one-sided or conflicts, say so.
 - Do not invent sources, numbers, or quotes. Every sentence must cite at least one given evidence id.
+
+THEN, the STRATEGIC READ (`read`): 1–3 sentences of decision-relevant interpretation — what these facts
+MEAN for the fund/pass call on this aspect: the implication, the risk they expose, the leverage or the
+gap, and what would most move the decision next. This is the "so what" a partner pays for. It is still
+GROUNDED: every read sentence must cite the evidence id(s) it reasons from — it interprets the cited
+facts, it never introduces a new fact, number, or source. If the facts do not support an interpretation,
+leave `read` empty rather than speculate.
 
 SHAPE THE ANSWER for the question — do not default to a wall of prose:
 - When you are COMPARING or ENUMERATING several items across the same attributes (tools, vendors,
@@ -214,7 +230,10 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
                 'Return ONE JSON object: {"layout": "bullets"|"prose", '
                 '"sentences": [{"text": "...", "evidence_ids": ["<id>", ...]}], '
                 '"table": {"columns": ["...", "..."], "rows": [{"cells": ["...", "..."], '
-                '"evidence_ids": ["<id>"]}]} , "note": "..."}. Use as much relevant evidence as possible.\n'
+                '"evidence_ids": ["<id>"]}], '
+                '"read": [{"text": "the strategic implication for the fund/pass decision", '
+                '"evidence_ids": ["<id>", ...]}], "note": "..."}. Use as much relevant evidence as '
+                "possible — draw on multiple sources, not one.\n"
                 "Choose the SHAPE that makes the answer most consumable: a `table` when comparing or "
                 "enumerating items across attributes (omit `table` otherwise); \"bullets\" for a list of "
                 "distinct facts; \"prose\" only for a short narrative. You may combine a table with a few "
@@ -230,21 +249,27 @@ def make_synthesize(llm_json, directive: str | None = None, *, thesis: str = "",
             d = raw if isinstance(raw, dict) else json.loads(raw)
             items = d.get("sentences") or []
             table = d.get("table")
+            read = d.get("read") or []
             layout = str(d.get("layout") or "").strip().lower()
             note = str(d.get("note") or "").strip()
         except Exception:      # noqa: BLE001 — never blocks; falls back to an honest coverage note
-            items, table, layout, note = [], None, "", ""
+            items, table, read, layout, note = [], None, [], "", ""
         # Rescue findings the model wrote but forgot to tag: bind each uncited sentence to the source
         # that actually contains its specifics, so a rich answer never collapses to "not established"
         # over a missing id. The strict gate below still drops anything that binds to no source.
         items = _recover_citations(items, evidence)
         table = _recover_table(table, evidence)
+        read = _recover_citations(read, evidence)
         table_md = sanitize_table(table, allowed)
         # bullets by default for a multi-point answer; prose only when the model asked for it and there
         # is no table alongside. A table renders its rows; the sentences frame or caveat it.
         use_bullets = layout != "prose" and (bool(table_md) or len(items) > 1)
         points = sanitize_answer(items, allowed, bullets=use_bullets)
-        parts = [p for p in (table_md, (points if points != NOT_ESTABLISHED else "")) if p]
+        # The strategic read is gated identically (each sentence must cite) and rendered as its own
+        # labeled block — the decision-relevant "so what" after the grounded facts.
+        read_md = sanitize_answer(read, allowed, bullets=False)
+        read_block = ("**Strategic read** — " + read_md) if read_md and read_md != NOT_ESTABLISHED else ""
+        parts = [p for p in (table_md, (points if points != NOT_ESTABLISHED else ""), read_block) if p]
         cited = "\n\n".join(parts)
         if cited:
             # A real answer, plus the model's caveat about what remains open, when it gave one.
