@@ -39,6 +39,14 @@ ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS focus_rung text NOT NULL DEFAULT 
 -- The integrated reading of every claim at once. A table of ten takes is ten judgements the reader
 -- still has to add up; this is the addition, and it is the part they act on.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS overall text NOT NULL DEFAULT '';
+-- Cross-finding synthesis over EVERY answered question at once: the steelman Startup Pitch Deck and the
+-- integrated Collective Take (diligence verdict). Each is {sections:[{key,title,prose}], generated_at}.
+-- Regenerated free from existing findings; distinct from `overall` (the legacy per-claim argue path).
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS pitch_deck jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS collective_take jsonb NOT NULL DEFAULT '{}';
+-- The competitive-landscape matrix: the thesis company vs. named peers across the startup rubric,
+-- {columns:[{key,label}], rows:[{entity,subject,cells:[{text,markers}]}]}. Cells empty where unknown.
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS competitive jsonb NOT NULL DEFAULT '{}';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS owner_token_hash text NOT NULL DEFAULT '';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS decision jsonb NOT NULL DEFAULT '{}';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS research_status text NOT NULL DEFAULT 'not_run';
@@ -314,6 +322,9 @@ async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str
     out = {k: t[k] for k in t.keys()}
     out["subject"] = _j(out["subject"])
     out["decision"] = _j(out.get("decision") or {})
+    out["pitch_deck"] = _j(out.get("pitch_deck") or {}) or {}
+    out["collective_take"] = _j(out.get("collective_take") or {}) or {}
+    out["competitive"] = _j(out.get("competitive") or {}) or {}
     for k in ("created_at", "updated_at"):
         out[k] = out[k].isoformat()
     out["is_owner"] = is_owner
@@ -422,6 +433,27 @@ async def set_overall(pool, thesis_id: str, overall: str) -> None:
     async with pool.acquire() as conn:
         await conn.execute("UPDATE ts_thesis SET overall = $2, updated_at = now() WHERE id = $1",
                            thesis_id, (overall or "")[:2000])
+
+
+async def set_pitch_deck(pool, thesis_id: str, deck: dict) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_thesis SET pitch_deck = $2::jsonb, updated_at = now() WHERE id = $1",
+                           thesis_id, json.dumps(deck or {}))
+
+
+async def set_collective_take(pool, thesis_id: str, take: dict) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_thesis SET collective_take = $2::jsonb, updated_at = now() WHERE id = $1",
+                           thesis_id, json.dumps(take or {}))
+
+
+async def set_competitive(pool, thesis_id: str, matrix: dict) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_thesis SET competitive = $2::jsonb, updated_at = now() WHERE id = $1",
+                           thesis_id, json.dumps(matrix or {}))
 
 
 async def set_focus(pool, thesis_id: str, rung: str) -> None:

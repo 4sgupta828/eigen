@@ -46,12 +46,13 @@ async def run_question(gather: Gather, profile, question: Question,
 async def run_aspect(gather: Gather, profile, aspect: Aspect, questions: list[Question],
                      synthesize: Synthesize | None = None) -> tuple[str, list[QuestionStatus]]:
     """Run every question of one aspect and derive its verdict. An aspect no record can settle
-    (profile marks it) is reported unsettleable rather than under-tested — a structural gap, not a
-    coverage gap."""
+    (profile marks it `call_only`) is NEVER sent to the evidence pipeline: no document can settle
+    willingness-to-pay or a team's calibre, so spending a retrieval + judge on it only to reach
+    `unsettleable` wastes credits and risks a low-tier signal being read as a finding. Its questions
+    stand as the agenda for the people-discovery leg (panel 2026-09-16); the aspect reads unsettleable."""
+    if getattr(aspect, "settleable", "") == "call_only":
+        return UNSETTLEABLE, [QuestionStatus(question=q, target_status="target_untested") for q in questions]
     statuses = [await run_question(gather, profile, q, synthesize) for q in questions]
-    if getattr(aspect, "settleable", "") == "call_only" and not any(
-            s.target_status != "target_untested" for s in statuses):
-        return UNSETTLEABLE, statuses
     return aggregate_aspect(profile, statuses, critical=aspect.critical), statuses
 
 

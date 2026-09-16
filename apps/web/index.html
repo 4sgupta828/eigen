@@ -919,13 +919,86 @@
   .th-loi-bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 .9rem;}
   .th-loi-bar #th-redraft{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 45%,var(--hair));}
   .th-loi-bar #th-redraft:hover{color:var(--on-accent);background:var(--gold);border-color:var(--gold);}
-  .th-inq-head:focus-visible,.th-run:focus-visible,.th-inq-add:focus-visible,.th-inq-del:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  .th-run-all{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
+  .th-run-all:hover{filter:brightness(1.06);}
+  /* Cross-finding synthesis: the Pitch Deck + Collective Take panel above the lines of inquiry. */
+  .th-synth-wrap{display:grid;gap:.9rem;margin:0 0 1.1rem;}
+  .th-synth{border:1px solid var(--hair);border-radius:12px;background:var(--card,var(--panel,#fff));
+    overflow:hidden;}
+  .th-take{border-color:color-mix(in srgb,var(--gold) 40%,var(--hair));}
+  .th-synth-sum{list-style:none;cursor:pointer;display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem;
+    padding:.7rem .95rem;background:color-mix(in srgb,var(--gold) 7%,transparent);}
+  .th-synth-sum::-webkit-details-marker{display:none;}
+  .th-synth-kicker{font-family:var(--mono);font-size:.74rem;font-weight:700;letter-spacing:.02em;color:var(--ink);}
+  .th-synth-note{font-size:.75rem;color:var(--dim);line-height:1.4;}
+  .th-take-body{padding:.4rem .95rem .9rem;}
+  .th-slides{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.7rem;padding:.7rem .95rem .95rem;}
+  .th-slide{border:1px solid var(--hair);border-radius:10px;padding:.6rem .75rem;background:var(--bg,transparent);
+    min-width:0;}
+  .th-synth-sec{padding:.5rem 0;border-top:1px solid var(--hair);}
+  .th-synth-sec:first-child{border-top:none;}
+  .th-slide .th-synth-sec{border-top:none;padding:0;}
+  .th-synth-h{margin:0 0 .3rem;font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--gold);
+    text-transform:uppercase;letter-spacing:.03em;}
+  .th-synth-sec p{margin:.35rem 0;font-size:.85rem;line-height:1.6;color:var(--ink);}
+  .th-synth-sec p:first-of-type{margin-top:0;}
+  .th-synth-sec sup.ref{font-size:.62em;line-height:0;color:var(--gold);cursor:pointer;font-weight:600;
+    padding:0 .1em;vertical-align:super;}
+  .th-synth-sec sup.ref:hover{text-decoration:underline;}
+  .th-synth-sec .th-answer-list{margin:.35rem 0;padding-left:1.1rem;}
+  .th-synth-sec .th-answer-list li{font-size:.85rem;line-height:1.55;margin:.2rem 0;}
+  .th-cite-hi{background:color-mix(in srgb,var(--gold) 16%,transparent);border-radius:6px;transition:background .3s;}
+  /* Collective Take memo: BLUF + grounded facts + tagged reasoning blocks. */
+  .th-memo-bluf{margin:.6rem .95rem .2rem;padding:.6rem .75rem;border-left:3px solid var(--gold);
+    background:color-mix(in srgb,var(--gold) 8%,transparent);border-radius:0 8px 8px 0;font-size:.9rem;
+    line-height:1.6;color:var(--ink);font-weight:500;}
+  .th-memo-grounded p{margin:.35rem 0;font-size:.85rem;line-height:1.6;color:var(--ink);}
+  .th-memo-grounded p:first-of-type{margin-top:0;}
+  .th-reasons{display:grid;gap:.4rem;margin:.5rem 0 .2rem;}
+  .th-reason{display:flex;gap:.5rem;align-items:flex-start;padding:.4rem .55rem;border-radius:8px;
+    background:var(--bg,transparent);border:1px solid var(--hair);font-size:.83rem;line-height:1.55;}
+  .th-reason-tag{flex:none;font-family:var(--mono);font-size:.6rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.04em;padding:.15rem .4rem;border-radius:5px;white-space:nowrap;margin-top:.05rem;
+    background:color-mix(in srgb,var(--dim) 18%,transparent);color:var(--ink);}
+  .th-reason-tension .th-reason-tag{background:color-mix(in srgb,#c0563f 24%,transparent);}
+  .th-reason-gap .th-reason-tag{background:color-mix(in srgb,#b8860b 26%,transparent);}
+  .th-reason-assumption .th-reason-tag{background:color-mix(in srgb,#6b5bd0 24%,transparent);}
+  .th-reason-implication .th-reason-tag{background:color-mix(in srgb,#2e8b6f 26%,transparent);}
+  .th-reason-what_would_change_this .th-reason-tag{background:color-mix(in srgb,#3a7bd0 24%,transparent);}
+  .th-reason-text{color:var(--ink);}
+  /* Finding footnotes (a citation IS a finding). */
+  .th-find-line{font-family:var(--mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.03em;color:var(--dim);}
+  .th-find-status{font-family:var(--mono);font-size:.6rem;padding:.05rem .35rem;border-radius:5px;}
+  .th-find-ok{background:color-mix(in srgb,#2e8b6f 22%,transparent);}
+  .th-find-no{background:color-mix(in srgb,#c0563f 22%,transparent);}
+  .th-find-dim{background:color-mix(in srgb,var(--dim) 18%,transparent);}
+  .th-find-ans{font-size:.8rem;color:var(--dim);line-height:1.5;margin:.25rem 0;}
+  /* Competitive matrix. */
+  .th-comp-wrap{margin:.6rem .95rem .2rem;overflow-x:auto;}
+  .th-comp-table{border-collapse:collapse;font-size:.8rem;min-width:640px;}
+  .th-comp-table th,.th-comp-table td{border:1px solid var(--hair);padding:.4rem .55rem;text-align:left;vertical-align:top;}
+  .th-comp-table thead th{background:color-mix(in srgb,var(--gold) 7%,transparent);font-family:var(--mono);
+    font-size:.68rem;position:sticky;top:0;}
+  .th-comp-table th[scope=row]{font-weight:600;white-space:nowrap;background:var(--bg,transparent);}
+  .th-comp-subject th[scope=row],.th-comp-subject td{background:color-mix(in srgb,var(--gold) 6%,transparent);}
+  .th-comp-you{display:inline-block;font-family:var(--mono);font-size:.55rem;text-transform:uppercase;
+    background:var(--gold);color:var(--on-accent);border-radius:4px;padding:.05rem .3rem;vertical-align:middle;}
+  .th-cell-empty{color:var(--hair);}
+  .th-deck-cites{padding:0 .95rem .3rem;}
+  .th-inq-head:focus-visible,.th-run:focus-visible,.th-inq-add:focus-visible,.th-inq-del:focus-visible,.th-synth-ref:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
   @media (max-width:560px){
     .th-inq-head{flex-wrap:wrap;}
     .th-inq h3{font-size:1.02rem;}
     .th-run{width:100%;}
     .th-loi-bar .th-inq-add{flex:1;text-align:center;}
     .th-qn-q{flex-wrap:wrap;}
+    .th-slides{grid-template-columns:1fr;padding:.6rem .7rem .7rem;}
+    .th-synth-sum{padding:.65rem .7rem;flex-wrap:wrap;}
+    .th-take-body{padding:.35rem .7rem .8rem;}
+    .th-run-all{min-height:42px;}
+    .th-memo-bluf{margin:.6rem .7rem .2rem;}
+    .th-comp-wrap{margin:.6rem .7rem .2rem;}
+    .th-reason{flex-wrap:wrap;gap:.3rem;}
   }
   @media (prefers-reduced-motion:reduce){.th-run{transition:none;}}
 
@@ -12378,6 +12451,7 @@ async function openShare(token){
       const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries", {headers: hdrs()});
       const d = await r.json(); if(!r.ok) throw new Error(d.detail || "could not load the lines of inquiry");
       STATE.inquiries = d.inquiries || [];
+      STATE.deck = d.deck || null; STATE.take = d.take || null; STATE.competitive = d.competitive || null;
       renderInquiries();
     }catch(e){ host.innerHTML = '<p class="th-note">' + esc2(e.message || String(e)) + "</p>"; }
   }
@@ -12487,15 +12561,201 @@ async function openShare(token){
     const openKeys = new Set([...host.querySelectorAll(".th-inq[open]")].map(d => d.dataset.key));
     const y = window.scrollY;
     const draftable = inqs.some(i => (i.questions || []).some(q => !q.target_status));
-    const bar = (owner && draftable)
-      ? '<div class="th-loi-bar"><button type="button" class="th-inq-add" id="th-redraft">Redraft all questions</button>'
-        + '<button type="button" class="th-inq-add th-inq-del" id="th-clear">Clear all &amp; start fresh</button></div>'
+    const anyAnswered = inqs.some(i => (i.questions || []).some(q => q.target_status));
+    const running = !!STATE.inqRun;
+    const totalUnrun = inqs.reduce((n, i) => n + (i.questions || []).filter(q => !q.target_status).length, 0);
+    // The global bar: run every line of inquiry at once → build the Pitch Deck + Collective Take, and
+    // (once findings exist) rebuild those two from the existing findings for free. Redraft/Clear stay.
+    const runAllBtn = (owner && !running && (totalUnrun > 0 || anyAnswered))
+      ? '<button type="button" class="th-run th-run-all" id="th-run-all">'
+        + (anyAnswered && totalUnrun === 0 ? "Rebuild the analysis"
+           : "Run all lines of inquiry &amp; synthesize") + "</button>"
       : "";
-    host.innerHTML = bar + '<div class="th-inqs">' + inqs.map(i => inqHtml(i, openKeys)).join("") + "</div>";
+    const resynthBtn = (owner && !running && anyAnswered && totalUnrun > 0)
+      ? '<button type="button" class="th-inq-add" id="th-resynth">Rebuild analysis from findings</button>' : "";
+    const draftBar = (owner && draftable)
+      ? '<button type="button" class="th-inq-add" id="th-redraft">Redraft all questions</button>'
+        + '<button type="button" class="th-inq-add th-inq-del" id="th-clear">Clear all &amp; start fresh</button>'
+      : "";
+    const bar = (runAllBtn || resynthBtn || draftBar)
+      ? '<div class="th-loi-bar">' + runAllBtn + resynthBtn + draftBar + "</div>" : "";
+    const synthProg = (running && STATE.inqRun.all)
+      ? '<div class="th-run-prog th-synth-prog"><span class="su-spin"></span> <span>Running all lines of inquiry'
+        + (STATE.inqRun.total ? " — " + esc2(String(Math.min(STATE.inqRun.done + 1, STATE.inqRun.total)))
+           + " of " + esc2(String(STATE.inqRun.total)) : "") + ", then synthesizing the deck, take &amp; competitors…</span></div>"
+      : "";
+    host.innerHTML = bar + synthProg + deckAndTakeHtml() + '<div class="th-inqs">'
+      + inqs.map(i => inqHtml(i, openKeys)).join("") + "</div>";
+    const ra = document.getElementById("th-run-all");
+    if(ra) ra.addEventListener("click", () => (anyAnswered && totalUnrun === 0) ? resynthesize() : runAllInquiries());
+    const rs = document.getElementById("th-resynth"); if(rs) rs.addEventListener("click", resynthesize);
     const rd = document.getElementById("th-redraft"); if(rd) rd.addEventListener("click", generateInquiries);
     const cl = document.getElementById("th-clear"); if(cl) cl.addEventListener("click", clearInquiries);
     wireInquiries();
+    wireDeckRefs();
     window.scrollTo(0, y);
+  }
+
+  // The three cross-finding artifacts, composed over every finding and CITING FINDINGS (each finding is
+  // itself a grounded answer; the reader drills from a footnote to that finding's own sources below):
+  //   • Collective Take    — a two-layer memo: grounded facts + tagged reasoning blocks + a BLUF
+  //   • Startup Pitch Deck  — the steelman investor deck, slide by slide
+  //   • Competitive Analysis — the thesis company vs. named peers across the startup rubric
+  let _synthScope = 0;
+  const KIND_LABEL = {tension: "Tension", gap: "Gap", assumption: "Assumption",
+    implication: "Implication", what_would_change_this: "What would change this"};
+  const FSTATUS = {target_supported: ["supported", "ok"], target_contradicted: ["contradicted", "no"],
+    target_untested: ["untested", "dim"]};
+
+  // Map every answered question to a citable FINDING (id → the finding + its own evidence rows).
+  function allFindingsMap(){
+    const m = {};
+    (STATE.inquiries || []).forEach(inq => (inq.questions || []).forEach(q => {
+      if(q.target_status && String(q.answer || "").trim())
+        m[q.id] = {id: q.id, line: inq.name, question: q.text, answer: q.answer,
+                   status: q.target_status, evidence: evidenceFor(q)};
+    }));
+    return m;
+  }
+
+  // A per-card citer: resolves [[e:<finding id>]] markers to numbered footnotes (findings), collecting
+  // them in first-seen order so the whole card shares one numbered "findings cited" list.
+  function findingCiter(){
+    const fmap = allFindingsMap();
+    const order = []; const seen = new Set(); const scope = ++_synthScope;
+    function ref(text){
+      return esc2(text).replace(/\[\[e:([A-Za-z0-9_-]{1,80})\]\]/g, (_m, id) => {
+        const f = fmap[id]; if(!f) return "";
+        if(!seen.has(id)){ seen.add(id); order.push(f); }
+        const n = order.indexOf(f) + 1;
+        return '<sup class="ref th-synth-ref" data-scope="' + scope + '" data-n="' + n + '" tabindex="0" '
+          + 'role="button" aria-label="finding ' + n + '">' + n + "</sup>";
+      });
+    }
+    function footnotes(){
+      if(!order.length) return "";
+      return '<details class="th-cites-wrap"><summary class="th-cites-sum"><span class="th-cites-badge">'
+        + order.length + "</span> finding" + (order.length === 1 ? "" : "s") + " cited</summary>"
+        + '<ol class="th-cites">' + order.map((f, i) => findingFootnote(f, i + 1, scope)).join("") + "</ol></details>";
+    }
+    return {ref: ref, footnotes: footnotes, count: () => order.length};
+  }
+
+  function findStatusChip(st){
+    const v = FSTATUS[st]; if(!v) return "";
+    return ' <span class="th-find-status th-find-' + v[1] + '">' + v[0] + "</span>";
+  }
+
+  // A footnote that IS a finding: the line + question it answered, its status, a trimmed grounded answer
+  // (inner markers stripped — its own sources live in the lines-of-inquiry card below), and its source count.
+  function findingFootnote(f, n, scope){
+    const ans = String(f.answer || "").replace(/\[\[e:[^\]]*\]\]/g, "")
+      .replace(/[([]\s*[)\]]/g, "").replace(/\s+([.,;])/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
+    const snip = ans.length > 300 ? ans.slice(0, 300) + "…" : ans;
+    const srcN = (f.evidence || []).length;
+    return '<li id="f' + scope + "-" + n + '" class="th-cite th-find-cite"><span class="th-cite-n">' + n + "</span>"
+      + '<div class="th-cite-body"><div class="ctext">'
+      + (f.line ? '<span class="th-find-line">' + esc2(f.line) + "</span> " : "")
+      + "<b>" + esc2(f.question || "") + "</b>" + findStatusChip(f.status) + "</div>"
+      + (snip ? '<div class="th-find-ans">' + esc2(snip) + "</div>" : "")
+      + (srcN ? '<div class="th-cite-src">' + srcN + " source" + (srcN === 1 ? "" : "s") + " in this finding</div>" : "")
+      + "</div></li>";
+  }
+
+  // One deck slide: title + grounded bullets (or a short prose block), citations via the shared citer.
+  function deckSlideHtml(s, citer){
+    let prose = String(s.prose || "").trim()
+      .replace(/[([]\s*[)\]]/g, "").replace(/\s+([.,;])/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
+    if(!prose || /^not established/i.test(prose)) return "";
+    const lines = prose.split(/\n/).filter(l => l.trim());
+    const body = lines.length && lines.every(l => /^\s*-\s+/.test(l))
+      ? '<ul class="th-answer-list">' + lines.map(l => "<li>" + citer.ref(l.replace(/^\s*-\s+/, "")) + "</li>").join("") + "</ul>"
+      : "<p>" + citer.ref(lines.join(" ")) + "</p>";
+    return '<div class="th-slide"><h4 class="th-synth-h">' + esc2(s.title || s.key) + "</h4>" + body + "</div>";
+  }
+
+  // One Collective-Take section: the GROUNDED layer (cited facts) then the REASONING blocks (tagged).
+  function takeSectionHtml(s, citer){
+    const gr = (s.grounded || []).filter(g => (g.text || "").trim());
+    const an = (s.analysis || []).filter(a => (a.text || "").trim());
+    if(!gr.length && !an.length) return "";
+    const gbody = gr.length ? '<div class="th-memo-grounded">'
+      + gr.map(g => "<p>" + citer.ref((g.text || "") + " " + (g.markers || "")) + "</p>").join("") + "</div>" : "";
+    const rbody = an.length ? '<div class="th-reasons">' + an.map(a =>
+        '<div class="th-reason th-reason-' + esc2(a.kind) + '"><span class="th-reason-tag">'
+        + esc2(KIND_LABEL[a.kind] || a.kind) + "</span><span class=\"th-reason-text\">"
+        + citer.ref((a.text || "") + " " + (a.markers || "")) + "</span></div>").join("") + "</div>" : "";
+    return '<div class="th-synth-sec"><h4 class="th-synth-h">' + esc2(s.title || s.key) + "</h4>" + gbody + rbody + "</div>";
+  }
+
+  // The competitive matrix: thesis company (highlighted) + named peers × the rubric; empty cells blank.
+  function competitiveHtml(comp, citer){
+    const cols = comp.columns || [], rows = comp.rows || [];
+    if(!cols.length || !rows.length) return "";
+    const head = "<tr><th>Company</th>" + cols.map(c => "<th>" + esc2(c.label || c.key) + "</th>").join("") + "</tr>";
+    const body = rows.map(r => {
+      const cells = cols.map((c, i) => {
+        const cell = (r.cells || [])[i] || {};
+        return "<td>" + ((cell.text || "").trim()
+          ? citer.ref((cell.text || "") + " " + (cell.markers || ""))
+          : '<span class="th-cell-empty">—</span>') + "</td>";
+      }).join("");
+      return "<tr" + (r.subject ? ' class="th-comp-subject"' : "") + '><th scope="row">' + esc2(r.entity || "")
+        + (r.subject ? ' <span class="th-comp-you">thesis</span>' : "") + "</th>" + cells + "</tr>";
+    }).join("");
+    return '<div class="th-tablewrap th-comp-wrap"><table class="th-table th-comp-table"><thead>'
+      + head + "</thead><tbody>" + body + "</tbody></table></div>";
+  }
+
+  function deckAndTakeHtml(){
+    const take = STATE.take, deck = STATE.deck, comp = STATE.competitive;
+    const hasTake = take && !take.empty && (((take.bottom_line || {}).text || "").trim()
+      || (take.sections || []).some(s => (s.grounded || []).length || (s.analysis || []).length));
+    const hasDeck = deck && !deck.empty && (deck.sections || []).some(s => {
+      const p = String(s.prose || "").trim(); return p && !/^not established/i.test(p); });
+    const hasComp = comp && !comp.empty && (comp.rows || []).length;
+    if(!hasTake && !hasDeck && !hasComp) return "";
+    let out = '<div class="th-synth-wrap">';
+    if(hasTake){
+      const c = findingCiter();
+      const bl = (take.bottom_line || {});
+      const secs = (take.sections || []).map(s => takeSectionHtml(s, c)).join("");
+      out += '<details class="th-synth th-take" open><summary class="th-synth-sum">'
+        + '<span class="th-synth-kicker">Collective Take</span>'
+        + '<span class="th-synth-note">the integrated diligence read — facts + reasoning across every finding</span></summary>'
+        + '<div class="th-take-body">'
+        + ((bl.text || "").trim() ? '<div class="th-memo-bluf">' + c.ref((bl.text || "") + " " + (bl.markers || "")) + "</div>" : "")
+        + secs + c.footnotes() + "</div></details>";
+    }
+    if(hasComp){
+      const c = findingCiter();
+      out += '<details class="th-synth th-comp" open><summary class="th-synth-sum">'
+        + '<span class="th-synth-kicker">Competitive Analysis</span>'
+        + '<span class="th-synth-note">the thesis company vs. named peers — blank where the record is silent</span></summary>'
+        + '<div class="th-take-body">' + competitiveHtml(comp, c) + c.footnotes() + "</div></details>";
+    }
+    if(hasDeck){
+      const c = findingCiter();
+      const slides = (deck.sections || []).map(s => deckSlideHtml(s, c)).join("");
+      out += '<details class="th-synth th-deck" open><summary class="th-synth-sum">'
+        + '<span class="th-synth-kicker">Startup Pitch Deck</span>'
+        + '<span class="th-synth-note">the steelman investor deck, built from the findings</span></summary>'
+        + '<div class="th-slides">' + slides + "</div>"
+        + '<div class="th-deck-cites">' + c.footnotes() + "</div></details>";
+    }
+    return out + "</div>";
+  }
+
+  // Scoped footnote hover/scroll for the synth sections: a [n] with data-scope jumps to #f{scope}-{n}.
+  function wireDeckRefs(){
+    document.querySelectorAll(".th-synth-ref[data-scope]").forEach(sup => {
+      const go = () => { const t = document.getElementById("f" + sup.dataset.scope + "-" + sup.dataset.n);
+        if(t){ const wrap = t.closest(".th-cites-wrap"); if(wrap && !wrap.open) wrap.open = true;
+          t.scrollIntoView({behavior: "smooth", block: "center"}); t.classList.add("th-cite-hi");
+          setTimeout(() => t.classList.remove("th-cite-hi"), 1400); } };
+      sup.addEventListener("click", go);
+      sup.addEventListener("keydown", ev => { if(ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); go(); } });
+    });
   }
 
   function verdictWord(v){ return (v || "open").replace(/_/g, " "); }
@@ -12731,6 +12991,60 @@ async function openShare(token){
     finally{ STATE.busy = false; }
   }
 
+  // Run EVERY line of inquiry at once — only the un-answered questions — then build the Pitch Deck +
+  // Collective Take. One projection round-trip (max_usd:0) to show the projected max, then one gated
+  // run. Same fail-safe polling as a single line of inquiry; the deck + take land on completion.
+  async function runAllInquiries(){
+    if(STATE.busy || STATE.inqRun) return;
+    STATE.busy = true;
+    try{
+      const inqs = STATE.inquiries || [];
+      const unrun = inqs.reduce((n, i) => n + (i.questions || []).filter(q => !q.target_status).length, 0);
+      if(!unrun){ STATE.busy = false; return resynthesize(); }
+      const pr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries/run",
+                             {method: "POST", headers: hdrs(), body: JSON.stringify({max_usd: 0, web: true})});
+      const pj = await pr.json().catch(() => ({}));
+      const max = Number((pj.projection || {}).projected_usd || 0);
+      if(!window.confirm("Run all lines of inquiry?\n\n" + unrun + " un-answered question"
+          + (unrun === 1 ? "" : "s") + " across every line — against our corpus, the open web, and the "
+          + "red team — then the Collective Take, Startup Pitch Deck, and Competitive Analysis are built "
+          + "across all findings.\n\nProjected maximum: $" + max.toFixed(3))){
+        STATE.busy = false; return;
+      }
+      const sr = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries/run",
+                             {method: "POST", headers: hdrs(), body: JSON.stringify(
+                               {max_usd: max, web: true, idempotency_key: freshRunKey("all")})});
+      const started = await sr.json().catch(() => ({}));
+      if(started.status === "synthesized"){ await loadInquiries(); STATE.busy = false; return; }
+      if(!sr.ok || !started.run) throw new Error(started.detail || "could not start the run");
+      STATE.inqRun = {all: true, run: started.run.id, done: 0, total: unrun};
+      renderInquiries();
+      pollInquiry(0);
+    }catch(e){ STATE.inqRun = null; note().textContent = e.message || String(e); }
+    finally{ STATE.busy = false; }
+  }
+
+  // Rebuild the Pitch Deck + Collective Take from the EXISTING findings — no research, no confirm.
+  async function resynthesize(){
+    if(STATE.busy || STATE.inqRun) return;
+    STATE.busy = true;
+    const host = document.getElementById("th-loi");
+    const prev = host ? host.querySelector(".th-synth-wrap") : null;
+    if(prev) prev.insertAdjacentHTML("beforebegin",
+      '<div class="th-run-prog th-synth-prog" id="th-resynth-prog"><span class="su-spin"></span> '
+      + "<span>rebuilding the analysis…</span></div>");
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/synthesize",
+                            {method: "POST", headers: hdrs()});
+      const d = await r.json().catch(() => ({}));
+      if(!r.ok) throw new Error(d.detail || "could not rebuild the deck & take");
+      if(d.deck) STATE.deck = d.deck; if(d.take) STATE.take = d.take; if(d.competitive) STATE.competitive = d.competitive;
+      renderInquiries();
+    }catch(e){ note().textContent = e.message || String(e);
+      const p = document.getElementById("th-resynth-prog"); if(p) p.remove(); }
+    finally{ STATE.busy = false; }
+  }
+
   function inquiryKeyOf(qid){
     const inq = (STATE.inquiries || []).find(i => (i.questions || []).some(q => q.id === qid));
     return inq ? inq.key : "";
@@ -12784,7 +13098,8 @@ async function openShare(token){
         // Refresh the questions so each answer appears the moment it is saved and the spinner advances.
         try{
           const ir = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries", {headers: hdrs()});
-          if(ir.ok){ STATE.inquiries = (await ir.json()).inquiries || STATE.inquiries; }
+          if(ir.ok){ const j = await ir.json(); STATE.inquiries = j.inquiries || STATE.inquiries;
+            if(j.deck) STATE.deck = j.deck; if(j.take) STATE.take = j.take; if(j.competitive) STATE.competitive = j.competitive; }
         }catch(e){ /* keep the last snapshot */ }
         renderInquiries();
         if(s.state === "completed"){
@@ -12795,7 +13110,8 @@ async function openShare(token){
           try{ const tr = await fetch("/thesis/" + encodeURIComponent(STATE.id), {headers: hdrs()});
                if(tr.ok) STATE.doc = (await tr.json()).thesis || STATE.doc; }catch(e){ }
           try{ const ir2 = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries", {headers: hdrs()});
-               if(ir2.ok) STATE.inquiries = (await ir2.json()).inquiries || STATE.inquiries; }catch(e){ }
+               if(ir2.ok){ const j2 = await ir2.json(); STATE.inquiries = j2.inquiries || STATE.inquiries;
+                 if(j2.deck) STATE.deck = j2.deck; if(j2.take) STATE.take = j2.take; if(j2.competitive) STATE.competitive = j2.competitive; } }catch(e){ }
           renderInquiries();
           return;
         }

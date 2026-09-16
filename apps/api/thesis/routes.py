@@ -27,6 +27,7 @@ from . import decompose as dec
 from . import genesis as gen
 from . import people as ppl
 from . import store as tstore
+from . import synth as syn
 from . import transcript as tx
 from .schema import (
     ASK_WHO, BUYER, CALL_ONLY, OPEN, QUESTION, ROLE_LABEL, SET_ASIDE, SETTLEABLE, STATED, UNSETTLEABLE,
@@ -740,6 +741,14 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     def _aspect_by_key(profile, key: str):
         return next((a for a in profile.aspects() if a.key == key), None)
 
+    def _evidence_questions(profile, rows: list[dict]) -> list[dict]:
+        """The question rows that ACTUALLY run against evidence — call_only aspects (settled by no
+        document) are excluded from cost projection, the run set, and progress, so an inquiry with a
+        call_only dimension still projects honestly and reaches 100% (its expert-call questions are not
+        spend and never 'answered' from the record)."""
+        call_only = {a.key for a in profile.aspects() if getattr(a, "settleable", "") == "call_only"}
+        return [q for q in rows if q.get("aspect_key") not in call_only]
+
     def _attack_fn(settleable: str, ctx: str, web: bool):
         # ctx carries the FULL frame: the thesis under test + the aspect + the subject, so retrieval and
         # the relation judge disambiguate a bare target against what we are actually testing.
@@ -769,6 +778,11 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         for akey, group in by_aspect.items():
             aspect = _aspect_by_key(profile, akey)
             if aspect is None:
+                continue
+            # call_only aspects (willingness-to-pay, switching cost, team) are settled by NO document —
+            # never spend a retrieval + judge on them (panel 2026-09-16). Their questions stand as the
+            # expert-call agenda; the aspect reads `unsettleable` (see _aspect_verdict).
+            if getattr(aspect, "settleable", "") == "call_only":
                 continue
             frame = f"Thesis under test: {thesis} | Aspect: {aspect.prompt} | {subject}".strip()
             gather = _make_gather(_attack_fn(aspect.settleable, frame, web))
@@ -800,10 +814,14 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
 
     def _aspect_verdict(profile, group: list[dict]) -> str:
         """Derive a dimension's verdict from its answered questions (never a second decision path)."""
+        aspect = _aspect_by_key(profile, group[0]["aspect_key"]) if group else None
+        # A call_only dimension no document can settle reads `unsettleable`, not `open` — its questions
+        # are never run against evidence; they route to the people-discovery leg (kernel run_aspect).
+        if aspect is not None and getattr(aspect, "settleable", "") == "call_only":
+            return _dec.UNSETTLEABLE
         answered = [q for q in group if q.get("target_status")]
         if not answered:
             return "open"
-        aspect = _aspect_by_key(profile, group[0]["aspect_key"])
         statuses = [_dec.QuestionStatus(
             _dec.Question(kind=_dec.QuestionKind(q["kind"]), text=q["text"], target=q["target"],
                           polarity=int(q["polarity"])), q["target_status"]) for q in answered]
@@ -834,7 +852,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                         "verdict": _aspect_verdict(profile, g)} for dk, g in by_dim.items()]
             out.append({"key": key, "name": iqs[0].get("inquiry_name") or "Line of inquiry",
                         "framing": iqs[0].get("inquiry_framing") or "", "aspects": aspects, "questions": iqs})
-        return {"status": "ok", "inquiries": out}
+        return {"status": "ok", "inquiries": out,
+                "deck": (_d or {}).get("pitch_deck") or {}, "take": (_d or {}).get("collective_take") or {},
+                "competitive": (_d or {}).get("competitive") or {}}
 
     @r.get("/thesis/{thesis_id}/experts")
     async def tl_experts(thesis_id: str, authorization: str = Header(default=""),
@@ -1133,11 +1153,14 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         aspects = profile.aspects()
         frame = {}
         if hasattr(profile, "frame_directive"):
+            # The frame is the deep-understanding step — the whole reason questions adapt to THIS thesis.
+            # Run it on the reasoning seam (deep thinking), and author the questions on the strong model,
+            # not the cheap default: a shallow frame is what makes questions orbit a generic rubric.
             frame = await _dec.frame_decision(
-                _llm_json(), decision=decision, context=_framing_context(d),
+                _take_llm_json(), decision=decision, context=_framing_context(d),
                 directive=profile.frame_directive(decision), aspects=aspects)
         inquiries = await _dec.generate_inquiries(
-            _llm_json(), decision=decision, aspects=aspects, directive=directive,
+            _strong_llm_json(), decision=decision, aspects=aspects, directive=directive,
             frame=(frame if _dec.is_substantive(frame) else None))
         await tstore.set_inquiries(pool, thesis_id, inquiries)
         return await tl_inquiries(thesis_id, authorization, x_thesis_owner)
@@ -1213,7 +1236,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         qs = await tstore.list_questions(pool, thesis_id, inquiry_key)
         if not qs:
             raise HTTPException(status_code=409, detail="generate questions for this inquiry first")
-        projection = project_research_cost(len(qs), web=body.web, web_available=bool(atk._web_client(manifest)))
+        runnable = _evidence_questions(_profile(), qs)          # call_only excluded from spend + progress
+        projection = project_research_cost(len(runnable), web=body.web,
+                                           web_available=bool(atk._web_client(manifest)))
         if projection["projected_usd"] > max(0.0, body.max_usd):
             return {"status": "refused", "projection": projection,
                     "reason": "Projected inquiry cost exceeds the approved maximum."}
@@ -1221,7 +1246,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         try:
             run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
                                           projected_usd=projection["projected_usd"], approved_usd=body.max_usd,
-                                          metadata={"inquiry": inquiry_key, "questions": [q["id"] for q in qs],
+                                          metadata={"inquiry": inquiry_key,
+                                                    "questions": [q["id"] for q in runnable],
                                                     "web": body.web, "tenant": tenant})
         except (ValueError, tstore.ActiveRunError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -1230,6 +1256,93 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="running", state="running")
         asyncio.create_task(_run_inquiry(thesis_id, inquiry_key, run["id"], body.web))
         return {"status": "running", "run": run}
+
+    def _take_llm_json():
+        # The Collective Take gets the DEEP-THINKING reasoning model (gpt-5.x via take_json); the deck +
+        # matrix stay on the faster strong seam. Falls back to strong if OpenAI is unconfigured.
+        try:
+            from .llm import take_json
+            return take_json() or _strong_llm_json()
+        except Exception:      # noqa: BLE001
+            return _strong_llm_json()
+
+    async def _synthesize(thesis_id: str) -> dict:
+        """Compose + persist the Pitch Deck, Collective Take, and Competitive Analysis across every
+        answered question. The take runs on the reasoning seam; deck + matrix on the strong seam."""
+        pool = await pool_of()
+        return await syn.synthesize_all(pool, thesis_id, _profile(), _strong_llm_json(),
+                                        take_llm_json=_take_llm_json())
+
+    async def _run_all(thesis_id: str, run_id: str, web: bool):
+        """Run every un-answered question across ALL lines of inquiry as ONE run, then synthesize the
+        deck + take so both exist the moment the run reports completed. Only unrun/stale questions are
+        driven — a re-click is cheap; a full re-run is still per-line/per-question."""
+        pool = await pool_of()
+        try:
+            qs = await tstore.list_questions(pool, thesis_id)
+            todo = [q for q in _evidence_questions(_profile(), qs) if not q.get("target_status")]
+            if todo:
+                await _run_question_rows(thesis_id, run_id, todo, web)
+            # Synthesize BEFORE marking completed, so the poll's /inquiries refresh already carries the
+            # deck + take (the status endpoint shows this stage while the two calls run).
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="synthesizing",
+                                     actual_delta=0.01)
+            try:
+                await _synthesize(thesis_id)
+            except Exception:      # noqa: BLE001 — synthesis is best-effort; findings are safe, the user
+                pass               # can Rebuild. Never fail the whole run over the write-up.
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
+                                     state="completed")
+        except tstore.SpendCapError as exc:
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="cap",
+                                  error={"reason": "approved cost reached", "detail": str(exc)})
+        except Exception as exc:      # noqa: BLE001 — a failed run fails closed, never corrupts
+            import traceback as _tb
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                  error={"reason": "run-all failed", "detail": str(exc)[:300], "tb": _tb.format_exc()[-800:]})
+
+    @r.post("/thesis/{thesis_id}/inquiries/run")
+    async def tl_run_all(thesis_id: str, body: ResearchStartIn, authorization: str = Header(default=""),
+                         x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Run ALL lines of inquiry at once — only the un-answered questions — then build the Startup
+        Pitch Deck + Collective Take. ONE run over every un-run question (respects the one-active-run
+        serialization); cost projected + gated like a single line of inquiry."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        qs = await tstore.list_questions(pool, thesis_id)
+        if not qs:
+            raise HTTPException(status_code=409, detail="draft the questions first")
+        todo = [q for q in _evidence_questions(_profile(), qs) if not q.get("target_status")]
+        # Nothing to research: skip straight to a fresh synthesis (free — no evidence gathered).
+        if not todo:
+            result = await _synthesize(thesis_id)
+            return {"status": "synthesized", "findings": result.get("findings", 0)}
+        projection = project_research_cost(len(todo), web=body.web, web_available=bool(atk._web_client(manifest)))
+        if projection["projected_usd"] > max(0.0, body.max_usd):
+            return {"status": "refused", "projection": projection,
+                    "reason": "Projected cost of running all lines of inquiry exceeds the approved maximum."}
+        key = body.idempotency_key or ("all-" + tstore.active_question_hash(todo))
+        try:
+            run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
+                                          projected_usd=projection["projected_usd"], approved_usd=body.max_usd,
+                                          metadata={"all": True, "questions": [q["id"] for q in todo],
+                                                    "web": body.web, "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if run.get("state") == "completed":
+            return {"status": "completed", "run": run}
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="running", state="running")
+        asyncio.create_task(_run_all(thesis_id, run["id"], body.web))
+        return {"status": "running", "run": run}
+
+    @r.post("/thesis/{thesis_id}/synthesize")
+    async def tl_synthesize(thesis_id: str, authorization: str = Header(default=""),
+                            x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Rebuild the Pitch Deck + Collective Take from the EXISTING findings — no research, no spend
+        beyond the two grounded synthesis calls. Backs the 'Rebuild deck & take' button."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        result = await _synthesize(thesis_id)
+        return {"status": "ok", "deck": result.get("deck"), "take": result.get("take"),
+                "competitive": result.get("competitive"), "findings": result.get("findings", 0)}
 
     async def _run_single(thesis_id: str, run_id: str, qid: str, web: bool):
         """Run ONE question (carrying its full thesis+aspect context) and complete the run."""

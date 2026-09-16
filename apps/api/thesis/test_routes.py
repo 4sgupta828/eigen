@@ -520,8 +520,8 @@ def test_experts_surfaces_who_and_what_to_ask_for_call_only_aspects(monkeypatch)
     r = c.get("/thesis/t1/experts", headers={"Authorization": "Bearer owner"})
     assert r.status_code == 200
     aspects = {a["key"]: a for a in r.json()["aspects"]}
-    # only call_only aspects appear
-    assert set(aspects) == {"switching_feasible", "willingness_to_pay"}
+    # only call_only aspects appear — now including team credibility (founder-market fit, panel 2026-09-16)
+    assert set(aspects) == {"switching_feasible", "willingness_to_pay", "team_credibility"}
     sf = aspects["switching_feasible"]
     assert any(role["role"] == "operator" for role in sf["roles"])          # ASK_WHO role surfaced
     assert "How long did your last tooling cutover actually take?" in sf["questions"]   # what to ask

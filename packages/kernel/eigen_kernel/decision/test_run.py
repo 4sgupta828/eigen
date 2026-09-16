@@ -76,6 +76,22 @@ async def test_call_only_aspect_with_no_findings_is_unsettleable_not_under_teste
 
 
 @pytest.mark.asyncio
+async def test_call_only_aspect_never_spends_a_gather():
+    # panel 2026-09-16: a call_only dimension no document can settle is NEVER sent to the evidence
+    # pipeline — its questions are the expert-call agenda, and it reads unsettleable without a retrieval.
+    calls = {"n": 0}
+    async def gather(q):
+        calls["n"] += 1
+        return [{"id": "e", "side": "for"}]
+    p = ToyProfile()
+    verdict, statuses = await run_aspect(gather, p, p.aspects()[1],
+                                         [_q(QuestionKind.SEEK_SUPPORT, 1), _q(QuestionKind.SEEK_CONTRADICTION, -1)])
+    assert calls["n"] == 0                         # not one retrieval spent
+    assert verdict == UNSETTLEABLE
+    assert len(statuses) == 2 and all(s.target_status == "target_untested" for s in statuses)
+
+
+@pytest.mark.asyncio
 async def test_run_inquiry_covers_its_aspects():
     async def gather(q):
         return [{"id": "e", "side": "for"}]

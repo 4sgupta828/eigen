@@ -55,6 +55,9 @@ class Aspect:
     prompt: str                  # the canonical question this aspect asks of the decision
     settleable: str = ""         # profile-defined: e.g. from-the-record vs needs-a-person
     critical: bool = False
+    feeds: tuple[str, ...] = ()  # OPAQUE downstream-artifact slot keys this aspect's answers populate.
+    #   The kernel never interprets these strings — they are a vertical-owned hint (e.g. a deck/memo/
+    #   matrix section key) the vertical may use to reason about coverage. Kept opaque preserves the split.
 
 
 @dataclass(frozen=True)

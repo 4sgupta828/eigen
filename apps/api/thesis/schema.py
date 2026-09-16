@@ -40,6 +40,10 @@ LADDER: tuple[tuple[str, str, str, str], ...] = (
      "no document records a budget never allocated for a SKU never offered"),
     ("enough_buyers", "Do enough such buyers exist?", CORPUS,
      "firm counts by segment, funding density"),
+    # call_only — founder-market fit is settled by people who know the founders and the domain, never a
+    # document (kept in sync with the DecisionProfile ladder so the expert-call path has its question).
+    ("team_credibility", "Are the founders credible for THIS problem — founder-market fit?", CALL_ONLY,
+     "references, prior operating record, domain reputation — nobody files a fit score"),
 )
 
 RUNGS = tuple(k for k, _q, _s, _w in LADDER)
@@ -61,6 +65,7 @@ ASK_WHO: dict[str, tuple[str, ...]] = {
     "catalyst": (ADVISOR,),
     "willingness_to_pay": (BUYER,),
     "enough_buyers": (ADVISOR,),
+    "team_credibility": (ADVISOR, OPERATOR),
 }
 
 ROLE_LABEL = {BUYER: "someone who buys this", OPERATOR: "someone who lives the status quo",
