@@ -22,6 +22,15 @@ def test_every_aspect_gets_at_least_the_floor_and_at_most_the_cap():
     assert sum(alloc.values()) <= 12
 
 
+def test_default_budget_gives_every_aspect_the_required_lens_pair():
+    # regression guard (Sept 2026): a real ~18-aspect contract must not thin to 1 question/dimension —
+    # every aspect keeps at least the seek_support + seek_contradiction pair, or the 360° balance breaks.
+    aspects = tuple(Aspect(key=f"a{i}", prompt="?", critical=(i < 6)) for i in range(18))
+    b = allocate_budget(aspects, None)          # defaults (DEFAULT_TOTAL, FLOOR)
+    assert b and all(n >= 2 for n in b.values())
+    assert any(n >= 3 for n in b.values())      # criticals still earn extra depth
+
+
 def test_floor_holds_even_when_total_is_below_the_number_of_aspects():
     # a shallow pass cannot starve a dimension below coverage
     alloc = allocate_budget(_aspects(), None, total=2, floor=1, cap=4)
