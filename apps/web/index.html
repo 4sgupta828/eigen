@@ -1101,6 +1101,8 @@
   .th-comp-wrap{margin:.6rem .95rem .2rem;overflow-x:auto;}
   .th-comp-table{border-collapse:collapse;font-size:.8rem;min-width:640px;}
   .th-comp-table th,.th-comp-table td{border:1px solid var(--hair);padding:.4rem .55rem;text-align:left;vertical-align:top;}
+  /* At-a-glance cells show FULL content and wrap to a readable width (the wrapper scrolls if needed). */
+  .th-comp-table td{white-space:normal;overflow-wrap:anywhere;min-width:9rem;max-width:20rem;line-height:1.4;}
   .th-comp-table thead th{background:color-mix(in srgb,var(--gold) 7%,transparent);font-family:var(--mono);
     font-size:.68rem;position:sticky;top:0;}
   .th-comp-table th[scope=row]{font-weight:600;white-space:nowrap;background:var(--bg,transparent);}
@@ -13012,9 +13014,11 @@ async function openShare(token){
     }).join("");
     const head = "<tr><th>Player</th>" + cols.map(c => "<th>" + esc2(c.label || c.key) + "</th>").join("") + "</tr>";
     const trows = players.map(p => "<tr><th scope=\"row\">" + esc2(p.name) + "</th>"
-      + cols.map(c => { const cell = (p.cells || {})[c.key];
-          return "<td>" + (cell && (cell.text || "").trim()
-            ? esc2(cell.text.slice(0, 120)) : '<span class="th-cell-empty">—</span>') + "</td>"; }).join("")
+      + cols.map(c => { const cell = (p.cells || {})[c.key]; const t = ((cell || {}).text || "").trim();
+          if(!t) return '<td><span class="th-cell-empty">—</span></td>';
+          const src = cell.source_url ? ' <a class="th-comp-src" href="' + esc2(cell.source_url)
+            + '" target="_blank" rel="noopener" title="' + esc2(cell.source_title || "source") + '">↗</a>' : "";
+          return "<td>" + esc2(t) + src + "</td>"; }).join("")     // full content — the cell wraps (see CSS)
       + "</tr>").join("");
     const table = '<details class="th-comp-tablewrap"><summary>At-a-glance comparison</summary>'
       + '<div class="th-tablewrap"><table class="th-table th-comp-table"><thead>' + head
