@@ -1534,11 +1534,13 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     async def tl_deck(thesis_id: str, authorization: str = Header(default=""),
                       x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
         """Generate the Startup Pitch Deck from the existing findings — a SEPARATE, on-demand artifact
-        (owner direction), available after the Collective Take exists. Free (one grounded synth call)."""
+        (owner direction), available after the Collective Take exists. Free (one grounded synth call).
+        Runs on the DEEP-THINKING reasoning seam (like the Take): the founder-voice pitch is a
+        connect-the-dots synthesis, not a fast extraction."""
         pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
         if _profile() is None:
             raise HTTPException(status_code=409, detail="no decision profile is configured")
-        result = await syn.synthesize_deck(pool, thesis_id, _profile(), _strong_llm_json())
+        result = await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json())
         return {"status": "ok", "deck": result.get("deck"), "findings": result.get("findings", 0)}
 
     async def _run_competitive(thesis_id: str, run_id: str):

@@ -52,9 +52,11 @@ ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS focus_rung text NOT NULL DEFAULT 
 -- The integrated reading of every claim at once. A table of ten takes is ten judgements the reader
 -- still has to add up; this is the addition, and it is the part they act on.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS overall text NOT NULL DEFAULT '';
--- Cross-finding synthesis over EVERY answered question at once: the steelman Startup Pitch Deck and the
--- integrated Collective Take (diligence verdict). Each is {sections:[{key,title,prose}], generated_at}.
--- Regenerated free from existing findings; distinct from `overall` (the legacy per-claim argue path).
+-- Cross-finding synthesis over EVERY answered question at once: the founder-voice Startup Pitch Deck and
+-- the integrated Collective Take (diligence verdict). Deck is {spine:{one_liner,insight,bottom_line},
+-- sections:[{key,title,headline:{text,markers},points:[{text,markers}]}], generated_at}; take is
+-- {bottom_line, sections:[{key,title,grounded,analysis}]}. (Older decks used sections:[{prose}]; the
+-- client still renders those.) Regenerated free from existing findings; distinct from `overall`.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS pitch_deck jsonb NOT NULL DEFAULT '{}';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS collective_take jsonb NOT NULL DEFAULT '{}';
 -- The competitive-landscape matrix: the thesis company vs. named peers across the startup rubric,
