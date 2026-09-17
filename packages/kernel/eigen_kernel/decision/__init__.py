@@ -28,7 +28,7 @@ from .select import score_questions, select_for_aspect, relevance_scores
 from .aggregate import resolve_signal, aggregate_aspect
 from .run import run_question, run_aspect, run_inquiry
 from .synthesis import sanitize_answer, sanitize_table, NOT_ESTABLISHED
-from .compose import compose_over_findings, compose_memo, compose_matrix, ANALYSIS_KINDS
+from .compose import compose_over_findings, compose_deck, compose_memo, compose_matrix, ANALYSIS_KINDS
 
 __all__ = [
     "QuestionKind", "Question", "QuestionStatus", "Aspect", "Inquiry",
@@ -43,5 +43,5 @@ __all__ = [
     "resolve_signal", "aggregate_aspect",
     "run_question", "run_aspect", "run_inquiry",
     "sanitize_answer", "sanitize_table", "NOT_ESTABLISHED",
-    "compose_over_findings", "compose_memo", "compose_matrix", "ANALYSIS_KINDS",
+    "compose_over_findings", "compose_deck", "compose_memo", "compose_matrix", "ANALYSIS_KINDS",
 ]

@@ -975,6 +975,21 @@
   .th-slides{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.7rem;padding:.7rem .95rem .95rem;}
   .th-slide{border:1px solid var(--hair);border-radius:10px;padding:.6rem .75rem;background:var(--bg,transparent);
     min-width:0;}
+  /* Pitch-deck spine: the one-liner, the insight, and the "will it fly" read above the slides. */
+  .th-deck-spine{margin:.3rem .95rem 0;padding:.75rem .9rem;border:1px solid var(--hair);border-radius:12px;
+    background:color-mix(in srgb,var(--gold) 6%,transparent);display:grid;gap:.6rem;}
+  .th-deck-oneliner{margin:0;font-size:1.02rem;line-height:1.45;font-weight:600;color:var(--ink);}
+  .th-deck-spine-block{display:grid;gap:.2rem;}
+  .th-deck-spine-block p{margin:0;font-size:.88rem;line-height:1.55;color:var(--ink);}
+  .th-deck-label{font-family:var(--mono);font-size:.63rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.05em;color:var(--gold);}
+  .th-deck-fly{border-left:3px solid var(--gold);padding-left:.6rem;}
+  .th-deck-spine sup.ref{font-size:.6em;line-height:0;color:var(--gold);cursor:pointer;font-weight:600;
+    padding:0 .1em;vertical-align:super;}
+  /* Each slide leads with an assertive headline; the points earn it. */
+  .th-slide-headline{margin:0 0 .35rem;font-size:.9rem;line-height:1.45;font-weight:600;color:var(--ink);}
+  .th-slide-headline sup.ref{font-size:.62em;line-height:0;color:var(--gold);cursor:pointer;font-weight:600;
+    padding:0 .1em;vertical-align:super;}
   .th-synth-sec{padding:.5rem 0;border-top:1px solid var(--hair);}
   .th-synth-sec:first-child{border-top:none;}
   .th-slide .th-synth-sec{border-top:none;padding:0;}
@@ -1123,6 +1138,8 @@
     .th-take-body{padding:.35rem .7rem .8rem;}
     .th-run-all{min-height:42px;}
     .th-memo-bluf{margin:.6rem .7rem .2rem;}
+    .th-deck-spine{margin:.3rem .7rem 0;padding:.65rem .7rem;}
+    .th-deck-oneliner{font-size:.98rem;}
     .th-comp-wrap{margin:.6rem .7rem .2rem;}
     .th-reason{flex-wrap:wrap;gap:.3rem;}
   }
@@ -12961,7 +12978,32 @@ async function openShare(token){
   }
 
   // One deck slide: title + grounded bullets (or a short prose block), citations via the shared citer.
+  // A single cited unit {text, markers} → resolved HTML, or "" when empty.
+  function deckUnit(u, citer){ const t = String((u && u.text) || "").trim();
+    return t ? citer.ref(t + " " + ((u && u.markers) || "")) : ""; }
+
+  // The deck SPINE: the one-liner a partner remembers, the non-obvious insight, and the "will it fly" read.
+  function deckSpineHtml(spine, citer){
+    spine = spine || {};
+    const ol = deckUnit(spine.one_liner, citer), ins = deckUnit(spine.insight, citer), bl = deckUnit(spine.bottom_line, citer);
+    if(!ol && !ins && !bl) return "";
+    let h = '<div class="th-deck-spine">';
+    if(ol)  h += '<p class="th-deck-oneliner">' + ol + "</p>";
+    if(ins) h += '<div class="th-deck-spine-block th-deck-insight"><span class="th-deck-label">The insight</span><p>' + ins + "</p></div>";
+    if(bl)  h += '<div class="th-deck-spine-block th-deck-fly"><span class="th-deck-label">Will it fly?</span><p>' + bl + "</p></div>";
+    return h + "</div>";
+  }
+
   function deckSlideHtml(s, citer){
+    // New shape: an assertive headline + structured points. Older decks carry a single `prose` blob.
+    const pts = (s.points || []).map(p => deckUnit(p, citer)).filter(Boolean);
+    const head = deckUnit(s.headline, citer);
+    if(pts.length || head){
+      const h = head ? '<p class="th-slide-headline">' + head + "</p>" : "";
+      const body = pts.length ? '<ul class="th-answer-list">' + pts.map(p => "<li>" + p + "</li>").join("") + "</ul>" : "";
+      if(!h && !body) return "";
+      return '<div class="th-slide"><h4 class="th-synth-h">' + esc2(s.title || s.key) + "</h4>" + h + body + "</div>";
+    }
     let prose = String(s.prose || "").trim()
       .replace(/[([]\s*[)\]]/g, "").replace(/\s+([.,;])/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
     if(!prose || /^not established/i.test(prose)) return "";
@@ -13193,8 +13235,11 @@ async function openShare(token){
     const take = STATE.take, deck = STATE.deck, comp = STATE.competitive;
     const hasTake = take && !take.empty && (((take.bottom_line || {}).text || "").trim()
       || (take.sections || []).some(s => (s.grounded || []).length || (s.analysis || []).length));
-    const hasDeck = deck && !deck.empty && (deck.sections || []).some(s => {
-      const p = String(s.prose || "").trim(); return p && !/^not established/i.test(p); });
+    const spineHas = deck && deck.spine && ["one_liner", "insight", "bottom_line"].some(
+      k => ((deck.spine[k] || {}).text || "").trim());
+    const hasDeck = deck && !deck.empty && (spineHas || (deck.sections || []).some(s => {
+      if((s.points || []).some(p => (p && p.text || "").trim()) || ((s.headline || {}).text || "").trim()) return true;
+      const p = String(s.prose || "").trim(); return p && !/^not established/i.test(p); }));
     const hasComp = comp && !comp.empty && ((comp.players || []).length || (comp.rows || []).length);
     if(!hasTake && !hasDeck && !hasComp) return "";
     let out = '<div class="th-synth-wrap">';
@@ -13219,10 +13264,12 @@ async function openShare(token){
     }
     if(hasDeck){
       const c = findingCiter();
+      const spine = deckSpineHtml(deck.spine, c);
       const slides = (deck.sections || []).map(s => deckSlideHtml(s, c)).join("");
       out += '<details class="th-synth th-deck" open><summary class="th-synth-sum">'
         + '<span class="th-synth-kicker">Startup Pitch Deck</span>'
-        + '<span class="th-synth-note">the steelman investor deck, built from the findings</span></summary>'
+        + '<span class="th-synth-note">the pitch a founder would make — headline-first, built from the findings</span></summary>'
+        + spine
         + '<div class="th-slides">' + slides + "</div>"
         + '<div class="th-deck-cites">' + c.footnotes() + "</div></details>";
     }

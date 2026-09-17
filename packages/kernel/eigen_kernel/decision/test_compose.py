@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 
-from eigen_kernel.decision import (compose_over_findings, compose_memo, compose_matrix,
+from eigen_kernel.decision import (compose_over_findings, compose_deck, compose_memo, compose_matrix,
                                     ANALYSIS_KINDS, NOT_ESTABLISHED)
 
 # Real finding ids are opaque (like a question id); the model only ever sees/echoes F1, F2.
@@ -51,6 +51,51 @@ def test_deck_no_model_yields_blank_and_failure_never_raises():
     assert all(s["prose"] == NOT_ESTABLISHED for s in
                asyncio.run(compose_over_findings(boom, directive="d", sections=_DECK_SECTIONS,
                                                   findings=_FINDINGS, layout="bullets")))
+
+
+_SPINE = {"one_liner": "one line", "insight": "the insight", "bottom_line": "will it fly"}
+
+
+def test_deck_spine_and_headline_points_gate_and_never_crash():
+    async def llm(_s, _u):
+        return {"spine": {
+                    "one_liner": {"text": "Acme is retention tooling for churny SaaS.", "finding_ids": ["F1"]},
+                    "insight": {"text": "uncited insight", "finding_ids": []},          # dropped: uncited
+                    "bottom_line": {"text": "Fabricated read.", "finding_ids": ["F9"]}},  # dropped: out of range
+                "sections": [
+                    {"key": "problem",
+                     "headline": {"text": "Churn is a 30% bleed.", "finding_ids": ["F1"]},
+                     "points": [{"text": "Two enterprises already signed.", "finding_ids": ["[f2]"]},  # tolerant
+                                {"text": "Looks strong.", "finding_ids": []},               # dropped: uncited
+                                {"text": "They own it.", "finding_ids": ["F9"]}]},          # dropped: out of range
+                    {"key": "ask",
+                     "headline": {"text": "no citation", "finding_ids": []},               # dropped -> blank
+                     "points": []}]}
+    out = asyncio.run(compose_deck(llm, directive="d", spine_intent=_SPINE, sections=_DECK_SECTIONS,
+                                   findings=_FINDINGS, decision="Acme"))
+    spine = out["spine"]
+    assert spine["one_liner"]["text"] == "Acme is retention tooling for churny SaaS."
+    assert ("[[e:%s]]" % _F1) in spine["one_liner"]["markers"]
+    assert "insight" not in spine and "bottom_line" not in spine        # both dropped, not fabricated
+    probs = {s["key"]: s for s in out["sections"]}
+    assert probs["problem"]["headline"]["text"] == "Churn is a 30% bleed."
+    assert [p["text"] for p in probs["problem"]["points"]] == ["Two enterprises already signed."]
+    assert ("[[e:%s]]" % _F2) in probs["problem"]["points"][0]["markers"]
+    assert probs["ask"]["headline"]["text"] == "" and probs["ask"]["points"] == []
+    assert [s["key"] for s in out["sections"]] == ["problem", "ask"]
+
+
+def test_deck_no_model_and_failure_yield_blank_never_raise():
+    for llm in (None, ):
+        out = asyncio.run(compose_deck(llm, directive="d", spine_intent=_SPINE, sections=_DECK_SECTIONS,
+                                       findings=_FINDINGS))
+        assert out["spine"] == {} and all(not s["points"] and not s["headline"]["text"] for s in out["sections"])
+
+    async def boom(_s, _u):
+        raise RuntimeError("down")
+    out = asyncio.run(compose_deck(boom, directive="d", spine_intent=_SPINE, sections=_DECK_SECTIONS,
+                                   findings=_FINDINGS))
+    assert out["spine"] == {} and [s["key"] for s in out["sections"]] == ["problem", "ask"]
 
 
 def test_memo_two_layers_grounded_and_reasoning_with_kind_gate():

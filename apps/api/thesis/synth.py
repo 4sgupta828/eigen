@@ -16,14 +16,35 @@ from __future__ import annotations
 
 import time
 
-from eigen_kernel.decision import compose_over_findings, compose_memo, compose_matrix
+from eigen_kernel.decision import compose_deck, compose_memo
 
 from . import store as tstore
 
 
 def _empty_deck(sections) -> dict:
-    return {"sections": [{"key": s["key"], "title": s["title"], "prose": ""} for s in sections],
+    return {"spine": {}, "sections": [{"key": s["key"], "title": s["title"],
+            "headline": {"text": "", "markers": ""}, "points": []} for s in sections],
             "empty": True, "generated_at": 0}
+
+
+def _take_context(take_obj: dict, *, cap: int = 2800) -> str:
+    """The Collective Take rendered as plain narrative CONTEXT for the deck — the connect-the-dots read
+    the deck should build its story around. NOT a citation source: the deck still cites findings, never
+    this text. Markers are stripped; the bottom line and the tagged reasoning blocks carry the signal."""
+    if not take_obj or take_obj.get("empty"):
+        return ""
+    import re
+    strip = lambda t: re.sub(r"\[\[e:[^\]]+\]\]", "", str(t or "")).strip()
+    parts: list[str] = []
+    bl = strip((take_obj.get("bottom_line") or {}).get("text"))
+    if bl:
+        parts.append(f"BOTTOM LINE: {bl}")
+    for s in (take_obj.get("sections") or []):
+        reasons = [f"  [{a.get('kind')}] {strip(a.get('text'))}"
+                   for a in (s.get("analysis") or []) if strip(a.get("text"))]
+        if reasons:
+            parts.append(str(s.get("title") or s.get("key") or "") + "\n" + "\n".join(reasons))
+    return "\n".join(parts)[:cap].strip()
 
 
 def _empty_take(sections) -> dict:
@@ -91,15 +112,20 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
 
 async def synthesize_deck(pool, thesis_id: str, profile, llm_json) -> dict:
     """Compose + persist the Startup Pitch Deck — a SEPARATE, on-demand artifact, generated after the
-    Collective Take exists. -> {"deck": {...}, "findings": <n>}."""
-    deck_dir, deck_secs = profile.pitch_deck_spec()
+    Collective Take exists. A 10x-founder pitch: a throughline SPINE plus a headline-driven slide per
+    section, built over the findings and informed (for narrative shape only) by the Collective Take.
+    -> {"deck": {...}, "findings": <n>}."""
+    deck_dir, spine, deck_secs = profile.pitch_deck_spec()
     thesis, _subject, findings = await _load_findings(pool, thesis_id, profile)
     if not findings:
         deck_obj = _empty_deck(deck_secs)
         await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
         return {"deck": deck_obj, "findings": 0}
-    deck = await compose_over_findings(llm_json, directive=deck_dir, sections=list(deck_secs),
-                                       findings=findings, decision=thesis, layout="bullets")
-    deck_obj = {"sections": deck, "empty": False, "generated_at": int(time.time()), "findings": len(findings)}
+    d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
+    context = _take_context((d or {}).get("collective_take") or {})
+    deck = await compose_deck(llm_json, directive=deck_dir, spine_intent=spine, sections=list(deck_secs),
+                              findings=findings, decision=thesis, context=context)
+    deck_obj = {"spine": deck.get("spine") or {}, "sections": deck.get("sections") or [],
+                "empty": False, "generated_at": int(time.time()), "findings": len(findings)}
     await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
     return {"deck": deck_obj, "findings": len(findings)}

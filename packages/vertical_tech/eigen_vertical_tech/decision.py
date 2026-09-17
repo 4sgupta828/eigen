@@ -209,41 +209,69 @@ For each question give a flat DECLARATIVE `target` the public record could confi
 # standing disciplines: a market signal is never a fact, stated intent is never realized fact, and a
 # figure absent from the record (a TAM, a round size) is flagged as unestablished, never fabricated.
 
-# The deck — a full investor narrative. More slides than a thin pitch: each is a crisp, grounded case,
-# and the diligence slides double as the checklist of what a founder still has to prove.
+# The deck SPINE — the throughline a 10x founder builds the whole pitch around. Composed by the kernel's
+# compose_deck as short cited lines above the slides: the one-liner a partner remembers, the non-obvious
+# INSIGHT the bet rests on, and the honest "will it fly" read. Each still cites findings or is dropped.
+_PITCH_DECK_SPINE: dict = {
+    "one_liner": "The company in one sentence a partner remembers — what it is, who it's for, and the "
+                 "category it means to own. Grounded in what the findings establish it actually does; "
+                 "sharp positioning, never hype.",
+    "insight": "THE non-obvious insight the whole bet rests on — what this founder sees about the buyer, "
+               "the market, or the technology that the status quo and incumbents have missed, and why "
+               "that makes the outcome feel inevitable. Draw it from the findings on the wedge, the "
+               "'why now', and the real differentiation — the one idea every slide then ladders to.",
+    "bottom_line": "The honest founder's-eye read: will this FLY? Name the single thing that most has to "
+                   "be true for it to become a category winner, what the record ALREADY shows going for "
+                   "it, and what this raise is meant to prove. Conviction earned from the evidence, never "
+                   "asserted — and never investment advice.",
+}
+
+# The deck — a founder's pitch, in a real narrative arc: problem → why now → solution → why we win →
+# market → traction → business → team → ask → the bet. Each slide leads with a headline the points earn.
+# The last slide reframes "open diligence" as the founder's own honest bet: what has to be true and how
+# it gets proven — that is the "will it fly" question answered in the open.
 _PITCH_DECK_SECTIONS: tuple[dict, ...] = (
-    {"key": "problem", "title": "Problem",
+    {"key": "problem", "title": "The Problem",
      "intent": "The pain: who has it, that it occurs in the wild, and its quantified cost (money, "
-               "headcount, time) — plus evidence that someone already spends against it."},
-    {"key": "solution", "title": "Solution & Product",
-     "intent": "What the company does and the MECHANISM by which it wins the job over the status quo and "
-               "the incumbent — the wedge, concretely, in the thesis's own nouns."},
+               "headcount, time) — plus evidence someone already spends against it. The headline names "
+               "the pain and its price."},
     {"key": "why_now", "title": "Why Now",
-     "intent": "The catalyst forcing a revisit now — a real, dated trigger (regulation, cost curve, "
-               "platform shift), not a manufactured one."},
-    {"key": "market", "title": "Market Size (TAM / SAM / SOM)",
-     "intent": "Size the opportunity from the record: TAM/SAM/SOM, the number of nameable buyers, the "
-               "budget line it is sold from. Where a figure is not in the record, give the sizing inputs "
-               "that ARE and flag the number as unestablished — never invent a market size."},
-    {"key": "business_model", "title": "Business Model & Unit Economics",
-     "intent": "How it makes money: pricing, who signs the check, and any unit economics the record "
-               "holds. Note explicitly that willingness-to-pay is not settleable by any document."},
-    {"key": "traction", "title": "Traction & Proof",
+     "intent": "The inflection that makes this the moment — a real, dated catalyst (regulation, a cost "
+               "curve breaking, a platform shift) that unlocks the wedge, not a manufactured one. Why a "
+               "smart team couldn't have won this two years ago."},
+    {"key": "solution", "title": "The Solution — How It Works",
+     "intent": "What the company does and the MECHANISM by which it wins the job over the status quo and "
+               "the incumbent — the wedge, concretely, in the company's own nouns. Show the 'how', not a "
+               "slogan."},
+    {"key": "competition", "title": "Why We Win — Moat & Defensibility",
+     "intent": "The landscape and why this is NOT a feature an incumbent ships next quarter — the "
+               "specific, real differentiation versus each named alternative, and the durable advantage "
+               "that compounds as the wedge widens. Why the lead holds."},
+    {"key": "market", "title": "The Prize — Market Size",
+     "intent": "How big this gets: size the opportunity from the record (TAM/SAM/SOM), the number of "
+               "nameable buyers, the budget line it's sold from. Where a figure isn't in the record, "
+               "give the sizing inputs that ARE and flag the number as a required founder input — never "
+               "invent a market size."},
+    {"key": "traction", "title": "Traction — Proof It's Working",
      "intent": "REALIZED proof only — named buyers, paid adoption, budget already allocated, benchmarks. "
-               "Roadmap, press-release, and patent-application intent is NOT traction; keep it out."},
-    {"key": "competition", "title": "Competition & Moat",
-     "intent": "The landscape and why this is not a feature an incumbent ships next quarter — the durable "
-               "advantage and how the wedge holds as it scales."},
-    {"key": "team", "title": "Team",
-     "intent": "Founders/operators the record names and why they are credible for THIS problem. If the "
-               "record does not cover the team, say so — it is a required diligence input."},
-    {"key": "ask", "title": "The Ask & Use of Funds",
-     "intent": "The round size and use of funds IF the record states them; otherwise say they are not "
-               "specified and are a required founder input. Then: what the strongest case asks an "
-               "investor to believe, only as far as the evidence carries it."},
-    {"key": "diligence", "title": "Key Risks & Open Diligence",
-     "intent": "The concrete risks and unresolved questions the diligence surfaced — the honest 'what "
-               "would have to be true / what we could not yet verify' an investor must clear."},
+               "Roadmap, press-release, and patent-application intent is NOT traction; keep it out. The "
+               "headline states the single strongest proof point."},
+    {"key": "business_model", "title": "The Business — Model & Unit Economics",
+     "intent": "How it makes money: pricing, who signs the check, and any unit economics the record "
+               "holds. Note explicitly that willingness-to-pay is settleable by no document — only a "
+               "person who lived it can."},
+    {"key": "team", "title": "Why This Team",
+     "intent": "The founders/operators the record names and why they are credible for THIS problem — "
+               "founder-market fit, concretely. If the record doesn't cover the team, say so; it's a "
+               "required diligence input, not a line to invent."},
+    {"key": "ask", "title": "The Ask & What It Unlocks",
+     "intent": "The round size and use of funds IF the record states them; otherwise say they're "
+               "unspecified and a required founder input. Then, only as far as the evidence carries it: "
+               "what the raise buys and the milestone it's meant to reach."},
+    {"key": "diligence", "title": "The Bet — What Has to Be True",
+     "intent": "The founder's honest close: the single load-bearing thing that most has to be true for "
+               "this to fly, the concrete risks that could sink it, and — for each — what evidence or "
+               "milestone would prove it out. Frame it as the plan to de-risk, not a list of doubts."},
 )
 
 # The Collective Take — a comprehensive two-layer memo (compose_memo), run on the deep-thinking
@@ -305,23 +333,38 @@ _COMPETITIVE_COLUMNS: tuple[dict, ...] = (
 )
 
 _PITCH_DECK_DIRECTIVE = """\
-You are a top-tier venture partner assembling the STRONGEST HONEST investor deck for a startup — the
-narrative that would actually earn a term sheet — built ONLY from findings already gathered and verified
-in diligence. Think like the person writing the check: lead with the pain and its size, show the wedge,
-prove traction with realized facts, size the market, and be straight about the risks. A great deck
-connects the dots the findings hold into one argument; it never inflates.
+You are the FOUNDER-CEO writing the deck that raises this round — a 10x founder with the pattern memory
+of every great pitch you've studied. You are not a diligence lead cataloguing risk; you are building the
+argument that makes a partner lean in and feel this is inevitable. But you are the rare founder who is
+INTELLECTUALLY HONEST: your conviction is earned from the evidence, never asserted — a sharp investor can
+smell a number you made up, and one invented figure loses the whole room. So you build ONLY from the
+findings already gathered in diligence, and where the record is silent you name what you'd prove next
+instead of inventing it. That honesty is exactly what makes the strong slides land.
 
-Rules, in order:
-1. ARGUE ONLY FROM THE FINDINGS GIVEN, citing findings by id. Never introduce a company, number, market
-   size, or fact that is not in them. You have no outside knowledge.
-2. Investor-grade substance: pull the concrete numbers, named buyers, mechanisms and dates. A vague
-   slide ("large market", "strong team") is a failure — quantify, or say the figure is unestablished.
-3. NEVER fabricate a TAM, a round size, a funding number, or a customer. Where a slide wants a figure
-   the record lacks, give the inputs that ARE there and mark the figure as a required founder input — a
-   named gap is more valuable to an investor than an invented number.
-4. Registers straight: a filing or granted patent is FACT; a press release, preprint, patent
-   APPLICATION, or roadmap is STATED INTENT (keep it out of Traction); forum/news is a market SIGNAL.
-5. Lead each point with the fact, not "the evidence". Crisp, plain lines — no hype adjectives."""
+Ask the founder's real question through the whole deck: WILL IT FLY? Lead with the pain and its price,
+name the non-obvious insight the market has missed, show the wedge and why it widens into a durable lead,
+prove it's working with realized facts, size the prize, and be crisp about the one thing that has to be
+true. The slides ladder to a single spine — the one insight everything rests on.
+
+How to write it:
+1. HEADLINE-FIRST. Every slide is ONE assertive headline — the sentence a partner remembers, the
+   takeaway the slide proves — then 2–5 crisp points that earn it. "Support teams lose $X per rep per
+   year to manual triage" beats "Problem". Write the headline; make the points pay for it.
+2. ONE THROUGHLINE. Write the spine, then make every slide advance that one argument. Connect the dots
+   the findings hold — say what several findings TOGETHER imply, and cite each one.
+3. ARGUE ONLY FROM THE FINDINGS, citing them by F-number. Never introduce a company, number, market
+   size, customer, or fact that is not in them. You have no outside knowledge. (A synthesis may be given
+   as context to shape the story — it is NOT a source; cite findings, never it.)
+4. CONCRETE OR NOTHING. Pull the real numbers, named buyers, mechanisms, dates. A vague line ("large
+   market", "strong team") is a failure — quantify it, or flag the figure as a founder input to prove.
+5. NEVER fabricate a TAM, a round size, a funding number, or a customer. Where a slide wants a figure the
+   record lacks, give the sizing inputs that ARE there and mark the number as a required founder input —
+   a named gap reads as founder honesty, not weakness.
+6. REGISTERS STRAIGHT. A filing or granted patent is FACT; a press release, preprint, patent APPLICATION,
+   or roadmap is STATED INTENT (never in Traction); forum/news is a market SIGNAL, never a fact. A great
+   founder never blurs these — it's how you keep the room's trust.
+7. No hype adjectives; the facts carry the excitement. You inform the investor's judgment — you never
+   issue a buy/sell call or give investment advice."""
 
 _COLLECTIVE_TAKE_DIRECTIVE = """\
 You are an investor's diligence lead writing the integrated read across EVERY finding — the memo a
@@ -385,10 +428,12 @@ class TechDecisionProfile:
     def inquiry_directive(self, decision: str) -> str:
         return _INQUIRY_DIRECTIVE
 
-    def pitch_deck_spec(self) -> tuple[str, tuple[dict, ...]]:
-        """(directive, sections) for the Startup Pitch Deck — the steelman investor deck composed across
-        all findings. Domain vocabulary lives here; the kernel's compose_over_findings just grounds it."""
-        return _PITCH_DECK_DIRECTIVE, _PITCH_DECK_SECTIONS
+    def pitch_deck_spec(self) -> tuple[str, dict, tuple[dict, ...]]:
+        """(directive, spine_intent, sections) for the Startup Pitch Deck — the founder's-voice pitch
+        composed across all findings: a throughline SPINE (one-liner, the insight, the "will it fly"
+        read) plus a headline-driven slide for each section. Domain vocabulary lives here; the kernel's
+        compose_deck supplies the mechanics and the grounding gate."""
+        return _PITCH_DECK_DIRECTIVE, dict(_PITCH_DECK_SPINE), _PITCH_DECK_SECTIONS
 
     def collective_take_spec(self) -> tuple[str, tuple[dict, ...]]:
         """(directive, sections) for the Collective Take — the two-layer diligence memo (grounded facts +

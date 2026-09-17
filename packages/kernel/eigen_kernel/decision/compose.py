@@ -161,6 +161,87 @@ async def compose_over_findings(llm_json, *, directive: str, sections: list[dict
     return out
 
 
+async def compose_deck(llm_json, *, directive: str, sections: list[dict], findings: list[dict],
+                       spine_intent: dict | None = None, context: str = "", decision: str = "",
+                       answer_chars: int = 1600) -> dict:
+    """Compose a HEADLINE-DRIVEN brief over the findings — the presentation-grade cousin of
+    `compose_over_findings`. Instead of a flat prose blob per section, each section gets a single
+    assertive HEADLINE (the takeaway the section proves) plus structured, individually-cited POINTS, and
+    the whole document carries a SPINE — a short set of throughline statements (`spine_intent` names and
+    describes them) that tie the sections into one argument. One model call writes everything.
+
+    `context` is optional prose shown to the model to inform the narrative (e.g. a synthesis produced
+    elsewhere); it is explicitly NOT a citation source — every emitted unit must still cite findings by
+    F-number or it is dropped. Same fail-safe as the rest of the path: a unit citing no finding is
+    dropped whole; a section with nothing behind it renders empty. Domain-free. Never raises.
+
+    Returns `{"spine": {<key>: {text, markers}}, "sections": [{key, title, headline: {text, markers},
+    points: [{text, markers}]}]}`."""
+    spine_intent = spine_intent or {}
+    resolve, reals, token_of = _resolver(findings)
+    blank = {"spine": {}, "sections": [{"key": s["key"], "title": s["title"],
+             "headline": {"text": "", "markers": ""}, "points": []} for s in (sections or [])]}
+    if llm_json is None or not reals or not sections:
+        return blank
+    spec = "\n".join(f'- {s["key"]}: {s["title"]} — {s.get("intent", "")}' for s in sections)
+    spine_keys = [str(k) for k in spine_intent]
+    spine_spec = "\n".join(f"- {k}: {spine_intent[k]}" for k in spine_keys)
+    spine_json = ", ".join(f'"{k}": {{"text": "...", "finding_ids": ["F1"]}}' for k in spine_keys)
+    user = (
+        (f"DECISION UNDER TEST: {decision}\n\n" if decision else "")
+        + "You are writing ACROSS all of the findings below — the complete diligence record, grouped by "
+          f"line of inquiry, each headed by a short [F#] tag. Cite by the F-number.\n\n"
+        + f"{_findings_block(findings, token_of, chars=answer_chars)}\n\n"
+        + (f"SYNTHESIS SO FAR (context to inform your narrative — NOT a citation source; you still cite "
+           f"findings by F-number, never this text):\n{context.strip()}\n\n" if context.strip() else "")
+        + (f"SPINE — the throughline; write each element as ONE line, cited:\n{spine_spec}\n\n"
+           if spine_spec else "")
+        + f"SECTIONS to write, in this order:\n{spec}\n\n"
+        + "WRITE IT HEADLINE-FIRST, CONNECTED, CONCRETE:\n"
+        + "- Each section gets ONE headline: a single assertive sentence stating the takeaway the "
+          "section proves (not a label), then 2–5 crisp points that earn it.\n"
+        + "- CONNECT THE DOTS: the value is what several findings together IMPLY — say what follows and "
+          "cite every finding the inference rests on (a point may cite two or three).\n"
+        + "- Pull the concrete facts the findings hold: the numbers, named parties, mechanisms, dates. A "
+          "vague headline or point is a failure.\n"
+        + "- Where a finding tested something and the record was silent, you MAY say so and cite that "
+          "finding — a named gap is a real result, not an empty section.\n"
+        + "- NEVER invent a number, market size, or party not in the findings; where a figure a section "
+          "wants is absent, say what IS known and that the figure is unestablished — never fabricate.\n\n"
+        + 'Return ONE JSON object: {"spine": {' + spine_json + '}, "sections": [{"key": "<section key>", '
+          '"headline": {"text": "...", "finding_ids": ["F1", ...]}, "points": [{"text": "...", '
+          '"finding_ids": ["F1", ...]}]}]}. Every headline and point must ' + _CITE_HINT
+        + " A section with nothing behind it gets an empty `points` list and may omit its headline. "
+          "Output ONLY the JSON object.")
+    try:
+        raw = await llm_json(directive, user)
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+    except Exception:      # noqa: BLE001 — never blocks; a failed call yields a blank deck
+        return blank
+
+    def _one(unit) -> dict:
+        g = _gate_units([{"text": (unit or {}).get("text"),
+                          "finding_ids": (unit or {}).get("finding_ids") or (unit or {}).get("evidence_ids")}],
+                        resolve, reals)
+        return {"text": g[0]["text"], "markers": g[0]["markers"]} if g else {"text": "", "markers": ""}
+
+    raw_spine = d.get("spine") or {}
+    spine_out = {}
+    for k in spine_keys:
+        cell = _one(raw_spine.get(k) if isinstance(raw_spine, dict) else None)
+        if cell["text"]:
+            spine_out[k] = cell
+    by_key = {str((s or {}).get("key") or ""): (s or {}) for s in (d.get("sections") or [])}
+    out_secs = []
+    for s in sections:
+        raw_s = by_key.get(s["key"], {})
+        headline = _one(raw_s.get("headline"))
+        points = [{"text": g["text"], "markers": g["markers"]}
+                  for g in _gate_units(raw_s.get("points") or raw_s.get("sentences") or [], resolve, reals)]
+        out_secs.append({"key": s["key"], "title": s["title"], "headline": headline, "points": points})
+    return {"spine": spine_out, "sections": out_secs}
+
+
 def _gate_units(items, resolve, reals: set) -> list[dict]:
     """Keep only points that cite ≥1 finding (after resolving F-tokens); strip inner markers, append the
     clean [[e:<real id>]] run. Returns [{text, markers, ids}]."""
