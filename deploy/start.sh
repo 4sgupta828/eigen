@@ -10,4 +10,8 @@ if [ "${EIGEN_ROLE:-api}" = "worker" ]; then
   exec python -m worker.main
 fi
 echo "[start] eigen api — vertical=${EIGEN_ACTIVE_VERTICAL:-?} mode=${EIGEN_PROVIDER_MODE:-replay} port=$PORT"
-exec uvicorn api.app:create_app --factory --host 0.0.0.0 --port "$PORT"
+# --proxy-headers + trust the Railway edge: honor X-Forwarded-Proto so the app knows it is served over
+# HTTPS. Without this, FastAPI's trailing-slash 307 (and any redirect) builds an http:// Location, which
+# a browser on the https page blocks as mixed content ("Failed to fetch").
+exec uvicorn api.app:create_app --factory --host 0.0.0.0 --port "$PORT" \
+     --proxy-headers --forwarded-allow-ips="*"
