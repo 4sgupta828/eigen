@@ -1040,37 +1040,45 @@
   .th-memo-grounded p{margin:.35rem 0;font-size:.85rem;line-height:1.6;color:var(--ink);}
   .th-memo-grounded p:first-of-type{margin-top:0;}
   /* Reasoning flow — the whole Collective Take as a chain: assumptions → evidence → implications → read. */
-  .th-rf{margin:.7rem .95rem .3rem;}
-  .th-rf-cap{font-family:var(--mono);font-size:.68rem;letter-spacing:.02em;color:var(--dim);margin:0 0 .5rem;}
-  .th-rf-lean{display:inline-block;font-family:var(--mono);font-size:.72rem;font-weight:700;
-    border:1.5px solid var(--hair);border-radius:999px;padding:.25rem .7rem;margin:0 0 .6rem;}
-  .th-rf-lean span{font-weight:400;opacity:.85;}
-  .th-rf-flow{display:flex;gap:.5rem;align-items:stretch;}
-  .th-rf-stage{flex:1 1 0;min-width:0;border:1px solid var(--hair);border-top:3px solid var(--muted);
-    border-radius:10px;padding:.55rem .6rem;background:var(--card,var(--panel,#fff));}
-  .th-rf-h{font-family:var(--mono);font-size:.66rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
-    color:var(--ink);}
-  .th-rf-hint{font-size:.66rem;color:var(--dim);margin:.1rem 0 .45rem;line-height:1.35;}
-  .th-rf-card{font-size:.8rem;line-height:1.5;color:var(--ink);border-left:2px solid var(--hair);
-    padding:.15rem 0 .15rem .5rem;margin:.35rem 0;}
-  .th-rf-bluf{border-left-color:var(--gold);font-weight:500;}
-  .th-rf-kind{display:inline-block;margin-left:.35rem;font-family:var(--mono);font-size:.56rem;
-    letter-spacing:.04em;text-transform:uppercase;color:var(--dim);border:1px solid var(--hair);
-    border-radius:999px;padding:0 .35rem;vertical-align:middle;}
-  .th-rf-stage.th-rf-what-must-be-true{border-top-color:#6a7bd0;}
-  .th-rf-stage.th-rf-what-the-evidence-shows{border-top-color:#b5762a;}
-  .th-rf-stage.th-rf-what-it-implies{border-top-color:#3a9d8f;}
-  .th-rf-stage.th-rf-read{border-top-color:var(--gold);}
-  .th-rf-change{margin-top:.6rem;border-top-color:#8a8a8a;}
-  .th-rf-wide{border:1px solid var(--hair);border-top:3px solid #8a8a8a;border-radius:10px;padding:.55rem .6rem;}
-  .th-rf-arrow{align-self:center;color:var(--muted);font-size:1.1rem;flex:0 0 auto;}
-  .th-rf-foot{font-family:var(--mono);font-size:.64rem;color:var(--dim);margin:.5rem 0 0;line-height:1.4;}
-  .th-rf sup.ref{font-size:.62em;line-height:0;color:var(--gold);cursor:pointer;font-weight:600;vertical-align:super;}
-  /* On phones the stages stack, and the ▸ arrows rotate to point DOWN through the flow. */
-  @media (max-width:640px){
-    .th-rf{margin:.7rem .7rem .3rem;}
-    .th-rf-flow{flex-direction:column;}
-    .th-rf-arrow{transform:rotate(90deg);align-self:center;}
+  /* Reasoning Map — the Take's tagged reasoning, drawn as colour-coded lanes flowing into the read.
+     Full text (never truncated), generous spacing (no overlap), SVG confluence drawn after layout. */
+  .th-rmap{position:relative;margin:.3rem .2rem .2rem;}
+  .th-rmap-top{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem .8rem;margin:0 0 .8rem;}
+  .th-rmap-base{font-family:var(--mono);font-size:.66rem;color:var(--dim);letter-spacing:.02em;}
+  .th-rmap-base b{color:var(--ink);}
+  .th-rmap-lean{display:inline-block;font-family:var(--mono);font-size:.72rem;font-weight:700;
+    padding:.28rem .65rem;border:1.5px solid var(--lc,var(--gold));border-radius:999px;color:var(--lc,var(--gold));}
+  .th-rmap-lean span{font-weight:400;opacity:.85;}
+  .th-rmap-lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.7rem;
+    align-items:start;position:relative;z-index:1;}
+  .th-rmap-lane{border:1px solid var(--hair);border-top:3px solid var(--rc,var(--muted));border-radius:11px;
+    padding:.6rem .65rem .65rem;background:var(--card,var(--panel,#fff));min-width:0;}
+  .th-rmap-lane-h{margin-bottom:.55rem;}
+  .th-rmap-chip{display:inline-block;font-family:var(--mono);font-size:.62rem;font-weight:700;
+    letter-spacing:.03em;text-transform:uppercase;color:#fff;padding:.24rem .55rem;border-radius:7px;}
+  .th-rmap-hint{display:block;font-size:.66rem;color:var(--dim);margin-top:.32rem;line-height:1.35;}
+  .th-rmap-cards{display:grid;gap:.45rem;}
+  .th-rmap-card{display:flex;gap:.5rem;align-items:flex-start;font-size:.82rem;line-height:1.55;color:var(--ink);
+    background:color-mix(in srgb,var(--rc) 7%,transparent);border:1px solid color-mix(in srgb,var(--rc) 22%,var(--hair));
+    border-radius:9px;padding:.45rem .55rem;overflow-wrap:anywhere;}
+  .th-rmap-dot{flex:none;width:7px;height:7px;border-radius:50%;margin-top:.42rem;}
+  .th-rmap-ctext{min-width:0;}
+  .th-rmap-links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible;}
+  .th-rmap-read{position:relative;z-index:1;margin:1.9rem auto 0;max-width:46rem;border:1.5px solid var(--gold);
+    border-radius:13px;padding:.75rem .9rem;background:color-mix(in srgb,var(--gold) 9%,var(--panel));}
+  .th-rmap-read-h{font-family:var(--mono);font-size:.62rem;font-weight:700;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--gold-strong,var(--gold));margin-bottom:.35rem;}
+  .th-rmap-read-text{font-size:.94rem;line-height:1.55;color:var(--ink);font-weight:500;}
+  .th-rmap-changewrap{margin-top:1rem;}
+  .th-rmap-change{border-top-color:var(--rc);}
+  .th-rmap-foot{font-family:var(--mono);font-size:.63rem;color:var(--dim);margin:.8rem 0 0;line-height:1.4;}
+  .th-rmap sup.ref{font-size:.62em;line-height:0;color:var(--gold);cursor:pointer;font-weight:600;vertical-align:super;}
+  @media (max-width:560px){
+    .th-rmap{margin:.3rem 0 .2rem;}
+    .th-rmap-lanes{grid-template-columns:1fr;}
+    .th-rmap-links{display:none;}   /* stacked lanes already read top→down; the fan is a desktop cue */
+    .th-rmap-read{margin-top:1rem;}
+    .th-rmap-read::before{content:"▼";display:block;text-align:center;color:var(--gold);margin:-.35rem 0 .35rem;}
   }
   /* Competitive landscape — per-player cards + an at-a-glance table. */
   .th-comp-cap{font-family:var(--mono);font-size:.72rem;letter-spacing:.02em;color:var(--dim);margin:.2rem 0 .6rem;}
@@ -3015,6 +3023,8 @@
       <button type="button" class="mbtn" id="deepdiveTab" role="tab" aria-selected="false" hidden title="DeepDive — one company, read end to end">⌖ DeepDive</button>
       <button type="button" class="mbtn" id="thesisTab" role="tab" aria-selected="false" hidden
             title="Test a startup thesis — the claims it rests on, attacked">⚗ Test Thesis</button>
+      <button type="button" class="mbtn" id="boardTab" hidden
+            title="ThesisBoard — theses the community published, anonymized">▤ ThesisBoard</button>
     <button type="button" class="mbtn" id="expertsTab" role="tab" aria-selected="false" hidden
             title="Find experts to validate a thesis — search people by expertise, title or company">⚑ Experts</button>
     <button type="button" class="mbtn" id="investorsTab" role="tab" aria-selected="false" hidden title="Investors — who funds what, from the public record">◈ Investors</button>
@@ -5627,6 +5637,13 @@ function applyModeTabs(){
   const ibtn = $("#investorsTab"); if(ibtn){ ibtn.hidden = !INVESTORS_ENABLED; ibtn.dataset.mode = "investors"; }
   const thbtn = $("#thesisTab"); if(thbtn){ thbtn.hidden = !THESIS_ENABLED; thbtn.dataset.mode = "thesis"; }
   const exbtn = $("#expertsTab"); if(exbtn){ exbtn.hidden = !THESIS_ENABLED; exbtn.dataset.mode = "experts"; }
+  // ThesisBoard is a destination (hash #board), not a mode — pre-mark it wired so wireModeSwitch skips
+  // it, and navigate on click. Visible whenever the thesis feature is on.
+  const bbtn = $("#boardTab");
+  if(bbtn){ bbtn.hidden = !THESIS_ENABLED;
+    if(!bbtn.dataset.wired){ bbtn.dataset.wired = "1";
+      bbtn.addEventListener("click", () => { if(location.hash === "#board"){ if(window.TH) TH.boardGallery(); }
+                                             else location.hash = "#board"; }); } }
   wireModeSwitch($("#modeswitch"));
 }
 // Flip the shell between Guided intake, Quick Q&A and Expert Panel. The header, heading, mode switch and
@@ -13114,6 +13131,7 @@ async function openShare(token){
     const cl = document.getElementById("th-clear"); if(cl) cl.addEventListener("click", clearInquiries);
     wireInquiries();
     wireDeckRefs();
+    wireReasoningMap();
     wireCompetitive();
     window.scrollTo(0, y);
   }
@@ -13378,64 +13396,113 @@ async function openShare(token){
     return {t: "CONTINUE diligence", d: "mixed / still under-tested", c: "#b5762a"};
   }
 
-  // The reasoning flow REPRESENTS THE WHOLE COLLECTIVE TAKE as a chain of reasoning: the load-bearing
-  // assumptions → what the evidence shows (tensions + gaps) → what it implies → the read (BLUF) → what
-  // would change it. Each stage carries the take's own tagged reasoning blocks (cited via the shared
-  // citer), so the diagram IS the take's argument, not a shallow thesis→verdict picture.
-  function takeReasoningFlow(take, c){
-    const secs = (take && take.sections) || [];
+  // ── Reasoning Map — the whole Collective Take at a glance, DRAWN ─────────────────────────────────
+  // A separated re-presentation of STATE.take: its tagged reasoning blocks, laid out in colour-coded
+  // lanes by KIND (assumptions → tensions → gaps → implications), each block shown IN FULL (never
+  // truncated), with SVG connectors flowing every lane into THE READ. No new data; fonts/colours are the
+  // app's tokens. The lane→read confluence is drawn after layout by wireReasoningMap() (measured DOM).
+  const RMAP_LANES = [
+    {kind: "assumption",  title: "What must be true", hint: "the load-bearing premises",   color: "#6b5bd0"},
+    {kind: "tension",     title: "Tensions",          hint: "findings that pull apart",     color: "#c0563f"},
+    {kind: "gap",         title: "Gaps",              hint: "what the record can't settle", color: "#b8860b"},
+    {kind: "implication", title: "What it implies",   hint: "the second-order read",        color: "#2e8b6f"},
+  ];
+  const RMAP_CHANGE = {kind: "what_would_change_this", title: "What would change the read",
+                       hint: "the highest-value next evidence", color: "#3a7bd0"};
+
+  function _takeBlocksByKind(take){
+    const by = {};
+    ((take && take.sections) || []).forEach(s => (s.analysis || []).forEach(a => {
+      if(!(a.text || "").trim()) return; const k = a.kind || ""; (by[k] = by[k] || []).push(a); }));
+    return by;
+  }
+  function rmapCard(a, color, c){
+    return '<div class="th-rmap-card" style="--rc:' + color + '">'
+      + '<span class="th-rmap-dot" style="background:' + color + '"></span>'
+      + '<span class="th-rmap-ctext">' + c.ref((a.text || "") + " " + (a.markers || "")) + "</span></div>";
+  }
+  function _rmapLaneHtml(l, blocks, c){
+    return '<div class="th-rmap-lane" style="--rc:' + l.color + '">'
+      + '<div class="th-rmap-lane-h"><span class="th-rmap-chip" style="background:' + l.color + '">'
+      + esc2(l.title) + "</span><span class=\"th-rmap-hint\">" + esc2(l.hint) + "</span></div>"
+      + '<div class="th-rmap-cards">' + blocks.map(a => rmapCard(a, l.color, c)).join("") + "</div></div>";
+  }
+  function reasoningMapHtml(take, c){
+    const by = _takeBlocksByKind(take);
+    const lanes = RMAP_LANES.filter(l => (by[l.kind] || []).length);
     const bl = (take && take.bottom_line) || {};
-    const byKey = {}; secs.forEach(s => { byKey[s.key || ""] = s; });
-    // Pull the substance for a group of sections — REASONING blocks first (interpretation), then grounded
-    // facts to guarantee the stage has content even when the model emitted few analysis blocks. Capped.
-    const items = (keys, kinds, cap) => {
-      const a = [], g = [];
-      keys.forEach(k => { const s = byKey[k]; if(!s) return;
-        (s.analysis || []).forEach(x => { if((x.text || "").trim() && (!kinds || kinds.indexOf(x.kind) >= 0)) a.push(x); });
-        (s.grounded || []).forEach(x => { if((x.text || "").trim()) g.push(x); }); });
-      return a.concat(g).slice(0, cap || 3);
-    };
-    const cardsFor = (its) => its.map(x =>
-      '<div class="th-rf-card">' + c.ref((x.text || "") + " " + (x.markers || ""))
-      + (x.kind ? '<span class="th-rf-kind">' + esc2(KIND_LABEL[x.kind] || x.kind) + "</span>" : "")
-      + "</div>").join("");
-    const stages = [];
-    const st = (title, hint, cls, its) => { if(its.length) stages.push(
-      '<div class="th-rf-stage ' + cls + '"><div class="th-rf-h">' + esc2(title) + "</div>"
-      + '<div class="th-rf-hint">' + esc2(hint) + "</div>" + cardsFor(its) + "</div>"); };
-    // Map the take's sections into the argument's chain — driven by section content, so it always fills.
-    st("What must be true", "the load-bearing premises", "th-rf-what-must-be-true",
-       items(["at_stake"], null, 3));
-    st("What the evidence established", "across the lines of inquiry", "th-rf-what-the-evidence-shows",
-       items(["by_line", "strengths"], null, 4));
-    st("Tensions, risks & gaps", "where it is contested or unproven", "th-rf-what-the-evidence-shows",
-       items(["risks_gaps", "competition", "signals"], null, 3));
-    st("What it implies", "the second-order read", "th-rf-what-it-implies",
-       items(["synthesis", "conviction"], null, 3));
-    if((bl.text || "").trim())
-      stages.push('<div class="th-rf-stage th-rf-read"><div class="th-rf-h">The read</div>'
-        + '<div class="th-rf-hint">where the reasoning converges</div>'
-        + '<div class="th-rf-card th-rf-bluf">' + c.ref((bl.text || "") + " " + (bl.markers || "")) + "</div></div>");
-    // Fallback: a thin take with no mapped sections but some content — flow every non-empty section.
-    if(stages.length < 2){
-      secs.forEach(s => st(s.title || s.key, "", "th-rf-what-the-evidence-shows",
-                           items([s.key || ""], null, 2)));
-    }
-    if(stages.length < 2) return "";
-    const change = items(["what_would_change"], null, 4);
+    const hasRead = !!(bl.text || "").trim();
+    const change = by[RMAP_CHANGE.kind] || [];
+    if(!lanes.length && !hasRead) return "";
+    let grounded = 0, lines = 0;
+    ((take && take.sections) || []).forEach(s => {
+      const g = (s.grounded || []).filter(x => (x.text || "").trim()).length;
+      grounded += g; if(g) lines++; });
     const lean = overallLean();
-    const leanChip = lean
-      ? '<div class="th-rf-lean" style="border-color:' + lean.c + ';color:' + lean.c + '">'
-        + esc2(lean.t) + ' <span>· ' + esc2(lean.d) + "</span></div>" : "";
-    const arrow = '<div class="th-rf-arrow" aria-hidden="true">▸</div>';
-    return '<div class="th-rf"><div class="th-rf-cap">How the reasoning flows to the read — the whole '
-      + "Collective Take at a glance</div>" + leanChip
-      + '<div class="th-rf-flow">' + stages.join(arrow) + "</div>"
-      + (change.length ? '<div class="th-rf-stage th-rf-change th-rf-wide"><div class="th-rf-h">'
-          + "What would change the read</div><div class=\"th-rf-hint\">the highest-value next evidence</div>"
-          + cardsFor(change) + "</div>" : "")
-      + '<div class="th-rf-foot">A reading of the evidence, not investment advice — the human owns the '
+    const leanChip = lean ? '<span class="th-rmap-lean" style="--lc:' + lean.c + '">' + esc2(lean.t)
+      + ' <span>· ' + esc2(lean.d) + "</span></span>" : "";
+    const base = grounded ? '<div class="th-rmap-base">Grounded in <b>' + grounded + "</b> cited "
+      + (grounded === 1 ? "fact" : "facts") + " across <b>" + lines + "</b> line" + (lines === 1 ? "" : "s")
+      + " of inquiry</div>" : "";
+    const laneHtml = lanes.map(l => _rmapLaneHtml(l, by[l.kind], c)).join("");
+    const readHtml = hasRead
+      ? '<div class="th-rmap-read"><div class="th-rmap-read-h">The read — where it converges</div>'
+        + '<div class="th-rmap-read-text">' + c.ref((bl.text || "") + " " + (bl.markers || "")) + "</div></div>"
+      : "";
+    const changeHtml = change.length ? _rmapLaneHtml(RMAP_CHANGE, change, c)
+        .replace("th-rmap-lane", "th-rmap-lane th-rmap-change") : "";
+    return '<div class="th-rmap" data-rmap="1">'
+      + ((base || leanChip) ? '<div class="th-rmap-top">' + base + leanChip + "</div>" : "")
+      + '<div class="th-rmap-lanes">' + laneHtml + "</div>"
+      + '<svg class="th-rmap-links" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"></svg>'
+      + readHtml
+      + (changeHtml ? '<div class="th-rmap-changewrap">' + changeHtml + "</div>" : "")
+      + '<div class="th-rmap-foot">A reading of the evidence, not investment advice — the human owns the '
       + "decision.</div></div>";
+  }
+
+  // Draw the confluence: a smooth, colour-matched curve from each lane's bottom-centre into the read's
+  // top-centre. Measured from the live DOM so nothing truncates or overlaps; skipped while collapsed.
+  function _rmapDraw(root){
+    const svg = root.querySelector(".th-rmap-links");
+    const lanesWrap = root.querySelector(".th-rmap-lanes");
+    const read = root.querySelector(".th-rmap-read");
+    if(!svg || !lanesWrap) return;
+    const rb = root.getBoundingClientRect();
+    if(rb.width < 40 || root.offsetParent === null){ svg.innerHTML = ""; return; }   // hidden/collapsed
+    svg.setAttribute("width", rb.width); svg.setAttribute("height", rb.height);
+    svg.setAttribute("viewBox", "0 0 " + rb.width + " " + rb.height);
+    const lanes = Array.from(lanesWrap.querySelectorAll(".th-rmap-lane"));
+    if(!lanes.length || !read){ svg.innerHTML = ""; return; }
+    const rr = read.getBoundingClientRect();
+    const tx = rr.left + rr.width / 2 - rb.left, ty = rr.top - rb.top;   // read top-centre
+    const gold = (getComputedStyle(document.documentElement).getPropertyValue("--gold") || "#1568B5").trim();
+    let out = "";
+    lanes.forEach(l => {
+      const lr = l.getBoundingClientRect();
+      const sx = lr.left + lr.width / 2 - rb.left, sy = lr.bottom - rb.top;
+      const col = (getComputedStyle(l).getPropertyValue("--rc") || "#888").trim();
+      const my = (sy + ty) / 2;
+      out += '<path d="M ' + sx + " " + sy + " C " + sx + " " + my + " " + tx + " " + my + " " + tx + " "
+        + (ty - 1) + '" fill="none" stroke="' + col + '" stroke-width="2" stroke-linecap="round" opacity="0.5"/>'
+        + '<circle cx="' + sx + '" cy="' + sy + '" r="3" fill="' + col + '"/>';
+    });
+    out += '<path d="M ' + (tx - 5) + " " + (ty - 8) + " L " + tx + " " + (ty - 1) + " L " + (tx + 5) + " "
+      + (ty - 8) + '" fill="none" stroke="' + gold + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+    svg.innerHTML = out;
+  }
+  function wireReasoningMap(){
+    document.querySelectorAll(".th-rmap[data-rmap]").forEach(root => {
+      const draw = () => _rmapDraw(root);
+      requestAnimationFrame(() => requestAnimationFrame(draw));      // after layout + fonts settle
+      if(window.ResizeObserver){
+        try{ if(root._ro) root._ro.disconnect(); }catch(e){}
+        root._ro = new ResizeObserver(() => draw()); root._ro.observe(root);
+      }
+      const det = root.closest("details");
+      if(det && !det._rmapBound){ det._rmapBound = true;
+        det.addEventListener("toggle", () => { if(det.open) requestAnimationFrame(draw); }); }
+    });
   }
 
   function deckAndTakeHtml(){
@@ -13451,6 +13518,15 @@ async function openShare(token){
     if(!hasTake && !hasDeck && !hasComp) return "";
     let out = '<div class="th-synth-wrap">';
     if(hasTake){
+      // Reasoning Map — the whole take at a glance, DRAWN, as its own panel (separated from the memo).
+      const cMap = findingCiter();
+      const mapHtml = reasoningMapHtml(take, cMap);
+      if(mapHtml){
+        out += '<details class="th-synth th-rmap-panel" open><summary class="th-synth-sum">'
+          + '<span class="th-synth-kicker">Reasoning Map</span>'
+          + '<span class="th-synth-note">how the reasoning flows to the read — the whole Collective Take at a glance</span></summary>'
+          + '<div class="th-take-body">' + mapHtml + cMap.footnotes() + "</div></details>";
+      }
       const c = findingCiter();
       const bl = (take.bottom_line || {});
       const secs = (take.sections || []).map(s => takeSectionHtml(s, c)).join("");
@@ -13459,7 +13535,6 @@ async function openShare(token){
         + '<span class="th-synth-note">the integrated diligence read — facts + reasoning across every finding</span></summary>'
         + '<div class="th-take-body">'
         + ((bl.text || "").trim() ? '<div class="th-memo-bluf">' + c.ref((bl.text || "") + " " + (bl.markers || "")) + "</div>" : "")
-        + takeReasoningFlow(take, c)
         + secs + c.footnotes() + "</div></details>";
     }
     if(hasComp){
