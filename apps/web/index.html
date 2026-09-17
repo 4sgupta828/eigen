@@ -12703,6 +12703,7 @@ async function openShare(token){
                if(g) g.innerHTML = '<p class="th-note">' + esc2(e.message || String(e)) + "</p>"; }
   }
   async function openBoardEntry(entryId){
+    if(!entryId){ return boardGallery(); }   // never fetch "/board/" (empty id → a redirect + wrong shape)
     setPublicChrome(true);
     const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = "";
     if(conv()) conv().innerHTML = "";
