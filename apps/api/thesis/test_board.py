@@ -146,9 +146,10 @@ def _doc():
         "versions": [{"text": "older wording", "rationale": "why"}],
         "shaping_prefs": ["prefers a named buyer"], "proposed_thesis": "draft", "decision": {"x": 1},
         "turns": [{"role": "user", "text": "private brainstorming"}],
-        "claims": [{"rung": "problem", "evidence": [
+        "claims": [{"rung": "problem", "thesis_id": "thesis-secret-16", "evidence": [
             {"id": "e1", "source_key": "call", "quote": "private expert call", "said_by": "an expert"},
-            {"id": "e2", "source_key": "sec", "quote": "public filing says X", "source_subject": "Acme"}]}],
+            {"id": "e2", "source_key": "sec", "quote": "public filing says X", "source_subject": "Acme",
+             "thesis_id": "thesis-secret-16"}]}],
     }
 
 
@@ -165,9 +166,12 @@ def test_anonymize_strips_submitter_identity_and_private_state():
 
 def test_anonymize_drops_private_expert_call_evidence_keeps_public():
     a = b.anonymize_doc(_doc())
-    ev = a["claims"][0]["evidence"]
+    claim = a["claims"][0]
+    assert "thesis_id" not in claim                        # the internal source id never leaks
+    ev = claim["evidence"]
     assert [e["id"] for e in ev] == ["e2"]                 # the owner-only 'call' row is removed
     assert ev[0]["quote"] == "public filing says X"        # public evidence survives (citations resolve)
+    assert "thesis_id" not in ev[0]                        # nor on the evidence rows
 
 
 def test_anonymize_does_not_mutate_the_original():
