@@ -523,6 +523,11 @@
   .th-board-link:hover{background:var(--gold);color:var(--on-accent,#fff);border-color:var(--gold);}
   .th-board-cta-note{font-size:.72rem;color:var(--dim);}
   .th-public-head{margin-top:.2rem;}
+  .th-public-meta{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;justify-content:flex-end;}
+  .th-pub-copy,.th-acts #th-board-copy{font-family:var(--mono);font-size:.72rem;font-weight:700;cursor:pointer;
+    color:var(--gold);background:transparent;border:1px solid color-mix(in srgb,var(--gold) 45%,var(--hair));
+    border-radius:999px;padding:.32rem .7rem;white-space:nowrap;}
+  .th-pub-copy:hover,.th-acts #th-board-copy:hover{background:var(--gold);color:var(--on-accent,#fff);border-color:var(--gold);}
   /* Clean public page: strip the app's editing chrome (mode tabs, composer, rail opener). */
   body.th-public #modeswitch,
   body.th-public #ask,
@@ -12616,17 +12621,36 @@ async function openShare(token){
     const badge = STATE.anonymous
       ? '<span class="th-readonly">ThesisBoard · anonymous</span>'
       : '<span class="th-readonly">Shared · read-only</span>';
+    // Anyone viewing this public page can grab its shareable link (the board URL, or the ?share link).
+    const copy = '<button type="button" class="th-pub-copy" id="th-pub-copy" '
+      + 'title="Copy a public link to this page — anyone can open it, no login">🔗 Copy link</button>';
     return '<section class="th-decision th-public-head" aria-label="Thesis">' + back
       + '<div class="th-decision-head"><div><div class="th-decision-kicker">Thesis</div>'
-      + "<h2>" + esc2(d.thesis || "") + "</h2></div>" + badge + "</div></section>";
+      + "<h2>" + esc2(d.thesis || "") + "</h2></div>"
+      + '<div class="th-public-meta">' + badge + copy + "</div></div></section>";
+  }
+  function publicShareUrl(){
+    return STATE.anonymous ? boardUrl(STATE.id) : publicUrl(STATE.id, STATE.share);
+  }
+  async function copyPublicLink(btn){
+    const url = publicShareUrl();
+    try{ await navigator.clipboard.writeText(url); btn.textContent = "✓ Link copied"; }
+    catch(e){ if(note()) note().textContent = "Copy this link: " + url; }
   }
 
   function boardActionsHtml(d){
     const published = !!(d && d.board_entry);
-    return '<button type="button" id="th-share">Copy public link</button>'
+    // Two kinds of public link: the ThesisBoard entry (anonymized, listed publicly) once published, and a
+    // personal read-only link to your own full thesis (a ?share token, not anonymized, not listed).
+    return (published
+        ? '<button type="button" id="th-board-copy" title="Copy the public ThesisBoard link — '
+          + 'anonymized, anyone can open it">🔗 Copy ThesisBoard link</button>'
+          + '<button type="button" id="th-board-view">View on board</button>'
+        : "")
       + '<button type="button" id="th-publish">'
         + (published ? "Update on ThesisBoard" : "Publish to ThesisBoard") + "</button>"
-      + (published ? '<button type="button" id="th-board-view">View on board</button>' : "")
+      + '<button type="button" id="th-share" title="A read-only link to your full thesis (not '
+        + 'anonymized, not listed on the board)">Copy read-only link</button>'
       + (published ? '<button type="button" id="th-unpublish" class="th-inq-del">Unpublish</button>' : "");
   }
   function wireBoardActions(d){
@@ -12639,6 +12663,11 @@ async function openShare(token){
     const vw = document.getElementById("th-board-view");
     if(vw) vw.addEventListener("click", () => {
       if(d && d.board_entry) location.hash = "#board/" + encodeURIComponent(d.board_entry); });
+    const bc = document.getElementById("th-board-copy");
+    if(bc) bc.addEventListener("click", async () => {
+      if(!(d && d.board_entry)) return;
+      try{ await navigator.clipboard.writeText(boardUrl(d.board_entry)); bc.textContent = "✓ ThesisBoard link copied"; }
+      catch(e){ if(note()) note().textContent = "Copy this link: " + boardUrl(d.board_entry); } });
   }
 
   async function publishToBoard(btn){
@@ -12826,6 +12855,8 @@ async function openShare(token){
     acts().innerHTML = canMutate(d) ? boardActionsHtml(d) : "";
     wireBoardActions(d);
     takes().innerHTML = (STATE.public ? publicHeaderHtml(d) : pretestHtml(d)) + '<div id="th-loi"></div>';
+    if(STATE.public){ const cp = document.getElementById("th-pub-copy");
+      if(cp) cp.addEventListener("click", () => copyPublicLink(cp)); }
     // A public/board view is PRE-FETCHED (the snapshot or the shared read is already in STATE) — never
     // re-fetch the owner-only endpoints; render straight from what we have.
     if(STATE.prefetched){ renderInquiries(); }
