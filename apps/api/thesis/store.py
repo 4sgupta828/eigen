@@ -243,6 +243,27 @@ CREATE TABLE IF NOT EXISTS ts_transcript (
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_ts_transcript_inq ON ts_transcript (thesis_id, inquiry_key, created_at DESC);
+
+-- The public ThesisBoard: a GLOBAL, cross-user gallery of theses their authors chose to publish. Each
+-- row is a FROZEN, ANONYMIZED snapshot built at publish time — unanswered questions stripped, the
+-- submitter's identity removed (the `payload` is self-contained and safe to serve with no auth). The
+-- source `thesis_id`/`owner_id` are kept ONLY so the author can re-publish or unpublish (and for
+-- moderation) and are NEVER included in any public read path. Re-publishing the same thesis REPLACES its
+-- snapshot in place (stable public URL). Deleting the source thesis cascades nothing here on purpose —
+-- unpublish is an explicit author/admin action — so `thesis_id` is a plain column, not an FK.
+CREATE TABLE IF NOT EXISTS ts_board (
+    id               text PRIMARY KEY,            -- public entry id (the board URL); unguessable
+    thesis_id        text NOT NULL,               -- internal: source thesis (re-publish / unpublish)
+    owner_id         text NOT NULL DEFAULT '',    -- internal: publisher; NEVER served publicly
+    title            text NOT NULL DEFAULT '',
+    summary          text NOT NULL DEFAULT '',    -- the thesis sentence, for the card
+    findings         int  NOT NULL DEFAULT 0,     -- answered-question count, for the card
+    payload          jsonb NOT NULL DEFAULT '{}', -- the sanitized, self-contained public snapshot
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_ts_board_thesis ON ts_board (thesis_id);
+CREATE INDEX IF NOT EXISTS ix_ts_board_recent ON ts_board (created_at DESC);
 """
 
 
@@ -760,6 +781,75 @@ async def issue_share(pool, thesis_id: str) -> str:
 async def revoke_share(pool, thesis_id: str) -> None:
     # Rotation invalidates every previously copied read-only URL without creating a nullable state.
     await issue_share(pool, thesis_id)
+
+
+# ---- public ThesisBoard: a global gallery of anonymized, published snapshots ------------------------
+
+async def publish_board(pool, *, thesis_id: str, owner_id: str, title: str, summary: str,
+                        payload: dict, findings: int) -> str:
+    """Insert or REPLACE this thesis's frozen public snapshot; returns the (stable) public entry id.
+    Re-publishing the same thesis keeps its existing id so shared board URLs never break."""
+    await ensure_schema(pool)
+    new_id = secrets.token_urlsafe(12)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO ts_board (id, thesis_id, owner_id, title, summary, findings, payload)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+               ON CONFLICT (thesis_id) DO UPDATE SET
+                    title = EXCLUDED.title, summary = EXCLUDED.summary, findings = EXCLUDED.findings,
+                    payload = EXCLUDED.payload, updated_at = now()
+               RETURNING id""",
+            new_id, thesis_id, owner_id or "", title or "", summary or "", int(findings or 0),
+            json.dumps(payload or {}))
+    return str(row["id"] if row else "")
+
+
+async def board_list(pool, *, limit: int = 60) -> list[dict]:
+    """Public board cards, newest first. Never returns owner_id / thesis_id / the full payload."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, title, summary, findings, created_at, updated_at
+                 FROM ts_board ORDER BY created_at DESC LIMIT $1""", min(200, max(1, limit)))
+    return [{"id": r["id"], "title": r["title"], "summary": r["summary"],
+             "findings": int(r["findings"] or 0), "published_at": r["created_at"].isoformat(),
+             "updated_at": r["updated_at"].isoformat()} for r in rows]
+
+
+async def board_get(pool, entry_id: str) -> dict | None:
+    """The public snapshot for one board entry — the self-contained, already-anonymized payload plus its
+    display fields. NEVER includes thesis_id or owner_id (they are not selected)."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        r = await conn.fetchrow(
+            """SELECT id, title, summary, findings, payload, created_at, updated_at
+                 FROM ts_board WHERE id = $1""", entry_id)
+    if not r:
+        return None
+    out = _j(r["payload"]) or {}
+    out["board_id"] = r["id"]
+    out["title"] = r["title"]
+    out["summary"] = r["summary"]
+    out["findings"] = int(r["findings"] or 0)
+    out["published_at"] = r["created_at"].isoformat()
+    out["updated_at"] = r["updated_at"].isoformat()
+    out["anonymous"] = True
+    return out
+
+
+async def board_entry_for_thesis(pool, thesis_id: str) -> str:
+    """The public entry id for a thesis if it is currently published, else ''. Owner-facing only."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        r = await conn.fetchrow("SELECT id FROM ts_board WHERE thesis_id = $1", thesis_id)
+    return str(r["id"]) if r else ""
+
+
+async def board_delete(pool, thesis_id: str) -> None:
+    """Unpublish: remove this thesis's board snapshot. Caller must already be the verified owner."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM ts_board WHERE thesis_id = $1", thesis_id)
 
 
 # ---- lines of inquiry: Socratic questions ------------------------------------------------------

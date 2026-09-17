@@ -497,6 +497,36 @@
   .th-decision-card li{margin:.35rem 0;line-height:1.5;}
   .th-readonly{font:.62rem/1.2 var(--mono);padding:.28rem .55rem;border:1px solid var(--hair);
     border-radius:999px;color:var(--dim);}
+  /* ── Public ThesisBoard: the gallery, the entry point, and the clean public page ──────────────── */
+  .th-board{max-width:60rem;margin:0 auto;}
+  .th-board-head h2{font:600 1.5rem/1.2 var(--serif);color:var(--ink);margin:.2rem 0 .3rem;}
+  .th-board-head p{font-size:.9rem;line-height:1.6;color:var(--dim);margin:0 0 .5rem;max-width:44rem;}
+  .th-board-mine,.th-board-back{display:inline-block;font-family:var(--mono);font-size:.72rem;color:var(--gold);
+    text-decoration:none;letter-spacing:.02em;margin-bottom:.4rem;}
+  .th-board-mine:hover,.th-board-back:hover{text-decoration:underline;}
+  .th-board-back{margin-bottom:.6rem;}
+  .th-board-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.8rem;margin-top:.7rem;}
+  .th-board-card{text-align:left;cursor:pointer;border:1px solid var(--hair);border-radius:12px;
+    padding:.85rem .95rem;background:var(--panel);display:grid;gap:.55rem;min-width:0;transition:border-color .15s,transform .15s;}
+  .th-board-card:hover{border-color:var(--gold);transform:translateY(-1px);}
+  .th-board-thesis{font:500 .96rem/1.45 var(--serif);color:var(--ink);
+    display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;}
+  .th-board-meta{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;font-family:var(--mono);
+    font-size:.66rem;color:var(--dim);letter-spacing:.02em;}
+  .th-board-anon{color:var(--gold);font-weight:700;}
+  .th-board-dot{opacity:.5;}
+  .th-board-empty{grid-column:1/-1;font-size:.9rem;color:var(--dim);line-height:1.6;padding:1rem;text-align:center;}
+  .th-board-cta{margin-top:.9rem;padding-top:.8rem;border-top:1px solid var(--hair);display:flex;
+    flex-wrap:wrap;align-items:baseline;gap:.5rem;}
+  .th-board-link{font-family:var(--mono);font-size:.8rem;font-weight:700;color:var(--gold);text-decoration:none;
+    padding:.4rem .7rem;border:1px solid color-mix(in srgb,var(--gold) 45%,var(--hair));border-radius:999px;}
+  .th-board-link:hover{background:var(--gold);color:var(--on-accent,#fff);border-color:var(--gold);}
+  .th-board-cta-note{font-size:.72rem;color:var(--dim);}
+  .th-public-head{margin-top:.2rem;}
+  /* Clean public page: strip the app's editing chrome (mode tabs, composer, rail opener). */
+  body.th-public #modeswitch,
+  body.th-public #ask,
+  body.th-public .th-rail-toggle{display:none;}
   .th-recents{margin:.55rem 0 1rem;border:1px solid var(--hair);border-radius:12px;padding:.75rem;}
   .th-recents[hidden]{display:none;}
   .th-answer{margin-top:.5rem;padding:.5rem .7rem;border-left:2px solid var(--gold);font-size:.82rem;
@@ -1142,6 +1172,7 @@
     .th-deck-oneliner{font-size:.98rem;}
     .th-comp-wrap{margin:.6rem .7rem .2rem;}
     .th-reason{flex-wrap:wrap;gap:.3rem;}
+    .th-board-grid{grid-template-columns:1fr;}
   }
   @media (prefers-reduced-motion:reduce){.th-run{transition:none;}}
 
@@ -8151,6 +8182,23 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel �
     if(window.DD) DD.dive(Object.assign({company_id: cid}, depth ? {depth: depth} : {}));
   }
   else if(location.hash === "#deepdive" && DEEPDIVE_ENABLED){ setMode("deepdive"); }
+  else if(location.hash === "#board" && THESIS_ENABLED){
+    const im = $("#idmodal"); if(im) im.hidden = true;
+    setMode("thesis"); if(window.TH) TH.boardGallery();
+  }
+  else if(location.hash.indexOf("#board/") === 0 && THESIS_ENABLED){
+    // a public board entry: the reader is never gated (anonymized snapshot, no auth)
+    const im = $("#idmodal"); if(im) im.hidden = true;
+    setMode("thesis"); if(window.TH) TH.openBoardEntry(decodeURIComponent(location.hash.slice(7)));
+  }
+  else if(location.hash.indexOf("#view/") === 0 && THESIS_ENABLED){
+    // a shared public thesis "#view/<id>/<token>" — the reader is never gated
+    const im = $("#idmodal"); if(im) im.hidden = true;
+    const raw = location.hash.slice(6), i = raw.lastIndexOf("/");
+    const id = decodeURIComponent(i < 0 ? raw : raw.slice(0, i));
+    const tok = i < 0 ? "" : decodeURIComponent(raw.slice(i + 1));
+    setMode("thesis"); if(window.TH) TH.openPublic(id, tok);
+  }
   else if(location.hash.indexOf("#thesis/") === 0 && THESIS_ENABLED){
     const id = decodeURIComponent(location.hash.slice(8));
     setMode("thesis"); if(window.TH) TH.open(id);
@@ -11764,7 +11812,8 @@ async function openShare(token){
   const STATE = { id: "", doc: null, busy: false, labels: null, answers: {}, progress: null,
                   share: "", run: "", owners: readOwners(),
                   proposed: "", testing: false, selected: null, poll: null,
-                  inquiries: null, inqRun: null };
+                  inquiries: null, inqRun: null,
+                  public: false, anonymous: false, prefetched: false };
   const conv = () => document.getElementById("th-conv");
   const acts = () => document.getElementById("th-acts");
   const claims = () => document.getElementById("th-claims");
@@ -11803,6 +11852,11 @@ async function openShare(token){
   const REG = {filed: "▣", stated: "▢", observed: "◈"};
 
   function enter(params){
+    // Leaving any public/board view when the user re-enters thesis mode normally (e.g. via the tab):
+    // drop the public snapshot so we land on the intro, not a stale read-only page.
+    if(STATE.public){ STATE.public = false; STATE.anonymous = false; STATE.prefetched = false;
+                      STATE.doc = null; STATE.id = ""; STATE.share = ""; }
+    setPublicChrome(false);
     if(!STATE.labels) loadLabels();
     renderRail();                         // the Thesis Explorations rail is always populated in this mode
     if(STATE.doc) return render();
@@ -12006,6 +12060,8 @@ async function openShare(token){
   }
 
   async function open(id, share){
+    STATE.public = false; STATE.anonymous = false; STATE.prefetched = false;   // normal open is never public
+    setPublicChrome(false);
     const parsed = parseThesisHash("#thesis/" + (id || "")
                                   + (share ? "?share=" + encodeURIComponent(share) : ""));
     if(!parsed.id) return;
@@ -12185,6 +12241,8 @@ async function openShare(token){
       + '</div>'
       + '<div class="th-disc-results" id="th-disc-results"></div>'
       + '</div>'
+      + '<div class="th-board-cta"><a class="th-board-link" href="#board">📋 Browse the ThesisBoard</a>'
+      + '<span class="th-board-cta-note">theses the community published — anonymized, findings only</span></div>'
       + "</div>";
   }
 
@@ -12516,9 +12574,157 @@ async function openShare(token){
                             {method:"POST", headers:hdrs(), body:"{}"});
       const body = await r.json(); if(!r.ok || !body.share_token)
         throw new Error(body.detail || "could not create a share link");
-      await navigator.clipboard.writeText(thesisUrl(STATE.id, body.share_token));
-      button.textContent = "Read-only link copied";
+      await navigator.clipboard.writeText(publicUrl(STATE.id, body.share_token));
+      button.textContent = "Public link copied";
     }catch(e){ note().textContent = e.message || String(e); }
+  }
+
+  // ── Public ThesisBoard + the clean public thesis page ───────────────────────────────────────────
+  // A dedicated, read-only surface (no rail, no composer, no edit controls) used two ways: a clean
+  // PUBLIC page for a thesis its owner shares (?share token, not anonymized), and a BOARD entry — a
+  // frozen, anonymized snapshot from the global gallery. Both render through the same thesis renderer
+  // with STATE.public set; the board additionally sets STATE.anonymous. Both are PRE-FETCHED so render()
+  // never calls an owner-only endpoint.
+  function publicUrl(id, token){
+    return location.origin + "/app#view/" + encodeURIComponent(id) + "/" + encodeURIComponent(token || "");
+  }
+  function boardUrl(entryId){ return location.origin + "/app#board/" + encodeURIComponent(entryId); }
+  function setPublicChrome(on){ try{ document.body.classList.toggle("th-public", !!on); }catch(e){} }
+
+  function publicHeaderHtml(d){
+    const back = STATE.anonymous ? '<a class="th-board-back" href="#board">← ThesisBoard</a>' : "";
+    const badge = STATE.anonymous
+      ? '<span class="th-readonly">ThesisBoard · anonymous</span>'
+      : '<span class="th-readonly">Shared · read-only</span>';
+    return '<section class="th-decision th-public-head" aria-label="Thesis">' + back
+      + '<div class="th-decision-head"><div><div class="th-decision-kicker">Thesis</div>'
+      + "<h2>" + esc2(d.thesis || "") + "</h2></div>" + badge + "</div></section>";
+  }
+
+  function boardActionsHtml(d){
+    const published = !!(d && d.board_entry);
+    return '<button type="button" id="th-share">Copy public link</button>'
+      + '<button type="button" id="th-publish">'
+        + (published ? "Update on ThesisBoard" : "Publish to ThesisBoard") + "</button>"
+      + (published ? '<button type="button" id="th-board-view">View on board</button>' : "")
+      + (published ? '<button type="button" id="th-unpublish" class="th-inq-del">Unpublish</button>' : "");
+  }
+  function wireBoardActions(d){
+    const sh = document.getElementById("th-share");
+    if(sh) sh.addEventListener("click", () => shareThesis(sh));
+    const pb = document.getElementById("th-publish");
+    if(pb) pb.addEventListener("click", () => publishToBoard(pb));
+    const un = document.getElementById("th-unpublish");
+    if(un) un.addEventListener("click", () => unpublishFromBoard(un));
+    const vw = document.getElementById("th-board-view");
+    if(vw) vw.addEventListener("click", () => {
+      if(d && d.board_entry) location.hash = "#board/" + encodeURIComponent(d.board_entry); });
+  }
+
+  async function publishToBoard(btn){
+    const prev = btn.textContent; btn.disabled = true; btn.textContent = "Publishing…";
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/publish",
+                            {method:"POST", headers:hdrs(), body:"{}"});
+      const d = await r.json();
+      if(!r.ok || !d.board_id) throw new Error(d.detail || "could not publish to the board");
+      if(STATE.doc) STATE.doc.board_entry = d.board_id;
+      try{ await navigator.clipboard.writeText(boardUrl(d.board_id)); }catch(e){}
+      render();
+      if(note()) note().textContent = "Published to the ThesisBoard — public link copied. It shows only "
+        + "answered lines of inquiry, and your identity is not attached.";
+    }catch(e){ btn.disabled = false; btn.textContent = prev;
+              if(note()) note().textContent = e.message || String(e); }
+  }
+  async function unpublishFromBoard(btn){
+    if(!window.confirm("Remove this thesis from the public ThesisBoard?")) return;
+    btn.disabled = true;
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/publish",
+                            {method:"DELETE", headers:hdrs()});
+      if(!r.ok){ const d = await r.json().catch(() => ({})); throw new Error(d.detail || "could not unpublish"); }
+      if(STATE.doc) STATE.doc.board_entry = "";
+      render();
+      if(note()) note().textContent = "Removed from the ThesisBoard.";
+    }catch(e){ btn.disabled = false; if(note()) note().textContent = e.message || String(e); }
+  }
+
+  function boardCardHtml(e){
+    const when = String(e.published_at || "").slice(0, 10);
+    return '<button type="button" class="th-board-card" data-board="' + esc2(e.id) + '">'
+      + '<div class="th-board-thesis">' + esc2(e.summary || e.title || "Untitled thesis") + "</div>"
+      + '<div class="th-board-meta"><span class="th-board-anon">Anonymous</span>'
+      + '<span class="th-board-dot">·</span><span>' + esc2(String(e.findings || 0)) + " findings</span>"
+      + (when ? '<span class="th-board-dot">·</span><span>' + esc2(when) + "</span>" : "")
+      + "</div></button>";
+  }
+  async function boardGallery(){
+    STATE.public = false; STATE.anonymous = false; STATE.prefetched = false;
+    STATE.id = ""; STATE.doc = null; STATE.inquiries = null;
+    STATE.deck = STATE.take = STATE.competitive = null;
+    setPublicChrome(false);
+    const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = "";
+    if(conv()) conv().innerHTML = ""; if(acts()) acts().innerHTML = "";
+    const thread = document.getElementById("th-thread"); if(thread) thread.hidden = true;
+    const host = takes(); if(!host) return;
+    host.innerHTML = '<div class="th-board"><div class="th-board-head">'
+      + '<h2>ThesisBoard</h2><p>Startup theses the community chose to publish — anonymized, showing only '
+      + "settled findings. Open one to read its lines of inquiry, the collective take and the pitch deck.</p>"
+      + '<a class="th-board-mine" href="#thesis">← Back to my theses</a></div>'
+      + '<div class="th-board-grid"><p class="th-run-prog"><span class="su-spin"></span> <span>loading the board…</span></p></div></div>';
+    try{
+      const r = await fetch("/board?limit=60"); const d = await r.json();
+      if(!r.ok) throw new Error(d.detail || "could not load the board");
+      const entries = d.entries || [];
+      const grid = host.querySelector(".th-board-grid");
+      grid.innerHTML = entries.length ? entries.map(boardCardHtml).join("")
+        : '<p class="th-board-empty">No theses have been published yet. Test a thesis, then use '
+          + "“Publish to ThesisBoard”.</p>";
+      grid.querySelectorAll(".th-board-card").forEach(b => b.addEventListener("click",
+        () => { location.hash = "#board/" + encodeURIComponent(b.dataset.board); }));
+    }catch(e){ const g = host.querySelector(".th-board-grid");
+               if(g) g.innerHTML = '<p class="th-note">' + esc2(e.message || String(e)) + "</p>"; }
+  }
+  async function openBoardEntry(entryId){
+    setPublicChrome(true);
+    const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = "";
+    if(conv()) conv().innerHTML = "";
+    const host = takes();
+    if(host) host.innerHTML = '<p class="th-run-prog"><span class="su-spin"></span> <span>opening…</span></p>';
+    try{
+      const r = await fetch("/board/" + encodeURIComponent(entryId)); const d = await r.json();
+      if(!r.ok || !d.entry) throw new Error(d.detail || "could not open that board entry");
+      const e = d.entry, doc = e.doc || {}, inq = e.inq || {};
+      STATE.public = true; STATE.anonymous = true; STATE.prefetched = true;
+      STATE.id = entryId; STATE.share = "";
+      STATE.doc = Object.assign({}, doc, {is_owner: false});
+      STATE.inquiries = inq.inquiries || [];
+      STATE.deck = inq.deck || null; STATE.take = inq.take || null; STATE.competitive = inq.competitive || null;
+      render();
+    }catch(e){ setPublicChrome(false); const host2 = takes();
+               if(host2) host2.innerHTML = '<p class="th-note">' + esc2(e.message || String(e)) + "</p>"; }
+  }
+  async function openPublic(id, token){
+    setPublicChrome(true);
+    const intro = document.getElementById("th-intro"); if(intro) intro.innerHTML = "";
+    if(conv()) conv().innerHTML = "";
+    const host = takes();
+    if(host) host.innerHTML = '<p class="th-run-prog"><span class="su-spin"></span> <span>opening…</span></p>';
+    const sq = token ? "?share=" + encodeURIComponent(token) : "";
+    try{
+      const r = await fetch("/thesis/" + encodeURIComponent(id) + sq, {headers: {"content-type": "application/json"}});
+      const d = await r.json();
+      if(!r.ok || !d.thesis) throw new Error(d.detail || "could not open that thesis");
+      STATE.public = true; STATE.anonymous = false; STATE.prefetched = true;
+      STATE.id = id; STATE.share = token || ""; STATE.doc = d.thesis;
+      const ri = await fetch("/thesis/" + encodeURIComponent(id) + "/inquiries" + sq,
+                             {headers: {"content-type": "application/json"}});
+      const di = ri.ok ? await ri.json() : {};
+      STATE.inquiries = di.inquiries || [];
+      STATE.deck = di.deck || null; STATE.take = di.take || null; STATE.competitive = di.competitive || null;
+      render();
+    }catch(e){ setPublicChrome(false); const host2 = takes();
+               if(host2) host2.innerHTML = '<p class="th-note">' + esc2(e.message || String(e)) + "</p>"; }
   }
 
   function render(){
@@ -12596,13 +12802,13 @@ async function openShare(token){
     // READY / TESTED: the thesis header + the lines of inquiry. The old claims ledger and its pips are
     // retired with the claims model — evidence now lives inline under each question.
     if(ledger) ledger.hidden = true;
-    acts().innerHTML = canMutate(d)
-      ? '<button type="button" id="th-share">Copy read-only link</button>' : "";
-    const sh = document.getElementById("th-share");
-    if(sh) sh.addEventListener("click", () => shareThesis(sh));
-    takes().innerHTML = pretestHtml(d) + '<div id="th-loi"></div>';
-    loadInquiries();
-    loadTranscripts();
+    acts().innerHTML = canMutate(d) ? boardActionsHtml(d) : "";
+    wireBoardActions(d);
+    takes().innerHTML = (STATE.public ? publicHeaderHtml(d) : pretestHtml(d)) + '<div id="th-loi"></div>';
+    // A public/board view is PRE-FETCHED (the snapshot or the shared read is already in STATE) — never
+    // re-fetch the owner-only endpoints; render straight from what we have.
+    if(STATE.prefetched){ renderInquiries(); }
+    else { loadInquiries(); loadTranscripts(); }
   }
 
   // The proposed thesis, editable, with "Use this thesis" (the only decomposition) + any clarifiers.
@@ -12722,7 +12928,8 @@ async function openShare(token){
     const host = document.getElementById("th-loi"); if(!host) return;
     host.innerHTML = '<p class="th-run-prog"><span class="su-spin"></span> <span>loading the lines of inquiry…</span></p>';
     try{
-      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries", {headers: hdrs()});
+      const r = await fetch("/thesis/" + encodeURIComponent(STATE.id) + "/inquiries"
+                            + (STATE.share ? "?share=" + encodeURIComponent(STATE.share) : ""), {headers: hdrs()});
       const d = await r.json(); if(!r.ok) throw new Error(d.detail || "could not load the lines of inquiry");
       STATE.inquiries = d.inquiries || [];
       STATE.deck = d.deck || null; STATE.take = d.take || null; STATE.competitive = d.competitive || null;
@@ -13800,6 +14007,7 @@ async function openShare(token){
   }
 
   window.TH = {submit, enter, reset, open, startTest, render, confirmThesis,
+    boardGallery, openBoardEntry, openPublic,
     __test:{ownerHeaders, thesisUrl, parseThesisHash, canMutate, decisionHtml, linkEvidence,
             newThesisHash, fmtBody, turnHtml, introHtml, phaseOf, payloadHtml, pretestHtml,
             contextHtml, inqHtml, qnHtml, LENS, segmentOf, expertQueryFor, insightsHtml,

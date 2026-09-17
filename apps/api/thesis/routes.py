@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from . import argue as arg
 from . import attack as atk
+from . import board as tboard
 from . import competitive as compres
 from . import converse as conv
 from . import decompose as dec
@@ -476,7 +477,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     @r.get("/thesis/{thesis_id}")
     async def tl_get(thesis_id: str, share: str = "", authorization: str = Header(default=""),
                      x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
-        _pool, d = await _read(thesis_id, authorization, x_thesis_owner, share)
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, share)
+        if d.get("is_owner"):      # tell the owner whether (and where) this thesis is on the public board
+            d["board_entry"] = await tstore.board_entry_for_thesis(pool, thesis_id)
         return {"status": "ok", "thesis": d}
 
     @r.get("/theses")
@@ -938,18 +941,15 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                           polarity=int(q["polarity"])), q["target_status"]) for q in answered]
         return _dec.aggregate_aspect(profile, statuses, critical=bool(getattr(aspect, "critical", False)))
 
-    @r.get("/thesis/{thesis_id}/inquiries")
-    async def tl_inquiries(thesis_id: str, authorization: str = Header(default=""),
-                           x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
-        """The lines of inquiry — now GENERATED per thesis and read back from the store (grouped by the
-        cluster each question was assigned), with a per-dimension verdict derived from the answers."""
-        pool, _d = await _read(thesis_id, authorization, x_thesis_owner)
+    async def _inquiries_view(pool, thesis_id: str, d: dict) -> dict:
+        """The lines-of-inquiry view over a thesis — clusters (grouped by the assignment each question got)
+        with a per-dimension verdict derived from the answers, plus the three synthesis artifacts. Shared
+        by the owner GET and the public-board snapshot builder."""
         profile = _profile()
         qs = await tstore.list_questions(pool, thesis_id)
         by_inq: dict[str, list] = {}
         for q in qs:
             by_inq.setdefault(q["inquiry_key"], []).append(q)
-        # Order the clusters by the generation order stored on their questions.
         order = {k: min(int(q.get("inquiry_order") or 0) for q in g) for k, g in by_inq.items()}
         out = []
         for key in sorted(by_inq, key=lambda k: order.get(k, 0)):
@@ -963,9 +963,18 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                         "verdict": _aspect_verdict(profile, g)} for dk, g in by_dim.items()]
             out.append({"key": key, "name": iqs[0].get("inquiry_name") or "Line of inquiry",
                         "framing": iqs[0].get("inquiry_framing") or "", "aspects": aspects, "questions": iqs})
-        return {"status": "ok", "inquiries": out,
-                "deck": (_d or {}).get("pitch_deck") or {}, "take": (_d or {}).get("collective_take") or {},
-                "competitive": (_d or {}).get("competitive") or {}}
+        return {"inquiries": out,
+                "deck": (d or {}).get("pitch_deck") or {}, "take": (d or {}).get("collective_take") or {},
+                "competitive": (d or {}).get("competitive") or {}}
+
+    @r.get("/thesis/{thesis_id}/inquiries")
+    async def tl_inquiries(thesis_id: str, share: str = "", authorization: str = Header(default=""),
+                           x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """The lines of inquiry — GENERATED per thesis and read back from the store, with per-dimension
+        verdicts and the three synthesis artifacts. Accepts a read-only `share` token so a public/shared
+        viewer can load the deck + take + competitive too (not just the thesis header)."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, share)
+        return {"status": "ok", **await _inquiries_view(pool, thesis_id, _d)}
 
     @r.get("/thesis/{thesis_id}/experts")
     async def tl_experts(thesis_id: str, authorization: str = Header(default=""),
@@ -1286,7 +1295,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         # critical-subset run is just "priority == 0", precise and never re-ranked (owner direction).
         await prio.assign_priorities(profile, inquiries, thesis=decision, llm_json=_strong_llm_json())
         await tstore.set_inquiries(pool, thesis_id, inquiries)
-        return await tl_inquiries(thesis_id, authorization, x_thesis_owner)
+        return await tl_inquiries(thesis_id, authorization=authorization, x_thesis_owner=x_thesis_owner)
 
     @r.post("/thesis/{thesis_id}/inquiries/prioritize")
     async def tl_prioritize(thesis_id: str, authorization: str = Header(default=""),
@@ -1303,7 +1312,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         await prio.assign_priorities(profile, [{"questions": qs}], thesis=d.get("thesis") or "",
                                      llm_json=_strong_llm_json())
         await tstore.set_question_priorities(pool, thesis_id, {q["id"]: q.get("priority", 1) for q in qs})
-        return await tl_inquiries(thesis_id, authorization, x_thesis_owner)
+        return await tl_inquiries(thesis_id, authorization=authorization, x_thesis_owner=x_thesis_owner)
 
     @r.patch("/thesis/{thesis_id}/question/{qid}")
     async def tl_edit_question(thesis_id: str, qid: str, body: QuestionEdit,
@@ -1542,6 +1551,51 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             raise HTTPException(status_code=409, detail="no decision profile is configured")
         result = await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json())
         return {"status": "ok", "deck": result.get("deck"), "findings": result.get("findings", 0)}
+
+    # ── Public ThesisBoard: self-publish an anonymized, answered-only snapshot to a global gallery ──────
+    @r.post("/thesis/{thesis_id}/publish")
+    async def tl_publish(thesis_id: str, authorization: str = Header(default=""),
+                         x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Publish (or re-publish) this thesis to the public ThesisBoard as a FROZEN, ANONYMIZED snapshot:
+        the submitter's identity is stripped and unanswered lines of inquiry are removed. Owner-only; free
+        (no LLM/research spend — a pure snapshot of what already exists). Idempotent per thesis: a stable
+        public entry id is kept across re-publishes so shared board URLs never break."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        view = await _inquiries_view(pool, thesis_id, d)
+        answered = tboard.answered_inquiries(view.get("inquiries") or [])
+        if not answered:
+            raise HTTPException(status_code=409,
+                                detail="answer at least one line of inquiry before publishing to the board")
+        payload = {"doc": tboard.anonymize_doc(d),
+                   "inq": {"inquiries": answered, "deck": view.get("deck") or {},
+                           "take": view.get("take") or {}, "competitive": view.get("competitive") or {}}}
+        entry_id = await tstore.publish_board(
+            pool, thesis_id=thesis_id, owner_id=str(d.get("owner_id") or ""),
+            title=str(d.get("title") or ""), summary=str(d.get("thesis") or ""),
+            payload=payload, findings=tboard.answered_count(answered))
+        return {"status": "ok", "board_id": entry_id}
+
+    @r.delete("/thesis/{thesis_id}/publish")
+    async def tl_unpublish(thesis_id: str, authorization: str = Header(default=""),
+                           x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Unpublish: remove this thesis's snapshot from the public board. Owner-only."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        await tstore.board_delete(pool, thesis_id)
+        return {"status": "ok"}
+
+    @r.get("/board")
+    async def tl_board(limit: int = 60):
+        """The public ThesisBoard gallery — every published snapshot, newest first. No auth; cards only
+        (no owner or source-thesis identity)."""
+        return {"status": "ok", "entries": await tstore.board_list(await pool_of(), limit=limit)}
+
+    @r.get("/board/{entry_id}")
+    async def tl_board_entry(entry_id: str):
+        """One public board entry — the self-contained, already-anonymized snapshot. No auth."""
+        entry = await tstore.board_get(await pool_of(), entry_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="no such board entry")
+        return {"status": "ok", "entry": entry}
 
     async def _run_competitive(thesis_id: str, run_id: str):
         """Research the competitive landscape (open web) and store it — a background run so the request
