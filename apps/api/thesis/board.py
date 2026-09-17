@@ -33,9 +33,10 @@ def anonymize_doc(doc: dict) -> dict:
     d["turns"] = []              # the genesis conversation is private to the author
     claims = []
     for c in (d.get("claims") or []):
-        c = dict(c)
-        c["evidence"] = [e for e in (c.get("evidence") or [])
-                         if (e or {}).get("source_key") != "call"]   # drop owner-only expert-call rows
+        c = {k: v for k, v in dict(c).items() if k != "thesis_id"}     # never expose the source thesis id
+        c["evidence"] = [{k: v for k, v in (e or {}).items() if k != "thesis_id"}
+                         for e in (c.get("evidence") or [])
+                         if (e or {}).get("source_key") != "call"]      # drop owner-only expert-call rows
         claims.append(c)
     d["claims"] = claims
     return d

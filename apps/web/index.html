@@ -8204,9 +8204,12 @@ function routeHash(){    // #s/<id> → Q&A answer/thread · #p/<id> → panel �
     setMode("thesis"); if(window.TH) TH.boardGallery();
   }
   else if(location.hash.indexOf("#board/") === 0 && THESIS_ENABLED){
-    // a public board entry: the reader is never gated (anonymized snapshot, no auth)
+    // a public board entry: the reader is never gated (anonymized snapshot, no auth). Capture the id
+    // BEFORE setMode — setMode("thesis") pushState's the hash to "#thesis", so reading it afterwards
+    // would yield an empty id (the "clicking a board thesis loads the gallery" bug).
     const im = $("#idmodal"); if(im) im.hidden = true;
-    setMode("thesis"); if(window.TH) TH.openBoardEntry(decodeURIComponent(location.hash.slice(7)));
+    const bid = decodeURIComponent(location.hash.slice(7));
+    setMode("thesis"); if(window.TH) TH.openBoardEntry(bid);
   }
   else if(location.hash.indexOf("#view/") === 0 && THESIS_ENABLED){
     // a shared public thesis "#view/<id>/<token>" — the reader is never gated
