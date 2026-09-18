@@ -160,6 +160,8 @@ export const api = {
   projectRun: (id: string) => req<RunResp>("POST", `/thesis/${enc(id)}/inquiries/run`, { max_usd: 0, web: true }, id),
   runAll: (id: string, max_usd: number) => req<RunResp>("POST", `/thesis/${enc(id)}/inquiries/run`, { max_usd, web: true }, id),
   runCritical: (id: string, max_usd: number, level = 0) => req<RunResp>("POST", `/thesis/${enc(id)}/inquiries/run_critical`, { max_usd, level, web: true }, id),
+  runQuestion: (id: string, qid: string, max_usd: number) =>
+    req<RunResp>("POST", `/thesis/${enc(id)}/question/${enc(qid)}/run`, { max_usd, web: true, idempotency_key: max_usd > 0 ? `q-${qid}-${Date.now()}` : undefined }, id),
   inquiryStatus: (id: string, run: string) => getJSON<RunStatus>(`/thesis/${enc(id)}/inquiry/status?run=${enc(run)}`, id),
   synthesize: (id: string) => req<{ status: string; take?: Take; deck?: Deck; competitive?: Competitive; findings?: number }>("POST", `/thesis/${enc(id)}/synthesize`, undefined, id),
   buildDeck: (id: string) => req<{ status: string; deck?: Deck; findings?: number }>("POST", `/thesis/${enc(id)}/deck`, undefined, id),

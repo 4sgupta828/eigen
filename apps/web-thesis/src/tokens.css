@@ -160,9 +160,17 @@ th { font-family: var(--mono); font-size: .55rem; text-transform: uppercase; let
 .th-aspect2-hint { font-size: .8rem; color: var(--muted); margin: -.15rem 0 .1rem; line-height: 1.45; }
 
 .th-qn2 { border: 1px solid var(--hair); border-left: 3px solid var(--gold); border-radius: 11px; background: var(--panel2); padding: .65rem .75rem; }
+/* unanswered questions are dimmed so answered findings hold focus */
+.th-qn2-open { background: transparent; border-style: dashed; border-left-color: var(--hair); opacity: .72; }
+.th-qn2-open:hover { opacity: 1; }
+.th-qn2-open .th-qn2-q { font-weight: 500; color: var(--muted); }
 .th-qn2-top { display: flex; align-items: center; gap: .45rem; margin-bottom: .35rem; }
 .th-lens2 { display: inline-flex; align-items: center; gap: .28rem; font-family: var(--mono); font-size: .58rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
 .th-lens2-g { color: var(--gold-strong); }
+.th-qn2-pending { font-family: var(--mono); font-size: .56rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); border: 1px dashed var(--hair); border-radius: 5px; padding: .1rem .35rem; }
+.th-qn2-run { margin-left: auto; font-family: var(--mono); font-size: .66rem; font-weight: 600; color: var(--gold-strong); background: color-mix(in srgb, var(--gold) 9%, var(--panel)); border: 1px solid color-mix(in srgb, var(--gold) 42%, var(--hair)); border-radius: 8px; padding: .28rem .6rem; cursor: pointer; white-space: nowrap; }
+.th-qn2-run:hover:not(:disabled) { background: var(--gold); color: var(--on-accent); border-color: var(--gold); }
+.th-qn2-run:disabled { opacity: .6; cursor: default; }
 .th-qn2-q { font-family: var(--serif); font-size: .98rem; font-weight: 600; line-height: 1.4; color: var(--ink); margin: 0 0 .1rem; }
 
 .th-answer-body { font-size: .88rem; line-height: 1.65; color: var(--ink); margin-top: .45rem; }

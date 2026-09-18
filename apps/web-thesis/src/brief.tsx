@@ -502,22 +502,53 @@ function GroundedAnswer({ q }: { q: Question }) {
     </>
   );
 }
-function QuestionCard({ q }: { q: Question }) {
+function QuestionCard({ q, id, owner, onDone }: { q: Question; id?: string; owner?: boolean; onDone?: () => void }) {
   const lens = LENS[q.kind || ""] || { label: (q.kind || "").replace(/_/g, " "), glyph: "" };
   const pr = Number(q.priority == null ? 1 : q.priority);
   const prCls = pr <= 0 ? "p-0" : pr === 1 ? "p-1" : "p-2";
+  const answered = !!q.target_status;
+  const [busy, setBusy] = useState(false); const [note, setNote] = useState(""); const [err, setErr] = useState("");
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+
+  function poll(runId: string) {
+    if (!id) return;
+    api.inquiryStatus(id, runId).then((s) => {
+      if (s.state === "completed") { setBusy(false); setNote(""); onDone?.(); return; }
+      if (s.state === "failed") { setBusy(false); setErr("the run failed — try again"); return; }
+      setNote("researching…");
+      timer.current = window.setTimeout(() => poll(runId), 2500);
+    }).catch(() => { timer.current = window.setTimeout(() => poll(runId), 3000); });
+  }
+  async function run() {
+    if (!id || busy) return; setErr("");
+    try {
+      const proj = await api.runQuestion(id, q.id, 0);
+      const max = Number(proj.projection?.projected_usd || 0);
+      if (!window.confirm(`Research this question against the corpus and the open web?\n\nProjected maximum: $${max.toFixed(3)}`)) return;
+      setBusy(true); setNote("starting…");
+      const r = await api.runQuestion(id, q.id, Math.max(max, 0.01));
+      if (r.status === "completed") { setBusy(false); onDone?.(); return; }
+      if (!r.run?.id) throw new Error(r.status === "refused" ? "cost exceeded the budget" : "could not start the run");
+      poll(r.run.id);
+    } catch (e) { setBusy(false); setErr((e as Error).message); }
+  }
+
   return (
-    <div className="th-qn2">
+    <div className={`th-qn2${answered ? "" : " th-qn2-open"}`}>
       <div className="th-qn2-top">
         <span className={`prio ${prCls}`} title={pr <= 0 ? "P0 — critical crux" : pr === 1 ? "P1 — important" : "P2 — completeness"}>P{pr <= 0 ? 0 : pr}</span>
         <span className="th-lens2">{lens.glyph ? <span className="th-lens2-g">{lens.glyph}</span> : null}{lens.label}</span>
+        {!answered && !(owner && id) ? <span className="th-qn2-pending">Not yet run</span> : null}
+        {owner && id ? <button className="th-qn2-run" disabled={busy} onClick={run} title={answered ? "Re-run this question" : "Run this question"}>{busy ? (note || "…") : answered ? "↻ Re-run" : "▶ Run"}</button> : null}
       </div>
       <div className="th-qn2-q">{q.text}</div>
-      {q.target_status ? <GroundedAnswer q={q} /> : <div className="th-answer-note">Not yet researched.</div>}
+      {answered ? <GroundedAnswer q={q} /> : <div className="th-answer-note">{busy ? (note || "researching…") : "Not yet researched — run it to fill this gap."}</div>}
+      {err ? <p style={{ color: "var(--p0)", fontSize: ".8rem", margin: ".35rem 0 0" }}>{err}</p> : null}
     </div>
   );
 }
-function LinesTab({ inquiries }: { inquiries?: InquiriesView["inquiries"] }) {
+function LinesTab({ inquiries, id, owner, onDone }: { inquiries?: InquiriesView["inquiries"]; id?: string; owner?: boolean; onDone?: () => void }) {
   const lines = (inquiries || []).filter((l) => (l.questions || []).length);
   if (!lines.length) return <p className="muted">No lines of inquiry yet.</p>;
   return (
@@ -559,11 +590,11 @@ function LinesTab({ inquiries }: { inquiries?: InquiriesView["inquiries"] }) {
                         <span className={`v ${av.cls}`}>{av.l}</span>
                       </div>
                       {a.prompt ? <p className="th-aspect2-hint">{a.prompt}</p> : null}
-                      {(byAspect.get(a.key) || []).map((q) => <QuestionCard key={q.id} q={q} />)}
+                      {(byAspect.get(a.key) || []).map((q) => <QuestionCard key={q.id} q={q} id={id} owner={owner} onDone={onDone} />)}
                     </div>
                   );
                 })}
-                {orphans.length ? <div className="th-aspect2">{orphans.map((q) => <QuestionCard key={q.id} q={q} />)}</div> : null}
+                {orphans.length ? <div className="th-aspect2">{orphans.map((q) => <QuestionCard key={q.id} q={q} id={id} owner={owner} onDone={onDone} />)}</div> : null}
               </div>
             </details>
           );
@@ -743,7 +774,7 @@ export function Brief({ doc, inq, anonymous, id, owner, onRefetchInq }: {
           </div>
           {tab === "take" ? <TakeTab take={take} />
             : tab === "reason" ? <ReasonTab take={take} lean={lean} />
-              : tab === "lines" ? <LinesTab inquiries={inq.inquiries} />
+              : tab === "lines" ? <LinesTab inquiries={inq.inquiries} id={id} owner={owner} onDone={onRefetchInq} />
                 : tab === "comp" ? <CompTab comp={comp} id={id} owner={owner} onDone={onRefetchInq} />
                   : <DeckTab deck={deck} />}
         </div>
