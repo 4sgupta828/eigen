@@ -74,3 +74,25 @@ def test_memory_context_and_history_render():
     assert "WHERE THIS BRAINSTORM STANDS" in ctx and "STILL OPEN" in ctx
     h = _history_block([{"role": "user", "text": "q"}, {"role": "agent", "text": "a"}])
     assert "You: q" in h and "Eigen: a" in h
+
+
+@pytest.mark.asyncio
+async def test_compose_brainstorm_gates_visuals():
+    async def llm(_s, _u):
+        return {"reply": "here", "visuals": [
+            {"kind": "bar", "title": "Funding", "unit": "$M", "series": [
+                {"label": "AgentCRM", "value": "12"}, {"label": "Rival", "value": 30}, {"label": "bad", "value": "x"}]},
+            {"kind": "bar", "title": "one point", "series": [{"label": "solo", "value": 5}]},   # <2 → dropped
+            {"kind": "tree", "title": "Decision", "nodes": [
+                {"id": "a", "label": "Enter?"}, {"id": "b", "label": "Build"}, {"id": "b", "label": "dupe"}],
+             "edges": [{"from": "a", "to": "b", "label": "yes"}, {"from": "a", "to": "ghost"}]},
+        ]}
+    out = await compose_brainstorm(llm, directive="d", context="c", said="numbers?")
+    viz = out["visuals"]
+    assert len(viz) == 2                                        # solo bar dropped; bar + tree kept
+    bar = viz[0]
+    assert bar["kind"] == "bar" and [s["label"] for s in bar["series"]] == ["AgentCRM", "Rival"]  # non-numeric dropped
+    assert bar["series"][0]["value"] == 12.0
+    tree = viz[1]
+    assert tree["kind"] == "tree" and len(tree["nodes"]) == 2   # dup id collapsed
+    assert tree["edges"] == [{"from": "a", "to": "b", "label": "yes"}]   # edge to ghost node dropped

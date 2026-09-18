@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { api, type BrainstormThread, type BrainstormMsg, type BsDirection, type BsCard } from "./api";
-import { PageHead, Working } from "./ui";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { api, type BrainstormThread, type BrainstormMsg, type BsDirection, type BsCard, type BsVisual, type Analysis, type Take } from "./api";
+import { PageHead, Working, plain } from "./ui";
 
 // Brainstorm is a continuous, memory-bearing agent over the thesis's WHOLE context (thesis → lines of
 // inquiry → collective take → competitive → everything). Each turn is an async, stoppable run: the agent
@@ -26,8 +26,15 @@ const PROMPTS = [
   "Where is this thesis weakest?", "Who really has to say yes for this to work?",
   "What would a smart skeptic attack first?", "What adjacent bets does this open up?",
 ];
+// The weak points the analysis already surfaced, in the same lane language as the Reasoning Map — a
+// running "what to probe" the brainstorm reasons against. Tucked under a toggle at the top (not buried).
+const WEAK_LANES: { kind: string; title: string; hint: string; color: string }[] = [
+  { kind: "tension", title: "Tensions", hint: "findings that pull apart", color: "#c0563f" },
+  { kind: "gap", title: "Gaps", hint: "what the record can't settle — take to an expert", color: "#b8860b" },
+  { kind: "assumption", title: "Assumptions", hint: "the load-bearing premises to challenge", color: "#6b5bd0" },
+];
 
-export function Brainstorm({ id, onExperts }: { id?: string; onExperts: () => void }) {
+export function Brainstorm({ id, take, onExperts }: { id?: string; take?: Take; onExperts: () => void }) {
   const [threads, setThreads] = useState<BrainstormThread[]>([]);
   const [tid, setTid] = useState<string>("");
   const [thread, setThread] = useState<BrainstormThread | null>(null);
@@ -35,9 +42,20 @@ export function Brainstorm({ id, onExperts }: { id?: string; onExperts: () => vo
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
+  const [showWeak, setShowWeak] = useState(false);
   const runId = useRef<string | null>(null);
   const timer = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+
+  // Weak points surfaced by the collective take, grouped into the lane language of the Reasoning Map.
+  const weakLanes = useMemo(() => {
+    const by = new Map<string, Analysis[]>();
+    (take?.sections || []).forEach((s) => (s.analysis || []).forEach((a) => {
+      if (!(a.text || "").trim()) return; const k = a.kind || ""; by.set(k, [...(by.get(k) || []), a]);
+    }));
+    return WEAK_LANES.map((l) => ({ ...l, items: by.get(l.kind) || [] })).filter((l) => l.items.length);
+  }, [take]);
+  const weakTotal = weakLanes.reduce((n, l) => n + l.items.length, 0);
 
   // Load the list of past brainstorms, and re-attach a run still in flight after a refresh.
   useEffect(() => {
@@ -161,6 +179,34 @@ export function Brainstorm({ id, onExperts }: { id?: string; onExperts: () => vo
         </aside>
 
         <section className="bs-main">
+          {weakTotal ? (
+            <div className={"bs-weak" + (showWeak ? " open" : "")}>
+              <button className="bs-weak-toggle" onClick={() => setShowWeak((v) => !v)} aria-expanded={showWeak}>
+                <span className="bs-weak-tw">{showWeak ? "▾" : "▸"}</span>
+                ⚠ Weak points the analysis surfaced <span className="bs-weak-n">{weakTotal}</span>
+                <span className="bs-weak-sub">probe these — click one to brainstorm it</span>
+              </button>
+              {showWeak ? (
+                <div className="bs-weak-lanes">
+                  {weakLanes.map((l) => (
+                    <div key={l.kind} className="bs-weak-lane" style={{ ["--wc" as string]: l.color }}>
+                      <div className="bs-weak-h"><span className="bs-weak-chip" style={{ background: l.color }}>{l.title}</span><span className="bs-weak-hint">{l.hint}</span></div>
+                      <ul className="bs-weak-items">
+                        {l.items.map((a, i) => (
+                          <li key={i}>
+                            <button className="bs-weak-item" disabled={busy} onClick={() => send(`Probe this ${l.kind}: ${plain(a.text)}`)} title="Brainstorm this">
+                              {plain(a.text)}
+                            </button>
+                            {l.kind === "gap" ? <button className="bs-inline-ask" onClick={onExperts}>→ Experts</button> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="bs-conv">
             {msgs.length === 0 && !busy ? (
               <div className="bs-seed">
@@ -206,6 +252,7 @@ function MsgView({ m, onExpand, busy, onExperts }: { m: BrainstormMsg; onExpand:
       <span className="bs-av ai">E</span>
       <div className="bs-bub">
         {c.reply ? <p className="bs-reply">{c.reply}</p> : null}
+        {(c.visuals || []).map((v, i) => <Visual key={i} v={v} />)}
         {sections.map((s, i) => {
           const meta = SEC_META[s.kind] || { title: s.kind, color: "#6E6550" };
           if (!(s.items || []).length) return null;
@@ -215,9 +262,11 @@ function MsgView({ m, onExpand, busy, onExperts }: { m: BrainstormMsg; onExpand:
               <ul className="bs-sec-items">
                 {s.items.map((it, j) => (
                   <li key={j}>
-                    {it}
-                    {s.kind === "related_questions" ? <button className="bs-inline-ask" onClick={() => onExpand({ kind: "question", label: it, query: it })} disabled={busy}>ask →</button> : null}
-                    {s.kind === "gaps" ? <button className="bs-inline-ask" onClick={onExperts}>→ Experts</button> : null}
+                    <span className="bs-sec-row">
+                      <span className="bs-sec-txt">{it}</span>
+                      {s.kind === "related_questions" ? <button className="bs-inline-ask" onClick={() => onExpand({ kind: "question", label: it, query: it })} disabled={busy}>ask →</button> : null}
+                      {s.kind === "gaps" ? <button className="bs-inline-ask" onClick={onExperts}>→ Experts</button> : null}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -234,6 +283,69 @@ function MsgView({ m, onExpand, busy, onExperts }: { m: BrainstormMsg; onExpand:
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+// The agent emits a visual when a picture beats prose — a bar for comparable numbers, a tree for a
+// decision / dependency map. Rendered dependency-free: CSS bars, and an indented, connector-styled
+// outline for the tree (reads as a decision tree, stays responsive at any width).
+function Visual({ v }: { v: BsVisual }) {
+  if (v.kind === "bar" && (v.series || []).length) return <BarChart v={v} />;
+  if (v.kind === "tree" && (v.nodes || []).length) return <TreeView v={v} />;
+  return null;
+}
+
+function BarChart({ v }: { v: BsVisual }) {
+  const series = v.series || [];
+  const max = Math.max(1, ...series.map((s) => Math.abs(s.value || 0)));
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ""));
+  return (
+    <div className="bs-viz">
+      {v.title ? <div className="bs-viz-h">📊 {v.title}{v.unit ? <span className="bs-viz-unit"> · {v.unit}</span> : null}</div> : null}
+      <div className="bs-bar-rows">
+        {series.map((s, i) => (
+          <div key={i} className="bs-bar-row">
+            <span className="bs-bar-lab">{s.label}</span>
+            <span className="bs-bar-track"><span className="bs-bar-fill" style={{ width: `${Math.max(2, (Math.abs(s.value || 0) / max) * 100)}%` }} /></span>
+            <span className="bs-bar-val">{fmt(s.value || 0)}{v.unit && v.unit.length <= 3 ? v.unit : ""}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TreeView({ v }: { v: BsVisual }) {
+  const nodes = v.nodes || []; const edges = v.edges || [];
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const kids = new Map<string, { to: string; label?: string }[]>();
+  edges.forEach((e) => { const a = kids.get(e.from) || []; a.push({ to: e.to, label: e.label }); kids.set(e.from, a); });
+  const incoming = new Set(edges.map((e) => e.to));
+  let roots = nodes.filter((n) => !incoming.has(n.id)).map((n) => n.id);
+  if (!roots.length && nodes.length) roots = [nodes[0].id];   // cyclic → start somewhere
+
+  const render = (nid: string, edgeLabel: string | undefined, seen: Set<string>): ReactNode => {
+    const n = byId.get(nid); if (!n) return null;
+    const repeat = seen.has(nid);
+    const next = new Set(seen); next.add(nid);
+    return (
+      <li key={nid + (edgeLabel || "")} className="bs-tree-li">
+        {edgeLabel ? <span className="bs-tree-edge">{edgeLabel}</span> : null}
+        <div className="bs-tree-node">
+          <span className="bs-tree-lab">{n.label}</span>
+          {n.note ? <span className="bs-tree-note">{n.note}</span> : null}
+        </div>
+        {!repeat && (kids.get(nid) || []).length ? (
+          <ul className="bs-tree">{(kids.get(nid) || []).map((c) => render(c.to, c.label, next))}</ul>
+        ) : null}
+      </li>
+    );
+  };
+  return (
+    <div className="bs-viz">
+      {v.title ? <div className="bs-viz-h">🌳 {v.title}</div> : null}
+      <ul className="bs-tree bs-tree-root">{roots.map((r) => render(r, undefined, new Set()))}</ul>
     </div>
   );
 }

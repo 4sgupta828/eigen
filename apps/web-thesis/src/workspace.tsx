@@ -49,6 +49,7 @@ export function Workspace({ id, token, step }: { id: string; token?: string; ste
   }
 
   const inqs = iq.data?.inquiries;
+  const take = iq.data?.take || doc.collective_take;
   const panel = { doc, inq: iq.data || {}, id, owner: doc.is_owner, onRefetchInq: reloadDoc };
   return (
     <>
@@ -61,7 +62,7 @@ export function Workspace({ id, token, step }: { id: string; token?: string; ste
               : active === "reason" ? <ReasoningPanel {...panel} />
                 : active === "competitive" ? <CompetitivePanel {...panel} />
                   : active === "deck" ? <DeckPanel {...panel} />
-                    : active === "brainstorm" ? <Brainstorm id={id} onExperts={() => setStage("experts")} />
+                    : active === "brainstorm" ? <Brainstorm id={id} take={take} onExperts={() => setStage("experts")} />
                       : active === "experts" ? <Experts id={id} inquiries={inqs} />
                         : <Share id={id} doc={doc} onChanged={reloadDoc} />}
       </div>

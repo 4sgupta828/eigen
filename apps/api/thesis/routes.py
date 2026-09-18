@@ -1341,7 +1341,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             await tstore.add_brainstorm_msg(pool, thesis_id=thesis_id, thread_id=thread_id, role="agent",
                                             content={"reply": turn.get("reply") or "",
                                                      "sections": turn.get("sections") or [],
-                                                     "directions": turn.get("directions") or []})
+                                                     "directions": turn.get("directions") or [],
+                                                     "visuals": turn.get("visuals") or []})
             await tstore.set_brainstorm_memory(pool, thread_id=thread_id, memory=turn.get("memory") or {})
             # Name an untitled thread from its first exchange, so "past brainstorms" reads well.
             if not (thread.get("title") or "").strip():

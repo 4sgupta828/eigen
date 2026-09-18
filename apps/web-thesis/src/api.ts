@@ -103,7 +103,11 @@ export type BsDirection = { kind: string; label: string; query: string };
 export type BsSourceCard = { title: string; url: string; source?: string; snippet?: string; tag?: string };
 export type BsPerson = { name: string; url: string; headline?: string; org?: string };
 export type BsCard = { kind: string; query?: string; cards?: BsSourceCard[]; people?: BsPerson[]; summary?: string[]; unavailable?: boolean };
-export type BsContent = { text?: string; reply?: string; sections?: BsSection[]; directions?: BsDirection[]; card?: BsCard };
+export type BsBarSeries = { label: string; value: number };
+export type BsTreeNode = { id: string; label: string; note?: string };
+export type BsTreeEdge = { from: string; to: string; label?: string };
+export type BsVisual = { kind: string; title?: string; unit?: string; series?: BsBarSeries[]; nodes?: BsTreeNode[]; edges?: BsTreeEdge[] };
+export type BsContent = { text?: string; reply?: string; sections?: BsSection[]; directions?: BsDirection[]; visuals?: BsVisual[]; card?: BsCard };
 export type BrainstormMsg = { id: number; role: "user" | "agent"; content: BsContent; created_at?: string };
 export type BrainstormThread = { id: string; thesis_id?: string; title?: string; memory?: BrainstormMemory; messages?: BrainstormMsg[] | number; created_at?: string; updated_at?: string };
 

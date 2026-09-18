@@ -32,12 +32,13 @@ from .compose import compose_over_findings, compose_deck, compose_memo, compose_
 from .brainstorm import (
     compose_brainstorm, merge_memory, empty_memory, memory_context,
     SECTION_KINDS as BRAINSTORM_SECTION_KINDS, DIRECTION_KINDS as BRAINSTORM_DIRECTION_KINDS,
+    VISUAL_KINDS as BRAINSTORM_VISUAL_KINDS,
 )
 from .orient import orient_and_scan, empty_brief, brief_context, brief_is_empty, unsourced_specifics
 
 __all__ = [
     "compose_brainstorm", "merge_memory", "empty_memory", "memory_context",
-    "BRAINSTORM_SECTION_KINDS", "BRAINSTORM_DIRECTION_KINDS",
+    "BRAINSTORM_SECTION_KINDS", "BRAINSTORM_DIRECTION_KINDS", "BRAINSTORM_VISUAL_KINDS",
     "orient_and_scan", "empty_brief", "brief_context", "brief_is_empty", "unsourced_specifics",
     "QuestionKind", "Question", "QuestionStatus", "Aspect", "Inquiry",
     "SUPPORTED", "CONTRADICTED", "UNDER_TESTED", "OPEN", "UNSETTLEABLE",

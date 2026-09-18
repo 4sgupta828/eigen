@@ -27,6 +27,66 @@ SECTION_KINDS = ("related_questions", "adjacent_areas", "deep_dive", "gaps")
 # dossier). These are capability names, not domain vocabulary — every vertical has experts and references.
 DIRECTION_KINDS = ("question", "experts", "references", "media", "deepdive")
 
+# Visuals a turn may emit when a picture beats prose: a `bar` chart for a few comparable numbers, or a
+# `tree` (nodes + edges) for a decision tree / dependency map / chain of interdependent choices. Generic.
+VISUAL_KINDS = ("bar", "tree")
+
+
+def _num(v):
+    try:
+        f = float(v)
+        return round(f, 4) if f == f and abs(f) != float("inf") else None
+    except Exception:      # noqa: BLE001
+        return None
+
+
+def _visuals(items) -> list[dict]:
+    """Gate model-emitted charts: keep only well-formed bars (≥2 numeric series) and trees (≥2 nodes with
+    edges that reference real nodes). Everything clamped; at most 2 per turn. Never raises."""
+    out: list[dict] = []
+    for v in (items or []):
+        if not isinstance(v, dict):
+            continue
+        kind = _clip(v.get("kind"), 20)
+        title = _clip(v.get("title"), 120)
+        if kind == "bar":
+            series = []
+            for s in (v.get("series") or []):
+                if not isinstance(s, dict):
+                    continue
+                lab, val = _clip(s.get("label"), 60), _num(s.get("value"))
+                if lab and val is not None:
+                    series.append({"label": lab, "value": val})
+                if len(series) >= 10:
+                    break
+            if len(series) >= 2:
+                out.append({"kind": "bar", "title": title, "unit": _clip(v.get("unit"), 20), "series": series})
+        elif kind == "tree":
+            nodes, ids = [], set()
+            for n in (v.get("nodes") or []):
+                if not isinstance(n, dict):
+                    continue
+                nid, lab = _clip(n.get("id"), 40), _clip(n.get("label"), 90)
+                if nid and lab and nid not in ids:
+                    ids.add(nid)
+                    nodes.append({"id": nid, "label": lab, "note": _clip(n.get("note"), 140)})
+                if len(nodes) >= 16:
+                    break
+            edges = []
+            for e in (v.get("edges") or []):
+                if not isinstance(e, dict):
+                    continue
+                a, b = _clip(e.get("from"), 40), _clip(e.get("to"), 40)
+                if a in ids and b in ids and a != b:
+                    edges.append({"from": a, "to": b, "label": _clip(e.get("label"), 40)})
+                if len(edges) >= 24:
+                    break
+            if len(nodes) >= 2:
+                out.append({"kind": "tree", "title": title, "nodes": nodes, "edges": edges})
+        if len(out) >= 2:
+            break
+    return out
+
 _WS = re.compile(r"\s+")
 
 
@@ -100,7 +160,7 @@ async def compose_brainstorm(llm_json, *, directive: str, context: str, said: st
     `context` is the caller-assembled, domain-specific context pack (opaque here). Never raises; on any
     failure returns a minimal turn carrying the prior memory unchanged."""
     mem = memory or empty_memory()
-    fallback = {"reply": "", "sections": [], "directions": [], "memory": merge_memory(mem, {})}
+    fallback = {"reply": "", "sections": [], "directions": [], "visuals": [], "memory": merge_memory(mem, {})}
     if llm_json is None or not (said or "").strip():
         return fallback
     sec_set, dir_set = set(section_kinds), set(direction_kinds)
@@ -120,6 +180,10 @@ async def compose_brainstorm(llm_json, *, directive: str, context: str, said: st
           '  "directions": [{"kind": "<one of ' + "|".join(direction_kinds) + '>", '
           '"label": "<button text, e.g. \'Find GTM experts in vertical SaaS\'>", '
           '"query": "<the focused query to run for this direction>"}],\n'
+          '  "visuals": [{"kind": "bar", "title": "...", "unit": "<e.g. $M, %, seats>", '
+          '"series": [{"label": "...", "value": 12.3}]}, '
+          '{"kind": "tree", "title": "...", "nodes": [{"id": "n1", "label": "...", "note": "<optional>"}], '
+          '"edges": [{"from": "n1", "to": "n2", "label": "<optional, e.g. yes/no>"}]}],\n'
           '  "memory": {"summary": "<2-3 sentence rolling state of this brainstorm>", '
           '"assumptions": ["..."], "explored": ["<topics now covered>"], '
           '"open_threads": ["<what is still worth pulling on>"]}}\n\n'
@@ -136,6 +200,11 @@ async def compose_brainstorm(llm_json, *, directive: str, context: str, said: st
           "podcasts/talks/blogs, 'deepdive' for a focused dossier on a company or sub-area. The `query` is "
           "what to actually search — DO NOT name specific real people, papers, or shows yourself; the "
           "search returns the real ones. Only suggest a retrieval direction when it would genuinely help.\n"
+        + "- visuals: PREFER a chart when it genuinely simplifies real complexity in THIS context — a "
+          "`bar` when you are comparing a handful of numbers from the context, or a `tree` (nodes + edges) "
+          "for a decision tree, a dependency map, or a chain of interdependent choices. Every number must "
+          "come from the context above, never invented; if you have no grounded numbers, omit `bar`. Omit "
+          "visuals entirely when prose is clearer. At most 2, and never a chart of one data point.\n"
         + "- memory: update the running state so the next turn stays continuous. Keep lists short and "
           "de-duplicated.\n"
         + "- Output ONLY the JSON object.")
@@ -176,4 +245,5 @@ async def compose_brainstorm(llm_json, *, directive: str, context: str, said: st
 
     reply = _clip(d.get("reply"), reply_chars)
     updated = merge_memory(mem, d.get("memory") if isinstance(d.get("memory"), dict) else {})
-    return {"reply": reply, "sections": sections, "directions": directions, "memory": updated}
+    return {"reply": reply, "sections": sections, "directions": directions,
+            "visuals": _visuals(d.get("visuals")), "memory": updated}
