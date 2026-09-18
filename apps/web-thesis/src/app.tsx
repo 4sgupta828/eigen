@@ -2,10 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import { Brief } from "./brief";
+import { Workspace } from "./workspace";
+import { Genesis } from "./genesis";
 
 // ── hash router (hash-compatible with the classic client: #thesis/#view/#board) ──
 type Route =
   | { name: "home" }
+  | { name: "new" }
   | { name: "board" }
   | { name: "boardEntry"; id: string }
   | { name: "view"; id: string; token: string }
@@ -13,6 +16,7 @@ type Route =
 
 function parseHash(hash: string): Route {
   const h = hash.replace(/^#/, "");
+  if (h === "new") return { name: "new" };
   if (h === "board") return { name: "board" };
   if (h.indexOf("board/") === 0) return { name: "boardEntry", id: decodeURIComponent(h.slice(6)) };
   if (h.indexOf("view/") === 0) {
@@ -47,7 +51,7 @@ function Shell({ crumb, children }: { crumb?: ReactNode; children: ReactNode }) 
         <span className="grow" />
       </div></div>
       <div className="wrap">{children}</div>
-      <div className="foot">Eigen · new thesis-first client (beachhead) · Phase 1</div>
+      <div className="foot">Eigen · new thesis-first client (beachhead) · full thesis lifecycle</div>
     </>
   );
 }
@@ -62,7 +66,7 @@ function Home() {
     <Shell crumb={<>My theses</>}>
       <div className="pagehead"><h1>My theses</h1><p>Each thesis is a workspace and a shareable, sourced brief.</p></div>
       <div className="row" style={{ marginBottom: 14 }}>
-        <button className="btn" disabled title="Coming in Phase 3">+ Test a new thesis</button>
+        <button className="btn" onClick={() => go("#new")}>+ Test a new thesis</button>
         <button className="btn sec" onClick={() => go("#board")}>▤ Browse the ThesisBoard</button>
       </div>
       {q.isLoading ? <Loading /> : theses.length ? theses.map((t) => (
@@ -103,25 +107,18 @@ function BoardEntryView({ id }: { id: string }) {
   );
 }
 
-function ThesisView({ id, token }: { id: string; token: string }) {
-  const t = useQuery({ queryKey: ["thesis", id, token], queryFn: () => api.thesis(id, token || undefined) });
-  const i = useQuery({ queryKey: ["inq", id, token], queryFn: () => api.inquiries(id, token || undefined), enabled: !!t.data });
-  if (t.isLoading) return <Shell><Loading /></Shell>;
-  if (t.error) return <Shell><Err e={t.error} /></Shell>;
-  return (
-    <Shell crumb={<b>{t.data?.thesis?.slice(0, 40)}…</b>}>
-      {t.data ? <Brief doc={t.data} inq={i.data || {}} anonymous={!t.data.is_owner && !!token} /> : null}
-    </Shell>
-  );
+function NewThesis() {
+  return <Shell crumb={<>New thesis</>}><Genesis /></Shell>;
 }
 
 export function App() {
   const r = useRoute();
   switch (r.name) {
+    case "new": return <NewThesis />;
     case "board": return <BoardGallery />;
     case "boardEntry": return r.id ? <BoardEntryView id={r.id} /> : <BoardGallery />;
-    case "view": return <ThesisView id={r.id} token={r.token} />;
-    case "thesis": return <ThesisView id={r.id} token={r.token} />;
+    case "view": return <Workspace id={r.id} token={r.token} />;
+    case "thesis": return <Workspace id={r.id} token={r.token} />;
     default: return <Home />;
   }
 }

@@ -1,7 +1,21 @@
 # Eigen image — the TECH vertical (deep-tech research Q&A). ONE image, TWO roles (deploy/start.sh
 # dispatches on EIGEN_ROLE): the API service serves; the separate ingest-WORKER service runs the corpus
 # drain (full-text HTML + DOCLING/torch PDF parsing). docling is a cached layer, so API code pushes
-# don't rebuild it, and it's imported lazily so serving never loads torch. No Node/ffmpeg video add-on.
+# don't rebuild it, and it's imported lazily so serving never loads torch.
+
+# ── Stage 1: build the new thesis-first client (Vite/React/TS) → apps/web/w ──
+# Isolated Node stage so the runtime image stays Python-only; the built bundle is copied in below and
+# served by FastAPI at /w. A failure here fails the build (prod keeps the last good deploy), never the
+# running API. See docs/specs/beachhead-build-plan.md.
+FROM node:22-slim AS webclient
+WORKDIR /client
+COPY apps/web-thesis/package.json apps/web-thesis/package-lock.json ./
+RUN npm ci
+COPY apps/web-thesis/ ./
+RUN npm run build
+# vite build.outDir is "../web/w" (relative to /client) → outputs to /web/w
+
+# ── Stage 2: the Python runtime image ──
 FROM python:3.13-slim
 
 WORKDIR /app
@@ -31,6 +45,8 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
 COPY packages packages
 COPY apps apps
 COPY deploy deploy
+# The new client, built in Stage 1, served at /w by FastAPI (app.py mounts it when apps/web/w exists).
+COPY --from=webclient /web/w apps/web/w
 RUN pip install --no-cache-dir "./packages/kernel[serve,postgres]" ./packages/vertical_tech
 
 # apps/ is not a pip package; put it on the path. Single vertical per deployment.
