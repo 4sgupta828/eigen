@@ -280,12 +280,6 @@ th { font-family: var(--mono); font-size: .55rem; text-transform: uppercase; let
 .th-synth-sec:first-child { border-top: none; }
 .th-synth-h { margin: 0 0 .4rem; font-family: var(--mono); font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--gold-strong); }
 .th-memo-grounded p { margin: .35rem 0; font-size: .88rem; line-height: 1.6; color: var(--ink); }
-.th-synth-sec .th-reasons { margin-bottom: .3rem; }
-.th-take-facts { margin-top: .45rem; }
-.th-take-facts > summary { font-family: var(--mono); font-size: .64rem; color: var(--muted); cursor: pointer; letter-spacing: .02em; padding: .15rem 0; }
-.th-take-facts > summary:hover { color: var(--ink); }
-.th-take-facts[open] > summary { margin-bottom: .2rem; }
-.th-take-facts .th-memo-grounded p { color: var(--muted); font-size: .84rem; }
 .th-reasons { display: grid; gap: .4rem; margin: .5rem 0 .2rem; }
 .th-reason { display: flex; gap: .5rem; align-items: flex-start; padding: .45rem .55rem; border-radius: 8px; background: color-mix(in srgb, var(--hair) 22%, transparent); border: 1px solid var(--hair); font-size: .86rem; line-height: 1.55; }
 .th-reason-tag { flex: none; font-family: var(--mono); font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: .15rem .4rem; border-radius: 5px; white-space: nowrap; margin-top: .05rem; background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--ink); }

@@ -55,7 +55,7 @@ export function Workspace({ id, token }: { id: string; token?: string }) {
       <div className="wrap">
         {active === "plan" ? <Plan id={id} inquiries={inqs} onReload={reloadInq} onRun={() => setStage("run")} />
           : active === "run" ? <Run id={id} onDone={() => { reloadDoc(); setStage("brief"); }} />
-            : active === "brief" ? <Brief doc={doc} inq={iq.data || {}} id={id} owner={doc.is_owner} onRefetchInq={reloadInq} />
+            : active === "brief" ? <Brief doc={doc} inq={iq.data || {}} id={id} owner={doc.is_owner} onRefetchInq={reloadDoc} />
               : active === "brainstorm" ? <Brainstorm id={id} take={take} onExperts={() => setStage("experts")} />
                 : active === "experts" ? <Experts id={id} inquiries={inqs} />
                   : <Share id={id} doc={doc} onChanged={reloadDoc} />}
