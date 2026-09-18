@@ -4,14 +4,15 @@ import { api } from "./api";
 import { Stepper, go, Loading, ErrState } from "./ui";
 import { Genesis } from "./genesis";
 import { Plan, Run } from "./plan";
-import { Brief } from "./brief";
+import { Brief, ReadPanel, ReasoningPanel, CompetitivePanel, DeckPanel, LinesPanel } from "./brief";
 import { Brainstorm } from "./brainstorm";
 import { Experts } from "./experts";
 import { Share } from "./share";
 
 const STAGES: [string, string, string][] = [
-  ["plan", "1", "Plan"], ["run", "2", "Run"], ["brief", "3", "Brief"],
-  ["brainstorm", "4", "Brainstorm"], ["experts", "5", "Experts"], ["share", "6", "Share"],
+  ["plan", "1", "Plan"], ["run", "2", "Run & Lines"], ["brief", "3", "Brief"],
+  ["reason", "4", "Reasoning Map"], ["competitive", "5", "Competitive"], ["deck", "6", "Pitch Deck"],
+  ["brainstorm", "7", "Brainstorm"], ["experts", "8", "Experts"], ["share", "9", "Share"],
 ];
 
 function TopBar({ crumb }: { crumb?: ReactNode }) {
@@ -48,17 +49,21 @@ export function Workspace({ id, token }: { id: string; token?: string }) {
 
   const inqs = iq.data?.inquiries;
   const take = iq.data?.take || doc.collective_take;
+  const panel = { doc, inq: iq.data || {}, id, owner: doc.is_owner, onRefetchInq: reloadDoc };
   return (
     <>
       <TopBar crumb={<><span style={{ cursor: "pointer" }} onClick={() => go("")}>My theses</span> · <b>{(doc.thesis || "").slice(0, 40)}…</b></>} />
       <Stepper stages={STAGES} active={active} onNav={setStage} />
       <div className="wrap">
         {active === "plan" ? <Plan id={id} inquiries={inqs} onReload={reloadInq} onRun={() => setStage("run")} />
-          : active === "run" ? <Run id={id} onDone={() => { reloadDoc(); setStage("brief"); }} />
-            : active === "brief" ? <Brief doc={doc} inq={iq.data || {}} id={id} owner={doc.is_owner} onRefetchInq={reloadDoc} />
-              : active === "brainstorm" ? <Brainstorm id={id} take={take} onExperts={() => setStage("experts")} />
-                : active === "experts" ? <Experts id={id} inquiries={inqs} />
-                  : <Share id={id} doc={doc} onChanged={reloadDoc} />}
+          : active === "run" ? (<><Run id={id} onDone={reloadDoc} />{tested ? <LinesPanel {...panel} /> : null}</>)
+            : active === "brief" ? <ReadPanel {...panel} />
+              : active === "reason" ? <ReasoningPanel {...panel} />
+                : active === "competitive" ? <CompetitivePanel {...panel} />
+                  : active === "deck" ? <DeckPanel {...panel} />
+                    : active === "brainstorm" ? <Brainstorm id={id} take={take} onExperts={() => setStage("experts")} />
+                      : active === "experts" ? <Experts id={id} inquiries={inqs} />
+                        : <Share id={id} doc={doc} onChanged={reloadDoc} />}
       </div>
     </>
   );

@@ -827,16 +827,30 @@ function RegenBar({ id, hasComp, onDone }: { id?: string; hasComp?: boolean; onD
 }
 
 // ── the Brief ─────────────────────────────────────────────────────────────────
-type Tab = "take" | "reason" | "lines" | "comp" | "deck";
-const TABS: [Tab, string][] = [["take", "The read"], ["reason", "Reasoning map"], ["lines", "Lines of inquiry"], ["comp", "Competitive"], ["deck", "Pitch deck"]];
+// Derivations shared by every panel (each brief view sources the same take/deck/comp + lean).
+const takeOf = (doc: ThesisDoc, inq: InquiriesView) => inq.take || doc.collective_take;
+const deckOf = (doc: ThesisDoc, inq: InquiriesView) => inq.deck || doc.pitch_deck;
+const compOf = (doc: ThesisDoc, inq: InquiriesView) => inq.competitive || doc.competitive;
+function leanOf(inq: InquiriesView) {
+  const inqs = (inq.inquiries || []).filter((i) => (i.aspects || []).length);
+  if (!inqs.length) return null;
+  const rolls = inqs.map((i) => {
+    const vs = (i.aspects || []).map((a) => a.verdict);
+    if (vs.includes("contradicted")) return "contradicted";
+    if (vs.length && vs.every((v) => v === "supported")) return "supported";
+    return "open";
+  });
+  if (rolls.includes("contradicted")) return { t: "Leans PASS", d: "contradicted on ≥1 aspect", c: "#c0392b" };
+  if (rolls.every((v) => v === "supported")) return { t: "Leans FUND", d: "supported across every line", c: "#2e7d5b" };
+  return { t: "CONTINUE diligence", d: "mixed / still under-tested", c: "#b5762a" };
+}
 
-export function Brief({ doc, inq, anonymous, id, owner, onRefetchInq }: {
-  doc: ThesisDoc; inq: InquiriesView; anonymous?: boolean; id?: string; owner?: boolean; onRefetchInq?: () => void;
-}) {
-  const [tab, setTab] = useState<Tab>("take");
+// The shared brief chrome: evidence context + the two-column memo/rail layout + the citation hover card.
+// Every brief panel (The read, Reasoning map, Competitive, Pitch deck, Lines of inquiry) renders inside it.
+function BriefShell({ doc, inq, anonymous, children }: { doc: ThesisDoc; inq: InquiriesView; anonymous?: boolean; children: ReactNode }) {
   const [view, setView] = useState<DrawerView>({ kind: "overview" });
+  const [hover, setHover] = useState<Hover>(null);
   const citer = useMemo(() => new Citer(), [doc, inq]);
-
   const evidenceById = useMemo(() => {
     const m = new Map<string, Evidence>();
     (doc.claims || []).forEach((c) => (c.evidence || []).forEach((e) => { if (e.id) m.set(e.id, e); }));
@@ -847,30 +861,8 @@ export function Brief({ doc, inq, anonymous, id, owner, onRefetchInq }: {
     (inq.inquiries || []).forEach((i) => (i.questions || []).forEach((q) => { if (q.id) m.set(q.id, q); }));
     return m;
   }, [inq]);
-
-  const take = inq.take || doc.collective_take;
-  const deck = inq.deck || doc.pitch_deck;
-  const comp = inq.competitive || doc.competitive;
-  const bl = take?.bottom_line;
   const active = view.kind === "overview" ? null : view.id;
-
-  const lean = useMemo(() => {
-    const inqs = (inq.inquiries || []).filter((i) => (i.aspects || []).length);
-    if (!inqs.length) return null;
-    const rolls = inqs.map((i) => {
-      const vs = (i.aspects || []).map((a) => a.verdict);
-      if (vs.includes("contradicted")) return "contradicted";
-      if (vs.length && vs.every((v) => v === "supported")) return "supported";
-      return "open";
-    });
-    if (rolls.includes("contradicted")) return { t: "Leans PASS", d: "contradicted on ≥1 aspect", c: "#c0392b" };
-    if (rolls.every((v) => v === "supported")) return { t: "Leans FUND", d: "supported across every line", c: "#2e7d5b" };
-    return { t: "CONTINUE diligence", d: "mixed / still under-tested", c: "#b5762a" };
-  }, [inq]);
-
-  const [hover, setHover] = useState<Hover>(null);
   const ctx: Ctx = { citer, evidenceById, findingById, show: setView, active, setHover };
-
   return (
     <BriefCtx.Provider value={ctx}>
       <CiteHover hover={hover} />
@@ -880,23 +872,58 @@ export function Brief({ doc, inq, anonymous, id, owner, onRefetchInq }: {
             Thesis under test{anonymous ? " · anonymized board view" : ""}
           </div>
           <h1 className="memo-thesis">{doc.thesis}</h1>
-          {parse(bl).clean ? (
-            <div className="card read"><div className="kick">The read</div><p><Cite value={bl} kind="finding" /></p></div>
-          ) : null}
-          <div className="tabs">
-            {TABS.map(([t, label]) => (
-              <button key={t} className={`tab${t === tab ? " on" : ""}`} onClick={() => setTab(t)}>{label}</button>
-            ))}
-          </div>
-          {owner && id ? <RegenBar id={id} hasComp={!!(comp?.players || []).length} onDone={onRefetchInq} /> : null}
-          {tab === "take" ? <TakeTab take={take} />
-            : tab === "reason" ? <ReasonTab take={take} lean={lean} />
-              : tab === "lines" ? <LinesTab inquiries={inq.inquiries} id={id} owner={owner} onDone={onRefetchInq} />
-                : tab === "comp" ? <CompTab comp={comp} id={id} owner={owner} onDone={onRefetchInq} />
-                  : <DeckTab deck={deck} />}
+          {children}
         </div>
         <aside className="rail"><Drawer view={view} /></aside>
       </div>
     </BriefCtx.Provider>
+  );
+}
+
+type PanelProps = { doc: ThesisDoc; inq: InquiriesView; anonymous?: boolean; id?: string; owner?: boolean; onRefetchInq?: () => void };
+
+// The Read — the collective take (implicitly "the brief"; no tab strip). Carries the read card + regen.
+export function ReadPanel({ doc, inq, anonymous, id, owner, onRefetchInq }: PanelProps) {
+  const take = takeOf(doc, inq); const bl = take?.bottom_line; const comp = compOf(doc, inq);
+  return (
+    <BriefShell doc={doc} inq={inq} anonymous={anonymous}>
+      {parse(bl).clean ? <div className="card read"><div className="kick">The read</div><p><Cite value={bl} kind="finding" /></p></div> : null}
+      {owner && id ? <RegenBar id={id} hasComp={!!(comp?.players || []).length} onDone={onRefetchInq} /> : null}
+      <TakeTab take={take} />
+    </BriefShell>
+  );
+}
+export function ReasoningPanel({ doc, inq, anonymous }: PanelProps) {
+  return <BriefShell doc={doc} inq={inq} anonymous={anonymous}><ReasonTab take={takeOf(doc, inq)} lean={leanOf(inq)} /></BriefShell>;
+}
+export function CompetitivePanel({ doc, inq, anonymous, id, owner, onRefetchInq }: PanelProps) {
+  return <BriefShell doc={doc} inq={inq} anonymous={anonymous}><CompTab comp={compOf(doc, inq)} id={id} owner={owner} onDone={onRefetchInq} /></BriefShell>;
+}
+export function DeckPanel({ doc, inq, anonymous }: PanelProps) {
+  return <BriefShell doc={doc} inq={inq} anonymous={anonymous}><DeckTab deck={deckOf(doc, inq)} /></BriefShell>;
+}
+export function LinesPanel({ doc, inq, anonymous, id, owner, onRefetchInq }: PanelProps) {
+  return <BriefShell doc={doc} inq={inq} anonymous={anonymous}><LinesTab inquiries={inq.inquiries} id={id} owner={owner} onDone={onRefetchInq} /></BriefShell>;
+}
+
+// The board still shows ONE standalone read-only page with every section tabbed (no stepper there).
+type Tab = "take" | "reason" | "lines" | "comp" | "deck";
+const TABS: [Tab, string][] = [["take", "The read"], ["reason", "Reasoning map"], ["lines", "Lines of inquiry"], ["comp", "Competitive"], ["deck", "Pitch deck"]];
+export function Brief({ doc, inq, anonymous, id, owner, onRefetchInq }: PanelProps) {
+  const [tab, setTab] = useState<Tab>("take");
+  const take = takeOf(doc, inq); const deck = deckOf(doc, inq); const comp = compOf(doc, inq); const bl = take?.bottom_line;
+  return (
+    <BriefShell doc={doc} inq={inq} anonymous={anonymous}>
+      {parse(bl).clean ? <div className="card read"><div className="kick">The read</div><p><Cite value={bl} kind="finding" /></p></div> : null}
+      <div className="tabs">
+        {TABS.map(([t, label]) => <button key={t} className={`tab${t === tab ? " on" : ""}`} onClick={() => setTab(t)}>{label}</button>)}
+      </div>
+      {owner && id ? <RegenBar id={id} hasComp={!!(comp?.players || []).length} onDone={onRefetchInq} /> : null}
+      {tab === "take" ? <TakeTab take={take} />
+        : tab === "reason" ? <ReasonTab take={take} lean={leanOf(inq)} />
+          : tab === "lines" ? <LinesTab inquiries={inq.inquiries} id={id} owner={owner} onDone={onRefetchInq} />
+            : tab === "comp" ? <CompTab comp={comp} id={id} owner={owner} onDone={onRefetchInq} />
+              : <DeckTab deck={deck} />}
+    </BriefShell>
   );
 }

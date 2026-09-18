@@ -126,7 +126,7 @@ export function Run({ id, onDone }: { id: string; onDone: () => void }) {
       <PageHead title="Run the research" sub="Credits are shared and scarce, so every run is projected and gated. Approve the spend, or run just the P0 crux first." />
       {phase.k === "projecting" ? <div className="state">projecting cost…</div>
         : phase.k === "done_already" ? (
-          <div className="gate"><div className="lbl">Already researched</div><p style={{ margin: ".4rem 0 .8rem" }}>Every question is answered.</p><button className="btn" onClick={onDone}>Open the brief →</button></div>
+          <div className="gate"><div className="lbl">Research complete</div><p style={{ margin: ".4rem 0 0" }}>Every question is answered — the lines of inquiry are below. Re-run any single question there, or regenerate the read from the Brief.</p></div>
         ) : phase.k === "gate" ? (
           <div className="gate">
             <div className="lbl">Projected cost</div>
@@ -155,9 +155,9 @@ export function Run({ id, onDone }: { id: string; onDone: () => void }) {
             </div>
           </div>
         ) : phase.k === "finished" ? (
-          <div className="gate"><div className="lbl">Done</div><button className="btn" style={{ marginTop: ".5rem" }} onClick={onDone}>Open the brief →</button></div>
+          <div className="gate"><div className="lbl">Done</div><p style={{ margin: ".4rem 0 0" }}>Research complete — the lines of inquiry are below. Open <b>Brief</b> for the synthesized read.</p></div>
         ) : phase.k === "stopped" ? (
-          <div className="gate"><div className="lbl">Stopped</div><p style={{ margin: ".4rem 0 .8rem" }}>Research stopped. The questions already answered are kept — re-run to continue.</p><button className="btn" onClick={onDone}>Open the brief →</button></div>
+          <div className="gate"><div className="lbl">Stopped</div><p style={{ margin: ".4rem 0 0" }}>Research stopped. The questions already answered are kept and shown below — re-run any of them to continue.</p></div>
         ) : (
           <div className="gate"><p style={{ color: "var(--p0)" }}>{phase.msg}</p><button className="btn sec" onClick={() => setPhase({ k: "projecting" })}>Retry</button></div>
         )}
