@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type ThesisDoc, type TurnPayload, type Turn, type Version, type Evidence } from "./api";
-import { PageHead, go } from "./ui";
+import { PageHead, go, Working } from "./ui";
 
 // ── word-level redline (LCS on whitespace-split tokens) — ported from the classic client ──
 function redline(prev: string, curr: string) {
@@ -149,7 +149,7 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
                 </div>
               </div>
             ))}
-            {busy ? <div className="turn"><span className="av ai">E</span><div className="bub muted">thinking…</div></div> : null}
+            {busy ? <div className="turn"><span className="av ai">E</span><div className="bub muted"><Working text="thinking…" /></div></div> : null}
           </div>
 
           {/* Working-thesis card — the agent restates the updated thesis every turn; redline shows what changed. */}

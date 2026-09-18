@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Inquiry, type Question, type RunResp } from "./api";
-import { PageHead } from "./ui";
+import { PageHead, Working } from "./ui";
 
 const verdictClass = (q: Question) => (q.target_status?.includes("contradict") ? "v-con" : q.target_status ? "v-sup" : "v-open");
 
@@ -57,8 +57,8 @@ export function Plan({ id, inquiries, onReload, onRun }: {
         <div className="card">
           <p style={{ margin: "0 0 .7rem", fontSize: ".9rem" }} className="muted">No lines of inquiry yet.</p>
           {busy === "gen" ? (
-            <div className="row" style={{ alignItems: "center", gap: ".6rem" }}>
-              <span className="mono muted" style={{ fontSize: ".85rem" }}>{stage || "generating…"}</span>
+            <div className="row" style={{ alignItems: "center", gap: ".7rem" }}>
+              <Working text={stage || "generating…"} />
               <button className="btn sec" onClick={stopGen}>■ Stop</button>
             </div>
           ) : (
@@ -83,7 +83,7 @@ export function Plan({ id, inquiries, onReload, onRun }: {
       <ScanStrip />
       <div className="row" style={{ marginBottom: 14, alignItems: "center" }}>
         {busy === "redraft" ? (
-          <><span className="mono muted" style={{ fontSize: ".82rem" }}>{stage || "redrafting…"}</span><button className="btn sec" onClick={stopGen}>■ Stop</button></>
+          <><Working text={stage || "redrafting…"} /><button className="btn sec" onClick={stopGen}>■ Stop</button></>
         ) : (
           <button className="btn sec" disabled={!!busy} onClick={() => generate("redraft")}>↻ Redraft questions</button>
         )}
@@ -177,7 +177,7 @@ export function Run({ id, onDone }: { id: string; onDone: () => void }) {
           </div>
         ) : phase.k === "running" ? (
           <div className="gate">
-            <div className="lbl">Researching</div>
+            <div className="lbl" style={{ display: "flex", alignItems: "center", gap: ".4rem" }}><Working text="Researching" /></div>
             <div className="row" style={{ justifyContent: "space-between", margin: ".3rem 0 .6rem" }}>
               <span className="serif" style={{ fontSize: "1.05rem" }}>{phase.total ? `${phase.done} of ${phase.total} questions` : "starting…"} · then synthesizing</span>
               <span className="mono muted">{phase.stage}</span>

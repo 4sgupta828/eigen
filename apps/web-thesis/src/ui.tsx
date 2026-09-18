@@ -2,6 +2,12 @@ import type { ReactNode } from "react";
 
 export const go = (h: string) => { location.hash = h; };
 
+// A consistent async indicator: a small spinner + a brief message, used at every background-run spot.
+export const Spinner = () => <span className="spinner" aria-hidden="true" />;
+export function Working({ text }: { text?: string }) {
+  return <span className="working" role="status" aria-live="polite"><Spinner /><span>{text || "working…"}</span></span>;
+}
+
 // strip [[e:id]] markers for plain display (the new do-side screens don't resolve citations yet)
 export function plain(s?: string): string {
   return String(s || "").replace(/\[\[e:[^\]]+\]\]/g, "").replace(/\s+([.,;:])/g, "$1").replace(/\s{2,}/g, " ").trim();

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { api } from "./api";
+import { Working } from "./ui";
 import type {
   Analysis, Cited, Competitive, CompCandidate, CompPlayer, Deck, Evidence, InquiriesView, Question, Take, ThesisDoc,
 } from "./api";
@@ -561,7 +562,7 @@ function QuestionCard({ q, id, owner, onDone }: { q: Question; id?: string; owne
         {owner && id && !busy ? <button className="th-qn2-run" onClick={run} title={answered ? "Re-run this question" : "Run this question"}>{answered ? "↻ Re-run" : "▶ Run"}</button> : null}
       </div>
       <div className="th-qn2-q">{q.text}</div>
-      {answered ? <GroundedAnswer q={q} /> : <div className="th-answer-note">{busy ? (note || "researching…") : "Not yet researched — run it to fill this gap."}</div>}
+      {answered ? <GroundedAnswer q={q} /> : <div className="th-answer-note">{busy ? <Working text={note || "researching this question…"} /> : "Not yet researched — run it to fill this gap."}</div>}
       {err ? <p style={{ color: "var(--p0)", fontSize: ".8rem", margin: ".35rem 0 0" }}>{err}</p> : null}
     </div>
   );
@@ -742,8 +743,9 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
       )}
       {owner && id ? (
         <div className="th-comp-addbar">
-          <button className="btn sec" disabled={busy} onClick={research}>{busy ? (note || "Researching…") : (empty ? "Research competitive landscape" : "Re-research landscape")}</button>
-          {!empty && !busy ? <button className="btn sec" disabled={candBusy || cands !== null} onClick={loadCandidates}>{candBusy ? "Finding players…" : "+ Add competitors"}</button> : null}
+          {busy ? <Working text={note || "researching the market…"} />
+            : <button className="btn sec" onClick={research}>{empty ? "Research competitive landscape" : "Re-research landscape"}</button>}
+          {!empty && !busy ? <button className="btn sec" disabled={candBusy || cands !== null} onClick={loadCandidates}>{candBusy ? <Working text="finding players…" /> : "+ Add competitors"}</button> : null}
         </div>
       ) : null}
       {cands !== null ? (
@@ -863,7 +865,7 @@ function RegenBar({ id, hasComp, onDone }: { id?: string; hasComp?: boolean; onD
     <div className="th-regen">
       {busy ? (
         <>
-          <span className="th-regen-note">{note || "regenerating…"}</span>
+          <Working text={note || "regenerating…"} />
           <button className="th-regen-btn" onClick={stop}>■ Stop</button>
         </>
       ) : (

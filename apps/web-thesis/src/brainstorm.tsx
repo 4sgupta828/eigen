@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Analysis, type Take } from "./api";
-import { PageHead, plain } from "./ui";
+import { PageHead, plain, Working } from "./ui";
 
 // Brainstorm surfaces the take's own weak points to probe — rendered in the same lane/chip/card
 // visual language as the Reasoning Map, grouped by kind. A gap no document settles → hand to Experts.
@@ -58,7 +58,7 @@ export function Brainstorm({ id, take, onExperts }: { id?: string; take?: Take; 
                 <div className="turn"><span className="av you">YOU</span><div className="bub">{x.q}</div></div>
                 <div className="turn"><span className="av ai">E</span>
                   <div className={`bub${x.a === undefined ? " muted" : ""}`} style={x.err ? { color: "var(--p0)" } : undefined}>
-                    {x.a === undefined ? "thinking…" : x.a}
+                    {x.a === undefined ? <Working text="thinking…" /> : x.a}
                   </div>
                 </div>
               </div>
