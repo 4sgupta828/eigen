@@ -21,6 +21,19 @@ from eigen_kernel.decision import compose_deck, compose_memo
 from . import store as tstore
 
 
+def _deck_substantive(deck: dict) -> bool:
+    """True if a deck actually has content — a spine or at least one section with a headline or points.
+    Used to refuse to overwrite a real deck with a blank one from a failed/empty rebuild."""
+    if not deck or deck.get("empty"):
+        return False
+    if deck.get("spine"):
+        return True
+    for s in (deck.get("sections") or []):
+        if (s.get("points") or []) or (s.get("headline") or {}).get("text") or s.get("prose"):
+            return True
+    return False
+
+
 def _empty_deck(sections) -> dict:
     return {"spine": {}, "sections": [{"key": s["key"], "title": s["title"],
             "headline": {"text": "", "markers": ""}, "points": []} for s in sections],
@@ -125,12 +138,16 @@ async def synthesize_deck(pool, thesis_id: str, profile, llm_json, reference: st
     deck_dir, spine, deck_secs = profile.pitch_deck_spec()
     refs = [r for r in (references or []) if isinstance(r, dict) and r.get("url")]
     thesis, _subject, findings = await _load_findings(pool, thesis_id, profile)
+    d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
+    existing = (d or {}).get("pitch_deck") or {}
     if not findings:
+        # A transient 0-findings must never wipe a deck that was built when findings existed.
+        if _deck_substantive(existing):
+            return {"deck": existing, "findings": 0}
         deck_obj = _empty_deck(deck_secs)
         deck_obj["references"] = refs
         await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
         return {"deck": deck_obj, "findings": 0}
-    d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
     context = _take_context((d or {}).get("collective_take") or {})
     if reference.strip():
         context = ((context + "\n\n") if context else "") + (
@@ -139,6 +156,10 @@ async def synthesize_deck(pool, thesis_id: str, profile, llm_json, reference: st
             "findings above and cites them by F-number):\n" + reference.strip())
     deck = await compose_deck(llm_json, directive=deck_dir, spine_intent=spine, sections=list(deck_secs),
                               findings=findings, decision=thesis, context=context)
+    # A blank compose (LLM hiccup, malformed JSON, or every unit dropped by the citation gate) must not
+    # clobber a good deck — otherwise a flaky rebuild makes the deck "disappear" until you regenerate.
+    if not _deck_substantive(deck) and _deck_substantive(existing):
+        return {"deck": existing, "findings": len(findings)}
     deck_obj = {"spine": deck.get("spine") or {}, "sections": deck.get("sections") or [],
                 "references": refs, "empty": False, "generated_at": int(time.time()),
                 "findings": len(findings)}

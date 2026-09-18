@@ -233,6 +233,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     # injected when available so competitive discovery sources direct competitors from our own corpus.
     r = APIRouter()
     tenant = resolve_tenant(tenant)
+    _VOICES_CACHE_V = 2      # bump to invalidate stored voices-organize caches when the logic changes
 
     async def _owner(token: str) -> str:
         if not user_of:
@@ -1489,14 +1490,18 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         ids = sorted(str(m.get("id")) for m in cands)
         key = hashlib.sha256("\0".join(ids).encode("utf-8")).hexdigest()[:20] if ids else ""
         cached = await tstore.get_thesis_voices(pool, thesis_id)
-        if cached.get("key") and cached.get("key") == key and not body.refresh:
+        # `_VOICES_CACHE_V` invalidates caches from an earlier organize (e.g. the over-pruning version that
+        # dropped podcasts/talks) — bump it whenever the organize logic changes.
+        if (cached.get("key") == key and cached.get("v") == _VOICES_CACHE_V and cached.get("buckets")
+                and not body.refresh):
             return {"status": "ok", "buckets": cached.get("buckets") or [], "cached": True}
         profile = _profile()
         directive = profile.voices_directive(d.get("thesis") or "") if profile and hasattr(profile, "voices_directive") else ""
         qs = await tstore.list_questions(pool, thesis_id)
         ctx = tvoices.thesis_context(d, qs)
         out = await tvoices.organize_voices(_llm_json(), directive=directive, context=ctx, candidates=cands)
-        payload = {"key": key, "buckets": out.get("buckets") or [], "generated_at": int(time.time())}
+        payload = {"key": key, "v": _VOICES_CACHE_V, "buckets": out.get("buckets") or [],
+                   "generated_at": int(time.time())}
         await tstore.set_thesis_voices(pool, thesis_id, payload)
         return {"status": "ok", "buckets": payload["buckets"], "cached": False}
 
@@ -2088,7 +2093,11 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 _strong_llm_json(), atk._web_client(manifest), thesis=thesis, subject=subject,
                 findings=findings, columns=[dict(c) for c in cols], startup_search=startup_search)
             land["generated_at"] = int(datetime.now(timezone.utc).timestamp())
-            await tstore.set_competitive(pool, thesis_id, land)
+            # A thin re-research that finds no players must not wipe a good landscape — only overwrite when
+            # the new run actually produced players, or when there is nothing worth keeping.
+            existing = (d or {}).get("competitive") or {}
+            if (land.get("players") or []) or not (existing.get("players") or []):
+                await tstore.set_competitive(pool, thesis_id, land)
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
                                      state="completed", actual_delta=0.0)
         except tstore.SpendCapError as exc:
