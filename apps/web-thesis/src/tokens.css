@@ -416,6 +416,11 @@ a.th-cite-src:hover { text-decoration: underline; }
 }
 
 /* ── voices: a content feed of first-person founder/investor pieces, organized by relevance ── */
+.vc-headrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.vc-headrow .pagehead { flex: 1; min-width: 0; }
+.vc-refresh { flex: none; margin-top: .2rem; font-family: var(--mono); font-size: .7rem; font-weight: 600; color: var(--gold-strong); background: var(--panel); border: 1px solid color-mix(in srgb, var(--gold) 34%, var(--hair)); border-radius: 999px; padding: .4rem .8rem; cursor: pointer; white-space: nowrap; }
+.vc-refresh:hover:not(:disabled) { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 6%, var(--panel)); }
+.vc-refresh:disabled { opacity: .55; cursor: default; }
 .vc-group { margin-bottom: 22px; }
 .vc-bucket-h { display: flex; align-items: center; gap: .45rem; font-family: var(--serif); font-weight: 600; font-size: 1.05rem; margin-bottom: .7rem; }
 .vc-bucket-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--gold); flex: none; }

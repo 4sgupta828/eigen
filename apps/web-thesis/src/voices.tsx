@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ThesisDoc, type Voice, type VoiceBucket, type VoiceSummary } from "./api";
 import { PageHead, Loading, Working } from "./ui";
 
@@ -30,6 +30,8 @@ function topicOf(doc: ThesisDoc): string {
 const compact = (m: Voice) => ({ id: m.id, kind: m.kind, title: m.title, snippet: m.text, speaker: m.speaker, show: m.show });
 
 export function VoicesPanel({ id, doc }: { id?: string; doc: ThesisDoc }) {
+  const qc = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
   const q = useMemo(() => topicOf(doc), [doc]);
   const vq = useQuery({ queryKey: ["voices", q], queryFn: () => api.voices(q, 30), enabled: !!q });
   const moments = vq.data || [];
@@ -44,9 +46,29 @@ export function VoicesPanel({ id, doc }: { id?: string; doc: ThesisDoc }) {
   const buckets: VoiceBucket[] = oq.data || [];
   const organized = buckets.length > 0;
 
+  // Force a fresh pull + re-organization, bypassing both the client cache and the server organize cache.
+  async function refresh() {
+    if (!q || refreshing) return;
+    setRefreshing(true);
+    try {
+      const fresh = await api.voices(q, 30);
+      qc.setQueryData(["voices", q], fresh);
+      if (id && fresh.length) {
+        const b = await api.voicesOrganize(id, fresh.map(compact), true);
+        qc.setQueryData(["voices-org", id, fresh.map((m) => m.id).join(",")], b);
+      }
+    } catch { /* keep what's shown */ }
+    finally { setRefreshing(false); }
+  }
+
   return (
     <>
-      <PageHead title="Voices" sub="Founders & investors on this space — podcasts, talks, blogs and essays from Eigen's first-person index, ranked to your thesis and grouped by how each bears on the investigation. Play them inline or open the summary. A signal to explore, not graded evidence." />
+      <div className="vc-headrow">
+        <PageHead title="Voices" sub="Founders & investors on this space — podcasts, talks, blogs and essays from Eigen's first-person index, ranked to your thesis and grouped by how each bears on the investigation. Play them inline or open the summary. A signal to explore, not graded evidence." />
+        <button className="vc-refresh" onClick={refresh} disabled={!q || refreshing || vq.isLoading}>
+          {refreshing ? "↻ refreshing…" : "↻ Refresh"}
+        </button>
+      </div>
       {vq.isLoading ? <Loading /> : null}
       {!vq.isLoading && moments.length === 0 ? (
         <p className="muted">No first-person voices matched this thesis's topic yet. As the Voices corpus grows, relevant podcasts, talks and essays will surface here.</p>
