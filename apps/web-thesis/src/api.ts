@@ -164,6 +164,7 @@ export const api = {
   runQuestion: (id: string, qid: string, max_usd: number) =>
     req<RunResp>("POST", `/thesis/${enc(id)}/question/${enc(qid)}/run`, { max_usd, web: true, idempotency_key: max_usd > 0 ? `q-${qid}-${Date.now()}` : undefined }, id),
   inquiryStatus: (id: string, run: string) => getJSON<RunStatus>(`/thesis/${enc(id)}/inquiry/status?run=${enc(run)}`, id),
+  cancelRun: (id: string, run?: string) => req<{ status: string; run_id?: string | null }>("POST", `/thesis/${enc(id)}/inquiry/cancel${run ? `?run=${enc(run)}` : ""}`, {}, id),
   synthesize: (id: string) => req<{ status: string; take?: Take; deck?: Deck; competitive?: Competitive; findings?: number }>("POST", `/thesis/${enc(id)}/synthesize`, undefined, id),
   buildDeck: (id: string) => req<{ status: string; deck?: Deck; findings?: number }>("POST", `/thesis/${enc(id)}/deck`, undefined, id),
 

@@ -759,6 +759,20 @@ async def fail_run(pool, *, thesis_id: str, run_id: str, stage: str, error: dict
             thesis_id, run_id, stage, json.dumps(error or {}))
 
 
+async def cancel_run(pool, *, thesis_id: str, run_id: str | None = None) -> str | None:
+    """Cooperatively stop a run: mark it cancelled so its background loop halts before the next unit and
+    the poller stops waiting. Cancels the given run, or the thesis's one active run when run_id is None.
+    Returns the cancelled run id, or None if there was nothing active to cancel."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """UPDATE ts_run SET state='cancelled', stage='cancelled', updated_at=now()
+                 WHERE thesis_id=$1 AND ($2::text IS NULL OR id=$2) AND state IN ('approved','running')
+                 RETURNING id""",
+            thesis_id, run_id)
+    return row["id"] if row else None
+
+
 async def set_decision(pool, thesis_id: str, decision: dict, *, research_status: str) -> None:
     await ensure_schema(pool)
     async with pool.acquire() as conn:

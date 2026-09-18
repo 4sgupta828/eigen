@@ -708,6 +708,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             web = atk._web_client(manifest) if (run or {}).get("metadata", {}).get("web") else None
             ctx = " ".join(str(v) for v in (d.get("subject") or {}).values())
             for c in todo:
+                rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+                if (rn or {}).get("state") == "cancelled":      # stopped by the user — keep partial results
+                    return
                 res = await atk.attack_claim(dsn, claim=c["claim"], settleable=c["settleable"],
                                              judge_llm=judge_llm, ui=_ui(), extra_context=ctx,
                                              web_client=web, relation_llm=_llm_json(),
@@ -720,6 +723,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 await tstore.advance_run(
                     pool, thesis_id=thesis_id, run_id=run_id, stage=f"claim:{c['rung']}",
                     actual_delta=round(0.003 + res.get("web_queries", 0) * atk.WEB_USD_PER_QUERY, 4))
+            rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+            if (rn or {}).get("state") == "cancelled":
+                return
             # Primary-research claims stay blockers until independently corroborated.
             for c in d["claims"]:
                 if c["settleable"] == CALL_ONLY and c["verdict"] == OPEN:
@@ -1255,6 +1261,16 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 "stage": (record or {}).get("stage", ""), "error": (record or {}).get("error") or {},
                 "done": done, "total": len(want)}
 
+    @r.post("/thesis/{thesis_id}/inquiry/cancel")
+    async def tl_cancel_run(thesis_id: str, run: str = "", authorization: str = Header(default=""),
+                            x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Stop a research run the user kicked off — the whole-thesis run, a single-question run, or a
+        competitive run. Cooperative: the run's background loop halts before its next unit; work already
+        done is kept. Cancels the given `run`, or the thesis's one active run when omitted."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        cancelled = await tstore.cancel_run(pool, thesis_id=thesis_id, run_id=(run or None))
+        return {"status": "cancelled" if cancelled else "none", "run_id": cancelled}
+
     @r.post("/thesis/{thesis_id}/inquiries/generate")
     async def tl_generate(thesis_id: str, authorization: str = Header(default=""),
                           x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
@@ -1724,6 +1740,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             row = next((q for q in await tstore.list_questions(pool, thesis_id) if q["id"] == qid), None)
             if row is not None:
                 await _run_question_rows(thesis_id, run_id, [row], web)
+            rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+            if (rn or {}).get("state") == "cancelled":      # user stopped it — don't flip to completed
+                return
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
                                      state="completed")
         except tstore.SpendCapError as exc:

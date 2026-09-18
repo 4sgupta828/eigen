@@ -508,17 +508,18 @@ function QuestionCard({ q, id, owner, onDone }: { q: Question; id?: string; owne
   const prCls = pr <= 0 ? "p-0" : pr === 1 ? "p-1" : "p-2";
   const answered = !!q.target_status;
   const [busy, setBusy] = useState(false); const [note, setNote] = useState(""); const [err, setErr] = useState("");
-  const timer = useRef<number | null>(null);
+  const timer = useRef<number | null>(null); const runId = useRef<string | null>(null);
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
 
-  function poll(runId: string) {
+  function poll(rid: string) {
     if (!id) return;
-    api.inquiryStatus(id, runId).then((s) => {
-      if (s.state === "completed") { setBusy(false); setNote(""); onDone?.(); return; }
-      if (s.state === "failed") { setBusy(false); setErr("the run failed — try again"); return; }
+    api.inquiryStatus(id, rid).then((s) => {
+      if (s.state === "completed") { setBusy(false); setNote(""); runId.current = null; onDone?.(); return; }
+      if (s.state === "cancelled") { setBusy(false); setNote(""); runId.current = null; onDone?.(); return; }
+      if (s.state === "failed") { setBusy(false); runId.current = null; setErr("the run failed — try again"); return; }
       setNote("researching…");
-      timer.current = window.setTimeout(() => poll(runId), 2500);
-    }).catch(() => { timer.current = window.setTimeout(() => poll(runId), 3000); });
+      timer.current = window.setTimeout(() => poll(rid), 2500);
+    }).catch(() => { timer.current = window.setTimeout(() => poll(rid), 3000); });
   }
   async function run() {
     if (!id || busy) return; setErr("");
@@ -530,8 +531,12 @@ function QuestionCard({ q, id, owner, onDone }: { q: Question; id?: string; owne
       const r = await api.runQuestion(id, q.id, Math.max(max, 0.01));
       if (r.status === "completed") { setBusy(false); onDone?.(); return; }
       if (!r.run?.id) throw new Error(r.status === "refused" ? "cost exceeded the budget" : "could not start the run");
-      poll(r.run.id);
+      runId.current = r.run.id; poll(r.run.id);
     } catch (e) { setBusy(false); setErr((e as Error).message); }
+  }
+  async function stop() {
+    if (!id) return; setNote("stopping…");
+    try { await api.cancelRun(id, runId.current || undefined); } catch { /* poll will settle it */ }
   }
 
   return (
@@ -540,7 +545,8 @@ function QuestionCard({ q, id, owner, onDone }: { q: Question; id?: string; owne
         <span className={`prio ${prCls}`} title={pr <= 0 ? "P0 — critical crux" : pr === 1 ? "P1 — important" : "P2 — completeness"}>P{pr <= 0 ? 0 : pr}</span>
         <span className="th-lens2">{lens.glyph ? <span className="th-lens2-g">{lens.glyph}</span> : null}{lens.label}</span>
         {!answered && !(owner && id) ? <span className="th-qn2-pending">Not yet run</span> : null}
-        {owner && id ? <button className="th-qn2-run" disabled={busy} onClick={run} title={answered ? "Re-run this question" : "Run this question"}>{busy ? (note || "…") : answered ? "↻ Re-run" : "▶ Run"}</button> : null}
+        {owner && id && busy ? <button className="th-qn2-stop" onClick={stop}>■ Stop</button> : null}
+        {owner && id && !busy ? <button className="th-qn2-run" onClick={run} title={answered ? "Re-run this question" : "Run this question"}>{answered ? "↻ Re-run" : "▶ Run"}</button> : null}
       </div>
       <div className="th-qn2-q">{q.text}</div>
       {answered ? <GroundedAnswer q={q} /> : <div className="th-answer-note">{busy ? (note || "researching…") : "Not yet researched — run it to fill this gap."}</div>}

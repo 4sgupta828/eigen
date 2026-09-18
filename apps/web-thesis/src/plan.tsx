@@ -80,7 +80,7 @@ export function Plan({ id, inquiries, onReload, onRun }: {
 }
 
 type RunPhase = { k: "projecting" } | { k: "done_already" } | { k: "gate"; usd: number; claims: number }
-  | { k: "running"; runId: string; done: number; total: number; stage: string } | { k: "finished" } | { k: "error"; msg: string };
+  | { k: "running"; runId: string; done: number; total: number; stage: string } | { k: "finished" } | { k: "stopped" } | { k: "error"; msg: string };
 
 export function Run({ id, onDone }: { id: string; onDone: () => void }) {
   const [phase, setPhase] = useState<RunPhase>({ k: "projecting" });
@@ -100,10 +100,14 @@ export function Run({ id, onDone }: { id: string; onDone: () => void }) {
   function poll(runId: string) {
     api.inquiryStatus(id, runId).then((s) => {
       if (s.state === "completed") { setPhase({ k: "finished" }); onDone(); return; }
+      if (s.state === "cancelled") { setPhase({ k: "stopped" }); onDone(); return; }
       if (s.state === "failed") { setPhase({ k: "error", msg: "the run failed — you can retry" }); return; }
       setPhase({ k: "running", runId, done: s.done || 0, total: s.total || 0, stage: s.stage || "" });
       timer.current = window.setTimeout(() => poll(runId), 2500);
     }).catch(() => { timer.current = window.setTimeout(() => poll(runId), 3000); });
+  }
+  async function stop() {
+    try { await api.cancelRun(id); } catch { /* the poll will settle to stopped */ }
   }
 
   async function start(critical: boolean) {
@@ -145,10 +149,15 @@ export function Run({ id, onDone }: { id: string; onDone: () => void }) {
               <span className="mono muted">{phase.stage}</span>
             </div>
             <div className="progress"><i style={{ width: `${phase.total ? Math.round((phase.done / phase.total) * 100) : 8}%` }} /></div>
-            <p className="muted" style={{ fontSize: ".84rem", margin: ".7rem 0 0" }}>Corpus + web · verbatim span-check on every claim · sentiment kept as signal.</p>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginTop: ".7rem" }}>
+              <p className="muted" style={{ fontSize: ".84rem", margin: 0 }}>Corpus + web · verbatim span-check on every claim · sentiment kept as signal.</p>
+              <button className="btn sec" onClick={stop}>■ Stop</button>
+            </div>
           </div>
         ) : phase.k === "finished" ? (
           <div className="gate"><div className="lbl">Done</div><button className="btn" style={{ marginTop: ".5rem" }} onClick={onDone}>Open the brief →</button></div>
+        ) : phase.k === "stopped" ? (
+          <div className="gate"><div className="lbl">Stopped</div><p style={{ margin: ".4rem 0 .8rem" }}>Research stopped. The questions already answered are kept — re-run to continue.</p><button className="btn" onClick={onDone}>Open the brief →</button></div>
         ) : (
           <div className="gate"><p style={{ color: "var(--p0)" }}>{phase.msg}</p><button className="btn sec" onClick={() => setPhase({ k: "projecting" })}>Retry</button></div>
         )}
