@@ -130,3 +130,57 @@ th { font-family: var(--mono); font-size: .55rem; text-transform: uppercase; let
 
 @media (max-width: 900px) { .briefgrid { grid-template-columns: 1fr; } .rail { position: static; } .rail-body { max-height: none; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ── stepper ── */
+.stepwrap { background: var(--panel2); border-bottom: 1px solid var(--hair); overflow-x: auto; }
+.steps { max-width: 1180px; margin: 0 auto; padding: .35rem 16px; display: flex; gap: .15rem; align-items: center; }
+.step { display: flex; align-items: center; gap: .4rem; font-family: var(--mono); font-size: .68rem; color: var(--muted); background: transparent; border: none; cursor: pointer; padding: .35rem .5rem; border-radius: 8px; white-space: nowrap; }
+.step:hover { color: var(--ink); }
+.step .num { width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center; font-size: .6rem; font-weight: 700; border: 1.5px solid var(--hair); color: var(--muted); flex: none; }
+.step.on { color: var(--ink); } .step.on .num { background: var(--gold); color: var(--on-accent); border-color: var(--gold); }
+.step.done .num { border-color: var(--fact); color: var(--fact); }
+.sep { color: var(--hair); flex: none; }
+
+/* ── genesis chat ── */
+.conv { display: grid; gap: .7rem; }
+.turn { display: flex; gap: .6rem; align-items: flex-start; }
+.av { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-family: var(--mono); font-size: .6rem; font-weight: 700; }
+.av.you { background: var(--gold); color: var(--on-accent); } .av.ai { border: 1.5px solid var(--gold); color: var(--gold-strong); }
+.bub { font-size: .94rem; line-height: 1.55; padding-top: .15rem; }
+.bub.aiq { font-family: var(--serif); font-weight: 600; }
+.landed { border: 1px solid var(--hair); border-left: 3px solid var(--gold); border-radius: 12px; background: var(--panel2); padding: .8rem .9rem; margin: .3rem 0 0 36px; }
+.landed .serif { font-size: 1.02rem; line-height: 1.5; font-family: var(--serif); }
+.gtext { flex: 1; min-width: 0; font-family: var(--sans); font-size: .9rem; color: var(--ink); background: var(--panel); border: 1px solid var(--hair); border-radius: 10px; padding: .6rem .7rem; }
+
+/* ── plan ── */
+.scanstrip { border: 1px solid var(--hair); border-left: 3px solid var(--signal); border-radius: 10px; background: color-mix(in srgb, var(--signal) 7%, var(--panel)); padding: .6rem .75rem; margin-bottom: 14px; font-size: .84rem; line-height: 1.5; display: flex; flex-wrap: wrap; gap: .4rem .5rem; align-items: center; }
+.scanstrip b { color: var(--ink); }
+.schip { font-family: var(--mono); font-size: .62rem; font-weight: 600; color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 40%, var(--hair)); border-radius: 999px; padding: .16rem .45rem; }
+.prio { font-family: var(--mono); font-size: .56rem; font-weight: 700; padding: .14rem .4rem; border-radius: 5px; flex: none; }
+.p-0 { color: var(--p0); border: 1.5px solid var(--p0); } .p-1 { color: var(--gold-strong); border: 1.5px solid var(--hair); } .p-2 { color: var(--muted); border: 1.5px solid var(--hair); }
+.qline { display: flex; gap: .5rem; align-items: flex-start; padding: .4rem 0; border-top: 1px solid var(--hair-soft); font-size: .88rem; }
+.qedit { margin-left: auto; font-family: var(--mono); font-size: .6rem; color: var(--muted); background: transparent; border: none; cursor: pointer; }
+
+/* ── run cost gate ── */
+.gate { border: 1px solid var(--hair); border-top: 3px solid var(--gold); border-radius: 14px; background: var(--panel); padding: 1.1rem 1.2rem; max-width: 620px; }
+.gate .big { font-family: var(--mono); font-size: 1.8rem; font-weight: 600; color: var(--ink); }
+.gate .lbl { font-family: var(--mono); font-size: .66rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin: .8rem 0; }
+.bd { border: 1px solid var(--hair); border-radius: 10px; padding: .55rem .65rem; background: var(--panel2); }
+.bd .n { font-family: var(--mono); font-size: 1.1rem; font-weight: 600; }
+.progress { height: 8px; border-radius: 999px; background: var(--panel2); overflow: hidden; border: 1px solid var(--hair); }
+.progress i { display: block; height: 100%; background: var(--gold); transition: width .4s; }
+
+/* ── experts ── */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; align-items: start; }
+.pcard { border: 1px solid var(--hair); border-radius: 12px; background: var(--panel); padding: .75rem .85rem; margin-bottom: 10px; }
+.pcard .role { font-family: var(--mono); font-size: .58rem; font-weight: 700; text-transform: uppercase; color: var(--gold-strong); }
+.ins { border-left: 2px solid var(--stc, var(--signal)); padding: .35rem 0 .35rem .6rem; margin: .4rem 0; font-size: .86rem; }
+.ins .tag { font-family: var(--mono); font-size: .56rem; font-weight: 700; text-transform: uppercase; margin-right: .3rem; }
+.t-validates { --stc: var(--fact); color: var(--fact); } .t-invalidates { --stc: var(--p0); color: var(--p0); } .t-context { --stc: var(--signal); color: var(--signal); }
+
+/* ── share ── */
+.sharebox { border: 1px solid var(--hair); border-radius: 12px; background: var(--panel); padding: .8rem .9rem; margin-bottom: 11px; }
+.linkfield { font-family: var(--mono); font-size: .74rem; background: var(--panel2); border: 1px solid var(--hair); border-radius: 8px; padding: .5rem .6rem; color: var(--ink); display: flex; justify-content: space-between; gap: .5rem; align-items: center; flex-wrap: wrap; word-break: break-all; }
+
+@media (max-width: 700px) { .split { grid-template-columns: 1fr; } .breakdown { grid-template-columns: 1fr; } }

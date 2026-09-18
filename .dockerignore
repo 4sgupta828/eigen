@@ -7,3 +7,5 @@
 .mypy_cache
 **/test_*.py
 docs
+apps/web-thesis/node_modules
+apps/web/w
