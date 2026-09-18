@@ -122,7 +122,7 @@ def _mem_block(m: dict) -> str:
 
 
 async def turn(llm_json, *, said: str, history: list[dict], budget_left: int,
-               memory: dict | None = None) -> dict:
+               memory: dict | None = None, context: str = "") -> dict:
     """One REASON-then-ACT turn. -> {reply, proposed_thesis, ready, memory, thought}. Never raises.
 
     A ReAct step over eigen's JSON seam: the agent is given its GOAL (a robust falsifiable thesis) and its
@@ -137,7 +137,9 @@ async def turn(llm_json, *, said: str, history: list[dict], budget_left: int,
         return {"reply": "", "proposed_thesis": "", "ready": True, "memory": mem, "thought": ""}
     if not said and not history:
         return {"reply": "", "proposed_thesis": "", "ready": False, "memory": mem, "thought": ""}
-    prompt = (f"CONVERSATION SO FAR:\n{_convo(history)}\n\n{_mem_block(mem)}\n\n"
+    prompt = ((f"REFERENCE MATERIAL THE AUTHOR ATTACHED (ground the thesis in it; it is context, not the "
+               f"thesis to restate verbatim):\n{context.strip()[:8000]}\n\n" if (context or '').strip() else "")
+              + f"CONVERSATION SO FAR:\n{_convo(history)}\n\n{_mem_block(mem)}\n\n"
               f"THE AUTHOR JUST SAID:\n{said}\n\nReason then act. Return your next turn as JSON now.")
     try:
         raw = await llm_json(_INTAKE_SYSTEM, prompt)
@@ -272,7 +274,7 @@ _DEFICIENCY_SYSTEM = (
 
 
 async def next_improvement(llm_json, *, thesis: str, skip: list[str] | None = None,
-                           memory: dict | None = None) -> dict:
+                           memory: dict | None = None, context: str = "") -> dict:
     """Identify the single most important remaining deficiency (against the five-pillar ideal) that is not
     in `skip`, and propose one improvement to close it. -> {done, pillar, pillar_label, deficiency, why,
     proposed_thesis, rationale}. Never raises; `done` (nothing to propose) on any failure."""
@@ -284,6 +286,8 @@ async def next_improvement(llm_json, *, thesis: str, skip: list[str] | None = No
         return empty
     skip_set = [s for s in (skip or []) if s in _PILLAR_KEYS]
     prompt = (f"CURRENT THESIS:\n{thesis}\n\n"
+              + (f"REFERENCE MATERIAL THE AUTHOR ATTACHED (use it to ground the improvement):\n"
+                 f"{context.strip()[:8000]}\n\n" if (context or '').strip() else "")
               + (f"PILLARS ALREADY ADDRESSED OR SKIPPED (do NOT propose these): "
                  f"{', '.join(skip_set)}\n\n" if skip_set else "")
               + f"{_mem_block(mem)}\n\nIdentify the next deficiency and propose one improvement. Return the JSON.")

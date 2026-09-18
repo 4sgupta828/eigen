@@ -48,7 +48,11 @@ export type ThesisDoc = {
   proposed_thesis?: string; research_status?: string;
   turns?: Turn[]; versions?: Version[]; shaping_prefs?: unknown;
   pitch_deck?: Deck; collective_take?: Take; competitive?: Competitive;
+  attachments?: StoredAttachment[];
 };
+// Intake reference material: sent as base64 (Attachment), stored text-extracted (StoredAttachment).
+export type Attachment = { name: string; media_type: string; data: string };
+export type StoredAttachment = { name: string; media_type?: string; chars?: number; text?: string };
 
 export type InquiriesView = { inquiries?: Inquiry[]; deck?: Deck; take?: Take; competitive?: Competitive };
 
@@ -162,12 +166,13 @@ export const api = {
     getJSON<{ status: string } & InquiriesView>(`/thesis/${enc(id)}/inquiries${share ? `?share=${enc(share)}` : ""}`, id),
 
   // ── intake / genesis ──  (create returns owner_token → persisted here)
-  async create(thesis: string, draft = true): Promise<CreateResp> {
-    const d = await req<CreateResp>("POST", "/thesis", { thesis, draft });
+  async create(thesis: string, draft = true, attachments?: Attachment[]): Promise<CreateResp> {
+    const d = await req<CreateResp>("POST", "/thesis", { thesis, draft, ...(attachments && attachments.length ? { attachments } : {}) });
     if (d.id && d.owner_token) rememberOwner(d.id, d.owner_token);
     return d;
   },
-  genesis: (id: string, text: string) => req<GenesisResp>("POST", `/thesis/${enc(id)}/genesis`, { text }, id),
+  genesis: (id: string, text: string, attachments?: Attachment[]) =>
+    req<GenesisResp>("POST", `/thesis/${enc(id)}/genesis`, { text, ...(attachments && attachments.length ? { attachments } : {}) }, id),
   confirm: (id: string, thesis: string, max_usd = 5, project_only = false) =>
     req<{ status: string; projection?: Projection; thesis?: ThesisDoc; reason?: string }>("POST", `/thesis/${enc(id)}/confirm`, { thesis, max_usd, project_only }, id),
   sample: () => req<{ thesis: string }>("POST", "/thesis/sample").then((d) => d.thesis),

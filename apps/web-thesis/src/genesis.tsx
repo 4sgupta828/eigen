@@ -1,17 +1,27 @@
-import { useEffect, useRef, useState } from "react";
-import { api, type ThesisDoc, type TurnPayload, type Turn, type Version, type Evidence, type Deficiency, type ThesisPillar } from "./api";
+import { useEffect, useRef, useState, type ClipboardEvent } from "react";
+import { api, type ThesisDoc, type TurnPayload, type Turn, type Version, type Evidence, type Deficiency, type ThesisPillar, type Attachment, type StoredAttachment } from "./api";
 import { PageHead, go, Working } from "./ui";
+
+// ── attachments (ported from Q&A mode): upload a PDF/text file, or a LARGE paste becomes a document ──
+const readAsBase64 = (file: Blob): Promise<string> => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(String(r.result).split(",")[1] || "");
+  r.onerror = rej; r.readAsDataURL(file);
+});
+const b64utf8 = (s: string) => btoa(unescape(encodeURIComponent(s)));   // UTF-8-safe base64
+const PASTE_MIN_CHARS = 2500, PASTE_MIN_LINES = 40;   // a document-sized paste; a long question stays inline
+const ATT_MAX = 6;
 
 // An intake box that grows with the pasted thesis up to a readable height, then scrolls inside itself —
 // so a one-liner stays compact but a full multi-page thesis is comfortable to review. Cmd/Ctrl+Enter submits.
-function GrowText({ value, onChange, onSubmit, placeholder, disabled, minRows = 3, maxPx = 360 }:
-  { value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder?: string; disabled?: boolean; minRows?: number; maxPx?: number }) {
+function GrowText({ value, onChange, onSubmit, placeholder, disabled, minRows = 3, maxPx = 360, onPaste }:
+  { value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder?: string; disabled?: boolean; minRows?: number; maxPx?: number; onPaste?: (e: ClipboardEvent) => void }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const resize = () => { const el = ref.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`; };
   useEffect(resize, [value]);   // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <textarea ref={ref} className="gtext gtext-area" value={value} disabled={disabled} rows={minRows}
-      placeholder={placeholder}
+      placeholder={placeholder} onPaste={onPaste}
       onChange={(e) => { onChange(e.target.value); resize(); }}
       onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit(); } }} />
   );
@@ -83,6 +93,53 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
   const [proposal, setProposal] = useState<Deficiency | null>(null);
   const [pillars, setPillars] = useState<ThesisPillar[]>([]);
   const [sharpening, setSharpening] = useState(false);
+  const [atts, setAtts] = useState<Attachment[]>([]);        // to send with the next create/genesis turn
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function addFiles(files: File[]) {
+    const next = [...atts];
+    for (const f of files) {
+      if (next.length >= ATT_MAX) break;
+      if (f.size > 20 * 1024 * 1024) { setErr(`"${f.name}" is too large (max 20MB).`); continue; }
+      try { next.push({ name: f.name, media_type: f.type || "", data: await readAsBase64(f) }); } catch { /* skip */ }
+    }
+    setAtts(next);
+  }
+  function addPastedText(text: string) {
+    if (atts.length >= ATT_MAX) return;
+    setAtts((a) => [...a, { name: "Pasted document", media_type: "text/plain", data: b64utf8(text) }]);
+  }
+  function onPaste(e: ClipboardEvent) {
+    const cd = e.clipboardData; if (!cd) return;
+    const files = [...(cd.files || [])].filter((f) => f && f.size);
+    if (files.length) { e.preventDefault(); addFiles(files); return; }
+    const text = cd.getData("text/plain") || "";
+    const lines = (text.match(/\n/g) || []).length + 1;
+    if ((text.length >= PASTE_MIN_CHARS || lines >= PASTE_MIN_LINES) && atts.length < ATT_MAX) {
+      e.preventDefault(); addPastedText(text);   // a document-sized paste → attachment, keeping the box clean
+    }
+  }
+  const removeAtt = (i: number) => setAtts((a) => a.filter((_, k) => k !== i));
+  const storedAtts: StoredAttachment[] = doc?.attachments || [];
+
+  // Attach control + pending chips — used under both the intake box and the mid-conversation box.
+  const attachBar = () => (
+    <div className="th-attach">
+      <input ref={fileRef} type="file" accept=".pdf,application/pdf,.txt,.md,.markdown,text/plain" multiple hidden
+        onChange={(e) => { addFiles([...(e.target.files || [])]); e.currentTarget.value = ""; }} />
+      <button type="button" className="th-attach-btn" disabled={busy || atts.length >= ATT_MAX} onClick={() => fileRef.current?.click()}>
+        📎 Attach a document</button>
+      <span className="th-attach-hint">PDF or text — or paste a long document; it becomes an attachment.</span>
+      {atts.length ? (
+        <div className="th-attach-chips">
+          {atts.map((a, i) => (
+            <span key={i} className="th-attach-chip">{(a.media_type || "").startsWith("text/") ? "📄" : "📎"} {a.name}
+              <button type="button" className="x" onClick={() => removeAtt(i)} aria-label="Remove">×</button></span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 
   const turns: Turn[] = doc?.turns || [];
   const agentTurns = turns.filter((t) => t.role === "agent" && t.payload?.proposed_thesis);
@@ -93,24 +150,26 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
   const started = !!id || turns.length > 0;
 
   async function begin(text: string) {
-    if (text.trim().length < 12) { setErr("State the thesis as a sentence (the product, who buys it, what they do today)."); return; }
+    if (text.trim().length < 12 && !atts.length) { setErr("State the thesis as a sentence — or attach the document it's based on."); return; }
     setBusy(true); setErr(""); setInput("");
+    const sending = atts;
     try {
-      const c = await api.create(text, true);       // draft; persists owner_token
-      setId(c.id);
-      const g = await api.genesis(c.id, "");         // agent opens / sharpens; returns full doc
+      const c = await api.create(text.trim() || "See the attached document.", true, sending);   // draft; stores attachments
+      setId(c.id); setAtts([]);
+      const g = await api.genesis(c.id, "");         // agent opens / sharpens (reads the stored attachments)
       setDoc(g.thesis || c.thesis);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
   async function turn(text: string) {
-    if (!text.trim()) return;
+    if (!text.trim() && !atts.length) return;
     if (!id) return begin(text);
     setBusy(true); setErr(""); setInput(""); setShowRedline(false);
+    const sending = atts;
     // Echo the author's message immediately (optimistic); the server's doc replaces it on response.
-    setDoc((prev) => prev ? { ...prev, turns: [...(prev.turns || []), { role: "user", text }] } : prev);
+    if (text.trim()) setDoc((prev) => prev ? { ...prev, turns: [...(prev.turns || []), { role: "user", text }] } : prev);
     try {
-      const g = await api.genesis(id, text);
-      if (g.thesis) setDoc(g.thesis);
+      const g = await api.genesis(id, text, sending);
+      if (g.thesis) setDoc(g.thesis); setAtts([]);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
   // One sharpening round: send the action, then render the next identified deficiency + proposal.
@@ -154,8 +213,9 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
       <PageHead title="State the thesis" sub="Say it in a sentence — the product, who buys it, what they do today. I sharpen it with you, then you commit it." />
       {!started ? (
         <div className="card">
-          <GrowText value={input} onChange={setInput} onSubmit={() => begin(input)} disabled={busy} minRows={4}
+          <GrowText value={input} onChange={setInput} onSubmit={() => begin(input)} disabled={busy} minRows={4} onPaste={onPaste}
             placeholder="State your thesis — or paste it in full (a paragraph, or a multi-page memo). The macro shift and why-now, your edge, the scope, the return logic, the risks…  (⌘/Ctrl+Enter to start)" />
+          {attachBar()}
           <div className="row" style={{ marginTop: 10 }}>
             <button className="btn" disabled={busy} onClick={() => begin(input)}>{busy ? "…" : "Start"}</button>
             <button className="btn sec" disabled={busy} onClick={sample}>🎲 Generate a sample</button>
@@ -196,6 +256,12 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
                 <blockquote className="th-landed-q">{proposed}</blockquote>
               )}
               <Mem mem={lastPay?.memory} />
+              {storedAtts.length ? (
+                <div className="th-attach-stored">
+                  <span className="th-attach-stored-h">Grounded in:</span>
+                  {storedAtts.map((a, i) => <span key={i} className="th-attach-chip ro">📎 {a.name}{a.chars ? ` · ${a.chars.toLocaleString()} chars` : ""}</span>)}
+                </div>
+              ) : null}
               <div className="th-landed-row">
                 <button type="button" className="th-use" disabled={busy} onClick={useThesis}>Use this thesis →</button>
                 <span className="th-landed-hint">{lastPay?.ready ? "or keep refining it below." : "keep refining below, or use it now."}</span>
@@ -271,8 +337,9 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
           ) : null}
 
           <div style={{ marginTop: ".8rem" }}>
-            <GrowText value={input} onChange={setInput} onSubmit={() => turn(input)} disabled={busy} minRows={2}
-              placeholder="Answer, or add what you know — paste anything relevant (⌘/Ctrl+Enter to send)" />
+            <GrowText value={input} onChange={setInput} onSubmit={() => turn(input)} disabled={busy} minRows={2} onPaste={onPaste}
+              placeholder="Answer, or add what you know — paste or attach anything relevant (⌘/Ctrl+Enter to send)" />
+            {attachBar()}
             <div className="row" style={{ marginTop: 8 }}>
               <button className="btn" disabled={busy} onClick={() => turn(input)}>Send</button>
             </div>

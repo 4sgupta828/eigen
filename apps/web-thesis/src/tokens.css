@@ -641,6 +641,20 @@ a.th-cite-src:hover { text-decoration: underline; }
 /* intake / answer box that grows then scrolls */
 .gtext-area { display: block; width: 100%; box-sizing: border-box; flex: none; resize: vertical; overflow-y: auto; min-height: 3.2rem; max-height: 360px; font-family: var(--serif); font-size: 1.02rem; line-height: 1.55; }
 
+/* intake attachments (ported from Q&A) */
+.th-attach { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.th-attach-btn { font-family: var(--mono); font-size: .7rem; font-weight: 600; color: var(--gold-strong); background: var(--panel); border: 1px solid color-mix(in srgb, var(--gold) 34%, var(--hair)); border-radius: 999px; padding: .34rem .7rem; cursor: pointer; }
+.th-attach-btn:hover:not(:disabled) { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 6%, var(--panel)); }
+.th-attach-btn:disabled { opacity: .5; cursor: default; }
+.th-attach-hint { font-size: .74rem; color: var(--muted); }
+.th-attach-chips { display: flex; flex-wrap: wrap; gap: .35rem; flex-basis: 100%; }
+.th-attach-chip { display: inline-flex; align-items: center; gap: .3rem; font-family: var(--mono); font-size: .68rem; color: var(--ink); background: color-mix(in srgb, var(--gold) 7%, var(--panel)); border: 1px solid var(--hair); border-radius: 8px; padding: .22rem .5rem; }
+.th-attach-chip .x { background: none; border: none; cursor: pointer; color: var(--muted); font-size: .9rem; line-height: 1; padding: 0 .1rem; }
+.th-attach-chip .x:hover { color: var(--p0); }
+.th-attach-chip.ro { background: var(--panel2); color: var(--muted); }
+.th-attach-stored { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+.th-attach-stored-h { font-family: var(--mono); font-size: .6rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+
 /* deficiency-driven sharpening */
 .th-sharpen { margin: .8rem 0 0 34px; border: 1px solid var(--hair); border-radius: 12px; background: color-mix(in srgb, var(--gold) 4%, var(--panel)); padding: .75rem .85rem; }
 .th-sharpen-h { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }

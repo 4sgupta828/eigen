@@ -53,16 +53,24 @@ def resolve_tenant(value: str = "") -> str:
     return (value or os.environ.get("EIGEN_TENANT_ID") or "demo").strip()
 
 
+class ThesisAttachment(BaseModel):
+    data: str = ""            # base64-encoded file bytes (or base64 UTF-8 for a pasted document)
+    media_type: str = ""      # e.g. application/pdf, text/plain
+    name: str = ""
+
+
 class NewThesis(BaseModel):
     thesis: str = ""
     title: str = ""
     project_only: bool = False
     max_usd: float = 0.0
     draft: bool = False       # create a genesis draft (no decompose, no cost) and converse to a thesis
+    attachments: list[ThesisAttachment] = []   # intake reference material (pasted docs / uploaded PDFs)
 
 
 class GenesisIn(BaseModel):
     text: str = ""            # the author's latest message in the genesis conversation
+    attachments: list[ThesisAttachment] = []   # more reference material added mid-conversation
 
 
 class ConfirmIn(BaseModel):
@@ -267,6 +275,36 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         except Exception:      # noqa: BLE001
             return None
 
+    def _extract_attachments(atts) -> list[dict]:
+        """Text-extract intake attachments (pasted documents + uploaded PDFs) via the shared media
+        pipeline → [{name, media_type, chars, text}]. Images are ignored for a thesis. Never raises."""
+        rows = [(a.model_dump() if hasattr(a, "model_dump") else dict(a)) for a in (atts or []) if a]
+        if not rows:
+            return []
+        try:
+            from api.media import attachments_to_media
+            _imgs, docs, pdfs, _notes = attachments_to_media(rows)
+        except Exception:      # noqa: BLE001 — a bad attachment never blocks intake
+            return []
+        out: list[dict] = []
+        for d in docs:
+            t = (d.get("text") or "").strip()
+            if t:
+                out.append({"name": d.get("name") or "document", "media_type": "text",
+                            "chars": len(t), "text": t[:12000]})
+        for p in pdfs:
+            t = (p.get("text_fallback") or "").strip()
+            if t:
+                out.append({"name": p.get("name") or "document.pdf", "media_type": "pdf",
+                            "chars": len(t), "text": t[:12000]})
+        return out[:6]
+
+    def _attach_context(stored: list[dict], *, cap: int = 8000) -> str:
+        """Render stored attachments as reference-material context for the genesis / sharpen prompts."""
+        parts = [f"— {a.get('name') or 'document'} —\n{(a.get('text') or '').strip()}"
+                 for a in (stored or []) if (a.get("text") or "").strip()]
+        return ("\n\n".join(parts))[:cap].strip()
+
     def _ui():
         return getattr(manifest, "ui", None)
 
@@ -316,6 +354,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             meta = await tstore.create(pool, thesis=t, claims=[], subject={},
                                        owner_id=oid, title=body.title or t)
             await tstore.set_proposed_thesis(pool, meta["id"], t)
+            stored = _extract_attachments(body.attachments)
+            if stored:
+                await tstore.set_thesis_attachments(pool, meta["id"], stored)
             # The client drives the first genesis turn with this same text, which stores the user turn;
             # storing it here too would double it. The draft row + proposed_thesis are enough.
             return {"status": "draft", **meta,
@@ -350,6 +391,13 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         said = (body.text or "").strip()
         if said:
             await tstore.add_turn(pool, thesis_id, role="user", text=said)
+        # Fold in any reference material added this turn, and carry the whole set as prompt context.
+        stored = list(d.get("attachments") or [])
+        new_att = _extract_attachments(body.attachments)
+        if new_att:
+            stored = (stored + new_att)[:6]
+            await tstore.set_thesis_attachments(pool, thesis_id, stored)
+        attach_ctx = _attach_context(stored)
         turns = d.get("turns") or []
         used = sum(1 for t in turns if t.get("role") == "agent" and t.get("move") == "genesis")
         # A ReAct agent with GOAL + MEMORY (strong model). Memory (thesis + assumptions + open threads +
@@ -358,7 +406,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         prior_mem = next((t.get("payload", {}).get("memory") for t in reversed(turns)
                           if t.get("role") == "agent" and t.get("payload", {}).get("memory")), None)
         got = await gen.turn(_strong_llm_json(), said=said, history=turns,
-                             budget_left=max(0, gen.GENESIS_BUDGET - used), memory=prior_mem)
+                             budget_left=max(0, gen.GENESIS_BUDGET - used), memory=prior_mem,
+                             context=attach_ctx)
         ready = bool(got.get("ready"))
         reply = got.get("reply") or ("Ready when you are." if ready else "Tell me a little more.")
         # The agent's current thesis this turn; keep the last good one if the model returned none.
@@ -431,7 +480,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         if not (prior_mem or {}).get("shaping_prefs") and d.get("shaping_prefs"):
             prior_mem = {**(prior_mem or {}), "shaping_prefs": d.get("shaping_prefs")}
 
-        proposal = await gen.next_improvement(_strong_llm_json(), thesis=current, skip=skip, memory=prior_mem)
+        proposal = await gen.next_improvement(_strong_llm_json(), thesis=current, skip=skip, memory=prior_mem,
+                                              context=_attach_context((d2 or {}).get("attachments") or []))
         pillars = [{"key": p["key"], "label": p["label"],
                     "addressed": p["key"] in accepted, "skipped": p["key"] in rejected} for p in gen.PILLARS]
         return {"status": "ok", "proposal": proposal, "skip": skip, "pillars": pillars,

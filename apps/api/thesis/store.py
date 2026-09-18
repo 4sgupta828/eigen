@@ -68,6 +68,9 @@ ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS landscape_brief jsonb NOT NULL DE
 -- Voices organized into relevance-to-the-investigation buckets (LLM-clustered, signal not evidence),
 -- cached by the candidate set they were built from so a revisit doesn't re-spend on the same corpus hits.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS voices jsonb NOT NULL DEFAULT '{}';
+-- Reference material the author attached at intake (pasted documents / uploaded PDFs), text-extracted and
+-- stored as [{name, media_type, chars, text}] so the genesis agent can shape the thesis against it.
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS attachments jsonb NOT NULL DEFAULT '[]';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS owner_token_hash text NOT NULL DEFAULT '';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS decision jsonb NOT NULL DEFAULT '{}';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS research_status text NOT NULL DEFAULT 'not_run';
@@ -410,6 +413,7 @@ async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str
     out["collective_take"] = _j(out.get("collective_take") or {}) or {}
     out["competitive"] = _j(out.get("competitive") or {}) or {}
     out["landscape_brief"] = _j(out.get("landscape_brief") or {}) or {}
+    out["attachments"] = _j(out.get("attachments") or []) or []      # intake reference material (extracted text)
     out["versions"] = _j(out.get("versions") or []) or []           # thesis version timeline (backtrack)
     out["shaping_prefs"] = _j(out.get("shaping_prefs") or []) or []  # how the author wants it shaped
     for k in ("created_at", "updated_at"):
@@ -922,6 +926,14 @@ async def delete_brainstorm_thread(pool, *, thesis_id: str, thread_id: str) -> N
     async with pool.acquire() as conn:
         await conn.execute(
             "DELETE FROM ts_brainstorm_thread WHERE id=$1 AND thesis_id=$2", thread_id, thesis_id)
+
+
+async def set_thesis_attachments(pool, thesis_id: str, attachments: list[dict]) -> None:
+    """Persist the intake reference material [{name, media_type, chars, text}] (text already extracted)."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_thesis SET attachments=$2::jsonb, updated_at=now() WHERE id=$1",
+                           thesis_id, json.dumps(list(attachments or [])))
 
 
 async def get_thesis_voices(pool, thesis_id: str) -> dict:
