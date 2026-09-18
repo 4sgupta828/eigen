@@ -222,6 +222,90 @@ async def improve(llm_json, *, thesis: str, memory: dict | None = None, instruct
             "rationale": str(d.get("rationale") or "").strip()[:400], "shaping_prefs": prefs[:12]}
 
 
+# ── deficiency-driven sharpening: one identified gap + one proposal at a time ──────────────────────
+# The five pillars of a solid startup INVESTMENT thesis. The agent grades the current thesis against
+# these and closes the weakest gap one proposal at a time, so the author accepts/rejects deliberately
+# rather than watching an opaque auto-rewrite.
+PILLARS: list[dict] = [
+    {"key": "macro_shift", "label": "Macro shift & why-now",
+     "what": "the specific technological, regulatory, or behavioural change opening this window NOW — a "
+             "tight wedge (e.g. 'embedded payroll for cross-border contractors'), never a broad bucket "
+             "like 'fintech' or 'AI'"},
+    {"key": "insight", "label": "Proprietary insight / edge",
+     "what": "why this investor/fund is uniquely positioned to SEE, WIN, and SUPPORT it — deep domain "
+             "expertise, a proprietary sourcing network, or a contrarian belief the consensus gets wrong"},
+    {"key": "scope", "label": "Operational parameters & scope",
+     "what": "explicit boundaries: target geography, company stage (pre-seed vs seed PMF), preferred "
+             "business models (usage-based, marketplace…), and typical check size"},
+    {"key": "returns", "label": "Venture-scale return logic (100x)",
+     "what": "how a winner compounds into a category-defining company — the TAM-expansion trajectory and "
+             "the exit path (IPO or strategic acquisition); the 100x math"},
+    {"key": "risks", "label": "Key risks & deal-breakers",
+     "what": "the 3–5 load-bearing assumptions that MUST hold, and the critical risks / unit-economic or "
+             "regulatory hurdles that would invalidate the thesis"},
+]
+_PILLAR_KEYS = {p["key"] for p in PILLARS}
+_PILLAR_LABEL = {p["key"]: p["label"] for p in PILLARS}
+
+_DEFICIENCY_SYSTEM = (
+    "You are a sharp venture partner helping an investor turn a rough thesis into a SOLID investment "
+    "thesis — ONE improvement at a time. A great thesis is a concise, first-principles roadmap that "
+    "HYPOTHESISES X from observed facts, logic, and the state of the world; defines the fund's unique "
+    "edge; targets a specific market inefficiency; and acts as a filter for deal flow. It rests on FIVE "
+    "pillars:\n"
+    + "\n".join(f"{i+1}. {p['label'].upper()} — {p['what']}" for i, p in enumerate(PILLARS)) + "\n\n"
+    "You are given the CURRENT thesis and the pillars ALREADY addressed or explicitly skipped. Find the "
+    "SINGLE most important REMAINING weakness — the pillar most missing or weakest that is NOT in the skip "
+    "list. Name it, say in one line why closing it matters for THIS thesis, and propose ONE concrete "
+    "improvement: rewrite the WHOLE thesis to strengthen exactly that one pillar. Keep the author's own "
+    "product and intent — sharpen, don't hijack. Stay grounded: real segments, mechanisms, numbers, "
+    "incumbents; the proposal must make the thesis MORE falsifiable and specific, not merely longer. If "
+    "every pillar is already adequately covered, set done=true.\n\n"
+    "Return ONE JSON object exactly:\n"
+    '{"done": <true only if the thesis already covers all five pillars solidly>,\n'
+    ' "pillar": "<one of ' + "|".join(p["key"] for p in PILLARS) + '>",\n'
+    ' "deficiency": "<what is missing or weak on this pillar, specific to THIS thesis — one or two lines>",\n'
+    ' "why": "<one line: why closing this gap matters>",\n'
+    ' "proposed_thesis": "<the full rewritten thesis with this ONE pillar strengthened — flowing prose>",\n'
+    ' "rationale": "<=2 sentences: exactly what you added or changed>"}\n'
+    "Output ONLY the JSON object.")
+
+
+async def next_improvement(llm_json, *, thesis: str, skip: list[str] | None = None,
+                           memory: dict | None = None) -> dict:
+    """Identify the single most important remaining deficiency (against the five-pillar ideal) that is not
+    in `skip`, and propose one improvement to close it. -> {done, pillar, pillar_label, deficiency, why,
+    proposed_thesis, rationale}. Never raises; `done` (nothing to propose) on any failure."""
+    mem = _mem(memory)
+    thesis = (thesis or "").strip()
+    empty = {"done": True, "pillar": "", "pillar_label": "", "deficiency": "", "why": "",
+             "proposed_thesis": "", "rationale": ""}
+    if llm_json is None or not thesis:
+        return empty
+    skip_set = [s for s in (skip or []) if s in _PILLAR_KEYS]
+    prompt = (f"CURRENT THESIS:\n{thesis}\n\n"
+              + (f"PILLARS ALREADY ADDRESSED OR SKIPPED (do NOT propose these): "
+                 f"{', '.join(skip_set)}\n\n" if skip_set else "")
+              + f"{_mem_block(mem)}\n\nIdentify the next deficiency and propose one improvement. Return the JSON.")
+    try:
+        raw = await llm_json(_DEFICIENCY_SYSTEM, prompt)
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+    except Exception:      # noqa: BLE001 — sharpening never blocks the author
+        return empty
+    if not isinstance(d, dict):
+        return empty
+    pillar = str(d.get("pillar") or "").strip()
+    if pillar not in _PILLAR_KEYS:
+        pillar = ""
+    proposed = str(d.get("proposed_thesis") or "").strip()[:THESIS_CAP]
+    done = bool(d.get("done")) or not pillar or not proposed
+    return {"done": done, "pillar": pillar, "pillar_label": _PILLAR_LABEL.get(pillar, ""),
+            "deficiency": str(d.get("deficiency") or "").strip()[:400],
+            "why": str(d.get("why") or "").strip()[:300],
+            "proposed_thesis": proposed,
+            "rationale": str(d.get("rationale") or "").strip()[:400]}
+
+
 # A sample thesis is a one-click SEED for the genesis conversation, not a committed thesis. Downstream it
 # is dropped in as the first author turn, stored via set_proposed_thesis, and rendered as a chat bubble.
 # We want it genuinely DETAILED (~250-300 words), so the whole proposed-thesis path shares one bound —

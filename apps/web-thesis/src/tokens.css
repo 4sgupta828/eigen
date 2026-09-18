@@ -638,6 +638,38 @@ a.th-cite-src:hover { text-decoration: underline; }
 .th-improve { font-family: var(--mono); font-size: .72rem; font-weight: 600; color: var(--gold-strong); background: color-mix(in srgb, var(--gold) 8%, var(--panel)); border: 1px solid color-mix(in srgb, var(--gold) 40%, var(--hair)); border-radius: 10px; padding: .45rem .75rem; cursor: pointer; }
 .th-improve:disabled { opacity: .55; cursor: default; }
 
+/* intake / answer box that grows then scrolls */
+.gtext-area { display: block; width: 100%; box-sizing: border-box; flex: none; resize: vertical; overflow-y: auto; min-height: 3.2rem; max-height: 360px; font-family: var(--serif); font-size: 1.02rem; line-height: 1.55; }
+
+/* deficiency-driven sharpening */
+.th-sharpen { margin: .8rem 0 0 34px; border: 1px solid var(--hair); border-radius: 12px; background: color-mix(in srgb, var(--gold) 4%, var(--panel)); padding: .75rem .85rem; }
+.th-sharpen-h { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.th-sharpen-title { font-family: var(--mono); font-size: .72rem; font-weight: 700; color: var(--ink); }
+.th-sharpen-sub { font-size: .74rem; color: var(--muted); }
+.th-pillars { display: flex; flex-wrap: wrap; gap: .35rem; margin: .6rem 0; }
+.th-pillar { display: inline-flex; align-items: center; gap: .25rem; font-family: var(--mono); font-size: .62rem; color: var(--muted); border: 1px solid var(--hair); border-radius: 999px; padding: .18rem .5rem; }
+.th-pillar b { color: var(--muted); }
+.th-pillar.done { color: var(--fact); border-color: color-mix(in srgb, var(--fact) 40%, var(--hair)); background: color-mix(in srgb, var(--fact) 8%, var(--panel)); }
+.th-pillar.done b { color: var(--fact); }
+.th-pillar.skip { color: var(--muted); opacity: .6; text-decoration: line-through; }
+.th-pillar.active { color: var(--gold-strong); border-color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, var(--panel)); font-weight: 700; }
+.th-prop { border: 1px solid color-mix(in srgb, var(--gold) 34%, var(--hair)); border-radius: 10px; background: var(--panel); padding: .7rem .8rem; }
+.th-prop-top { margin-bottom: .35rem; }
+.th-prop-pill { font-family: var(--mono); font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #fff; background: var(--gold); border-radius: 6px; padding: .14rem .46rem; }
+.th-prop-def { font-family: var(--serif); font-size: 1rem; line-height: 1.5; color: var(--ink); }
+.th-prop-why { font-size: .82rem; color: var(--muted); line-height: 1.5; margin-top: .3rem; }
+.th-prop-why b { color: var(--ink); }
+.th-prop-thesis { font-family: var(--serif); font-size: .96rem; line-height: 1.55; margin: .6rem 0 .4rem; border-left: 2px solid var(--hair); padding: .1rem 0 .1rem .7rem; color: var(--ink); }
+.th-prop-thesis ins { background: color-mix(in srgb, var(--fact) 20%, transparent); text-decoration: none; border-radius: 3px; padding: 0 .1em; }
+.th-prop-thesis del { color: var(--p0); opacity: .65; }
+.th-prop-rat { font-size: .8rem; color: var(--muted); font-style: italic; margin-bottom: .5rem; }
+.th-prop-acts { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.th-prop-accept { font-family: var(--mono); font-size: .72rem; font-weight: 700; color: var(--on-accent); background: var(--gold); border: none; border-radius: 10px; padding: .5rem .9rem; cursor: pointer; }
+.th-prop-reject { font-family: var(--mono); font-size: .72rem; font-weight: 600; color: var(--gold-strong); background: transparent; border: 1px solid color-mix(in srgb, var(--gold) 40%, var(--hair)); border-radius: 10px; padding: .5rem .9rem; cursor: pointer; }
+.th-prop-accept:disabled, .th-prop-reject:disabled { opacity: .55; cursor: default; }
+.th-prop-done { font-size: .9rem; color: var(--fact); font-weight: 600; padding: .3rem 0; }
+.th-prop-wait { padding: .4rem 0; }
+
 .th-versions { margin: .5rem 0 0 34px; font-size: .84rem; }
 .th-versions summary { font-family: var(--mono); font-size: .68rem; color: var(--muted); cursor: pointer; }
 .th-ver { display: flex; gap: .6rem; align-items: flex-start; border-top: 1px solid var(--hair); padding: .5rem 0; }

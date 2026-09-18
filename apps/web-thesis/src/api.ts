@@ -92,6 +92,10 @@ const enc = encodeURIComponent;
 // response shapes for the do-side
 export type Version = { id: string; text?: string; parent_id?: string; source?: string; rationale?: string; at?: string; active?: boolean };
 export type GenesisResp = { status: string; reply?: string; ready?: boolean; proposed_thesis?: string; versions?: Version[]; change_rationale?: string; thesis?: ThesisDoc };
+// Deficiency-driven sharpening: one identified gap + one proposed rewrite at a time.
+export type ThesisPillar = { key: string; label: string; addressed?: boolean; skipped?: boolean };
+export type Deficiency = { done: boolean; pillar: string; pillar_label: string; deficiency: string; why: string; proposed_thesis: string; rationale: string };
+export type ImproveResp = { status: string; proposal: Deficiency; skip: string[]; pillars: ThesisPillar[]; proposed_thesis?: string; versions?: Version[]; thesis?: ThesisDoc };
 export type Projection = { claims?: number; projected_usd?: number; components?: Record<string, number> };
 export type Run = { id: string; state: string; stage?: string; projected_usd?: number; approved_usd?: number; actual_usd?: number; metadata?: Record<string, unknown> };
 export type RunResp = { status: string; projection?: Projection; run?: Run; findings?: number; selected?: number };
@@ -169,7 +173,8 @@ export const api = {
   sample: () => req<{ thesis: string }>("POST", "/thesis/sample").then((d) => d.thesis),
   versions: (id: string) => getJSON<{ versions: Version[] }>(`/thesis/${enc(id)}/versions`, id).then((d) => d.versions || []),
   revert: (id: string, version_id: string) => req<GenesisResp>("POST", `/thesis/${enc(id)}/revert`, { version_id }, id),
-  improve: (id: string, instruction = "") => req<GenesisResp>("POST", `/thesis/${enc(id)}/improve`, { instruction }, id),
+  improve: (id: string, body?: { action?: string; pillar?: string; proposed_thesis?: string }) =>
+    req<ImproveResp>("POST", `/thesis/${enc(id)}/improve`, { action: "propose", ...(body || {}) }, id),
 
   // ── plan ──
   generate: (id: string) => req<RunResp>("POST", `/thesis/${enc(id)}/inquiries/generate`, undefined, id),

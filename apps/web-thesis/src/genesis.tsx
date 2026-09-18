@@ -1,6 +1,21 @@
-import { useState } from "react";
-import { api, type ThesisDoc, type TurnPayload, type Turn, type Version, type Evidence } from "./api";
+import { useEffect, useRef, useState } from "react";
+import { api, type ThesisDoc, type TurnPayload, type Turn, type Version, type Evidence, type Deficiency, type ThesisPillar } from "./api";
 import { PageHead, go, Working } from "./ui";
+
+// An intake box that grows with the pasted thesis up to a readable height, then scrolls inside itself —
+// so a one-liner stays compact but a full multi-page thesis is comfortable to review. Cmd/Ctrl+Enter submits.
+function GrowText({ value, onChange, onSubmit, placeholder, disabled, minRows = 3, maxPx = 360 }:
+  { value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder?: string; disabled?: boolean; minRows?: number; maxPx?: number }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const resize = () => { const el = ref.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`; };
+  useEffect(resize, [value]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <textarea ref={ref} className="gtext gtext-area" value={value} disabled={disabled} rows={minRows}
+      placeholder={placeholder}
+      onChange={(e) => { onChange(e.target.value); resize(); }}
+      onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit(); } }} />
+  );
+}
 
 // ── word-level redline (LCS on whitespace-split tokens) — ported from the classic client ──
 function redline(prev: string, curr: string) {
@@ -64,6 +79,10 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [showRedline, setShowRedline] = useState(false);
+  // Deficiency-driven sharpening: one identified gap + one proposal at a time.
+  const [proposal, setProposal] = useState<Deficiency | null>(null);
+  const [pillars, setPillars] = useState<ThesisPillar[]>([]);
+  const [sharpening, setSharpening] = useState(false);
 
   const turns: Turn[] = doc?.turns || [];
   const agentTurns = turns.filter((t) => t.role === "agent" && t.payload?.proposed_thesis);
@@ -94,14 +113,20 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
       if (g.thesis) setDoc(g.thesis);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
-  async function improve() {
+  // One sharpening round: send the action, then render the next identified deficiency + proposal.
+  async function sharpen(body?: { action?: string; pillar?: string; proposed_thesis?: string }) {
     if (!id) return;
-    setBusy(true); setErr(""); setShowRedline(false);
+    setBusy(true); setErr(""); setShowRedline(false); setSharpening(true);
     try {
-      const g = await api.improve(id);
-      if (g.thesis) setDoc(g.thesis);
+      const r = await api.improve(id, body);
+      if (r.thesis) setDoc(r.thesis);
+      setPillars(r.pillars || []);
+      setProposal(r.proposal && !r.proposal.done && r.proposal.proposed_thesis ? r.proposal : null);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
+  const startSharpen = () => sharpen();
+  const acceptProposal = () => proposal && sharpen({ action: "accept", pillar: proposal.pillar, proposed_thesis: proposal.proposed_thesis });
+  const rejectProposal = () => proposal && sharpen({ action: "reject", pillar: proposal.pillar });
   async function revert(vid: string) {
     if (!id || !vid) return;
     setBusy(true); setErr(""); setShowRedline(false);
@@ -129,13 +154,12 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
       <PageHead title="State the thesis" sub="Say it in a sentence — the product, who buys it, what they do today. I sharpen it with you, then you commit it." />
       {!started ? (
         <div className="card">
-          <div className="row" style={{ marginBottom: 10 }}>
-            <input className="gtext" value={input} onChange={(e) => setInput(e.target.value)}
-              placeholder="e.g. A startup selling AI clinical decision support to mid-sized hospitals…"
-              onKeyDown={(e) => { if (e.key === "Enter") begin(input); }} />
+          <GrowText value={input} onChange={setInput} onSubmit={() => begin(input)} disabled={busy} minRows={4}
+            placeholder="State your thesis — or paste it in full (a paragraph, or a multi-page memo). The macro shift and why-now, your edge, the scope, the return logic, the risks…  (⌘/Ctrl+Enter to start)" />
+          <div className="row" style={{ marginTop: 10 }}>
             <button className="btn" disabled={busy} onClick={() => begin(input)}>{busy ? "…" : "Start"}</button>
+            <button className="btn sec" disabled={busy} onClick={sample}>🎲 Generate a sample</button>
           </div>
-          <button className="btn sec" disabled={busy} onClick={sample}>🎲 Generate a sample</button>
         </div>
       ) : (
         <div className="card">
@@ -149,7 +173,7 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
                 </div>
               </div>
             ))}
-            {busy ? <div className="turn"><span className="av ai">E</span><div className="bub muted"><Working text="thinking…" /></div></div> : null}
+            {busy && !sharpening ? <div className="turn"><span className="av ai">E</span><div className="bub muted"><Working text="thinking…" /></div></div> : null}
           </div>
 
           {/* Working-thesis card — the agent restates the updated thesis every turn; redline shows what changed. */}
@@ -188,11 +212,45 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
             </div>
           ) : null}
 
-          {/* Draft actions: auto-improve + backtrack to any earlier version. */}
+          {/* Sharpen toward a SOLID investment thesis — one identified deficiency + one proposal at a time. */}
           {proposed.trim().length >= 12 ? (
-            <div className="th-acts">
-              <button type="button" className="th-improve" disabled={busy} onClick={improve}
-                title="I propose improvement questions, answer them myself, and sharpen the thesis">✨ Improve my thesis</button>
+            <div className="th-sharpen">
+              <div className="th-sharpen-h">
+                <span className="th-sharpen-title">✨ Sharpen toward a solid thesis</span>
+                <span className="th-sharpen-sub">one gap at a time — you accept or skip each proposal</span>
+              </div>
+              {pillars.length ? (
+                <div className="th-pillars">
+                  {pillars.map((p) => (
+                    <span key={p.key} className={"th-pillar" + (p.addressed ? " done" : p.skipped ? " skip" : "") + (proposal?.pillar === p.key ? " active" : "")}
+                      title={p.addressed ? "addressed" : p.skipped ? "skipped" : "not yet addressed"}>
+                      <b>{p.addressed ? "✓" : p.skipped ? "–" : "○"}</b> {p.label}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {busy && sharpening ? <div className="th-prop-wait"><Working text="identifying the next deficiency…" /></div>
+                : proposal ? (
+                  <div className="th-prop">
+                    <div className="th-prop-top"><span className="th-prop-pill">{proposal.pillar_label}</span></div>
+                    <div className="th-prop-def">{proposal.deficiency}</div>
+                    {proposal.why ? <div className="th-prop-why"><b>Why it matters:</b> {proposal.why}</div> : null}
+                    <blockquote className="th-prop-thesis">
+                      <span className="th-redline-key"><ins>added</ins> <del>removed</del> — the proposed rewrite</span>
+                      <Redline prev={proposed} curr={proposal.proposed_thesis} />
+                    </blockquote>
+                    {proposal.rationale ? <div className="th-prop-rat">{proposal.rationale}</div> : null}
+                    <div className="th-prop-acts">
+                      <button type="button" className="th-prop-accept" disabled={busy} onClick={acceptProposal}>✓ Accept this improvement</button>
+                      <button type="button" className="th-prop-reject" disabled={busy} onClick={rejectProposal}>✗ Skip · show next gap</button>
+                    </div>
+                  </div>
+                ) : sharpening ? (
+                  <div className="th-prop-done">✓ Solid — the thesis covers all five pillars. Use it below, or keep refining.</div>
+                ) : (
+                  <button type="button" className="th-improve" disabled={busy} onClick={startSharpen}
+                    title="I grade the thesis against the five pillars of a solid investment thesis and propose the highest-leverage fix">Find the next gap to close →</button>
+                )}
             </div>
           ) : null}
           {versions.length >= 2 ? (
@@ -212,11 +270,12 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
             </details>
           ) : null}
 
-          <div className="row" style={{ marginTop: ".8rem" }}>
-            <input className="gtext" value={input} onChange={(e) => setInput(e.target.value)}
-              placeholder="Answer, or add what you know — I'll keep sharpening it"
-              onKeyDown={(e) => { if (e.key === "Enter") turn(input); }} />
-            <button className="btn" disabled={busy} onClick={() => turn(input)}>Send</button>
+          <div style={{ marginTop: ".8rem" }}>
+            <GrowText value={input} onChange={setInput} onSubmit={() => turn(input)} disabled={busy} minRows={2}
+              placeholder="Answer, or add what you know — paste anything relevant (⌘/Ctrl+Enter to send)" />
+            <div className="row" style={{ marginTop: 8 }}>
+              <button className="btn" disabled={busy} onClick={() => turn(input)}>Send</button>
+            </div>
           </div>
         </div>
       )}

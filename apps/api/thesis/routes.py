@@ -146,7 +146,10 @@ class QuestionEdit(BaseModel):
 
 
 class ImproveIn(BaseModel):
-    instruction: str = ""      # optional: "narrow to X" / "foreground the moat" — steers the improve pass
+    instruction: str = ""            # optional: "narrow to X" — steers a directed pass (legacy/back-compat)
+    action: str = "propose"          # propose | accept | reject — the deficiency-driven sharpening flow
+    pillar: str = ""                 # the pillar being accepted or rejected
+    proposed_thesis: str = ""        # the accepted rewrite to apply
 
 
 class RevertIn(BaseModel):
@@ -385,9 +388,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     @r.post("/thesis/{thesis_id}/improve")
     async def tl_improve(thesis_id: str, body: ImproveIn, authorization: str = Header(default=""),
                          x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
-        """The agent improves the thesis for the author: proposes a few improvement questions, ANSWERS
-        them itself, and rewrites the thesis — auto-applied as a new (backtrackable) version. Draft-only:
-        refuses once the thesis is decomposed (edit before you test)."""
+        """Sharpen the thesis toward a SOLID investment thesis — one identified deficiency + one proposed
+        rewrite at a time, which the author ACCEPTS (applied as a backtrackable version) or REJECTS (skip
+        that pillar). Every call returns the NEXT proposal. Draft-only: refuses once decomposed."""
         oid = await _owner(authorization)
         pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
         if d.get("claims"):
@@ -395,35 +398,44 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         current = (d.get("proposed_thesis") or d.get("thesis") or "").strip()
         if not current:
             raise HTTPException(status_code=409, detail="draft a thesis first")
-        turns = d.get("turns") or []
+        action = (body.action or "propose").strip()
+        pillar = (body.pillar or "").strip()
+        label = gen._PILLAR_LABEL.get(pillar, pillar or "the thesis")
+
+        if action == "accept" and (body.proposed_thesis or "").strip() and body.proposed_thesis.strip() != current:
+            applied = body.proposed_thesis.strip()[:gen.THESIS_CAP]
+            await tstore.add_thesis_version(pool, thesis_id, applied, source="improve",
+                                            rationale=f"Strengthened: {label}")
+            await tstore.set_proposed_thesis(pool, thesis_id, applied)
+            current = applied
+            await tstore.add_turn(pool, thesis_id, role="agent", move="improve",
+                                  text=f"Accepted — strengthened {label}.",
+                                  payload={"pillar": pillar, "status": "accepted", "proposed_thesis": applied})
+        elif action == "reject" and pillar:
+            await tstore.add_turn(pool, thesis_id, role="agent", move="improve",
+                                  text=f"Skipped {label} for now.",
+                                  payload={"pillar": pillar, "status": "rejected", "proposed_thesis": current})
+
+        # Skip pillars already accepted (now covered) or explicitly rejected, from the record.
+        d2 = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
+        turns = (d2 or {}).get("turns") or []
+        accepted, rejected = set(), set()
+        for t in turns:
+            p = (t.get("payload") or {})
+            k, st = str(p.get("pillar") or ""), str(p.get("status") or "")
+            if k in gen._PILLAR_KEYS:
+                (accepted if st == "accepted" else rejected if st == "rejected" else set()).add(k)
+        skip = sorted(accepted | rejected)
         prior_mem = next((t.get("payload", {}).get("memory") for t in reversed(turns)
                           if t.get("role") == "agent" and t.get("payload", {}).get("memory")), None)
-        # Seed shaping prefs from what genesis has already learned about this author.
         if not (prior_mem or {}).get("shaping_prefs") and d.get("shaping_prefs"):
             prior_mem = {**(prior_mem or {}), "shaping_prefs": d.get("shaping_prefs")}
-        res = await gen.improve(_strong_llm_json(), thesis=current, memory=prior_mem,
-                                instruction=body.instruction or "", history=turns)
-        improved = (res.get("improved_thesis") or "").strip()
-        qa = res.get("questions") or []
-        changed = bool(improved) and improved != current
-        if changed:
-            src = "directed" if (body.instruction or "").strip() else "self_improve"
-            await tstore.add_thesis_version(pool, thesis_id, improved, source=src,
-                                            rationale=res.get("rationale") or "")
-        if res.get("shaping_prefs"):
-            await tstore.set_shaping_prefs(pool, thesis_id, res["shaping_prefs"])
-        # Log the self-Q&A as an agent turn so the reasoning is visible and part of the record. Carry the
-        # resulting thesis as `proposed_thesis` so the client renders the working-thesis card on THIS turn
-        # (the card keys on proposed_thesis; without it the thesis appears to vanish after Improve).
-        final_thesis = improved if changed else current
-        qa_text = "\n".join(f"Q: {x['q']}\nA: {x['a']}" for x in qa)
-        note = (res.get("rationale") or "Improved the thesis.") + ("\n\n" + qa_text if qa_text else "")
-        await tstore.add_turn(pool, thesis_id, role="agent", move="improve", text=note,
-                              payload={"questions": qa, "rationale": res.get("rationale") or "",
-                                       "proposed_thesis": final_thesis, "ready": False,
-                                       "memory": {"shaping_prefs": res.get("shaping_prefs") or []}})
-        return {"status": "ok", "changed": changed, "questions": qa,
-                "rationale": res.get("rationale") or "", "proposed_thesis": improved or current,
+
+        proposal = await gen.next_improvement(_strong_llm_json(), thesis=current, skip=skip, memory=prior_mem)
+        pillars = [{"key": p["key"], "label": p["label"],
+                    "addressed": p["key"] in accepted, "skipped": p["key"] in rejected} for p in gen.PILLARS]
+        return {"status": "ok", "proposal": proposal, "skip": skip, "pillars": pillars,
+                "proposed_thesis": current,
                 "versions": await tstore.list_thesis_versions(pool, thesis_id),
                 "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
                                            owner_token=x_thesis_owner)}

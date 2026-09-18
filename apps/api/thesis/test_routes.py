@@ -746,7 +746,7 @@ def _genesis_client(monkeypatch, *, llm, captured):
     async def pool_of(): return object()
     async def user_of(token): return {"id": "user-1"} if token == "Bearer owner" else {}
     async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token="", trusted=False):
-        return draft if thesis_id == "t1" and (owner_id == "user-1" or owner_token == "owner-cap") else None
+        return draft if thesis_id == "t1" and (trusted or owner_id == "user-1" or owner_token == "owner-cap") else None
     async def fake_add_version(_pool, tid, text, *, source="", rationale="", parent_id=""):
         vid = f"v{len(captured['versions']) + 1}"
         captured["versions"].append({"id": vid, "text": text, "source": source, "rationale": rationale,
@@ -757,12 +757,18 @@ def _genesis_client(monkeypatch, *, llm, captured):
         v = next((x for x in captured["versions"] if x["id"] == vid), None)
         return {"id": vid, "text": v["text"]} if v else None
     async def fake_prefs(_pool, tid, prefs): captured["prefs"] = prefs
+    async def fake_set_proposed(_pool, tid, text): draft["proposed_thesis"] = text
     async def fake_turn(_pool, tid, *, role, move="", text="", payload=None, **_k):
         captured["turns"].append({"role": role, "move": move, "text": text, "payload": payload or {}})
+        draft["turns"] = captured["turns"]
     for name, fn in [("get", fake_get), ("add_thesis_version", fake_add_version),
                      ("list_thesis_versions", fake_list), ("revert_thesis_version", fake_revert),
-                     ("set_shaping_prefs", fake_prefs), ("add_turn", fake_turn)]:
-        monkeypatch.setattr(routes.tstore, name, fn)
+                     ("set_shaping_prefs", fake_prefs), ("set_proposed_thesis", fake_set_proposed),
+                     ("add_turn", fake_turn)]:
+        monkeypatch.setattr(routes.tstore, name, fn, raising=False)
+    # Force the "strong" seam to fall back to the provided mock (no real OpenAI in tests).
+    import api.thesis.llm as _tllm
+    monkeypatch.setattr(_tllm, "strong_json", lambda: None, raising=False)
     app = FastAPI()
     app.include_router(routes.build_router(
         pool_of, providers=SimpleNamespace(llm_json=llm),
@@ -772,24 +778,35 @@ def _genesis_client(monkeypatch, *, llm, captured):
     return TestClient(app)
 
 
-def test_improve_applies_a_version_and_carries_proposed_thesis_for_the_card(monkeypatch):
-    # Regression: after Improve, the working-thesis card vanished because the improve turn stored
-    # `improved_thesis`, but the client card keys on `proposed_thesis`. The turn must carry it.
+def test_improve_proposes_then_accept_applies_a_version(monkeypatch):
+    # The deficiency-driven flow: `propose` returns ONE identified gap + a rewrite (applying nothing);
+    # `accept` applies that rewrite as a backtrackable version and records the pillar as addressed.
     cap = {"versions": [], "turns": [], "prefs": None}
     async def llm(_system, _user):
-        return {"questions": [{"q": "Who buys?", "a": "The VP of RevOps."}, {"q": "no answer"}],
-                "improved_thesis": "RevOps teams at mid-market SaaS will pay for X because Y.",
-                "rationale": "Named the buyer and mechanism.", "shaping_prefs": ["wants a named buyer"]}
+        return {"done": False, "pillar": "macro_shift", "deficiency": "No why-now.",
+                "why": "Timing is the crux.",
+                "proposed_thesis": "RevOps teams at mid-market SaaS will pay for X now that Y shipped.",
+                "rationale": "Added the macro shift + why-now."}
     c = _genesis_client(monkeypatch, llm=llm, captured=cap)
-    r = c.post("/thesis/t1/improve", json={}, headers={"Authorization": "Bearer owner"})
+
+    # propose: a gap + a rewrite, nothing applied yet
+    r = c.post("/thesis/t1/improve", json={"action": "propose"}, headers={"Authorization": "Bearer owner"})
     assert r.status_code == 200
-    body = r.json()
-    assert body["changed"] is True and "RevOps" in body["proposed_thesis"]
-    assert len(body["questions"]) == 1                       # self-answered, the untyped junk dropped
-    assert len(cap["versions"]) == 1                         # a backtrackable version was created
-    imp = next(t for t in cap["turns"] if t["move"] == "improve")
-    assert imp["payload"]["proposed_thesis"].startswith("RevOps")   # the card renders (the fix)
-    assert cap["prefs"] == ["wants a named buyer"]           # shaping memory persisted
+    prop = r.json()["proposal"]
+    assert prop["pillar"] == "macro_shift" and prop["done"] is False and "RevOps" in prop["proposed_thesis"]
+    assert len(cap["versions"]) == 0                          # propose applies nothing
+
+    # accept: applies the rewrite as a version + records the pillar addressed
+    r2 = c.post("/thesis/t1/improve",
+                json={"action": "accept", "pillar": "macro_shift", "proposed_thesis": prop["proposed_thesis"]},
+                headers={"Authorization": "Bearer owner"})
+    assert r2.status_code == 200
+    assert len(cap["versions"]) == 1 and cap["versions"][0]["text"].startswith("RevOps")
+    acc = next(t for t in cap["turns"] if t["payload"].get("status") == "accepted")
+    assert acc["payload"]["pillar"] == "macro_shift"
+    body = r2.json()
+    assert any(p["key"] == "macro_shift" and p["addressed"] for p in body["pillars"])   # progress reflects it
+    assert "macro_shift" in body["skip"]                     # won't be re-proposed
 
 
 def test_versions_and_revert_backtrack_the_thesis(monkeypatch):
