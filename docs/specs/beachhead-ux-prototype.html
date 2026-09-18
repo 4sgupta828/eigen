@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Beachhead UX — canonical visual reference for the new thesis-first client. Static mock; example data from the real published CDS thesis. See beachhead-ux.md. -->
+</head>
+<body style="margin:0">
+<title>Thesis Lifecycle</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#F4F1E7; --panel:#FDFBF5; --panel2:#F1ECDF; --ink:#221D12; --muted:#6E6550;
+    --gold:#8A6A1F; --gold-strong:#6E5314; --hair:#DBD3BF; --hair-soft:rgba(34,29,18,.05);
+    --fact:#2E6B4F; --intent:#A5641E; --signal:#3F5E86; --p0:#B23B3B; --on-accent:#FDFBF5;
+    --serif:"Source Serif 4",Georgia,serif; --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+    --bg:#070E19; --panel:#0F1A2C; --panel2:#0C1524; --ink:#ECEBE3; --muted:#8B96A9;
+    --gold:#D3B37C; --gold-strong:#E7CB93; --hair:#22304A; --hair-soft:rgba(255,255,255,.05);
+    --fact:#57B891; --intent:#D6975A; --signal:#84A9DA; --p0:#E08A8A; --on-accent:#0B1220; }}
+  :root[data-theme="dark"]{
+    --bg:#070E19; --panel:#0F1A2C; --panel2:#0C1524; --ink:#ECEBE3; --muted:#8B96A9;
+    --gold:#D3B37C; --gold-strong:#E7CB93; --hair:#22304A; --hair-soft:rgba(255,255,255,.05);
+    --fact:#57B891; --intent:#D6975A; --signal:#84A9DA; --p0:#E08A8A; --on-accent:#0B1220; }
+  *{box-sizing:border-box;}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3,h4{font-family:var(--serif);margin:0;font-weight:600;letter-spacing:-.01em;text-wrap:balance;}
+  .kick{font-family:var(--mono);font-size:.62rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--gold-strong);}
+  .muted{color:var(--muted);} .serif{font-family:var(--serif);}
+  button{font-family:inherit;}
+  /* top bar + stepper */
+  .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:color-mix(in srgb,var(--panel) 94%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--hair);}
+  .top-in{max-width:1180px;margin:0 auto;padding:.5rem 16px;display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;}
+  .mark{font-family:var(--serif);font-weight:700;font-size:1rem;letter-spacing:.13em;}
+  .mark b{color:var(--gold-strong);}
+  .crumb{font-family:var(--mono);font-size:.7rem;color:var(--muted);padding-left:.55rem;border-left:1px solid var(--hair);}
+  .crumb b{color:var(--ink);}
+  .grow{flex:1;}
+  .chip{font-family:var(--mono);font-size:.66rem;font-weight:600;padding:.24rem .52rem;border-radius:999px;white-space:nowrap;}
+  .c-verdict{border:1.5px solid var(--intent);color:var(--intent);}
+  .stepwrap{background:var(--panel2);border-bottom:1px solid var(--hair);overflow-x:auto;}
+  .steps{max-width:1180px;margin:0 auto;padding:.35rem 16px;display:flex;gap:.15rem;align-items:center;}
+  .step{display:flex;align-items:center;gap:.4rem;font-family:var(--mono);font-size:.68rem;color:var(--muted);
+    background:transparent;border:none;cursor:pointer;padding:.35rem .5rem;border-radius:8px;white-space:nowrap;}
+  .step:hover{color:var(--ink);}
+  .step .num{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-size:.6rem;font-weight:700;
+    border:1.5px solid var(--hair);color:var(--muted);flex:none;}
+  .step.on{color:var(--ink);} .step.on .num{background:var(--gold);color:var(--on-accent);border-color:var(--gold);}
+  .step.done .num{border-color:var(--fact);color:var(--fact);}
+  .sep{color:var(--hair);flex:none;}
+  .wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:22px 48px;}
+  /* generic bits */
+  .card{border:1px solid var(--hair);border-radius:14px;background:var(--panel);padding:.95rem 1.1rem;margin-bottom:13px;}
+  .btn{font-family:var(--mono);font-size:.74rem;font-weight:600;color:var(--on-accent);background:var(--gold);border:none;border-radius:10px;padding:.6rem .95rem;cursor:pointer;}
+  .btn.sec{color:var(--gold-strong);background:transparent;border:1px solid color-mix(in srgb,var(--gold) 42%,var(--hair));}
+  .btn.sec:hover{border-color:var(--gold);}
+  .row{display:flex;gap:.55rem;flex-wrap:wrap;align-items:center;}
+  .pagehead{margin-bottom:16px;} .pagehead h1{font-size:1.35rem;line-height:1.25;} .pagehead p{color:var(--muted);font-size:.9rem;margin:.3rem 0 0;max-width:60ch;}
+  /* HOME */
+  .tcard{display:block;width:100%;text-align:left;border:1px solid var(--hair);border-radius:13px;background:var(--panel);padding:.9rem 1rem;margin-bottom:11px;cursor:pointer;}
+  .tcard:hover{border-color:var(--gold);}
+  .tcard h3{font-size:1.02rem;line-height:1.3;}
+  .tcard .meta{font-family:var(--mono);font-size:.66rem;color:var(--muted);margin-top:.4rem;display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;}
+  .st{font-family:var(--mono);font-size:.58rem;font-weight:700;text-transform:uppercase;padding:.16rem .42rem;border-radius:5px;}
+  .st-tested{color:var(--intent);background:color-mix(in srgb,var(--intent) 13%,transparent);}
+  .st-run{color:var(--signal);background:color-mix(in srgb,var(--signal) 13%,transparent);}
+  .st-draft{color:var(--muted);background:var(--panel2);}
+  /* INTAKE conversation */
+  .conv{display:grid;gap:.7rem;}
+  .turn{display:flex;gap:.6rem;align-items:flex-start;}
+  .av{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:.6rem;font-weight:700;}
+  .av.you{background:var(--gold);color:var(--on-accent);} .av.ai{border:1.5px solid var(--gold);color:var(--gold-strong);}
+  .bub{font-size:.94rem;line-height:1.55;padding-top:.15rem;}
+  .bub.aiq{font-family:var(--serif);font-weight:600;}
+  .landed{border:1px solid var(--hair);border-left:3px solid var(--gold);border-radius:12px;background:var(--panel2);padding:.8rem .9rem;margin:.3rem 0 0 36px;}
+  .landed .serif{font-size:1.02rem;line-height:1.5;}
+  /* PLAN */
+  .prio{font-family:var(--mono);font-size:.56rem;font-weight:700;padding:.14rem .4rem;border-radius:5px;flex:none;cursor:pointer;}
+  .p-0{color:var(--p0);border:1.5px solid var(--p0);} .p-1{color:var(--gold-strong);border:1.5px solid var(--hair);} .p-2{color:var(--muted);border:1.5px solid var(--hair);}
+  .qline{display:flex;gap:.5rem;align-items:flex-start;padding:.4rem 0;border-top:1px solid var(--hair-soft);font-size:.88rem;}
+  .qedit{margin-left:auto;font-family:var(--mono);font-size:.6rem;color:var(--muted);background:transparent;border:none;cursor:pointer;}
+  .addq{font-family:var(--mono);font-size:.64rem;color:var(--gold-strong);background:transparent;border:1px dashed color-mix(in srgb,var(--gold) 40%,var(--hair));border-radius:8px;padding:.3rem .55rem;cursor:pointer;margin-top:.45rem;}
+  .scanstrip{border:1px solid var(--hair);border-left:3px solid var(--signal);border-radius:10px;background:color-mix(in srgb,var(--signal) 7%,var(--panel));padding:.6rem .75rem;margin-bottom:14px;font-size:.84rem;line-height:1.5;display:flex;flex-wrap:wrap;gap:.4rem .5rem;align-items:center;}
+  .scanstrip b{color:var(--ink);}
+  .schip{font-family:var(--mono);font-size:.62rem;font-weight:600;color:var(--signal);border:1px solid color-mix(in srgb,var(--signal) 40%,var(--hair));border-radius:999px;padding:.16rem .45rem;}
+  /* RUN cost gate */
+  .gate{border:1px solid var(--hair);border-top:3px solid var(--gold);border-radius:14px;background:var(--panel);padding:1.1rem 1.2rem;max-width:620px;}
+  .gate .big{font-family:var(--mono);font-size:1.8rem;font-weight:600;color:var(--ink);}
+  .gate .lbl{font-family:var(--mono);font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+  .breakdown{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin:.8rem 0;}
+  .bd{border:1px solid var(--hair);border-radius:10px;padding:.55rem .65rem;background:var(--panel2);}
+  .bd .n{font-family:var(--mono);font-size:1.1rem;font-weight:600;}
+  .progress{height:8px;border-radius:999px;background:var(--panel2);overflow:hidden;border:1px solid var(--hair);}
+  .progress i{display:block;height:100%;width:56%;background:var(--gold);}
+  /* BRIEF (reused from V2) */
+  .briefgrid{display:grid;grid-template-columns:1fr 372px;gap:20px;align-items:start;}
+  .memo{min-width:0;} .memo h1{font-size:1.35rem;line-height:1.28;margin-bottom:.3rem;}
+  .subthesis{font-size:.88rem;color:var(--muted);margin-bottom:.85rem;line-height:1.5;}
+  .read{border-left:3px solid var(--gold);} .read p{font-family:var(--serif);font-size:1.05rem;line-height:1.6;margin:.3rem 0 0;}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:13px;}
+  .est{border-left:3px solid var(--fact);} .crux{border-left:3px solid var(--intent);}
+  .est ul,.crux ul{list-style:none;padding:0;margin:.45rem 0 0;display:grid;gap:.5rem;}
+  .est li,.crux li{font-size:.89rem;line-height:1.5;padding-left:1rem;position:relative;}
+  .est li::before{content:"";position:absolute;left:0;top:.5em;width:6px;height:6px;border-radius:50%;background:var(--fact);}
+  .crux li::before{content:"?";position:absolute;left:0;top:-.02em;font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--intent);}
+  cite{font-style:normal;}
+  .ref{font-family:var(--mono);font-size:.64em;font-weight:600;color:var(--gold-strong);vertical-align:super;line-height:0;cursor:pointer;padding:0 .12em;border-radius:3px;}
+  .ref:hover,.ref.on{background:var(--gold);color:var(--on-accent);} .ref.gap{color:var(--intent);} .ref.gap:hover,.ref.gap.on{background:var(--intent);color:var(--on-accent);}
+  .tabs{display:flex;gap:.3rem;margin-bottom:11px;flex-wrap:wrap;}
+  .tab{font-family:var(--mono);font-size:.68rem;color:var(--muted);background:transparent;border:1px solid var(--hair);border-radius:999px;padding:.3rem .65rem;cursor:pointer;}
+  .tab.on{color:var(--on-accent);background:var(--gold);border-color:var(--gold);}
+  .disc{border:1px solid var(--hair);border-radius:12px;background:var(--panel);margin-bottom:10px;overflow:hidden;}
+  .disc-sum{display:flex;align-items:center;gap:.5rem;padding:.68rem .9rem;cursor:pointer;user-select:none;}
+  .disc-sum .tw{transition:transform .18s;color:var(--muted);font-size:.8rem;} .disc.open .tw{transform:rotate(90deg);}
+  .disc-sum h3{font-size:.96rem;} .disc-sum .count{font-family:var(--mono);font-size:.64rem;color:var(--muted);margin-left:auto;}
+  .disc-body{display:none;padding:0 .9rem .9rem;} .disc.open .disc-body{display:block;}
+  .loi{border-top:1px solid var(--hair-soft);padding:.5rem 0;} .loi-h{display:flex;align-items:center;gap:.5rem;font-size:.89rem;font-weight:600;}
+  .v{font-family:var(--mono);font-size:.55rem;font-weight:700;text-transform:uppercase;padding:.14rem .4rem;border-radius:5px;flex:none;}
+  .v-open{color:var(--intent);background:color-mix(in srgb,var(--intent) 13%,transparent);}
+  .loi-q{font-size:.83rem;color:var(--muted);margin-top:.28rem;line-height:1.5;} .loi-q b{color:var(--ink);}
+  .rmap{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem;}
+  .lane{border:1px solid var(--hair);border-top:3px solid var(--lc,var(--muted));border-radius:9px;padding:.5rem .6rem;font-size:.81rem;line-height:1.45;}
+  .lane b{font-family:var(--mono);font-size:.55rem;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:.3rem;color:var(--lc);}
+  table{border-collapse:collapse;width:100%;font-size:.82rem;} th,td{text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--hair);vertical-align:top;}
+  th{font-family:var(--mono);font-size:.55rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;}
+  .spine{border:1px solid var(--hair);border-radius:12px;background:color-mix(in srgb,var(--gold) 6%,var(--panel));padding:.8rem .9rem;margin-bottom:11px;}
+  .spine .one{font-family:var(--serif);font-size:1.05rem;font-weight:600;line-height:1.4;}
+  .spine .lab{font-family:var(--mono);font-size:.58rem;text-transform:uppercase;letter-spacing:.05em;color:var(--gold-strong);margin-top:.5rem;}
+  /* right rail drawer */
+  .rail{position:sticky;top:calc(env(safe-area-inset-top,0px) + 108px);border:1px solid var(--hair);border-radius:14px;background:var(--panel);overflow:hidden;}
+  .rail-head{display:flex;align-items:center;gap:.5rem;padding:.6rem .8rem;border-bottom:1px solid var(--hair);background:var(--panel2);}
+  .rail-back{margin-left:auto;font-family:var(--mono);font-size:.66rem;color:var(--gold-strong);background:transparent;border:none;cursor:pointer;}
+  .rail-body{padding:.8rem;max-height:70vh;overflow:auto;}
+  .discipline{font-size:.77rem;color:var(--muted);line-height:1.5;background:var(--panel2);border:1px solid var(--hair);border-radius:9px;padding:.5rem .6rem;margin-bottom:.7rem;} .discipline b{color:var(--ink);}
+  .tiles{display:grid;gap:.5rem;} .tile{text-align:left;cursor:pointer;border:1px solid var(--hair);border-left:3px solid var(--tc,var(--muted));border-radius:10px;background:var(--panel2);padding:.55rem .7rem;display:flex;flex-direction:column;gap:.12rem;}
+  .tile:hover{border-color:var(--gold);} .tile .t-top{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem;} .tile h4{font-size:.87rem;} .tile .n{font-family:var(--mono);font-size:.86rem;font-weight:600;color:var(--tc,var(--ink));} .tile .sub{font-size:.72rem;color:var(--muted);}
+  .reg{font-family:var(--mono);font-size:.55rem;text-transform:uppercase;letter-spacing:.03em;display:inline-flex;align-items:center;gap:.3rem;color:var(--muted);margin-top:.15rem;} .reg .d{width:6px;height:6px;border-radius:50%;}
+  .src-quote{font-family:var(--serif);font-size:.95rem;line-height:1.5;border-left:2px solid var(--sc,var(--gold));padding:.3rem 0 .3rem .7rem;margin:.4rem 0;}
+  .src-meta{font-family:var(--mono);font-size:.67rem;color:var(--muted);display:grid;gap:.2rem;margin-top:.3rem;} .src-meta b{color:var(--ink);}
+  .gapbox{border-left:2px solid var(--intent);background:color-mix(in srgb,var(--intent) 8%,transparent);padding:.5rem .6rem;border-radius:0 8px 8px 0;font-size:.89rem;line-height:1.5;} .gapbox b{color:var(--intent);}
+  .qa-q{font-family:var(--serif);font-size:1rem;font-weight:600;margin:0 0 .5rem;} .qa-a p{margin:.2rem 0 .5rem;font-size:.9rem;line-height:1.55;}
+  .claim{font-family:var(--mono);font-size:.57rem;font-weight:600;text-transform:uppercase;color:var(--gold-strong);margin-right:.15rem;}
+  .trace{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.55rem;padding-top:.5rem;border-top:1px solid var(--hair);}
+  .tb{font-family:var(--mono);font-size:.64rem;font-weight:600;padding:.2rem .5rem;border-radius:999px;} .tb-ok{color:var(--signal);border:1.5px solid color-mix(in srgb,var(--signal) 50%,var(--hair));} .tb-flag{color:var(--intent);border:1.5px solid color-mix(in srgb,var(--intent) 50%,var(--hair));}
+  /* EXPERTS */
+  .pcard{border:1px solid var(--hair);border-radius:12px;background:var(--panel);padding:.75rem .85rem;margin-bottom:10px;}
+  .pcard .role{font-family:var(--mono);font-size:.58rem;font-weight:700;text-transform:uppercase;color:var(--gold-strong);}
+  .ins{border-left:2px solid var(--stc,var(--signal));padding:.35rem 0 .35rem .6rem;margin:.4rem 0;font-size:.86rem;}
+  .ins .tag{font-family:var(--mono);font-size:.56rem;font-weight:700;text-transform:uppercase;margin-right:.3rem;}
+  .t-val{--stc:var(--fact);color:var(--fact);} .t-inv{--stc:var(--p0);color:var(--p0);} .t-ctx{--stc:var(--signal);color:var(--signal);}
+  /* SHARE */
+  .sharebox{border:1px solid var(--hair);border-radius:12px;background:var(--panel);padding:.8rem .9rem;margin-bottom:11px;}
+  .linkfield{font-family:var(--mono);font-size:.74rem;background:var(--panel2);border:1px solid var(--hair);border-radius:8px;padding:.5rem .6rem;color:var(--ink);display:flex;justify-content:space-between;gap:.5rem;align-items:center;flex-wrap:wrap;}
+  .foot{max-width:1180px;margin:0 auto;padding:6px 16px 30px;font-family:var(--mono);font-size:.65rem;color:var(--muted);}
+  @media (max-width:900px){ .briefgrid{grid-template-columns:1fr;} .rail{position:static;} .rail-body{max-height:none;} .split{grid-template-columns:1fr;} .breakdown{grid-template-columns:1fr;} }
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important;} }
+</style>
+
+<div class="top"><div class="top-in">
+  <span class="mark">EIG<b>E</b>N</span>
+  <span class="crumb" id="crumb">My theses</span>
+  <span class="grow"></span>
+  <span class="chip c-verdict" id="verdictChip" hidden>◑ Continue diligence</span>
+</div></div>
+<div class="stepwrap"><div class="steps" id="steps"></div></div>
+<div class="wrap"><div id="screen"></div></div>
+<div class="foot">Prototype — the full thesis lifecycle, real data mapped from the published “Clinical decision support” thesis. Nothing here is live.</div>
+
+<script>
+/* ---------- shared real data (from the published CDS thesis) ---------- */
+const SOURCES={
+ 1:{reg:"coverage",title:"Healthcare-AI ROI precedent",quote:"A comparable CDS deployment ran $180,000–$320,000, ~$1.2M in annual savings, and a 4–8 month payback.",meta:["Line: Is the problem real, and does it cost?","Register: market coverage — signal, not a filed number"]},
+ 2:{reg:"coverage",title:"Clinical-outcome precedents",quote:"Good Shepherd Medical Center reported a 105% increase in clinical interventions; Blessing Hospital a 45.5% drop in mortality.",meta:["Line: Is the problem real?","Register: coverage — reported, not audited"]},
+ 3:{reg:"paper",title:"Preventable readmissions",quote:"Approximately 27% of hospital readmissions are estimated to be preventable.",meta:["Line: Is the problem real?","Register: paper"]},
+ 4:{reg:"coverage",title:"Buying authority",quote:"The CIO at U.S. health systems now holds purchasing authority over a wider range of technology than ever — buying runs through committees.",meta:["Line: Is the market big enough?","So the buyer may NOT be the CMIO the thesis names"]},
+ 5:{reg:"coverage",title:"Incumbent bundling — Epic",quote:"Epic Systems offers proprietary predictive models integrated with its EHR, including the Epic Unplanned Readmission Model.",meta:["Line: Who else is in the field?","The incumbent already ships the same capability, embedded"]},
+ 6:{reg:"preprint",title:"Model reliability across sites",quote:"LLMs demonstrate notable robustness to common variations in clinical documentation.",meta:["Line: Is the core technology feasible?","Register: preprint — stated, not production-proven"]},
+ 9:{reg:"gap",gap:true,title:"Gap — willingness-to-pay & switching cost",quote:"No document settles whether hospitals will pay past a pilot, or the true switching cost off the embedded EHR option.",meta:["Undocumentable by design — routed to an expert call","Never asserted as fact"]}
+};
+const REG={coverage:{c:"var(--signal)",l:"Coverage · signal"},preprint:{c:"var(--intent)",l:"Preprint · stated"},paper:{c:"var(--fact)",l:"Paper"},gap:{c:"var(--intent)",l:"Gap · unprovable"}};
+const FEEDS=[{key:"coverage",reg:"coverage",name:"Market coverage",n:109,sub:"news, profiles, analyst posts",items:[SOURCES[1].quote,SOURCES[4].quote,SOURCES[5].quote]},{key:"preprint",reg:"preprint",name:"Preprints",n:2,sub:"stated intent",items:[SOURCES[6].quote]},{key:"paper",reg:"paper",name:"Papers",n:1,sub:"peer-reviewed",items:[SOURCES[3].quote]}];
+const QA=[{q:"Can it get past Epic's bundled predictive models?",claims:[{k:"Incumbent",t:"Epic already ships predictive CDS embedded in the EHR, including an Unplanned Readmission Model.",refs:[5]},{k:"Open",t:"The record does not establish the startup's differentiation is durable against that bundling.",refs:[]}],gapId:9,ok:"grounded in coverage",flag:"defensibility unsettled"},
+ {q:"Who actually signs the check?",claims:[{k:"Authority",t:"The CIO holds broad purchasing authority and decisions run through committees — the CMIO may not be the economic buyer.",refs:[4]}],gapId:9,ok:"grounded in coverage",flag:"buyer unconfirmed"},
+ {q:"Does it hold up across hospitals' messy data?",claims:[{k:"Feasibility",t:"LLMs show notable robustness to variation in clinical documentation.",refs:[6]},{k:"Caveat",t:"That evidence is preprint-stage — stated, not proven in a live deployment.",refs:[6]}],gapId:9,ok:"grounded in preprint",flag:"not production-proven"}];
+const LOIS=[
+ {name:"Is the problem real, and does it cost?",p:1,qs:["Are readmissions in mid-sized hospitals driven by factors a CDS can influence?","Do ROI precedents exist for comparable deployments?"],found:"~27% of readmissions estimated preventable; ROI & outcome precedents exist — causal link to this product not yet established."},
+ {name:"Is the market big enough, and does the model work?",p:0,qs:["Can the CMIO actually authorize the purchase?","What is the realistic ACV and sales cycle?","Does a budget line already exist?"],found:"The CIO now holds broad purchasing authority; buying runs through committees — the named buyer may be wrong."},
+ {name:"Who else is in the field, and can it defend a lead?",p:0,qs:["Are Epic / Oracle / MEDITECH bundling comparable predictive CDS?"],found:"Epic already ships proprietary predictive models embedded in the EHR."},
+ {name:"Is the core technology feasible?",p:2,qs:["Do documentation variations across hospitals degrade the model?"],found:"LLMs show robustness to documentation variation — but preprint-stage, not production-proven."}
+];
+const PLAYERS=[["ClinIQ","AI-driven CDS","Integration with existing EHR workflows"],["QxPlatform","AI-driven CDS","EHR integration; ~$50B market framing"],["XOVO Technologies","AI-driven CDS","Interoperable across systems"],["Elaine — Clinomic","AI-driven CDS","GDPR / ISO 27001 compliance edge"],["CuraPilot","AI-driven CDS","Workflow-embedded assistance"],["SISMOO","AI-driven CDS","Deep EHR integration"]];
+
+/* ---------- router ---------- */
+const STAGES=[["home","⌂","My theses"],["intake","1","State"],["plan","2","Plan"],["run","3","Run"],["brief","4","Brief"],["brainstorm","5","Brainstorm"],["experts","6","Experts"],["share","7","Share"]];
+let cur="home", ranState=false;
+const el=id=>document.getElementById(id);
+function nav(id){ cur=id; render(); window.scrollTo(0,0); }
+function renderSteps(){
+  const idx=STAGES.findIndex(s=>s[0]===cur);
+  el("steps").innerHTML=STAGES.map((s,i)=>'<button class="step '+(s[0]===cur?"on":(i<idx?"done":""))+'" data-nav="'+s[0]+'"><span class="num">'+s[1]+'</span>'+s[2]+'</button>'+(i<STAGES.length-1?'<span class="sep">›</span>':"")).join("");
+}
+const CRUMB={home:"My theses",intake:"New thesis · genesis",plan:"Clinical decision support · plan",run:"Clinical decision support · run",brief:"Clinical decision support",brainstorm:"Clinical decision support · brainstorm",experts:"Clinical decision support · experts",share:"Clinical decision support · share"};
+
+/* ---------- screens ---------- */
+const S={};
+S.home=()=>`<div class="pagehead"><h1>My theses</h1><p>Each thesis is a workspace and a shareable, sourced brief. Start one, or open a tested thesis to read its brief.</p></div>
+ <div class="row" style="margin-bottom:14px"><button class="btn" data-nav="intake">+ Test a new thesis</button><button class="btn sec" data-nav="share">▤ Browse the ThesisBoard</button></div>
+ <button class="tcard" data-nav="brief"><h3>Clinical decision support for mid-sized hospitals</h3><div class="meta"><span class="st st-tested">Tested</span><span>◑ Continue diligence</span><span>·</span><span>4 lines · 112 sources</span><span>·</span><span>2 days ago</span></div></button>
+ <button class="tcard" data-nav="run"><h3>System of record for freight brokerage</h3><div class="meta"><span class="st st-run">Running</span><span>researching 5 of 9 lines…</span></div></button>
+ <button class="tcard" data-nav="intake"><h3>Vertical AI for insurance underwriting</h3><div class="meta"><span class="st st-draft">Draft</span><span>still in genesis — sharpening the thesis</span></div></button>`;
+
+S.intake=()=>`<div class="pagehead"><h1>State the thesis</h1><p>Say it in a sentence. I sharpen it with you until it's concrete — the product, the buyer, what they do today — then you commit it.</p></div>
+ <div class="row" style="margin-bottom:14px"><button class="btn sec">🎲 Generate a sample</button><button class="btn sec">🔎 Discover a published thesis to start from</button></div>
+ <div class="card"><div class="conv">
+   <div class="turn"><span class="av you">YOU</span><div class="bub">AI clinical decision support for hospitals.</div></div>
+   <div class="turn"><span class="av ai">E</span><div class="bub aiq">Who's the economic buyer, and what do they use today? "Hospitals" is a user, not a check-signer.</div></div>
+   <div class="turn"><span class="av you">YOU</span><div class="bub">CMIO at mid-sized hospitals. Today it's manual decision-making plus legacy software.</div></div>
+   <div class="turn"><span class="av ai">E</span><div class="bub aiq">Good. Here's the thesis I'd commit — the buyer, the substitute, the wedge, and the "why now" are all in it:</div></div>
+   <div class="landed"><span class="kick">Landed thesis</span><p class="serif" style="margin:.35rem 0 0">A healthcare startup will sell a Clinical Decision Support System to mid-sized hospitals, targeting the CMIO / Director of Clinical Informatics — replacing manual decision-making and legacy software with AI-driven analytics to cut diagnostic errors and readmissions, under HIPAA/FDA, as value-based care pushes hospitals to act.</p>
+     <div class="row" style="margin-top:.7rem"><button class="btn" data-nav="plan">Use this thesis →</button><button class="btn sec">⇄ Keep sharpening</button></div></div>
+ </div></div>`;
+
+S.plan=()=>{
+  const pcls=p=>p===0?"p-0":(p===1?"p-1":"p-2"), plbl=p=>p===0?"P0 crux":(p===1?"P1":"P2");
+  return `<div class="pagehead"><h1>Plan the inquiry</h1><p>These are thesis-native lines of inquiry — pointed questions the evidence can settle. Edit them, set priorities, then run the ones you choose. P0 is the crux you'd run first.</p></div>
+   <div class="scanstrip">🛰 <b>Scanned the current landscape</b> · as of today — so the questions name what's real <em>now</em>, not the model's memory.<span class="schip">6 recent entrants</span><span class="schip">CMS 2026 rule</span><span class="schip">Epic Unplanned Readmission Model</span></div>
+   <div class="row" style="margin-bottom:14px"><button class="btn sec">↻ Redraft questions</button><button class="btn sec">◈ Set P0/P1/P2 priorities</button><button class="btn sec">🛰 Re-scan landscape</button></div>
+   ${LOIS.map((l,li)=>`<div class="card"><div class="row" style="justify-content:space-between"><h3 style="font-size:1rem">${l.name}</h3><span class="prio ${pcls(l.p)}">${plbl(l.p)}</span></div>
+     ${l.qs.map(q=>`<div class="qline"><span>${q}</span><button class="qedit">edit</button></div>`).join("")}
+     <button class="addq">+ add a question</button></div>`).join("")}
+   <div class="row"><button class="btn" data-nav="run">Continue to run →</button></div>`;
+};
+
+S.run=()=>ranState?`<div class="pagehead"><h1>Running the research</h1><p>One end-to-end run — no half-answers. Resumable if a deploy interrupts it.</p></div>
+   <div class="gate"><div class="lbl">Researching</div><div class="row" style="justify-content:space-between;margin:.3rem 0 .6rem"><span class="serif" style="font-size:1.05rem">5 of 9 questions · then synthesizing the take</span><span class="mono muted">~$1.30 spent</span></div>
+   <div class="progress"><i></i></div>
+   <p class="muted" style="font-size:.84rem;margin:.7rem 0 0">Corpus + web · verbatim span-check on every claim · sentiment kept as signal.</p>
+   <div class="row" style="margin-top:.9rem"><button class="btn" data-nav="brief">Jump to the brief (demo) →</button></div></div>`
+ :`<div class="pagehead"><h1>Run the research</h1><p>Anthropic/OpenAI credits are shared and scarce, so every run is projected and gated. Approve the spend, or run just the P0 crux first.</p></div>
+   <div class="gate"><div class="lbl">Projected cost</div><div class="big">$2.40</div>
+   <div class="breakdown"><div class="bd"><div class="lbl">Questions</div><div class="n">9 unanswered</div></div><div class="bd"><div class="lbl">Across</div><div class="n">4 lines</div></div><div class="bd"><div class="lbl">Legs</div><div class="n">corpus + web</div></div><div class="bd"><div class="lbl">Est. time</div><div class="n">~6 min</div></div></div>
+   <p class="muted" style="font-size:.84rem">No partial answers: it runs end-to-end, then synthesizes the Collective Take, Reasoning Map, Competitive and Deck.</p>
+   <div class="row" style="margin-top:.9rem"><button class="btn" data-run>Approve &amp; run · $2.40</button><button class="btn sec" data-run>Run P0 crux only · $0.80</button></div></div>`;
+
+function briefTab(t){
+  if(t==="take") return `<div class="card read"><div class="kick">The read</div><p>Leans <b>continue diligence</b>. The problem and ROI precedents are real<span class="ref" data-src="1">1</span><span class="ref" data-src="2">2</span>, but the central commercial premise isn't settled: buying authority<span class="ref" data-src="4">4</span>, integration burden, incumbent bundling<span class="ref" data-src="5">5</span>, and cross-site model reliability<span class="ref" data-src="6">6</span> remain unresolved. The crux — can a <em>standalone</em> system beat embedded EHR alternatives, committee buying, and deployment friction<span class="ref gap" data-src="9">9</span>.</p></div>
+    <div class="split"><div class="card est"><div class="kick">What the record establishes</div><ul>
+      <li>ROI precedent: ~$180K–$320K deploy, ~$1.2M annual savings, 4–8 mo payback.<span class="ref" data-src="1">1</span></li>
+      <li>Outcomes: Good Shepherd +105% interventions; Blessing −45.5% mortality.<span class="ref" data-src="2">2</span></li>
+      <li>~27% of readmissions estimated preventable.<span class="ref" data-src="3">3</span></li></ul></div>
+      <div class="card crux"><div class="kick">The crux — not yet settled</div><ul>
+      <li>Who signs? CIO holds broad purchasing power; committee buying.<span class="ref" data-src="4">4</span></li>
+      <li>Epic already ships an Unplanned Readmission Model.<span class="ref" data-src="5">5</span></li>
+      <li>Model reliability across each hospital's messy data.<span class="ref" data-src="6">6</span></li>
+      <li>Willingness-to-pay — no document settles it.<span class="ref gap" data-src="9">9</span></li></ul></div></div>`;
+  if(t==="reason") return `<div class="card"><div class="kick" style="margin-bottom:.5rem">Reasoning map — how it converges on the read</div><div class="rmap">
+    <div class="lane" style="--lc:#6b5bd0"><b>Must be true</b>A stakeholder champions the buy through governance, the product integrates &amp; passes review, and it beats the embedded EHR option.</div>
+    <div class="lane" style="--lc:#c0563f"><b>Tension</b>Value prop is strongest where ROI precedents show benefit — but the causal link to <em>this</em> product isn't established.</div>
+    <div class="lane" style="--lc:#b8860b"><b>Gap</b>Willingness-to-pay &amp; switching cost settled by no document.</div>
+    <div class="lane" style="--lc:#2e8b6f"><b>Implies</b>Defensibility unsettled — EHR incumbents already address the same pain.</div></div></div>`;
+  if(t==="lines") return `<div class="card">${LOIS.map(l=>`<div class="loi"><div class="loi-h"><span class="v v-open">Open</span>${l.name}</div><div class="loi-q"><b>Found:</b> ${l.found}</div></div>`).join("")}</div>`;
+  if(t==="comp") return `<div class="card"><table><thead><tr><th>Player</th><th>Angle</th><th>Moat / edge</th></tr></thead><tbody>${PLAYERS.map(p=>`<tr><td><b>${p[0]}</b></td><td>${p[1]}</td><td>${p[2]}</td></tr>`).join("")}</tbody></table><p class="muted" style="font-size:.74rem;margin:.5rem 0 0;font-family:var(--mono)">+ Epic, Oracle Health/Cerner, MEDITECH as incumbents. Empty where the record is silent — never invented.</p></div>`;
+  if(t==="deck") return `<div class="spine"><span class="kick">Founder pitch · the spine</span><p class="one" style="margin:.3rem 0 0">The AI clinical co-pilot that reaches the CMIO without the Epic tax — cutting preventable readmissions where it's already a board-level metric.</p><div class="lab">The insight</div><p style="margin:.15rem 0 0;font-size:.92rem">Hospitals don't lack predictive models — they lack ones they can adopt without an EHR mega-project; the wedge is standalone deployment with proven ROI.</p></div>
+    <div class="card"><div class="kick">Problem</div><p style="font-size:.92rem;margin:.35rem 0 0">Preventable readmissions are a board-level cost; ~27% are avoidable<span class="ref" data-src="3">3</span>, and precedents show $1.2M/yr savings<span class="ref" data-src="1">1</span>.</p></div>
+    <div class="card"><div class="kick">The bet — what has to be true</div><p style="font-size:.92rem;margin:.35rem 0 0">A standalone CDS can win the committee and out-earn Epic's embedded model. Milestone: one named mid-sized deployment with pre/post outcomes and loaded cost.<span class="ref gap" data-src="9">9</span></p></div>`;
+}
+let bTab="take";
+S.brief=()=>`<div class="briefgrid"><div class="memo">
+   <div class="mono muted" style="font-size:.7rem;margin-bottom:.3rem">Thesis under test · 4 lines · 112 sources · tested via web coverage</div>
+   <h1>AI clinical decision support for mid-sized hospitals</h1>
+   <div class="subthesis">Sold to the CMIO, replacing legacy CDS. <span data-nav="brainstorm" style="color:var(--gold-strong);cursor:pointer;text-decoration:underline">Brainstorm on it →</span></div>
+   <div class="tabs">${[["take","The read"],["reason","Reasoning map"],["lines","Lines of inquiry"],["comp","Competitive"],["deck","Pitch deck"]].map(x=>`<button class="tab ${x[0]===bTab?"on":""}" data-tab="${x[0]}">${x[1]}</button>`).join("")}</div>
+   <div id="briefTab">${briefTab(bTab)}</div>
+ </div>
+ <aside class="rail"><div class="rail-head"><span class="kick" id="railKick" style="color:var(--muted)">Evidence</span><button class="rail-back" id="railBack" hidden>‹ Evidence</button></div><div class="rail-body" id="railBody"></div></aside></div>`;
+
+S.brainstorm=()=>`<div class="pagehead"><h1>Brainstorm</h1><p>Poke holes, explore angles, or ask a direct question — answered over the thesis's own findings, the corpus and the web, with every line traced to a typed source. Where it can't prove something, that's your cue to seek an expert.</p></div>
+ <div class="briefgrid"><div class="memo">
+   <div class="card"><div class="kick">Brainstorm over this thesis</div><div class="row" style="margin-top:.45rem"><input style="flex:1;min-width:0;font-family:var(--sans);font-size:.9rem;color:var(--ink);background:var(--panel);border:1px solid var(--hair);border-radius:10px;padding:.6rem .7rem" placeholder="Ask or challenge — “where is this weakest?”, “who really signs?”…"><button class="btn" data-q="0">Ask</button></div>
+     <div style="margin-top:.75rem"><span class="kick" style="color:var(--muted)">💡 Weak points it surfaces — probe these</span>
+       <div class="row" style="margin-top:.4rem">${QA.map((x,i)=>`<button class="tab" data-q="${i}">${x.q}</button>`).join("")}</div></div>
+     <p class="muted" style="font-size:.82rem;margin:.65rem 0 0">Each answers on the right, cited. Anything it can't settle from the record surfaces as a gap — take it to <span data-nav="experts" style="color:var(--gold-strong);cursor:pointer;text-decoration:underline">Experts →</span></p></div>
+ </div>
+ <aside class="rail"><div class="rail-head"><span class="kick" id="railKick" style="color:var(--muted)">Answer</span><button class="rail-back" id="railBack" hidden>‹ Evidence</button></div><div class="rail-body" id="railBody"></div></aside></div>`;
+
+S.experts=()=>`<div class="pagehead"><h1>Seek experts &amp; integrate their knowledge</h1><p>Some things no document settles — willingness-to-pay, switching cost, whether the buyer will really sign. Find the people who lived them, then fold what they say back into the thesis as verbatim-gated evidence.</p></div>
+ <div class="split" style="align-items:start">
+   <div>
+     <div class="kick" style="margin-bottom:.5rem">1 · Seek experts — who can settle the gaps</div>
+     <div class="pcard"><div class="role">Economic buyer</div><h3 style="font-size:.98rem">A CMIO / VP Clinical Informatics at a 200–400 bed system</h3><p class="muted" style="font-size:.83rem;margin:.25rem 0 .55rem">Settles: who really signs, the budget line, the committee path.</p><button class="btn sec" style="padding:.35rem .6rem">Find people →</button></div>
+     <div class="pcard"><div class="role">Operator</div><h3 style="font-size:.98rem">A clinical informatics lead who ran an Epic predictive rollout</h3><p class="muted" style="font-size:.83rem;margin:.25rem 0 .55rem">Settles: integration burden, switching cost off the embedded model.</p><button class="btn sec" style="padding:.35rem .6rem">Find people →</button></div>
+     <div class="pcard"><div class="role">Advisor</div><h3 style="font-size:.98rem">An analyst who tracks health-system CDS procurement</h3><p class="muted" style="font-size:.83rem;margin:.25rem 0 .55rem">Settles: how the category is really moving, incumbent bundling.</p><button class="btn sec" style="padding:.35rem .6rem">Find people →</button></div>
+   </div>
+   <div>
+     <div class="kick" style="margin-bottom:.5rem">2 · Integrate expert knowledge</div>
+     <div class="card" style="border-style:dashed;background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center"><span class="kick" style="color:var(--muted)">Paste a call transcript</span><button class="btn sec" style="padding:.32rem .55rem">+ Upload</button></div>
+       <p class="muted" style="font-size:.8rem;margin:.4rem 0 .3rem">We keep only what's said verbatim, tag each point validates / invalidates / context toward a line, and tie it to the thesis. Expert opinion is <b>stated</b> — informative, never controlling.</p></div>
+     <div class="pcard"><div class="kick">Extracted · CMIO, 320-bed system → “Who signs the check?”</div>
+       <div class="ins t-val"><span class="tag">Validates</span>"Readmission penalties are a board metric — I'd fund something that moved it."</div>
+       <div class="ins t-inv"><span class="tag">Invalidates</span>"I can't sign alone; it goes through a tech &amp; a clinical committee."</div>
+       <div class="ins t-ctx"><span class="tag">Context</span>"If Epic already has a model, you need a hard head-to-head to displace it."</div>
+       <p class="muted mono" style="font-size:.66rem;margin:.35rem 0 0">Verbatim-gated · folded into the “buyer” line as stated evidence.</p></div>
+   </div>
+ </div>`;
+
+S.share=()=>`<div class="pagehead"><h1>Share</h1><p>Publish a clean, anonymized brief to the public ThesisBoard, or send a private read-only link to your full thesis.</p></div>
+ <div class="sharebox"><div class="kick">Publish to the ThesisBoard</div><p style="font-size:.88rem;margin:.35rem 0 .6rem">A frozen, <b>anonymized</b> snapshot — answered lines only, your identity removed. Anyone can open it, no login.</p>
+   <div class="linkfield"><span>askeigen.com/app#board/cwTjITihtvQp1Gkl</span><button class="btn sec" style="padding:.35rem .6rem">🔗 Copy link</button></div>
+   <div class="row" style="margin-top:.7rem"><button class="btn">Update on ThesisBoard</button><button class="btn sec">Unpublish</button></div></div>
+ <div class="sharebox"><div class="kick">Private read-only link</div><p style="font-size:.88rem;margin:.35rem 0 .6rem">Your full, non-anonymized thesis — for someone specific. Not listed on the board.</p>
+   <div class="linkfield"><span>askeigen.com/app#view/…/…</span><button class="btn sec" style="padding:.35rem .6rem">🔗 Copy read-only link</button></div></div>
+ <div class="pagehead" style="margin-top:20px"><h2 style="font-size:1.1rem">On the ThesisBoard</h2></div>
+ <button class="tcard" data-nav="brief"><h3>A healthcare startup will sell a Clinical Decision Support System…</h3><div class="meta"><span class="st" style="color:var(--gold-strong)">Anonymous</span><span>·</span><span>112 sources</span><span>·</span><span>2 days ago</span></div></button>`;
+
+/* ---------- drawer (brief/ask) ---------- */
+const railBody=()=>el("railBody"), setKick=t=>{const k=el("railKick"); if(k)k.textContent=t;}, setBack=on=>{const b=el("railBack"); if(b)b.hidden=!on;};
+const regChip=r=>'<span class="reg"><span class="d" style="background:'+REG[r].c+'"></span>'+REG[r].l+'</span>';
+const refChips=refs=>refs.map(i=>'<span class="ref'+(SOURCES[i].gap?' gap':'')+'" data-src="'+i+'">'+i+'</span>').join("");
+function drawEvidence(){ if(!railBody())return; setKick("Evidence"); setBack(false);
+  railBody().innerHTML='<div class="discipline"><b>Provenance discipline:</b> 112 sources, almost all <b>market coverage</b> — shown as signal, never counted as fact. Click a type, or any <span class="ref" style="position:static">n</span>, for the exact quote.</div><div class="tiles">'+FEEDS.map(f=>'<button class="tile" style="--tc:'+REG[f.reg].c+'" data-feed="'+f.key+'"><div class="t-top"><h4>'+f.name+'</h4><span class="n">'+f.n+'</span></div><span class="sub">'+f.sub+'</span>'+regChip(f.reg)+'</button>').join("")+'</div>'; }
+function drawFeed(k){ const f=FEEDS.find(x=>x.key===k); setKick(f.name); setBack(true); railBody().innerHTML=regChip(f.reg)+'<p class="muted" style="font-size:.78rem;margin:.4rem 0 .5rem">'+f.n+' items · typed '+REG[f.reg].l.toLowerCase()+', kept out of the “fact” column.</p>'+f.items.map(it=>'<div class="src-quote" style="--sc:'+REG[f.reg].c+'">“'+it+'”</div>').join(""); }
+function drawSource(i){ const s=SOURCES[i]; setKick("Source ["+i+"]"); setBack(true); railBody().innerHTML=(s.gap?'<div class="gapbox"><b>Can’t prove it.</b> '+s.quote+'</div>':regChip(s.reg)+'<div class="src-quote" style="--sc:'+REG[s.reg].c+'">“'+s.quote+'”</div>')+'<div class="src-meta"><div><b>'+s.title+'</b></div>'+s.meta.map(m=>'<div>'+m+'</div>').join("")+'</div>'; }
+function drawQA(qi){ const x=QA[qi]; setKick("Answer"); setBack(true); railBody().innerHTML='<div class="qa-q">'+x.q+'</div><div class="qa-a">'+x.claims.map(c=>'<p><span class="claim">'+c.k+'</span>'+c.t+' '+refChips(c.refs)+'</p>').join("")+'<div class="gapbox"><b>Can’t prove it:</b> routed to an expert call '+refChips([x.gapId])+'</div><div class="trace"><span class="tb tb-ok">◔ '+x.ok+'</span><span class="tb tb-flag">⚠ '+x.flag+'</span></div><div class="mono muted" style="font-size:.67rem;margin-top:.5rem;line-height:1.5">Same question to a raw chatbot: <b style="color:var(--ink)">fluent, uncited, uncheckable</b>. Here every line traces to a typed source.</div></div>'; }
+function markRef(i){ document.querySelectorAll('.ref.on').forEach(e=>e.classList.remove('on')); document.querySelectorAll('.ref[data-src="'+i+'"]').forEach(e=>e.classList.add('on')); }
+
+/* ---------- render + events ---------- */
+function render(){
+  renderSteps(); el("crumb").innerHTML=CRUMB[cur]; el("verdictChip").hidden=!(cur==="brief"||cur==="brainstorm"||cur==="experts");
+  el("screen").innerHTML=S[cur]();
+  if(cur==="brief"||cur==="brainstorm") drawEvidence();
+}
+document.addEventListener('click',e=>{
+  const n=e.target.closest('[data-nav]'); if(n){ nav(n.dataset.nav); return; }
+  if(e.target.closest('[data-run]')){ ranState=true; nav('run'); return; }
+  const tb=e.target.closest('.tab[data-tab]'); if(tb){ bTab=tb.dataset.tab; el("briefTab").innerHTML=briefTab(bTab); document.querySelectorAll('.tab[data-tab]').forEach(t=>t.classList.toggle('on',t.dataset.tab===bTab)); return; }
+  const r=e.target.closest('.ref'); if(r&&r.dataset.src){ drawSource(r.dataset.src); markRef(r.dataset.src); document.querySelector('.rail')&&document.querySelector('.rail').scrollIntoView({behavior:'smooth',block:'nearest'}); return; }
+  const t=e.target.closest('.tile'); if(t){ drawFeed(t.dataset.feed); return; }
+  if(e.target.closest('#railBack')){ drawEvidence(); return; }
+  const q=e.target.closest('[data-q]'); if(q){ if(cur!=='brainstorm'&&cur!=='brief') nav('brainstorm'); drawQA(+q.dataset.q); return; }
+});
+render();
+</script>
+
+</body>
+</html>
