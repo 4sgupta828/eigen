@@ -161,6 +161,24 @@ need to be filled? Surface the mechanism, assumptions, risks, anchors, and compe
 depth here is what makes the downstream questions adapt to this thesis instead of orbiting a fixed rubric."""
 
 
+_ORIENTATION_DIRECTIVE = """\
+You are an investor's diligence lead ORIENTING before you write any questions — you do NOT answer anything
+here. Name what you must LEARN about the CURRENT market, as of today, to ask the right questions of THIS
+thesis, so the plan names what is real NOW rather than what you remember. Your training memory is stale on
+exactly the things that decide a tech investment: who the incumbents are today and what they now ship, the
+recent entrants and their latest funding, the current regulation/policy, the newest benchmarks/SOTA, the
+real present-day "why now" catalyst, and the live substitutes. Emit search queries that would surface each
+of those FOR THIS THESIS'S exact job + buyer + segment — present-tense and dated. A generic "who are the
+competitors" is a failure; "which 2026 open-source LLM-evaluation vendors sell to enterprise ML teams" is
+right. Name what to search for; never assert an answer."""
+
+_LANDSCAPE_CLAUSE = (
+    "\n\nCURRENCY DISCIPLINE: when a CURRENT LANDSCAPE block (dated) is provided, draw every named "
+    "incumbent, entrant, regulation, benchmark and funding fact ONLY from it. Anything not in that block, "
+    "phrase generically (\"which incumbents currently ship X?\", not \"does <Vendor> ship X?\") or tag it "
+    "to-verify — never recall a specific competitor / rule / number from memory, which is stale. Treat any "
+    "recency you 'remember' as a hypothesis to check against the block. Everything is as of today.")
+
 _INQUIRY_DIRECTIVE = """\
 You are an investor's diligence lead. Given a startup investment thesis, design the research plan that
 would let evidence decide it — as a set of pointed, NEUTRAL questions grouped into lines of inquiry that
@@ -430,10 +448,15 @@ class TechDecisionProfile:
         return _QUESTION_DIRECTIVE
 
     def frame_directive(self, decision: str) -> str:
-        return _FRAME_DIRECTIVE
+        return _FRAME_DIRECTIVE + _LANDSCAPE_CLAUSE
 
     def inquiry_directive(self, decision: str) -> str:
-        return _INQUIRY_DIRECTIVE
+        return _INQUIRY_DIRECTIVE + _LANDSCAPE_CLAUSE
+
+    def orientation_directive(self, decision: str) -> str:
+        """What a tech-investment thesis must LEARN (current) to ask well — the vocabulary for the
+        kernel's domain-free orient_and_scan. Drives the orientation queries; names no answer."""
+        return _ORIENTATION_DIRECTIVE
 
     def pitch_deck_spec(self) -> tuple[str, dict, tuple[dict, ...]]:
         """(directive, spine_intent, sections) for the Startup Pitch Deck — the founder's-voice pitch

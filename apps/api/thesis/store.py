@@ -62,6 +62,9 @@ ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS collective_take jsonb NOT NULL DE
 -- The competitive-landscape matrix: the thesis company vs. named peers across the startup rubric,
 -- {columns:[{key,label}], rows:[{entity,subject,cells:[{text,markers}]}]}. Cells empty where unknown.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS competitive jsonb NOT NULL DEFAULT '{}';
+-- The dated, typed LandscapeBrief from the orient-and-scan (keeps the QUESTIONS current, not just the
+-- answers): {as_of, incumbents, entrants, funding, regulation, benchmarks, why_now, unknowns}.
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS landscape_brief jsonb NOT NULL DEFAULT '{}';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS owner_token_hash text NOT NULL DEFAULT '';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS decision jsonb NOT NULL DEFAULT '{}';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS research_status text NOT NULL DEFAULT 'not_run';
@@ -374,6 +377,7 @@ async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str
     out["pitch_deck"] = _j(out.get("pitch_deck") or {}) or {}
     out["collective_take"] = _j(out.get("collective_take") or {}) or {}
     out["competitive"] = _j(out.get("competitive") or {}) or {}
+    out["landscape_brief"] = _j(out.get("landscape_brief") or {}) or {}
     out["versions"] = _j(out.get("versions") or []) or []           # thesis version timeline (backtrack)
     out["shaping_prefs"] = _j(out.get("shaping_prefs") or []) or []  # how the author wants it shaped
     for k in ("created_at", "updated_at"):
@@ -583,6 +587,14 @@ async def set_competitive(pool, thesis_id: str, matrix: dict) -> None:
     async with pool.acquire() as conn:
         await conn.execute("UPDATE ts_thesis SET competitive = $2::jsonb, updated_at = now() WHERE id = $1",
                            thesis_id, json.dumps(matrix or {}))
+
+
+async def set_landscape_brief(pool, thesis_id: str, brief: dict) -> None:
+    """Persist the dated orient-and-scan brief on the thesis (reused within TTL; surfaced in the UI)."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_thesis SET landscape_brief = $2::jsonb, updated_at = now() WHERE id = $1",
+                           thesis_id, json.dumps(brief or {}))
 
 
 async def add_competitive_players(pool, thesis_id: str, new_players: list[dict], *,

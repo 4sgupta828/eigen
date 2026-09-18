@@ -14,7 +14,10 @@ The mode is flag-gated (EIGEN_THESIS). OFF is a true no-op: no routes, no tables
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+
+log = logging.getLogger("eigen.thesis")
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header, HTTPException
@@ -1271,11 +1274,55 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         cancelled = await tstore.cancel_run(pool, thesis_id=thesis_id, run_id=(run or None))
         return {"status": "cancelled" if cancelled else "none", "run_id": cancelled}
 
+    async def _landscape_scan(d: dict, *, light: bool = False) -> dict:
+        """Orient-before-you-ask: scan the CURRENT landscape (corpus + live web + our Startup index) into
+        a dated brief, so the questions name what is real NOW, not the model's training memory. The kernel
+        capability is domain-free; the legs and the 'what to learn' directive are injected here. Never
+        raises — a leg we cannot reach just widens the brief's `unknowns`."""
+        profile = _profile()
+        decision = (d.get("proposed_thesis") or d.get("thesis") or "").strip()
+        subject = " ".join(str(v) for v in (d.get("subject") or {}).values()).strip()
+        directive = profile.orientation_directive(decision) if hasattr(profile, "orientation_directive") else ""
+        wc = atk._web_client(manifest)
+        pool = await pool_of()
+
+        async def retrieve(q: str):
+            vecs = await atk._embed_queries([q])
+            async with pool.acquire() as conn:
+                rows = await atk._corpus_hits(conn, tenant, q, vecs.get(q))
+            return [{"title": r.get("document_title") or r.get("source_key") or "", "text": r.get("text") or "",
+                     "source": r.get("source_key") or "", "as_of": r.get("published_at") or "", "register": "filed"}
+                    for r in rows[:3]]
+
+        async def web(q: str):
+            if wc is None:
+                return []
+            res = await wc.search(q, max_results=5, open_web=True)
+            out = []
+            for x in res or []:
+                text = " ".join(filter(None, [*(getattr(x, "highlights", ()) or ()), getattr(x, "snippet", "") or "",
+                                              (getattr(x, "body", "") or "")[:1200]]))
+                out.append({"title": getattr(x, "title", "") or "", "url": getattr(x, "url", "") or "", "text": text[:1500]})
+            return out
+
+        async def peers(q: str):
+            if startup_search is None:
+                return []
+            return await startup_search(q, 4) or []
+
+        caps = dict(n_queries=4, per_query=2, web_cap=4) if light else dict(n_queries=8, per_query=3, web_cap=8)
+        return await _dec.orient_and_scan(_strong_llm_json(), retrieve=retrieve, web=web, peers=peers,
+                                          decision=decision, subject=subject, directive=directive, **caps)
+
     @r.post("/thesis/{thesis_id}/inquiries/generate")
     async def tl_generate(thesis_id: str, authorization: str = Header(default=""),
                           x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
         """Design the research plan for THIS thesis: one decision-level agent generates thesis-native
-        questions covering every rubric dimension, clustered into named lines of inquiry."""
+        questions covering every rubric dimension, clustered into named lines of inquiry.
+
+        ORIENT FIRST: a landscape scan (current corpus + web + peers) grounds the plan so it names what is
+        real now, not the model's training memory — the highest-leverage staleness fix (the plan gates all
+        downstream evidence)."""
         pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
         profile = _profile()
         if profile is None:
@@ -1283,6 +1330,15 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         decision = d.get("thesis") or ""
         directive = (profile.inquiry_directive(decision)
                      if hasattr(profile, "inquiry_directive") else "")
+        # Scan the current landscape and persist it; feed its dated specifics into framing + generation.
+        # Best-effort: the plan must generate even if the scan or its persistence is unavailable.
+        brief: dict = {}
+        try:
+            brief = await _landscape_scan(d)
+            await tstore.set_landscape_brief(pool, thesis_id, brief)
+        except Exception:      # noqa: BLE001 — never let the scan break plan generation
+            brief = brief or {}
+        landscape = _dec.brief_context(brief)
         # UNDERSTAND before asking: read the thesis (and the conversation that produced it) into a frame
         # — its mechanism, load-bearing assumptions, specific risks — so the questions test THIS thesis's
         # substance, not a generic rubric. Falls open to rubric-only generation if framing yields nothing.
@@ -1292,21 +1348,35 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             # The frame is the deep-understanding step — the whole reason questions adapt to THIS thesis.
             # Run it on the reasoning seam (deep thinking), and author the questions on the strong model,
             # not the cheap default: a shallow frame is what makes questions orbit a generic rubric.
+            ctx = _framing_context(d)
+            if landscape:
+                ctx = (ctx + "\n\n" + landscape) if ctx else landscape
             frame = await _dec.frame_decision(
-                _take_llm_json(), decision=decision, context=_framing_context(d),
+                _take_llm_json(), decision=decision, context=ctx,
                 directive=profile.frame_directive(decision), aspects=aspects)
         # Generate PER LINE OF INQUIRY — a focused, frame-driven call for each inquiry's 2–4 aspects, so
         # questions are deep and thesis-native, not a single call spread thin across the whole contract
         # (the fix for generic, cookie-cutter questions). Falls back to the whole-thesis generator only if
         # the profile does not expose a fixed inquiry partition.
         fr = frame if _dec.is_substantive(frame) else None
+        # The GENERATOR must see the dated landscape too — not just the frame — or the currency-discipline
+        # clause has no facts to bind to and the model falls back to stale memory.
+        gen_directive = (directive + "\n\n" + landscape) if landscape else directive
         if hasattr(profile, "inquiries") and profile.inquiries():
             inquiries = await _dec.generate_by_inquiry(
                 _strong_llm_json(), decision=decision, inquiries=profile.inquiries(), aspects=aspects,
-                directive=directive, frame=fr)
+                directive=gen_directive, frame=fr)
         else:
             inquiries = await _dec.generate_inquiries(
-                _strong_llm_json(), decision=decision, aspects=aspects, directive=directive, frame=fr)
+                _strong_llm_json(), decision=decision, aspects=aspects, directive=gen_directive, frame=fr)
+        # Anti-staleness lint (observability, non-destructive): flag any question naming a specific NOT in
+        # the dated scan — a specific the model likely recalled from stale memory. Logged, never rewrites.
+        if not _dec.brief_is_empty(brief):
+            stale = sorted({e for inq in inquiries for q in (inq.get("questions") or [])
+                            for e in _dec.unsourced_specifics(q.get("text") or "", brief)})
+            if stale:
+                log.info("landscape lint (thesis=%s): %d question specific(s) not in the scan: %s",
+                         thesis_id, len(stale), stale[:12])
         # Mark each question's PRIORITY LEVEL now, with full thesis context (P0 crux / P1 / P2) — so the
         # critical-subset run is just "priority == 0", precise and never re-ranked (owner direction).
         await prio.assign_priorities(profile, inquiries, thesis=decision, llm_json=_strong_llm_json())

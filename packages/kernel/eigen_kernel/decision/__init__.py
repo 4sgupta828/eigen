@@ -29,8 +29,10 @@ from .aggregate import resolve_signal, aggregate_aspect
 from .run import run_question, run_aspect, run_inquiry
 from .synthesis import sanitize_answer, sanitize_table, NOT_ESTABLISHED
 from .compose import compose_over_findings, compose_deck, compose_memo, compose_matrix, ANALYSIS_KINDS
+from .orient import orient_and_scan, empty_brief, brief_context, brief_is_empty, unsourced_specifics
 
 __all__ = [
+    "orient_and_scan", "empty_brief", "brief_context", "brief_is_empty", "unsourced_specifics",
     "QuestionKind", "Question", "QuestionStatus", "Aspect", "Inquiry",
     "SUPPORTED", "CONTRADICTED", "UNDER_TESTED", "OPEN", "UNSETTLEABLE",
     "TARGET_SUPPORTED", "TARGET_CONTRADICTED", "TARGET_UNTESTED",
