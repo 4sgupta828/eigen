@@ -7,12 +7,14 @@ import { Plan, Run } from "./plan";
 import { Brief, ReadPanel, ReasoningPanel, CompetitivePanel, DeckPanel, LinesPanel } from "./brief";
 import { Brainstorm } from "./brainstorm";
 import { Experts } from "./experts";
+import { VoicesPanel } from "./voices";
 import { Share } from "./share";
 
 const STAGES: [string, string, string][] = [
   ["plan", "1", "Plan"], ["run", "2", "Run & Lines"], ["brief", "3", "Brief"],
   ["reason", "4", "Reasoning Map"], ["competitive", "5", "Competitive"], ["deck", "6", "Pitch Deck"],
-  ["brainstorm", "7", "Brainstorm"], ["experts", "8", "Experts"], ["share", "9", "Share"],
+  ["brainstorm", "7", "Brainstorm"], ["experts", "8", "Experts"], ["voices", "9", "Voices"],
+  ["share", "10", "Share"],
 ];
 
 function TopBar({ crumb }: { crumb?: ReactNode }) {
@@ -64,7 +66,8 @@ export function Workspace({ id, token, step }: { id: string; token?: string; ste
                   : active === "deck" ? <DeckPanel {...panel} />
                     : active === "brainstorm" ? <Brainstorm id={id} take={take} onExperts={() => setStage("experts")} />
                       : active === "experts" ? <Experts id={id} inquiries={inqs} />
-                        : <Share id={id} doc={doc} onChanged={reloadDoc} />}
+                        : active === "voices" ? <VoicesPanel doc={doc} />
+                          : <Share id={id} doc={doc} onChanged={reloadDoc} />}
       </div>
     </>
   );

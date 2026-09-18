@@ -111,6 +111,10 @@ export type BsContent = { text?: string; reply?: string; sections?: BsSection[];
 export type BrainstormMsg = { id: number; role: "user" | "agent"; content: BsContent; created_at?: string };
 export type BrainstormThread = { id: string; thesis_id?: string; title?: string; memory?: BrainstormMemory; messages?: BrainstormMsg[] | number; created_at?: string; updated_at?: string };
 
+// ── voices: first-person founder/investor content (podcasts, talks, blogs, essays) ──
+export type VoiceMedia = { kind?: string; id?: string; url?: string; t?: number };
+export type Voice = { id: string; kind: string; text?: string; title?: string; show?: string; speaker?: string; role?: string; published?: string; year?: string; url?: string; media?: VoiceMedia; site?: string; image?: string };
+
 export type Candidate = { name?: string; profile_url?: string; headline?: string; org?: string; role?: string; relevance?: number; provider?: string };
 export type ExpertAspect = { key: string; prompt?: string; verdict?: string; verdict_note?: string; roles?: { role: string; label: string }[]; questions?: string[]; candidates?: Candidate[]; calls?: { quote?: string; said_by?: string; said_role?: string; firm?: string; relation?: string }[]; guidance?: string };
 export type Insight = { quote?: string; insight?: string; stance?: "validates" | "invalidates" | "context"; refers_to?: string };
@@ -205,6 +209,9 @@ export const api = {
     req<{ status: string; candidates?: CompCandidate[]; space?: string; unavailable?: boolean }>("POST", `/thesis/${enc(id)}/competitive/candidates`, {}, id),
   competitiveAdd: (id: string, names: string[], max_usd: number) =>
     req<RunResp & { selected?: number }>("POST", `/thesis/${enc(id)}/competitive/add`, { names, max_usd, idempotency_key: max_usd > 0 ? "compadd-" + Date.now() : undefined }, id),
+
+  // ── voices: first-person founder/investor content relevant to the thesis (Voices corpus) ──
+  voices: (q: string, limit = 14) => req<{ moments: Voice[] }>("POST", "/voices/search", { q, limit }).then((d) => d.moments || []),
 
   // ── experts + transcripts ──
   experts: (id: string) => getJSON<{ status: string; aspects: ExpertAspect[] }>(`/thesis/${enc(id)}/experts`, id).then((d) => d.aspects || []),

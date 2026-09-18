@@ -383,6 +383,21 @@ a.th-cite-src:hover { text-decoration: underline; }
   .bs-threads { grid-auto-flow: row; }
 }
 
+/* ── voices: first-person founder/investor content ── */
+.vc-group { margin-bottom: 16px; }
+.vc-group .kick { display: block; margin-bottom: .5rem; }
+.vc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.vc-card { display: grid; gap: .28rem; border: 1px solid var(--hair); border-radius: 12px; background: var(--panel); padding: .7rem .8rem; text-decoration: none; color: var(--ink); transition: border-color .12s, box-shadow .12s; }
+.vc-card:hover { border-color: var(--gold); box-shadow: 0 1px 10px rgba(34,29,18,.05); }
+.vc-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.vc-badge { font-family: var(--mono); font-size: .58rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--gold-strong); background: color-mix(in srgb, var(--gold) 12%, var(--panel)); border-radius: 5px; padding: .1rem .38rem; }
+.vc-play { font-family: var(--mono); font-size: .6rem; font-weight: 700; color: var(--on-accent); background: var(--gold); border-radius: 999px; padding: .1rem .42rem; white-space: nowrap; }
+.vc-title { font-family: var(--serif); font-weight: 600; font-size: .92rem; line-height: 1.32; overflow-wrap: anywhere; }
+.vc-who { font-size: .74rem; color: var(--gold-strong); line-height: 1.35; }
+.vc-snip { font-size: .78rem; color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.vc-date { font-family: var(--mono); font-size: .6rem; color: var(--muted); }
+@media (max-width: 560px) { .vc-grid { grid-template-columns: 1fr; } }
+
 /* ── plan ── */
 .scanstrip { border: 1px solid var(--hair); border-left: 3px solid var(--signal); border-radius: 10px; background: color-mix(in srgb, var(--signal) 7%, var(--panel)); padding: .6rem .75rem; margin-bottom: 14px; font-size: .84rem; line-height: 1.5; display: flex; flex-wrap: wrap; gap: .4rem .5rem; align-items: center; }
 .scanstrip b { color: var(--ink); }
