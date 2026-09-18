@@ -130,6 +130,13 @@ function titleClean(t?: string): string {
 function domainOf(url?: string): string {
   try { return new URL(url || "").hostname.replace(/^www\./, ""); } catch { return ""; }
 }
+// A source reference for a piece of evidence: a link for web/URL sources, else a labeled reference for
+// corpus/internal sources (which carry a source_key like "sec"/"arxiv" but no URL) — never a dead end.
+const sourceLabel = (e: Evidence) => e.source_key || e.evidence_kind || (e.document_id ? "corpus" : "source");
+function SourceRef({ e }: { e: Evidence }) {
+  if (e.source_url) return <a className="th-cite-src" href={e.source_url} target="_blank" rel="noopener" onClick={(ev) => ev.stopPropagation()}>{domainOf(e.source_url) || e.source_key || "source"} ↗</a>;
+  return <span className="th-cite-src th-cite-src-corpus">{sourceLabel(e)}</span>;
+}
 // The honest tier: coverage / sentiment / press is SIGNAL regardless of the coarse `register` field.
 function tierOf(e: Evidence): { rank: number; label: string; c: string } {
   const k = e.evidence_kind || "", rel = e.relation || "", reg = e.register || "";
@@ -252,7 +259,7 @@ function Drawer({ view }: { view: DrawerView }) {
                 <div>{(q.target_status || "").replace(/_/g, " ")}</div>
               </div>
               <div className="src-quote" style={{ ["--sc" as string]: "var(--gold)" }}>Q: {q.text}</div>
-              <div className="loi-a">{parse({ text: q.answer }).clean || "—"}</div>
+              {q.answer ? <GroundedAnswer q={q} /> : <div className="loi-a">—</div>}
             </>
           )}
         </div>
@@ -281,7 +288,8 @@ function Drawer({ view }: { view: DrawerView }) {
               {e.evidence_kind ? <div>kind: {e.evidence_kind}{e.relation ? ` · ${e.relation.replace(/_/g, " ")}` : ""}</div> : null}
               {e.side === "for" || e.side === "against" ? <div>weighs <b className={e.side === "against" ? "ev-against" : "ev-for"}>{e.side}</b> the thesis</div> : null}
               {e.as_of || e.period ? <div>as of {(e.as_of || e.period || "").slice(0, 10)}</div> : null}
-              {e.source_url ? <div>{domainOf(e.source_url)} · <a href={e.source_url} target="_blank" rel="noopener">open source ↗</a></div> : null}
+              {e.source_url ? <div>{domainOf(e.source_url)} · <a href={e.source_url} target="_blank" rel="noopener">open source ↗</a></div>
+                : <div>source: {sourceLabel(e)}{e.title && titleClean(e.title) !== sourceLabel(e) ? ` · ${titleClean(e.title)}` : ""}</div>}
             </div>
           </>
         )}
@@ -496,7 +504,7 @@ function GroundedAnswer({ q }: { q: Question }) {
                 <div className="th-cite-body">
                   <div className="th-cite-meta"><span className="d" style={{ background: t.c }} /> {meta || "source"}</div>
                   {cleanText(e.quote) ? <blockquote className="th-cite-q">“{excerpt(e.quote, 300)}”</blockquote> : null}
-                  {e.source_url ? <a className="th-cite-src" href={e.source_url} target="_blank" rel="noopener" onClick={(ev) => ev.stopPropagation()}>{domainOf(e.source_url)} ↗</a> : null}
+                  <SourceRef e={e} />
                 </div>
               </li>
             );

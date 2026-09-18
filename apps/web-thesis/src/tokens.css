@@ -206,7 +206,8 @@ th { font-family: var(--mono); font-size: .55rem; text-transform: uppercase; let
 .th-cite-meta .d { width: 6px; height: 6px; border-radius: 50%; flex: none; }
 .th-cite-q { font-family: var(--serif); font-size: .84rem; line-height: 1.5; color: var(--ink); margin: 0; border-left: 2px solid var(--hair); padding-left: .55rem; }
 .th-cite-src { font-family: var(--mono); font-size: .64rem; color: var(--gold-strong); text-decoration: none; }
-.th-cite-src:hover { text-decoration: underline; }
+a.th-cite-src:hover { text-decoration: underline; }
+.th-cite-src-corpus { color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
 
 /* home */
 .tcard { display: block; width: 100%; text-align: left; border: 1px solid var(--hair); border-radius: 13px; background: var(--panel); padding: .9rem 1rem; margin-bottom: 11px; cursor: pointer; }

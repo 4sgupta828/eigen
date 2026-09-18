@@ -28,6 +28,7 @@ export type Evidence = {
   id: string; title?: string; quote?: string; source_url?: string; register?: string;
   evidence_kind?: string; source_subject?: string; as_of?: string; side?: string; relation?: string;
   signal_only?: boolean; said_by?: string; said_role?: string; period?: string;
+  source_key?: string; document_id?: string;
 };
 export type Claim = { rung?: string; verdict?: string; research_status?: string; evidence?: Evidence[] };
 
