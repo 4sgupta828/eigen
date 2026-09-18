@@ -383,19 +383,37 @@ a.th-cite-src:hover { text-decoration: underline; }
   .bs-threads { grid-auto-flow: row; }
 }
 
-/* ── voices: first-person founder/investor content ── */
-.vc-group { margin-bottom: 16px; }
-.vc-group .kick { display: block; margin-bottom: .5rem; }
-.vc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
-.vc-card { display: grid; gap: .28rem; border: 1px solid var(--hair); border-radius: 12px; background: var(--panel); padding: .7rem .8rem; text-decoration: none; color: var(--ink); transition: border-color .12s, box-shadow .12s; }
-.vc-card:hover { border-color: var(--gold); box-shadow: 0 1px 10px rgba(34,29,18,.05); }
+/* ── voices: first-person founder/investor content, organized by relevance ── */
+.vc-group { margin-bottom: 18px; }
+.vc-bucket-h { display: flex; align-items: center; gap: .45rem; font-family: var(--serif); font-weight: 600; font-size: 1rem; margin-bottom: .6rem; }
+.vc-bucket-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); flex: none; }
+.vc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; align-items: start; }
+.vc-card { border: 1px solid var(--hair); border-radius: 12px; background: var(--panel); overflow: hidden; transition: border-color .12s, box-shadow .12s; }
+.vc-card:hover { border-color: color-mix(in srgb, var(--gold) 42%, var(--hair)); box-shadow: 0 1px 10px rgba(34,29,18,.05); }
+.vc-card.vc-open { border-color: color-mix(in srgb, var(--gold) 55%, var(--hair)); box-shadow: 0 2px 14px rgba(34,29,18,.07); }
+.vc-head { display: grid; gap: .28rem; width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: .7rem .8rem; font: inherit; color: var(--ink); }
 .vc-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .vc-badge { font-family: var(--mono); font-size: .58rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--gold-strong); background: color-mix(in srgb, var(--gold) 12%, var(--panel)); border-radius: 5px; padding: .1rem .38rem; }
-.vc-play { font-family: var(--mono); font-size: .6rem; font-weight: 700; color: var(--on-accent); background: var(--gold); border-radius: 999px; padding: .1rem .42rem; white-space: nowrap; }
+.vc-act { font-family: var(--mono); font-size: .6rem; font-weight: 700; color: var(--on-accent); background: var(--gold); border-radius: 999px; padding: .1rem .46rem; white-space: nowrap; }
+.vc-open .vc-act { background: var(--gold-strong); }
 .vc-title { font-family: var(--serif); font-weight: 600; font-size: .92rem; line-height: 1.32; overflow-wrap: anywhere; }
 .vc-who { font-size: .74rem; color: var(--gold-strong); line-height: 1.35; }
+.vc-why { font-size: .8rem; color: var(--ink); line-height: 1.5; border-left: 2px solid color-mix(in srgb, var(--gold) 35%, var(--hair)); padding-left: .5rem; }
 .vc-snip { font-size: .78rem; color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .vc-date { font-family: var(--mono); font-size: .6rem; color: var(--muted); }
+.vc-body { padding: 0 .8rem .8rem; border-top: 1px solid var(--hair-soft); display: grid; gap: .5rem; }
+.vc-embed { position: relative; width: 100%; aspect-ratio: 16 / 9; margin-top: .6rem; border-radius: 8px; overflow: hidden; background: #000; }
+.vc-embed iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.vc-audio { width: 100%; margin-top: .6rem; }
+.vc-summary { margin-top: .6rem; display: grid; gap: .4rem; }
+.vc-sum-h { font-family: var(--serif); font-weight: 600; font-size: .9rem; line-height: 1.4; }
+.vc-sum-points { margin: 0; padding-left: 1.05rem; display: grid; gap: .28rem; }
+.vc-sum-points li { font-size: .82rem; line-height: 1.5; }
+.vc-sum-points li::marker { color: var(--gold); }
+.vc-sum-p { font-size: .82rem; line-height: 1.55; color: var(--ink); margin: 0; }
+.vc-sum-q { margin: 0; font-family: var(--serif); font-style: italic; font-size: .84rem; color: var(--muted); border-left: 2px solid var(--hair); padding-left: .6rem; }
+.vc-link { font-family: var(--mono); font-size: .68rem; font-weight: 600; color: var(--gold-strong); text-decoration: none; }
+.vc-link:hover { text-decoration: underline; }
 @media (max-width: 560px) { .vc-grid { grid-template-columns: 1fr; } }
 
 /* ── plan ── */

@@ -438,6 +438,28 @@ Rules:
    fabrication). Only suggest a retrieval direction when it would genuinely move the thinking forward.
 6. Talk like a partner: direct, concrete, no filler, no hedging scaffolding, no jargon for its own sake."""
 
+_VOICES_DIRECTIVE = """\
+You are an investor's analyst curating first-person FOUNDER & INVESTOR voices — podcasts, talks, blog
+posts, essays — for their diligence on a thesis. You are given the thesis (and what the investigation
+has surfaced) and a list of candidate pieces (title, who, a snippet). Your job: keep only the ones that
+genuinely bear on THIS thesis, and organize them by HOW they bear on the investigation.
+
+These are a SIGNAL — how operators and investors frame this market — never graded evidence. So describe
+how a piece RELATES to the investigation; you may note when a voice LEANS TOWARD or PUSHES BACK ON part
+of the thesis, but never present it as proof of anything.
+
+Rules:
+1. RELEVANCE is strict. Drop a piece that is only loosely on-topic — a generic "AI" essay that never
+   touches this thesis's actual question does not belong. Better a short, sharp list than a padded one.
+2. Organize into BUCKETS by how each piece bears on the investigation. The bucket labels are YOURS to
+   choose from what you see — dynamic, not a fixed menu. Good labels read like "Speaks to
+   willingness-to-pay", "Pushes back on the moat", "How operators run this GTM motion", "Grounds the
+   market-size claim", "First-hand on the buyer". Group pieces that bear on the same angle together.
+3. For each kept piece, write a ONE-LINE `why`: the specific way it bears on this thesis (what it
+   addresses / leans toward / complicates), in the analyst's plain voice.
+4. Never invent a piece, a speaker, or a claim about a piece beyond its snippet. If unsure whether a
+   piece is relevant, drop it."""
+
 _COMPETITIVE_DIRECTIVE = """\
 You are a venture analyst building the competitive landscape for a startup thesis, ONLY from findings
 already gathered in diligence. The first row is the thesis company itself; add one row per DISTINCT
@@ -499,6 +521,12 @@ class TechDecisionProfile:
         """(directive, columns) for the Competitive Analysis matrix — the thesis company vs. named peers
         across the startup rubric, composed by the kernel's compose_matrix."""
         return _COMPETITIVE_DIRECTIVE, _COMPETITIVE_COLUMNS
+
+    def voices_directive(self, decision: str = "") -> str:
+        """How to curate + organize first-person founder/investor voices for a thesis: strict relevance,
+        dynamic relevance-to-the-investigation buckets, signal-not-evidence framing. Domain judgment
+        (voices are a signal; which angles matter) lives here; the app runs the LLM + retrieval."""
+        return _VOICES_DIRECTIVE
 
     def brainstorm_directive(self, decision: str = "") -> str:
         """The venture-partner voice + grounding discipline for the kernel's domain-free

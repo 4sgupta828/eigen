@@ -114,6 +114,8 @@ export type BrainstormThread = { id: string; thesis_id?: string; title?: string;
 // ── voices: first-person founder/investor content (podcasts, talks, blogs, essays) ──
 export type VoiceMedia = { kind?: string; id?: string; url?: string; t?: number };
 export type Voice = { id: string; kind: string; text?: string; title?: string; show?: string; speaker?: string; role?: string; published?: string; year?: string; url?: string; media?: VoiceMedia; site?: string; image?: string };
+export type VoiceBucket = { label: string; items: { id: string; why?: string }[] };
+export type VoiceSummary = { heading?: string; points?: string[]; quotes?: string[]; sections?: { title?: string; paragraphs?: string[] }[]; note?: string; basis?: string; title?: string };
 
 export type Candidate = { name?: string; profile_url?: string; headline?: string; org?: string; role?: string; relevance?: number; provider?: string };
 export type ExpertAspect = { key: string; prompt?: string; verdict?: string; verdict_note?: string; roles?: { role: string; label: string }[]; questions?: string[]; candidates?: Candidate[]; calls?: { quote?: string; said_by?: string; said_role?: string; firm?: string; relation?: string }[]; guidance?: string };
@@ -212,6 +214,9 @@ export const api = {
 
   // ── voices: first-person founder/investor content relevant to the thesis (Voices corpus) ──
   voices: (q: string, limit = 14) => req<{ moments: Voice[] }>("POST", "/voices/search", { q, limit }).then((d) => d.moments || []),
+  voicesOrganize: (id: string, moments: { id: string; kind: string; title?: string; snippet?: string; speaker?: string; show?: string }[], refresh = false) =>
+    req<{ status: string; buckets: VoiceBucket[]; cached?: boolean }>("POST", `/thesis/${enc(id)}/voices/organize`, { moments, refresh }, id).then((d) => d.buckets || []),
+  voiceSummary: (momentId: string, refresh = false) => req<VoiceSummary>("POST", "/voices/summary", { id: momentId, refresh }),
 
   // ── experts + transcripts ──
   experts: (id: string) => getJSON<{ status: string; aspects: ExpertAspect[] }>(`/thesis/${enc(id)}/experts`, id).then((d) => d.aspects || []),

@@ -65,6 +65,9 @@ ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS competitive jsonb NOT NULL DEFAUL
 -- The dated, typed LandscapeBrief from the orient-and-scan (keeps the QUESTIONS current, not just the
 -- answers): {as_of, incumbents, entrants, funding, regulation, benchmarks, why_now, unknowns}.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS landscape_brief jsonb NOT NULL DEFAULT '{}';
+-- Voices organized into relevance-to-the-investigation buckets (LLM-clustered, signal not evidence),
+-- cached by the candidate set they were built from so a revisit doesn't re-spend on the same corpus hits.
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS voices jsonb NOT NULL DEFAULT '{}';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS owner_token_hash text NOT NULL DEFAULT '';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS decision jsonb NOT NULL DEFAULT '{}';
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS research_status text NOT NULL DEFAULT 'not_run';
@@ -919,6 +922,21 @@ async def delete_brainstorm_thread(pool, *, thesis_id: str, thread_id: str) -> N
     async with pool.acquire() as conn:
         await conn.execute(
             "DELETE FROM ts_brainstorm_thread WHERE id=$1 AND thesis_id=$2", thread_id, thesis_id)
+
+
+async def get_thesis_voices(pool, thesis_id: str) -> dict:
+    """The cached organized-voices payload {key, buckets, generated_at}, or {} if never built."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT voices FROM ts_thesis WHERE id=$1", thesis_id)
+    return _j((row or {}).get("voices") or {}) if row else {}
+
+
+async def set_thesis_voices(pool, thesis_id: str, voices: dict) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_thesis SET voices=$2::jsonb, updated_at=now() WHERE id=$1",
+                           thesis_id, json.dumps(voices or {}))
 
 
 async def set_decision(pool, thesis_id: str, decision: dict, *, research_status: str) -> None:

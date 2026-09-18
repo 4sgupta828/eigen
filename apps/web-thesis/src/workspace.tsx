@@ -66,7 +66,7 @@ export function Workspace({ id, token, step }: { id: string; token?: string; ste
                   : active === "deck" ? <DeckPanel {...panel} />
                     : active === "brainstorm" ? <Brainstorm id={id} take={take} onExperts={() => setStage("experts")} />
                       : active === "experts" ? <Experts id={id} inquiries={inqs} />
-                        : active === "voices" ? <VoicesPanel doc={doc} />
+                        : active === "voices" ? <VoicesPanel id={id} doc={doc} inquiries={inqs} />
                           : <Share id={id} doc={doc} onChanged={reloadDoc} />}
       </div>
     </>

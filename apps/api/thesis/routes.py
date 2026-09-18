@@ -14,8 +14,10 @@ The mode is flag-gated (EIGEN_THESIS). OFF is a true no-op: no routes, no tables
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
+import time
 
 log = logging.getLogger("eigen.thesis")
 from datetime import datetime, timezone
@@ -36,6 +38,7 @@ from . import prioritize as prio
 from . import store as tstore
 from . import synth as syn
 from . import transcript as tx
+from . import voices as tvoices
 from .schema import (
     ASK_WHO, BUYER, CALL_ONLY, OPEN, QUESTION, ROLE_LABEL, SET_ASIDE, SETTLEABLE, STATED, UNSETTLEABLE,
     VERDICT_LABEL, labels,
@@ -114,6 +117,11 @@ class BrainstormExpandIn(BaseModel):
 
 class BrainstormThreadIn(BaseModel):
     title: str = ""
+
+
+class VoicesOrganizeIn(BaseModel):
+    moments: list[dict] = []       # compact candidates from /voices/search: {id, kind, title, snippet, speaker, show}
+    refresh: bool = False
 
 
 class ResearchStartIn(BaseModel):
@@ -1468,6 +1476,29 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage=leg, state="running")
         asyncio.create_task(_run_expand(thesis_id, run["id"], thread_id, leg, (body.query or "").strip()))
         return {"status": "running", "run": run}
+
+    @r.post("/thesis/{thesis_id}/voices/organize")
+    async def tl_voices_organize(thesis_id: str, body: VoicesOrganizeIn,
+                                 authorization: str = Header(default=""),
+                                 x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Organize the candidate Voices (retrieved by the client from /voices/search) into
+        relevance-to-the-investigation buckets, pruning the off-topic ones — one LLM pass, cached by the
+        candidate set so a revisit doesn't re-spend. Voices are a signal, not evidence."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        cands = [m for m in (body.moments or []) if isinstance(m, dict) and m.get("id")][:30]
+        ids = sorted(str(m.get("id")) for m in cands)
+        key = hashlib.sha256("\0".join(ids).encode("utf-8")).hexdigest()[:20] if ids else ""
+        cached = await tstore.get_thesis_voices(pool, thesis_id)
+        if cached.get("key") and cached.get("key") == key and not body.refresh:
+            return {"status": "ok", "buckets": cached.get("buckets") or [], "cached": True}
+        profile = _profile()
+        directive = profile.voices_directive(d.get("thesis") or "") if profile and hasattr(profile, "voices_directive") else ""
+        qs = await tstore.list_questions(pool, thesis_id)
+        ctx = tvoices.thesis_context(d, qs)
+        out = await tvoices.organize_voices(_llm_json(), directive=directive, context=ctx, candidates=cands)
+        payload = {"key": key, "buckets": out.get("buckets") or [], "generated_at": int(time.time())}
+        await tstore.set_thesis_voices(pool, thesis_id, payload)
+        return {"status": "ok", "buckets": payload["buckets"], "cached": False}
 
     async def _landscape_scan(d: dict, *, light: bool = False) -> dict:
         """Orient-before-you-ask: scan the CURRENT landscape (corpus + live web + our Startup index) into
