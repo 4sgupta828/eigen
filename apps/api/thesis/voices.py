@@ -94,10 +94,16 @@ async def organize_voices(llm_json, *, directive: str, context: str, candidates:
                 continue
             used.add(idx)
             items.append({"id": cands[idx]["id"], "why": _clip(it.get("why"), 200)})
-            if len(items) >= 12:
+            if len(items) >= 14:
                 break
         if label and items:
             buckets.append({"label": label, "items": items})
         if len(buckets) >= max_buckets:
             break
+    # Nothing the corpus surfaced is thrown away: whatever the model didn't place (thin-snippet podcasts,
+    # talks, and the like) rides along under a general heading so the feed stays full, just less sorted.
+    leftover = [cands[i]["id"] for i in range(len(cands)) if i not in used]
+    if leftover:
+        buckets.append({"label": "More voices in this space",
+                        "items": [{"id": mid, "why": ""} for mid in leftover]})
     return {"buckets": buckets}

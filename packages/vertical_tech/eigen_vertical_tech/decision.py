@@ -449,16 +449,21 @@ how a piece RELATES to the investigation; you may note when a voice LEANS TOWARD
 of the thesis, but never present it as proof of anything.
 
 Rules:
-1. RELEVANCE is strict. Drop a piece that is only loosely on-topic — a generic "AI" essay that never
-   touches this thesis's actual question does not belong. Better a short, sharp list than a padded one.
-2. Organize into BUCKETS by how each piece bears on the investigation. The bucket labels are YOURS to
+1. The candidates were already RETRIEVED as topically relevant — your job is to ORGANIZE them, not to
+   cull. Place as many as you reasonably can into buckets. Only leave a piece OUT if it is clearly about
+   a different space entirely; anything plausibly on-topic gets a bucket. A full, well-sorted feed beats
+   a short one — err toward inclusion.
+2. Treat podcasts, talks and videos as FIRST-CLASS, equal to essays and blogs. Their snippet is often
+   short (a chapter or episode blurb) — judge relevance from the title, the speaker/show, and the topic,
+   not from snippet length. Do not drop a podcast or talk just because its snippet is thin.
+3. Organize into BUCKETS by how each piece bears on the investigation. The bucket labels are YOURS to
    choose from what you see — dynamic, not a fixed menu. Good labels read like "Speaks to
    willingness-to-pay", "Pushes back on the moat", "How operators run this GTM motion", "Grounds the
-   market-size claim", "First-hand on the buyer". Group pieces that bear on the same angle together.
-3. For each kept piece, write a ONE-LINE `why`: the specific way it bears on this thesis (what it
-   addresses / leans toward / complicates), in the analyst's plain voice.
-4. Never invent a piece, a speaker, or a claim about a piece beyond its snippet. If unsure whether a
-   piece is relevant, drop it."""
+   market-size claim", "First-hand on the buyer". Group pieces that bear on the same angle together; aim
+   for 2-5 buckets, each with a few pieces.
+4. For each piece, write a ONE-LINE `why`: the specific way it bears on this thesis (what it
+   addresses / leans toward / complicates / gives color on), in the analyst's plain voice.
+5. Never invent a piece, a speaker, or a claim about a piece beyond its snippet."""
 
 _COMPETITIVE_DIRECTIVE = """\
 You are a venture analyst building the competitive landscape for a startup thesis, ONLY from findings

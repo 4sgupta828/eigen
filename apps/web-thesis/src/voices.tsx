@@ -28,7 +28,7 @@ const compact = (m: Voice) => ({ id: m.id, kind: m.kind, title: m.title, snippet
 
 export function VoicesPanel({ id, doc, inquiries }: { id?: string; doc: ThesisDoc; inquiries?: Inquiry[] }) {
   const q = useMemo(() => topicOf(doc, inquiries), [doc, inquiries]);
-  const vq = useQuery({ queryKey: ["voices", q], queryFn: () => api.voices(q, 24), enabled: !!q });
+  const vq = useQuery({ queryKey: ["voices", q], queryFn: () => api.voices(q, 30), enabled: !!q });
   const moments = vq.data || [];
   const byId = useMemo(() => new Map(moments.map((m) => [m.id, m])), [moments]);
 
@@ -72,6 +72,15 @@ export function VoicesPanel({ id, doc, inquiries }: { id?: string; doc: ThesisDo
   );
 }
 
+const KIND_TINT: Record<string, string> = {
+  podcast: "#8a5a2b", video: "#b23", essay: "#2e6d5b", blog: "#3a6ea5", transcript: "#6b5bd0", chapter: "#8a6d3b",
+};
+
+function thumbUrl(m: Voice): string {
+  if (m.media?.kind === "youtube" && m.media.id) return `https://i.ytimg.com/vi/${m.media.id}/hqdefault.jpg`;
+  return m.image || "";
+}
+
 function VoiceCard({ m, why }: { m: Voice; why?: string }) {
   const [open, setOpen] = useState(false);
   const meta = KIND_META[m.kind] || { label: m.kind, icon: "•" };
@@ -80,6 +89,8 @@ function VoiceCard({ m, why }: { m: Voice; why?: string }) {
   const playable = !!(yt || audio);
   const who = [m.speaker, m.show].filter(Boolean).join(" · ");
   const date = String(m.published || m.year || "").slice(0, 10);
+  const thumb = thumbUrl(m);
+  const tint = KIND_TINT[m.kind] || "#8a6d3b";
 
   const sq = useQuery({
     queryKey: ["voice-summary", m.id],
@@ -88,16 +99,23 @@ function VoiceCard({ m, why }: { m: Voice; why?: string }) {
   });
 
   return (
-    <div className={"vc-card" + (open ? " vc-open" : "")}>
+    <div className={"vc-card" + (open ? " vc-open" : "")} style={{ ["--vt" as string]: tint }}>
       <button className="vc-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <div className="vc-top">
-          <span className="vc-badge">{meta.icon} {meta.label}</span>
-          <span className="vc-act">{playable ? (yt ? "▶ watch" : "▶ listen") : "⌄ summary"}</span>
+        <div className={"vc-thumb" + (playable ? " vc-thumb-play" : "")}
+          style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}>
+          {!thumb ? <span className="vc-thumb-icon">{meta.icon}</span> : null}
+          {playable ? <span className="vc-thumb-btn">▶</span> : null}
+          <span className="vc-thumb-badge">{meta.icon} {meta.label}</span>
         </div>
-        {m.title ? <div className="vc-title">{m.title}</div> : null}
-        {who ? <div className="vc-who">{who}</div> : null}
-        {why ? <div className="vc-why">{why}</div> : (m.text ? <div className="vc-snip">{m.text}</div> : null)}
-        {date ? <div className="vc-date">{date}</div> : null}
+        <div className="vc-meta">
+          {m.title ? <div className="vc-title">{m.title}</div> : null}
+          {who ? <div className="vc-who">{who}</div> : null}
+          {why ? <div className="vc-why">{why}</div> : (m.text ? <div className="vc-snip">{m.text}</div> : null)}
+          <div className="vc-foot">
+            <span className="vc-act">{playable ? (yt ? "▶ Watch here" : "▶ Listen here") : "⌄ Read summary"}</span>
+            {date ? <span className="vc-date">{date}</span> : null}
+          </div>
+        </div>
       </button>
 
       {open ? (
@@ -105,7 +123,7 @@ function VoiceCard({ m, why }: { m: Voice; why?: string }) {
           {yt ? (
             <div className="vc-embed">
               <iframe src={`https://www.youtube-nocookie.com/embed/${yt.id}?start=${yt.t || 0}&autoplay=1&rel=0`}
-                title={m.title || "video"} allow="accelerator; autoplay; encrypted-media; picture-in-picture" allowFullScreen />
+                title={m.title || "video"} allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen />
             </div>
           ) : audio ? (
             <audio className="vc-audio" controls autoPlay src={`${audio.url}${audio.t ? `#t=${audio.t}` : ""}`} />

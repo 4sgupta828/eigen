@@ -17,10 +17,11 @@ async def test_organize_voices_buckets_prunes_and_maps_ids():
         ]}
     out = await v.organize_voices(llm, directive="d", context="THESIS: x", candidates=cands)
     labels = [b["label"] for b in out["buckets"]]
-    assert labels == ["Speaks to willingness-to-pay", "How operators run GTM"]   # empty/dup bucket dropped
+    # the two model buckets, then a catch-all for whatever it didn't place (nothing retrieved is lost)
+    assert labels == ["Speaks to willingness-to-pay", "How operators run GTM", "More voices in this space"]
     assert out["buckets"][0]["items"] == [{"id": "a", "why": "covers the buyer"}]
     assert out["buckets"][1]["items"] == [{"id": "b", "why": "land-and-expand"}]  # bad index 9 dropped
-    # candidate "c" (crypto) simply wasn't listed → pruned
+    assert out["buckets"][2]["items"] == [{"id": "c", "why": ""}]                 # unplaced → catch-all
 
 
 @pytest.mark.asyncio
