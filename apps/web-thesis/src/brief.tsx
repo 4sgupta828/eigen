@@ -769,6 +769,51 @@ function DeckTab({ deck }: { deck?: Deck }) {
   );
 }
 
+// Owner control: after running new questions, rebuild the read (Collective Take) and its derivatives —
+// the pitch deck (free) and, on confirm, the competitive landscape (gated web spend).
+function RegenBar({ id, hasComp, onDone }: { id?: string; hasComp?: boolean; onDone?: () => void }) {
+  const [busy, setBusy] = useState(false); const [note, setNote] = useState(""); const [err, setErr] = useState("");
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  function poll(runId: string) {
+    if (!id) return;
+    api.inquiryStatus(id, runId).then((s) => {
+      if (s.state === "completed" || s.state === "cancelled") { setBusy(false); setNote(""); onDone?.(); return; }
+      if (s.state === "failed") { setBusy(false); setErr("competitive research failed"); onDone?.(); return; }
+      setNote("re-researching competitors…");
+      timer.current = window.setTimeout(() => poll(runId), 2500);
+    }).catch(() => { timer.current = window.setTimeout(() => poll(runId), 3000); });
+  }
+  async function regen() {
+    if (!id || busy) return; setErr("");
+    if (!window.confirm("Rebuild the read and pitch deck from the latest findings?")) return;
+    setBusy(true);
+    try {
+      setNote("rebuilding the read…"); await api.synthesize(id);
+      setNote("rebuilding the deck…"); await api.buildDeck(id);
+      onDone?.();
+      if (hasComp) {
+        const proj = await api.competitiveResearch(id, 0);
+        const max = Number(proj.projection?.projected_usd || 0);
+        if (window.confirm(`Also re-research the competitive landscape from the open web?\n\nProjected maximum: $${max.toFixed(3)}`)) {
+          setNote("starting competitive…");
+          const r = await api.competitiveResearch(id, Math.max(max, 0.01));
+          if (r.run?.id) { poll(r.run.id); return; }
+        }
+      }
+      setBusy(false); setNote("");
+    } catch (e) { setBusy(false); setErr((e as Error).message); }
+  }
+  if (!id) return null;
+  return (
+    <div className="th-regen">
+      <button className="th-regen-btn" disabled={busy} onClick={regen}>{busy ? (note || "regenerating…") : "↻ Regenerate from latest findings"}</button>
+      <span className="th-regen-note">rebuilds the read &amp; deck; competitive is re-researched on confirm</span>
+      {err ? <span style={{ color: "var(--p0)", fontSize: ".78rem" }}>{err}</span> : null}
+    </div>
+  );
+}
+
 // ── the Brief ─────────────────────────────────────────────────────────────────
 type Tab = "take" | "reason" | "lines" | "comp" | "deck";
 const TABS: [Tab, string][] = [["take", "The read"], ["reason", "Reasoning map"], ["lines", "Lines of inquiry"], ["comp", "Competitive"], ["deck", "Pitch deck"]];
@@ -831,6 +876,7 @@ export function Brief({ doc, inq, anonymous, id, owner, onRefetchInq }: {
               <button key={t} className={`tab${t === tab ? " on" : ""}`} onClick={() => setTab(t)}>{label}</button>
             ))}
           </div>
+          {owner && id ? <RegenBar id={id} hasComp={!!(comp?.players || []).length} onDone={onRefetchInq} /> : null}
           {tab === "take" ? <TakeTab take={take} />
             : tab === "reason" ? <ReasonTab take={take} lean={lean} />
               : tab === "lines" ? <LinesTab inquiries={inq.inquiries} id={id} owner={owner} onDone={onRefetchInq} />

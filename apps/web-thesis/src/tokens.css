@@ -333,6 +333,12 @@ th { font-family: var(--mono); font-size: .55rem; text-transform: uppercase; let
 .th-cell-empty { color: var(--muted); font-style: italic; font-size: .8rem; }
 .th-comp-tablewrap { margin-top: .8rem; }
 .th-comp-tablewrap summary { font-family: var(--mono); font-size: .7rem; color: var(--gold-strong); cursor: pointer; }
+.th-regen { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; margin: 0 0 1rem; padding: .5rem .65rem; border: 1px dashed var(--hair); border-radius: 10px; background: color-mix(in srgb, var(--gold) 5%, var(--panel)); }
+.th-regen-btn { font-family: var(--mono); font-size: .72rem; font-weight: 600; color: var(--gold-strong); background: color-mix(in srgb, var(--gold) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--gold) 42%, var(--hair)); border-radius: 9px; padding: .4rem .7rem; cursor: pointer; white-space: nowrap; }
+.th-regen-btn:hover:not(:disabled) { background: var(--gold); color: var(--on-accent); border-color: var(--gold); }
+.th-regen-btn:disabled { opacity: .65; cursor: default; }
+.th-regen-note { font-size: .76rem; color: var(--muted); }
+
 .th-comp-addbar { margin-top: .7rem; display: flex; flex-wrap: wrap; gap: .5rem; }
 .linklike { background: none; border: none; color: var(--gold-strong); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
 .th-comp-pick { margin-top: .7rem; border: 1px solid var(--hair); border-left: 3px solid var(--gold); border-radius: 12px; background: var(--panel2); padding: .75rem .85rem; }
