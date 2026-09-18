@@ -213,7 +213,7 @@ export const api = {
     req<RunResp & { selected?: number }>("POST", `/thesis/${enc(id)}/competitive/add`, { names, max_usd, idempotency_key: max_usd > 0 ? "compadd-" + Date.now() : undefined }, id),
 
   // ── voices: first-person founder/investor content relevant to the thesis (Voices corpus) ──
-  voices: (q: string, limit = 14) => req<{ moments: Voice[] }>("POST", "/voices/search", { q, limit }).then((d) => d.moments || []),
+  voices: (q: string, limit = 14, kinds?: string[]) => req<{ moments: Voice[] }>("POST", "/voices/search", { q, limit, ...(kinds && kinds.length ? { kinds } : {}) }).then((d) => d.moments || []),
   voicesOrganize: (id: string, moments: { id: string; kind: string; title?: string; snippet?: string; speaker?: string; show?: string }[], refresh = false) =>
     req<{ status: string; buckets: VoiceBucket[]; cached?: boolean }>("POST", `/thesis/${enc(id)}/voices/organize`, { moments, refresh }, id).then((d) => d.buckets || []),
   voiceSummary: (momentId: string, refresh = false) => req<VoiceSummary>("POST", "/voices/summary", { id: momentId, refresh }),

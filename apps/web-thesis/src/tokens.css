@@ -431,10 +431,15 @@ a.th-cite-src:hover { text-decoration: underline; }
 .vc-head { display: grid; width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 0; font: inherit; color: var(--ink); }
 .vc-thumb { position: relative; aspect-ratio: 16 / 9; background-size: cover; background-position: center;
   background-color: color-mix(in srgb, var(--vt) 88%, black); display: grid; place-items: center; }
-.vc-thumb-icon { font-size: 2rem; filter: grayscale(.1) drop-shadow(0 1px 2px rgba(0,0,0,.3)); }
-.vc-thumb-badge { position: absolute; left: .5rem; bottom: .5rem; font-family: var(--mono); font-size: .58rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #fff; background: rgba(0,0,0,.55); backdrop-filter: blur(2px); border-radius: 6px; padding: .12rem .42rem; }
-.vc-thumb-btn { position: absolute; width: 42px; height: 42px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; display: grid; place-items: center; font-size: 1rem; padding-left: 3px; transition: background .12s, transform .12s; }
+.vc-thumb-icon { position: absolute; font-size: 2.8rem; opacity: .3; }
+.vc-thumb-badge { position: absolute; left: .5rem; bottom: .5rem; display: inline-flex; align-items: center; gap: .22rem; font-family: var(--mono); font-size: .58rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #fff; background: rgba(0,0,0,.6); backdrop-filter: blur(2px); border-radius: 6px; padding: .14rem .44rem; }
+.vc-thumb-btn { position: absolute; width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.58); color: #fff; display: grid; place-items: center; font-size: 1.05rem; transition: background .12s, transform .12s; }
+.vc-btn-play { padding-left: 3px; }        /* optical-centre the ▶ glyph */
+.vc-btn-read { font-size: 1.15rem; }
 .vc-card:hover .vc-thumb-btn { background: var(--vt); transform: scale(1.08); }
+/* a hint of the action on the corner ribbon too, so the type is unmistakable at a glance */
+.vc-play .vc-thumb-badge, .vc-listen .vc-thumb-badge { border-left: 3px solid #ff5a4d; }
+.vc-read .vc-thumb-badge { border-left: 3px solid #64b5a0; }
 .vc-meta { display: grid; gap: .3rem; padding: .65rem .8rem .75rem; }
 .vc-title { font-family: var(--serif); font-weight: 600; font-size: .96rem; line-height: 1.32; overflow-wrap: anywhere; }
 .vc-who { font-size: .75rem; font-weight: 600; color: var(--vt, var(--gold-strong)); line-height: 1.35; }

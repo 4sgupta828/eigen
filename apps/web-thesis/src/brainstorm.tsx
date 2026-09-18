@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type BrainstormThread, type BrainstormMsg, type BsDirection, type BsCard, type Analysis, type Take } from "./api";
 import { PageHead, Working, plain } from "./ui";
 import { Visual } from "./viz";
@@ -36,7 +37,18 @@ const WEAK_LANES: { kind: string; title: string; hint: string; color: string }[]
 ];
 
 export function Brainstorm({ id, take, onExperts }: { id?: string; take?: Take; onExperts: () => void }) {
-  const [threads, setThreads] = useState<BrainstormThread[]>([]);
+  const qc = useQueryClient();
+  // Past brainstorms are loaded via React Query so they RELIABLY reload every time you come back to the
+  // thesis (refetch on mount + window focus, with retries) — a transient failure or a missed remount can
+  // no longer leave the sidebar empty. Optimistic edits write straight into the query cache.
+  const threadsQ = useQuery({
+    queryKey: ["bs-threads", id], queryFn: () => api.bsThreads(id!),
+    enabled: !!id, retry: 2, refetchOnWindowFocus: true, staleTime: 0,
+  });
+  const threads: BrainstormThread[] = threadsQ.data || [];
+  const setThreads = (u: BrainstormThread[] | ((x: BrainstormThread[]) => BrainstormThread[])) =>
+    qc.setQueryData<BrainstormThread[]>(["bs-threads", id], (old) =>
+      typeof u === "function" ? (u as (x: BrainstormThread[]) => BrainstormThread[])(old || []) : u);
   const [tid, setTid] = useState<string>("");
   const [thread, setThread] = useState<BrainstormThread | null>(null);
   const [input, setInput] = useState("");
@@ -58,12 +70,15 @@ export function Brainstorm({ id, take, onExperts }: { id?: string; take?: Take; 
   }, [take]);
   const weakTotal = weakLanes.reduce((n, l) => n + l.items.length, 0);
 
-  // Load the list of past brainstorms, and re-attach a run still in flight after a refresh.
+  // Open the most-recent thread once the list has loaded (unless one is already open, e.g. from a resume).
+  useEffect(() => {
+    if (!tid && threads[0]?.id) select(threads[0].id);
+  }, [threads]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-attach a run still in flight after a refresh / return to the thesis.
   useEffect(() => {
     if (!id) return;
     let alive = true;
-    api.bsThreads(id).then((ts) => { if (!alive) return; setThreads(ts); if (ts[0]?.id && !tid) select(ts[0].id); })
-      .catch(() => { /* first visit: no threads yet */ });
     api.activeRun(id).then((a) => {
       if (!alive || !a.run?.id || a.kind !== "brainstorm" || runId.current) return;
       if (a.thread_id) { setTid(a.thread_id); loadThread(a.thread_id); }
@@ -78,7 +93,7 @@ export function Brainstorm({ id, take, onExperts }: { id?: string; take?: Take; 
   }
   async function select(threadId: string) { setTid(threadId); setErr(""); await loadThread(threadId); }
 
-  async function refreshThreads() { if (id) api.bsThreads(id).then(setThreads).catch(() => {}); }
+  function refreshThreads() { if (id) qc.invalidateQueries({ queryKey: ["bs-threads", id] }); }
 
   function poll(rid: string, threadId: string) {
     if (!id) return;

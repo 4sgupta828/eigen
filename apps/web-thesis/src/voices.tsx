@@ -29,11 +29,24 @@ function topicOf(doc: ThesisDoc): string {
 
 const compact = (m: Voice) => ({ id: m.id, kind: m.kind, title: m.title, snippet: m.text, speaker: m.speaker, show: m.show });
 
+// Two pulls, merged: a general topical search PLUS a podcast/video-only search — so talks and podcasts
+// are always represented even when keyword ranking would otherwise bury them under long essays.
+async function fetchVoices(q: string): Promise<Voice[]> {
+  const [mixed, av] = await Promise.all([
+    api.voices(q, 22),
+    api.voices(q, 10, ["podcast", "video"]),
+  ]);
+  const seen = new Set<string>();
+  const out: Voice[] = [];
+  for (const m of [...av, ...mixed]) if (m.id && !seen.has(m.id)) { seen.add(m.id); out.push(m); }
+  return out;
+}
+
 export function VoicesPanel({ id, doc }: { id?: string; doc: ThesisDoc }) {
   const qc = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const q = useMemo(() => topicOf(doc), [doc]);
-  const vq = useQuery({ queryKey: ["voices", q], queryFn: () => api.voices(q, 30), enabled: !!q });
+  const vq = useQuery({ queryKey: ["voices", q], queryFn: () => fetchVoices(q), enabled: !!q });
   const moments = vq.data || [];
   const byId = useMemo(() => new Map(moments.map((m) => [m.id, m])), [moments]);
 
@@ -45,13 +58,17 @@ export function VoicesPanel({ id, doc }: { id?: string; doc: ThesisDoc }) {
   });
   const buckets: VoiceBucket[] = oq.data || [];
   const organized = buckets.length > 0;
+  // Belt-and-suspenders: whatever the organizer didn't place (podcasts/videos it ignored, or any gap in
+  // the server catch-all) is ALWAYS shown here, so no retrieved piece is ever silently dropped.
+  const placed = useMemo(() => new Set(buckets.flatMap((b) => b.items.map((it) => it.id))), [buckets]);
+  const leftover = moments.filter((m) => !placed.has(m.id));
 
   // Force a fresh pull + re-organization, bypassing both the client cache and the server organize cache.
   async function refresh() {
     if (!q || refreshing) return;
     setRefreshing(true);
     try {
-      const fresh = await api.voices(q, 30);
+      const fresh = await fetchVoices(q);
       qc.setQueryData(["voices", q], fresh);
       if (id && fresh.length) {
         const b = await api.voicesOrganize(id, fresh.map(compact), true);
@@ -86,11 +103,13 @@ export function VoicesPanel({ id, doc }: { id?: string; doc: ThesisDoc }) {
             </div>
           </div>
         );
-      }) : moments.length > 0 && !oq.isLoading ? (
-        // Fallback: organization unavailable → a flat, kind-grouped list.
+      }) : null}
+
+      {/* Everything not placed in a bucket (or the whole list when organization is unavailable). */}
+      {leftover.length && !oq.isLoading ? (
         <div className="vc-group">
-          <div className="vc-bucket-h"><span className="vc-bucket-dot" />Relevant voices</div>
-          <div className="vc-grid">{moments.map((m) => <VoiceCard key={m.id} m={m} />)}</div>
+          <div className="vc-bucket-h"><span className="vc-bucket-dot" />{organized ? "More voices in this space" : "Relevant voices"}</div>
+          <div className="vc-grid">{leftover.map((m) => <VoiceCard key={m.id} m={m} />)}</div>
         </div>
       ) : null}
     </>
@@ -123,13 +142,14 @@ function VoiceCard({ m, why }: { m: Voice; why?: string }) {
     enabled: open && !playable,     // readable pieces summarize on expand; playable pieces embed a player
   });
 
+  const action = yt ? "watch" : audio ? "listen" : "read";
+  const actionText = { watch: "▶ Watch here", listen: "▶ Listen here", read: "📖 Read summary" }[action];
   return (
-    <div className={"vc-card" + (open ? " vc-open" : "")} style={{ ["--vt" as string]: tint }}>
+    <div className={"vc-card vc-" + action + (open ? " vc-open" : "")} style={{ ["--vt" as string]: tint }}>
       <button className="vc-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <div className={"vc-thumb" + (playable ? " vc-thumb-play" : "")}
-          style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}>
+        <div className="vc-thumb" style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}>
           {!thumb ? <span className="vc-thumb-icon">{meta.icon}</span> : null}
-          {playable ? <span className="vc-thumb-btn">▶</span> : null}
+          <span className={"vc-thumb-btn vc-btn-" + (playable ? "play" : "read")}>{playable ? "▶" : "📖"}</span>
           <span className="vc-thumb-badge">{meta.icon} {meta.label}</span>
         </div>
         <div className="vc-meta">
@@ -137,7 +157,7 @@ function VoiceCard({ m, why }: { m: Voice; why?: string }) {
           {who ? <div className="vc-who">{who}</div> : null}
           {why ? <div className="vc-why">{why}</div> : (m.text ? <div className="vc-snip">{m.text}</div> : null)}
           <div className="vc-foot">
-            <span className="vc-act">{playable ? (yt ? "▶ Watch here" : "▶ Listen here") : "⌄ Read summary"}</span>
+            <span className="vc-act">{actionText}</span>
             {date ? <span className="vc-date">{date}</span> : null}
           </div>
         </div>
