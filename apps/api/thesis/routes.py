@@ -1286,7 +1286,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         if run:
             m = run.get("metadata") or {}
             kind = ("generate" if m.get("generate") else "regenerate" if m.get("regenerate")
-                    else "competitive" if m.get("competitive") else "research")
+                    else "deck" if m.get("deck") else "competitive" if m.get("competitive") else "research")
         return {"run": run, "kind": kind}
 
     async def _landscape_scan(d: dict, *, light: bool = False) -> dict:
@@ -1678,18 +1678,45 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         return {"status": "ok", "take": result.get("take"), "deck": _d.get("pitch_deck") or {},
                 "competitive": _d.get("competitive") or {}, "findings": result.get("findings", 0)}
 
+    async def _run_deck(thesis_id: str, run_id: str):
+        """Build the Startup Pitch Deck in the BACKGROUND (founder-voice synthesis over the findings) so the
+        Pitch Deck CTA never blocks or dangles. Stoppable like any run."""
+        pool = await pool_of()
+        try:
+            if _profile() is None:
+                await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="setup",
+                                      error={"reason": "no decision profile is configured"})
+                return
+            rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+            if (rn or {}).get("state") == "cancelled":
+                return
+            await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json())
+            rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+            if (rn or {}).get("state") == "cancelled":
+                return
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed", state="completed")
+        except Exception as exc:      # noqa: BLE001 — fail closed; never corrupt state
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                  error={"reason": "deck build failed", "detail": str(exc)[:300]})
+
     @r.post("/thesis/{thesis_id}/deck")
     async def tl_deck(thesis_id: str, authorization: str = Header(default=""),
                       x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
-        """Generate the Startup Pitch Deck from the existing findings — a SEPARATE, on-demand artifact
-        (owner direction), available after the Collective Take exists. Free (one grounded synth call).
-        Runs on the DEEP-THINKING reasoning seam (like the Take): the founder-voice pitch is a
-        connect-the-dots synthesis, not a fast extraction."""
+        """Kick off the Startup Pitch Deck build as an async, stoppable background run; the client polls
+        status. Founder-voice synthesis over the findings — a separate, on-demand artifact."""
         pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
         if _profile() is None:
             raise HTTPException(status_code=409, detail="no decision profile is configured")
-        result = await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json())
-        return {"status": "ok", "deck": result.get("deck"), "findings": result.get("findings", 0)}
+        key = "deck-" + tstore.new_idempotency_key()
+        try:
+            run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
+                                          projected_usd=0.0, approved_usd=1.0,
+                                          metadata={"deck": True, "questions": [], "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="drafting", state="running")
+        asyncio.create_task(_run_deck(thesis_id, run["id"]))
+        return {"status": "running", "run": run}
 
     async def _run_regenerate(thesis_id: str, run_id: str):
         """Rebuild the Collective Take + Pitch Deck from the current findings in the BACKGROUND — a

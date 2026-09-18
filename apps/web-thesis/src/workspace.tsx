@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { Stepper, go, Loading, ErrState } from "./ui";
@@ -25,15 +25,16 @@ function TopBar({ crumb }: { crumb?: ReactNode }) {
   );
 }
 
-export function Workspace({ id, token }: { id: string; token?: string }) {
+export function Workspace({ id, token, step }: { id: string; token?: string; step?: string }) {
   const qc = useQueryClient();
   const tq = useQuery({ queryKey: ["thesis", id, token || ""], queryFn: () => api.thesis(id, token || undefined) });
   const doc = tq.data;
   const isDraft = !!doc && !(doc.claims || []).length;
   const iq = useQuery({ queryKey: ["inq", id, token || ""], queryFn: () => api.inquiries(id, token || undefined), enabled: !!doc && !isDraft });
   const tested = doc?.research_status === "completed" || (iq.data?.inquiries || []).some((i) => (i.questions || []).some((q) => q.target_status));
-  const [stage, setStage] = useState<string>("");
-  const active = stage || (tested ? "brief" : "plan");
+  // The active step lives in the URL (?step=…) so a browser refresh stays on the same step.
+  const active = step || (tested ? "brief" : "plan");
+  const setStage = (s: string) => go(`#thesis/${encodeURIComponent(id)}?step=${s}${token ? `&share=${encodeURIComponent(token)}` : ""}`);
 
   const reloadInq = () => qc.invalidateQueries({ queryKey: ["inq", id] });
   const reloadDoc = () => { qc.invalidateQueries({ queryKey: ["thesis", id] }); reloadInq(); };

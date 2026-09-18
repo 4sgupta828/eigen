@@ -168,7 +168,7 @@ export const api = {
   cancelRun: (id: string, run?: string) => req<{ status: string; run_id?: string | null }>("POST", `/thesis/${enc(id)}/inquiry/cancel${run ? `?run=${enc(run)}` : ""}`, {}, id),
   activeRun: (id: string) => getJSON<{ run: Run | null; kind: string }>(`/thesis/${enc(id)}/inquiry/active`, id),
   synthesize: (id: string) => req<{ status: string; take?: Take; deck?: Deck; competitive?: Competitive; findings?: number }>("POST", `/thesis/${enc(id)}/synthesize`, undefined, id),
-  buildDeck: (id: string) => req<{ status: string; deck?: Deck; findings?: number }>("POST", `/thesis/${enc(id)}/deck`, undefined, id),
+  buildDeck: (id: string) => req<RunResp>("POST", `/thesis/${enc(id)}/deck`, undefined, id),
   // rebuild the read (take) + deck as ONE async, stoppable background run
   regenerate: (id: string) => req<RunResp>("POST", `/thesis/${enc(id)}/regenerate`, undefined, id),
 

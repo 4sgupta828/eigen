@@ -12,7 +12,7 @@ type Route =
   | { name: "board" }
   | { name: "boardEntry"; id: string }
   | { name: "view"; id: string; token: string }
-  | { name: "thesis"; id: string; token: string };
+  | { name: "thesis"; id: string; token: string; step: string };
 
 function parseHash(hash: string): Route {
   const h = hash.replace(/^#/, "");
@@ -25,8 +25,8 @@ function parseHash(hash: string): Route {
   }
   if (h.indexOf("thesis/") === 0) {
     const raw = h.slice(7); const [id, qs] = raw.split("?");
-    const share = new URLSearchParams(qs || "").get("share") || "";
-    return { name: "thesis", id: decodeURIComponent(id || ""), token: share };
+    const p = new URLSearchParams(qs || "");
+    return { name: "thesis", id: decodeURIComponent(id || ""), token: p.get("share") || "", step: p.get("step") || "" };
   }
   return { name: "home" };
 }
@@ -118,7 +118,7 @@ export function App() {
     case "board": return <BoardGallery />;
     case "boardEntry": return r.id ? <BoardEntryView id={r.id} /> : <BoardGallery />;
     case "view": return <Workspace id={r.id} token={r.token} />;
-    case "thesis": return <Workspace id={r.id} token={r.token} />;
+    case "thesis": return <Workspace id={r.id} token={r.token} step={r.step} />;
     default: return <Home />;
   }
 }

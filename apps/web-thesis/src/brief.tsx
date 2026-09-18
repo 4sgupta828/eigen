@@ -971,8 +971,59 @@ export function ReasoningPanel({ doc, inq, anonymous }: PanelProps) {
 export function CompetitivePanel({ doc, inq, anonymous, id, owner, onRefetchInq }: PanelProps) {
   return <BriefShell doc={doc} inq={inq} anonymous={anonymous}><CompTab comp={compOf(doc, inq)} id={id} owner={owner} onDone={onRefetchInq} /></BriefShell>;
 }
-export function DeckPanel({ doc, inq, anonymous }: PanelProps) {
-  return <BriefShell doc={doc} inq={inq} anonymous={anonymous}><DeckTab deck={deckOf(doc, inq)} /></BriefShell>;
+// Owner CTA to build (or rebuild) the Pitch Deck — an async, stoppable run, resumed after a refresh.
+function DeckBar({ id, hasDeck, onDone }: { id?: string; hasDeck?: boolean; onDone?: () => void }) {
+  const [busy, setBusy] = useState(false); const [note, setNote] = useState(""); const [err, setErr] = useState("");
+  const timer = useRef<number | null>(null); const runId = useRef<string | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  useEffect(() => {
+    let alive = true; if (!id) return;
+    api.activeRun(id).then((a) => {
+      if (!alive || !a.run?.id || a.kind !== "deck" || runId.current) return;
+      setBusy(true); setNote("building the pitch deck…"); runId.current = a.run.id; poll(a.run.id);
+    }).catch(() => { /* nothing in flight */ });
+    return () => { alive = false; };
+  }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  function poll(rid: string) {
+    if (!id) return;
+    api.inquiryStatus(id, rid).then((s) => {
+      if (s.state === "completed" || s.state === "cancelled") { runId.current = null; setBusy(false); setNote(""); onDone?.(); return; }
+      if (s.state === "failed") { runId.current = null; setBusy(false); setErr("deck build failed — try again"); return; }
+      setNote("building the pitch deck…");
+      timer.current = window.setTimeout(() => poll(rid), 2500);
+    }).catch(() => { timer.current = window.setTimeout(() => poll(rid), 3000); });
+  }
+  async function build() {
+    if (!id || busy) return; setErr(""); setBusy(true); setNote("starting…");
+    try {
+      const r = await api.buildDeck(id);
+      if (!r.run?.id) { onDone?.(); setBusy(false); setNote(""); return; }
+      runId.current = r.run.id; poll(r.run.id);
+    } catch (e) { setBusy(false); setNote(""); setErr((e as Error).message); }
+  }
+  async function stop() { setNote("stopping…"); try { await api.cancelRun(id!, runId.current || undefined); } catch { /* poll settles it */ } }
+  if (!id) return null;
+  return (
+    <div className="th-regen">
+      {busy ? (
+        <><Working text={note || "building the pitch deck…"} /><button className="th-regen-btn" onClick={stop}>■ Stop</button></>
+      ) : (
+        <><button className="th-regen-btn" onClick={build}>{hasDeck ? "↻ Regenerate the pitch deck" : "✨ Generate the pitch deck"}</button>
+          <span className="th-regen-note">a founder-voice pitch built from your findings</span></>
+      )}
+      {err ? <span style={{ color: "var(--p0)", fontSize: ".78rem" }}>{err}</span> : null}
+    </div>
+  );
+}
+export function DeckPanel({ doc, inq, anonymous, id, owner, onRefetchInq }: PanelProps) {
+  const deck = deckOf(doc, inq);
+  const hasDeck = !!(deck?.spine || (deck?.sections || []).length);
+  return (
+    <BriefShell doc={doc} inq={inq} anonymous={anonymous}>
+      {owner && id ? <DeckBar id={id} hasDeck={hasDeck} onDone={onRefetchInq} /> : null}
+      <DeckTab deck={deck} />
+    </BriefShell>
+  );
 }
 export function LinesPanel({ doc, inq, anonymous, id, owner, onRefetchInq }: PanelProps) {
   return <BriefShell doc={doc} inq={inq} anonymous={anonymous}><LinesTab inquiries={inq.inquiries} id={id} owner={owner} onDone={onRefetchInq} /></BriefShell>;
