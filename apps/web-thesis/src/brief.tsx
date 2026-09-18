@@ -987,10 +987,16 @@ function BriefShell({ doc, inq, anonymous, children }: { doc: ThesisDoc; inq: In
       <CiteHover hover={hover} />
       <div className="briefgrid">
         <div className="memo">
-          <div className="mono muted" style={{ fontSize: ".7rem", marginBottom: ".3rem" }}>
-            Thesis under test{anonymous ? " · anonymized board view" : ""}
-          </div>
-          <h1 className="memo-thesis">{doc.thesis}</h1>
+          {/* The owner sees the thesis in the persistent bar on every step; only the shared/anonymous
+              board view (which has no bar) shows the full heading here. */}
+          {anonymous ? (
+            <>
+              <div className="mono muted" style={{ fontSize: ".7rem", marginBottom: ".3rem" }}>
+                Thesis under test · anonymized board view
+              </div>
+              <h1 className="memo-thesis">{doc.thesis}</h1>
+            </>
+          ) : null}
           {children}
         </div>
         <aside className="rail"><Drawer view={view} /></aside>

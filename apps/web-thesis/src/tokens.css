@@ -33,6 +33,13 @@ button { font-family: inherit; }
 .c-verdict { border: 1.5px solid var(--intent); color: var(--intent); }
 
 .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 22px 48px; }
+/* persistent "thesis under test" reference on every step — prominent but compact, scrolls if long */
+.thesis-wrap { padding-block: 16px 0; }
+.thesis-bar { display: flex; gap: .75rem; align-items: flex-start; border: 1px solid var(--hair); border-left: 3px solid var(--gold); border-radius: 10px; background: color-mix(in srgb, var(--gold) 5%, var(--panel)); padding: .55rem .8rem; max-height: 84px; overflow-y: auto; }
+.thesis-bar-k { font-family: var(--mono); font-size: .55rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--gold-strong); line-height: 1.3; flex: none; padding-top: .15rem; }
+.thesis-bar-t { margin: 0; font-family: var(--serif); font-size: .98rem; line-height: 1.5; color: var(--ink); }
+.thesis-bar::-webkit-scrollbar { width: 8px; }
+.thesis-bar::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--gold) 30%, var(--hair)); border-radius: 4px; }
 .briefgrid { display: grid; grid-template-columns: 1fr 372px; gap: 20px; align-items: start; }
 .memo { min-width: 0; }
 .memo-thesis { font-family: var(--serif); font-weight: 400; font-size: 1.06rem; line-height: 1.6; color: var(--ink); margin: 0 0 .85rem; padding-left: .85rem; border-left: 2px solid var(--hair); }

@@ -57,6 +57,12 @@ export function Workspace({ id, token, step }: { id: string; token?: string; ste
     <>
       <TopBar crumb={<><span style={{ cursor: "pointer" }} onClick={() => go("")}>My theses</span> · <b>{(doc.thesis || "").slice(0, 40)}…</b></>} />
       <Stepper stages={STAGES} active={active} onNav={setStage} />
+      {doc.thesis ? (
+        <div className="wrap thesis-wrap"><div className="thesis-bar">
+          <span className="thesis-bar-k">Thesis<br />under test</span>
+          <p className="thesis-bar-t">{doc.thesis}</p>
+        </div></div>
+      ) : null}
       <div className="wrap">
         {active === "plan" ? <Plan id={id} inquiries={inqs} onReload={reloadInq} onRun={() => setStage("run")} />
           : active === "run" ? (<><Run id={id} onDone={reloadDoc} />{tested ? <LinesPanel {...panel} /> : null}</>)
@@ -66,7 +72,7 @@ export function Workspace({ id, token, step }: { id: string; token?: string; ste
                   : active === "deck" ? <DeckPanel {...panel} />
                     : active === "brainstorm" ? <Brainstorm id={id} take={take} onExperts={() => setStage("experts")} />
                       : active === "experts" ? <Experts id={id} inquiries={inqs} />
-                        : active === "voices" ? <VoicesPanel id={id} doc={doc} inquiries={inqs} />
+                        : active === "voices" ? <VoicesPanel id={id} doc={doc} />
                           : <Share id={id} doc={doc} onChanged={reloadDoc} />}
       </div>
     </>

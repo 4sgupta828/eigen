@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, type ThesisDoc, type Inquiry, type Voice, type VoiceBucket, type VoiceSummary } from "./api";
+import { api, type ThesisDoc, type Voice, type VoiceBucket, type VoiceSummary } from "./api";
 import { PageHead, Loading, Working } from "./ui";
 
 // Voices — first-person founders & investors on this thesis's space (podcasts, talks, blogs, essays)
@@ -17,17 +17,20 @@ const KIND_META: Record<string, { label: string; icon: string }> = {
   chapter: { label: "Moment", icon: "⏱" },
 };
 
-function topicOf(doc: ThesisDoc, inquiries?: Inquiry[]): string {
+// A SHORT, topical query. Voices ranking is keyword-based: a long, many-term query over-constrains it
+// and biases toward the longest documents (essays), starving podcasts and videos — so keep it to a few
+// salient words from the subject (NOT the lines of inquiry, whose generic names dilute the topic).
+function topicOf(doc: ThesisDoc): string {
   const subj = Object.values(doc.subject || {}).map((v) => String(v || "").trim()).filter(Boolean).join(" ");
-  const lines = (inquiries || []).map((i) => String(i.name || "").trim()).filter(Boolean).slice(0, 4).join(" ");
-  const base = [subj, lines].filter(Boolean).join(" ") || (doc.thesis || "").split(/\s+/).slice(0, 12).join(" ");
-  return base.slice(0, 180);
+  let q = subj.trim();
+  if (q.split(/\s+/).filter(Boolean).length < 3) q = `${q} ${doc.thesis || ""}`.trim();
+  return q.split(/\s+/).filter(Boolean).slice(0, 8).join(" ").slice(0, 90);
 }
 
 const compact = (m: Voice) => ({ id: m.id, kind: m.kind, title: m.title, snippet: m.text, speaker: m.speaker, show: m.show });
 
-export function VoicesPanel({ id, doc, inquiries }: { id?: string; doc: ThesisDoc; inquiries?: Inquiry[] }) {
-  const q = useMemo(() => topicOf(doc, inquiries), [doc, inquiries]);
+export function VoicesPanel({ id, doc }: { id?: string; doc: ThesisDoc }) {
+  const q = useMemo(() => topicOf(doc), [doc]);
   const vq = useQuery({ queryKey: ["voices", q], queryFn: () => api.voices(q, 30), enabled: !!q });
   const moments = vq.data || [];
   const byId = useMemo(() => new Map(moments.map((m) => [m.id, m])), [moments]);
