@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type Inquiry, type Question } from "./api";
+import { api, type Inquiry, type Question, type RunPlan } from "./api";
 import { PageHead, Working } from "./ui";
 
 const verdictClass = (q: Question) => (q.target_status?.includes("contradict") ? "v-con" : q.target_status ? "v-sup" : "v-open");
@@ -124,100 +124,144 @@ export function Plan({ id, inquiries, onReload, onRun }: {
   );
 }
 
-type RunPhase = { k: "projecting" } | { k: "done_already" } | { k: "gate"; usd: number; claims: number }
-  | { k: "running"; runId: string; done: number; total: number; stage: string } | { k: "finished" } | { k: "stopped" } | { k: "error"; msg: string };
+type RunPhase = { k: "loading" } | { k: "idle" }
+  | { k: "gate"; level: number | "all"; usd: number; count: number }
+  | { k: "running"; done: number; total: number; stage: string } | { k: "error"; msg: string };
 
 export function Run({ id, onDone }: { id: string; onDone: () => void }) {
-  const [phase, setPhase] = useState<RunPhase>({ k: "projecting" });
+  const [plan, setPlan] = useState<RunPlan | null>(null);
+  const [phase, setPhase] = useState<RunPhase>({ k: "loading" });
   const timer = useRef<number | null>(null);
+
+  async function loadPlan() { try { setPlan(await api.runPlan(id)); } catch { /* keep prior */ } }
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      // Re-attach a research run that's already in flight (e.g. after a page refresh) instead of losing
-      // its progress — the run keeps going server-side.
+      await loadPlan();
       try {
-        const a = await api.activeRun(id);
+        const a = await api.activeRun(id);   // re-attach an in-flight research run after a refresh
         if (!alive) return;
-        if (a.run?.id && a.kind === "research") {
-          setPhase({ k: "running", runId: a.run.id, done: 0, total: 0, stage: a.run.stage || "" });
-          poll(a.run.id); return;
-        }
-      } catch { /* fall through to projecting */ }
-      try {
-        const r = await api.projectRun(id);
-        if (!alive) return;
-        if (r.status === "synthesized" || r.status === "completed") setPhase({ k: "done_already" });
-        else if (r.projection) setPhase({ k: "gate", usd: r.projection.projected_usd || 0, claims: r.projection.claims || 0 });
-        else setPhase({ k: "gate", usd: 0, claims: 0 });
-      } catch (e) { if (alive) setPhase({ k: "error", msg: (e as Error).message }); }
+        if (a.run?.id && a.kind === "research") { setPhase({ k: "running", done: 0, total: 0, stage: a.run.stage || "" }); poll(); return; }
+      } catch { /* nothing in flight */ }
+      if (alive) setPhase({ k: "idle" });
     })();
     return () => { alive = false; if (timer.current) window.clearTimeout(timer.current); };
-  }, [id]);
+  }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  function poll(runId: string) {
-    api.inquiryStatus(id, runId).then((s) => {
-      if (s.state === "completed") { setPhase({ k: "finished" }); onDone(); return; }
-      if (s.state === "cancelled") { setPhase({ k: "stopped" }); onDone(); return; }
-      if (s.state === "failed") { setPhase({ k: "error", msg: "the run failed — you can retry" }); return; }
-      setPhase({ k: "running", runId, done: s.done || 0, total: s.total || 0, stage: s.stage || "" });
-      timer.current = window.setTimeout(() => poll(runId), 2500);
-    }).catch(() => { timer.current = window.setTimeout(() => poll(runId), 3000); });
+  function poll() {
+    api.activeRun(id).then((a) => {
+      if (!a.run?.id) return finish();   // run cleared → done
+      api.inquiryStatus(id, a.run!.id).then((s) => {
+        if (s.state === "completed" || s.state === "cancelled") return finish();
+        if (s.state === "failed") { setPhase({ k: "error", msg: "the run failed — you can retry" }); return; }
+        setPhase({ k: "running", done: s.done || 0, total: s.total || 0, stage: s.stage || "" });
+        timer.current = window.setTimeout(poll, 2500);
+      }).catch(() => { timer.current = window.setTimeout(poll, 3000); });
+    }).catch(() => { timer.current = window.setTimeout(poll, 3000); });
   }
-  async function stop() {
-    try { await api.cancelRun(id); } catch { /* the poll will settle to stopped */ }
-  }
+  async function finish() { await loadPlan(); setPhase({ k: "idle" }); onDone(); }
+  async function stop() { try { await api.cancelRun(id); } catch { /* poll settles */ } }
 
-  async function start(critical: boolean) {
-    const budget = phase.k === "gate" ? Math.max(1, phase.usd + 0.5) : 5;
-    setPhase({ k: "running", runId: "", done: 0, total: 0, stage: "starting…" });
+  // Project the layer's cost (max_usd 0 → refused+projection), then show a compact confirm.
+  async function projectLayer(level: number | "all") {
+    setPhase({ k: "loading" });
     try {
-      const r = critical ? await api.runCritical(id, budget, 0) : await api.runAll(id, budget);
-      if (r.status === "synthesized" || r.status === "completed") { setPhase({ k: "finished" }); onDone(); return; }
-      if (r.run?.id) poll(r.run.id);
+      const r = level === "all" ? await api.projectRun(id) : await api.runCritical(id, 0, level);
+      if (r.status === "synthesized" || r.status === "completed") { await finish(); return; }
+      const count = r.selected ?? r.projection?.claims ?? 0;
+      setPhase({ k: "gate", level, usd: r.projection?.projected_usd || 0, count });
+    } catch (e) { setPhase({ k: "error", msg: (e as Error).message }); }
+  }
+  async function runLayer(level: number | "all", usd: number) {
+    const budget = Math.max(1, usd + 0.5);
+    setPhase({ k: "running", done: 0, total: 0, stage: "starting…" });
+    try {
+      const r = level === "all" ? await api.runAll(id, budget) : await api.runCritical(id, budget, level);
+      if (r.status === "synthesized" || r.status === "completed") { await finish(); return; }
+      if (r.run?.id) poll();
       else setPhase({ k: "error", msg: r.status === "refused" ? "cost exceeded the budget" : "could not start the run" });
     } catch (e) { setPhase({ k: "error", msg: (e as Error).message }); }
   }
 
+  const levels = plan?.levels || [];
+  const started = (plan?.answered || 0) > 0;
+  const nextLevel = plan?.next_level ?? null;
+  const nextLabel = nextLevel !== null ? (levels.find((l) => l.level === nextLevel)?.label || `P${nextLevel}`) : "";
+
   return (
     <>
-      <PageHead title="Run the research" sub="Credits are shared and scarce, so every run is projected and gated. Approve the spend, or run just the P0 crux first." />
-      {phase.k === "projecting" ? <div className="state">projecting cost…</div>
-        : phase.k === "done_already" ? (
-          <div className="gate"><div className="lbl">Research complete</div><p style={{ margin: ".4rem 0 0" }}>Every question is answered — the lines of inquiry are below. Re-run any single question there, or regenerate the read from the Brief.</p></div>
-        ) : phase.k === "gate" ? (
-          <div className="gate">
-            <div className="lbl">Projected cost</div>
-            <div className="big">${phase.usd.toFixed(2)}</div>
-            <div className="breakdown">
-              <div className="bd"><div className="lbl">Questions</div><div className="n">{phase.claims || "—"}</div></div>
-              <div className="bd"><div className="lbl">Legs</div><div className="n">corpus + web</div></div>
-            </div>
-            <p className="muted" style={{ fontSize: ".84rem" }}>No partial answers: it runs end-to-end, then synthesizes the Take, Reasoning map, Competitive and Deck.</p>
-            <div className="row" style={{ marginTop: ".9rem" }}>
-              <button className="btn" onClick={() => start(false)}>Approve &amp; run · ${Math.max(1, phase.usd + 0.5).toFixed(2)}</button>
-              <button className="btn sec" onClick={() => start(true)}>Run P0 crux only</button>
-            </div>
+      <PageHead title="Run the research" sub="Answer the lines of inquiry in layers — the P0 crux first, then broaden one layer at a time. Each layer only researches un-answered questions, then refreshes the Brief, Reasoning Map and Take." />
+
+      {plan && plan.total > 0 ? (
+        <div className="runplan">
+          <div className="runplan-head">
+            <span className="runplan-count"><b>{plan.answered}</b> of {plan.total} questions answered</span>
+            {plan.remaining > 0 ? <span className="runplan-rem">{plan.remaining} remaining</span> : <span className="runplan-done">✓ all answered</span>}
           </div>
-        ) : phase.k === "running" ? (
+          <div className="runplan-levels">
+            {levels.map((l) => {
+              const pct = l.total ? Math.round((l.answered / l.total) * 100) : 0;
+              const isNext = l.level === nextLevel;
+              return (
+                <div key={l.level} className={"runplan-lvl" + (l.remaining === 0 ? " full" : "") + (isNext ? " next" : "")}>
+                  <div className="runplan-lvl-h">
+                    <span className="runplan-lvl-name">{l.remaining === 0 ? "✓ " : ""}{l.label}</span>
+                    <span className="runplan-lvl-n">{l.answered}/{l.total}</span>
+                  </div>
+                  <div className="runplan-bar"><i style={{ width: `${pct}%` }} /></div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {phase.k === "loading" ? <div className="state">loading…</div>
+        : phase.k === "running" ? (
           <div className="gate">
             <div className="lbl" style={{ display: "flex", alignItems: "center", gap: ".4rem" }}><Working text="Researching" /></div>
             <div className="row" style={{ justifyContent: "space-between", margin: ".3rem 0 .6rem" }}>
-              <span className="serif" style={{ fontSize: "1.05rem" }}>{phase.total ? `${phase.done} of ${phase.total} questions` : "starting…"} · then synthesizing</span>
+              <span className="serif" style={{ fontSize: "1.05rem" }}>{phase.total ? `${phase.done} of ${phase.total} questions this run` : "starting…"} · then refreshing the read</span>
               <span className="mono muted">{phase.stage}</span>
             </div>
             <div className="progress"><i style={{ width: `${phase.total ? Math.round((phase.done / phase.total) * 100) : 8}%` }} /></div>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginTop: ".7rem" }}>
-              <p className="muted" style={{ fontSize: ".84rem", margin: 0 }}>Corpus + web · verbatim span-check on every claim · sentiment kept as signal.</p>
+              <p className="muted" style={{ fontSize: ".82rem", margin: 0 }}>Corpus + web · verbatim span-check on every claim · already-answered questions are skipped.</p>
               <button className="btn sec" onClick={stop}>■ Stop</button>
             </div>
           </div>
-        ) : phase.k === "finished" ? (
-          <div className="gate"><div className="lbl">Done</div><p style={{ margin: ".4rem 0 0" }}>Research complete — the lines of inquiry are below. Open <b>Brief</b> for the synthesized read.</p></div>
-        ) : phase.k === "stopped" ? (
-          <div className="gate"><div className="lbl">Stopped</div><p style={{ margin: ".4rem 0 0" }}>Research stopped. The questions already answered are kept and shown below — re-run any of them to continue.</p></div>
+        ) : phase.k === "gate" ? (
+          <div className="gate">
+            <div className="lbl">{phase.level === "all" ? "Run everything remaining" : `Run ${levels.find((l) => l.level === phase.level)?.label || "the next layer"}`}</div>
+            <p className="serif" style={{ fontSize: "1.05rem", margin: ".3rem 0 .1rem" }}>{phase.count} un-answered question{phase.count === 1 ? "" : "s"} · then the Brief, Reasoning Map &amp; Take refresh.</p>
+            <p className="muted" style={{ fontSize: ".8rem", margin: ".2rem 0 0" }}>Already-answered questions are skipped. <span className="runplan-cost">est. ~${(phase.usd).toFixed(2)} · corpus + web</span></p>
+            <div className="row" style={{ marginTop: ".8rem" }}>
+              <button className="btn" onClick={() => runLayer(phase.level, phase.usd)}>Run these {phase.count} →</button>
+              <button className="btn sec" onClick={() => setPhase({ k: "idle" })}>Cancel</button>
+            </div>
+          </div>
+        ) : phase.k === "error" ? (
+          <div className="gate"><p style={{ color: "var(--p0)" }}>{phase.msg}</p><button className="btn sec" onClick={() => { setPhase({ k: "idle" }); loadPlan(); }}>Retry</button></div>
+        ) : plan && plan.all_answered ? (
+          <div className="gate"><div className="lbl">✓ Research complete</div><p style={{ margin: ".4rem 0 0" }}>Every question is answered. The lines of inquiry are below; the synthesized read is in <b>Brief</b>. Re-run any single question below to refresh it.</p></div>
         ) : (
-          <div className="gate"><p style={{ color: "var(--p0)" }}>{phase.msg}</p><button className="btn sec" onClick={() => setPhase({ k: "projecting" })}>Retry</button></div>
+          <div className="gate">
+            {nextLevel !== null ? (
+              <>
+                <div className="lbl">{started ? "Deepen the research" : "Start with the crux"}</div>
+                <p className="serif" style={{ fontSize: "1.06rem", margin: ".3rem 0 .5rem" }}>
+                  {started ? <>Next layer: <b>{nextLabel}</b> — {plan?.next_run} un-answered question{plan?.next_run === 1 ? "" : "s"}.</>
+                    : <>Run the <b>P0 crux</b> first — the {plan?.next_run} question{plan?.next_run === 1 ? "" : "s"} whose answers most move the call.</>}
+                </p>
+                <div className="row">
+                  <button className="btn" onClick={() => projectLayer(nextLevel)}>{started ? `Run ${nextLabel} →` : "Run the P0 crux →"}</button>
+                  {plan && plan.remaining > (plan.next_run || 0) ? <button className="btn sec" onClick={() => projectLayer("all")}>Run all {plan.remaining} remaining</button> : null}
+                </div>
+                <p className="muted" style={{ fontSize: ".8rem", margin: ".6rem 0 0" }}>Each layer only researches un-answered questions, then refreshes the Brief, Reasoning Map &amp; Take — nothing already answered is re-run.</p>
+              </>
+            ) : <p className="muted">Draft the lines of inquiry first, on the Plan step.</p>}
+          </div>
         )}
     </>
   );

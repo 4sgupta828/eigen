@@ -21,6 +21,19 @@ from eigen_kernel.decision import compose_deck, compose_memo
 from . import store as tstore
 
 
+def _take_substantive(take: dict) -> bool:
+    """True if a collective take actually has content — a bottom line, or a section with grounded facts
+    or reasoning. Used to refuse to overwrite a real take with a blank one from a failed re-synthesis."""
+    if not take or take.get("empty"):
+        return False
+    if (take.get("bottom_line") or {}).get("text"):
+        return True
+    for s in (take.get("sections") or []):
+        if (s.get("grounded") or []) or (s.get("analysis") or []):
+            return True
+    return False
+
+
 def _deck_substantive(deck: dict) -> bool:
     """True if a deck actually has content — a spine or at least one section with a headline or points.
     Used to refuse to overwrite a real deck with a blank one from a failed/empty rebuild."""
@@ -109,7 +122,11 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
     take_llm = take_llm_json or llm_json
     take_dir, take_secs = profile.collective_take_spec()
     thesis, subject, findings = await _load_findings(pool, thesis_id, profile)
+    existing = ((await tstore.get(pool, thesis_id=thesis_id, trusted=True)) or {}).get("collective_take") or {}
     if not findings:
+        # A transient 0-findings must never wipe a take that was built when findings existed.
+        if _take_substantive(existing):
+            return {"take": existing, "findings": 0}
         take_obj = _empty_take(take_secs)
         await tstore.set_collective_take(pool, thesis_id, take_obj)
         return {"take": take_obj, "findings": 0}
@@ -119,6 +136,10 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
     n = len(findings)
     take_obj = {"bottom_line": take.get("bottom_line") or {"text": "", "markers": ""},
                 "sections": take.get("sections") or [], "empty": False, "generated_at": now, "findings": n}
+    # A blank re-synthesis (LLM hiccup, or every unit dropped by the gate) must not clobber a good take —
+    # otherwise broadening from P0 to P1/P2 makes the brief + reasoning map "disappear" until a rebuild.
+    if not _take_substantive(take_obj) and _take_substantive(existing):
+        return {"take": existing, "findings": n}
     await tstore.set_collective_take(pool, thesis_id, take_obj)
     return {"take": take_obj, "findings": n}
 

@@ -1975,6 +1975,39 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         asyncio.create_task(_run_all(thesis_id, run["id"], body.web, subset))
         return {"status": "running", "run": run, "selected": len(subset)}
 
+    @r.get("/thesis/{thesis_id}/inquiries/run_plan")
+    async def tl_run_plan(thesis_id: str, authorization: str = Header(default=""),
+                          x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Per-priority-level progress over the evidence questions — how many are answered vs remaining at
+        each level (P0 crux → P1 → P2 …) and which layer to run next. Drives the layered Run UI so the
+        author sees what's done, what's left, and can deepen one layer at a time."""
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner)
+        qs = await tstore.list_questions(pool, thesis_id)
+        ev = _evidence_questions(_profile(), qs) if _profile() else qs
+        labels = {0: "P0 · the crux", 1: "P1 · core coverage", 2: "P2 · deeper coverage"}
+        tot: dict[int, int] = {}
+        ans: dict[int, int] = {}
+        for q in ev:
+            lvl = int(q.get("priority") or 1)
+            tot[lvl] = tot.get(lvl, 0) + 1
+            if q.get("target_status"):
+                ans[lvl] = ans.get(lvl, 0) + 1
+        levels = [{"level": l, "label": labels.get(l, f"P{l} · further"), "total": tot[l],
+                   "answered": ans.get(l, 0), "remaining": tot[l] - ans.get(l, 0)} for l in sorted(tot)]
+        answered = sum(ans.values())
+        total = sum(tot.values())
+        next_level = next((l for l in sorted(tot) if ans.get(l, 0) < tot[l]), None)
+        # run_critical(next_level) runs EVERY unrun question with priority <= next_level (so it also mops up
+        # any straggler from an earlier level), which is exactly what the "run next layer" button triggers.
+        next_run = (sum(tot[l] - ans.get(l, 0) for l in tot if l <= next_level)
+                    if next_level is not None else 0)
+        take = d.get("collective_take") or {}
+        has_take = bool((take.get("bottom_line") or {}).get("text") or (take.get("sections") and any(
+            (s.get("grounded") or s.get("analysis")) for s in take.get("sections") or [])))
+        return {"status": "ok", "levels": levels, "answered": answered, "total": total,
+                "remaining": total - answered, "all_answered": total > 0 and answered >= total,
+                "next_level": next_level, "next_run": next_run, "has_take": has_take}
+
     @r.post("/thesis/{thesis_id}/synthesize")
     async def tl_synthesize(thesis_id: str, authorization: str = Header(default=""),
                             x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):

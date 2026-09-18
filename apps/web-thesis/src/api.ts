@@ -104,6 +104,8 @@ export type Projection = { claims?: number; projected_usd?: number; components?:
 export type Run = { id: string; state: string; stage?: string; projected_usd?: number; approved_usd?: number; actual_usd?: number; metadata?: Record<string, unknown> };
 export type RunResp = { status: string; projection?: Projection; run?: Run; findings?: number; selected?: number };
 export type RunStatus = { status: string; run_id?: string; state?: string; stage?: string; done?: number; total?: number; actual_usd?: number; error?: Record<string, unknown> };
+export type RunLevel = { level: number; label: string; total: number; answered: number; remaining: number };
+export type RunPlan = { status: string; levels: RunLevel[]; answered: number; total: number; remaining: number; all_answered: boolean; next_level: number | null; next_run: number; has_take: boolean };
 // ── brainstorm: a continuous, memory-bearing agent over the thesis's whole context ──
 export type BrainstormMemory = { summary?: string; assumptions?: string[]; explored?: string[]; open_threads?: string[] };
 export type BsSection = { kind: string; items: string[] };
@@ -195,6 +197,7 @@ export const api = {
   projectRun: (id: string) => req<RunResp>("POST", `/thesis/${enc(id)}/inquiries/run`, { max_usd: 0, web: true }, id),
   runAll: (id: string, max_usd: number) => req<RunResp>("POST", `/thesis/${enc(id)}/inquiries/run`, { max_usd, web: true }, id),
   runCritical: (id: string, max_usd: number, level = 0) => req<RunResp>("POST", `/thesis/${enc(id)}/inquiries/run_critical`, { max_usd, level, web: true }, id),
+  runPlan: (id: string) => getJSON<RunPlan>(`/thesis/${enc(id)}/inquiries/run_plan`, id),
   runQuestion: (id: string, qid: string, max_usd: number) =>
     req<RunResp>("POST", `/thesis/${enc(id)}/question/${enc(qid)}/run`, { max_usd, web: true, idempotency_key: max_usd > 0 ? `q-${qid}-${Date.now()}` : undefined }, id),
   inquiryStatus: (id: string, run: string) => getJSON<RunStatus>(`/thesis/${enc(id)}/inquiry/status?run=${enc(run)}`, id),

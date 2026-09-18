@@ -482,6 +482,26 @@ a.th-cite-src:hover { text-decoration: underline; }
 .progress { height: 8px; border-radius: 999px; background: var(--panel2); overflow: hidden; border: 1px solid var(--hair); }
 .progress i { display: block; height: 100%; background: var(--gold); transition: width .4s; }
 
+/* run-plan: layered progress (P0/P1/P2 …) — what's done, what's remaining, cost as a side detail */
+.runplan { border: 1px solid var(--hair); border-radius: 14px; background: var(--panel); padding: .85rem 1rem; margin-bottom: 14px; max-width: 620px; }
+.runplan-head { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; margin-bottom: .7rem; }
+.runplan-count { font-family: var(--serif); font-size: 1.05rem; }
+.runplan-count b { color: var(--gold-strong); }
+.runplan-rem { font-family: var(--mono); font-size: .72rem; color: var(--muted); }
+.runplan-done { font-family: var(--mono); font-size: .72rem; font-weight: 600; color: var(--fact); }
+.runplan-levels { display: grid; gap: .55rem; }
+.runplan-lvl { display: grid; gap: .28rem; }
+.runplan-lvl-h { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.runplan-lvl-name { font-family: var(--mono); font-size: .74rem; color: var(--ink); }
+.runplan-lvl.full .runplan-lvl-name { color: var(--fact); }
+.runplan-lvl.next .runplan-lvl-name { color: var(--gold-strong); font-weight: 700; }
+.runplan-lvl-n { font-family: var(--mono); font-size: .72rem; color: var(--muted); }
+.runplan-bar { height: 7px; border-radius: 999px; background: var(--panel2); overflow: hidden; border: 1px solid var(--hair); }
+.runplan-bar i { display: block; height: 100%; background: color-mix(in srgb, var(--gold) 55%, var(--hair)); transition: width .4s; }
+.runplan-lvl.full .runplan-bar i { background: var(--fact); }
+.runplan-lvl.next .runplan-bar i { background: var(--gold); }
+.runplan-cost { font-family: var(--mono); font-size: .72rem; color: var(--muted); margin-left: .3rem; }
+
 /* ── experts ── */
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; align-items: start; }
 .pcard { border: 1px solid var(--hair); border-radius: 12px; background: var(--panel); padding: .75rem .85rem; margin-bottom: 10px; }
