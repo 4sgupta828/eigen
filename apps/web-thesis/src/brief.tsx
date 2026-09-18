@@ -288,25 +288,59 @@ function Drawer({ view }: { view: DrawerView }) {
 
 // ── tab renderers ────────────────────────────────────────────────────────────────
 const KIND_LABEL: Record<string, string> = { tension: "Tension", gap: "Gap", assumption: "Assumption", implication: "Implication", what_would_change_this: "What would change this" };
+
+// Plain-language pass on synthesized take prose: strip the repetitive "The X record found that…" /
+// "…was tested and marked silent or insufficient on whether…" scaffolding the synth model emits, so the
+// read sounds like a memo, not a machine. Only touches leading boilerplate; citations are untouched.
+function plainTake(text?: string): string {
+  let s = (text || "").trim();
+  s = s.replace(/^Line of inquiry,\s*[^:]+:\s*the\b.*?\bwas tested and marked (?:silent or insufficient|insufficient|inconclusive)[^.]*?\bon whether\s+/i, "Still open — whether ");
+  s = s.replace(/^Read together,\s*/i, "");
+  s = s.replace(/^The [\w][\w\s/-]*? record found (?:that )?/i, "");
+  s = s.replace(/^The record (?:found|contains|shows|supports)(?: that)?\s+/i, "");
+  s = s.replace(/\bin this record\b/gi, "");
+  s = s.replace(/\s{2,}/g, " ").replace(/\s+([.,;:])/g, "$1").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+const takeKey = (text?: string) => (text || "").toLowerCase().replace(/\[\[e:[^\]]+\]\]/g, "").replace(/[^a-z0-9]+/g, " ").trim().slice(0, 70);
+
 function TakeTab({ take }: { take?: Take }) {
   const secs = (take?.sections || []).filter((s) => (s.grounded?.length || s.analysis?.length));
   if (!secs.length) return <p className="muted">No collective take yet.</p>;
+  // Dedup facts and reasoning across the whole take — the synth model repeats the same facts in every
+  // section, which is the main reason the read is hard to consume.
+  const seenG = new Set<string>(); const seenA = new Set<string>();
   return (
-    <div className="card">
+    <div className="card th-take">
       {secs.map((s) => {
-        const gr = (s.grounded || []).filter((g) => (g.text || "").trim());
-        const an = (s.analysis || []).filter((a) => (a.text || "").trim());
+        const gr = (s.grounded || [])
+          .map((g) => ({ ...g, text: plainTake(g.text) }))
+          .filter((g) => { const t = (g.text || "").trim(); if (!t && !(g.markers || "").trim()) return false; const k = takeKey(g.text || g.markers); if (!k || seenG.has(k)) return false; seenG.add(k); return true; });
+        const an = (s.analysis || [])
+          .filter((a) => (a.text || "").trim())
+          .map((a) => ({ ...a, text: plainTake(a.text) }))
+          .filter((a) => { const k = a.kind + ":" + takeKey(a.text); if (seenA.has(k)) return false; seenA.add(k); return true; });
         if (!gr.length && !an.length) return null;
         return (
           <div key={s.key} className="th-synth-sec">
             <h4 className="th-synth-h">{s.title || s.key}</h4>
-            {gr.length ? <div className="th-memo-grounded">{gr.map((g, i) => <p key={i}><Cite value={g} kind="finding" /></p>)}</div> : null}
+            {/* reasoning leads — it's the differentiated view; the supporting facts collapse below it */}
             {an.length ? <div className="th-reasons">{an.map((a: Analysis, i) => (
               <div key={i} className={`th-reason th-reason-${a.kind}`}>
                 <span className="th-reason-tag">{KIND_LABEL[a.kind] || a.kind}</span>
                 <span className="th-reason-text"><Cite value={a} kind="finding" /></span>
               </div>
             ))}</div> : null}
+            {gr.length ? (
+              an.length ? (
+                <details className="th-take-facts">
+                  <summary>{gr.length} supporting {gr.length === 1 ? "fact" : "facts"} from the record</summary>
+                  <div className="th-memo-grounded">{gr.map((g, i) => <p key={i}><Cite value={g} kind="finding" /></p>)}</div>
+                </details>
+              ) : (
+                <div className="th-memo-grounded">{gr.map((g, i) => <p key={i}><Cite value={g} kind="finding" /></p>)}</div>
+              )
+            ) : null}
           </div>
         );
       })}
