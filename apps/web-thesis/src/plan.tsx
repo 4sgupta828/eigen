@@ -191,13 +191,13 @@ export function Run({ id, onDone }: { id: string; onDone: () => void }) {
 
   return (
     <>
-      <PageHead title="Run the research" sub="Answer the lines of inquiry in layers — the P0 crux first, then broaden one layer at a time. Each layer only researches un-answered questions, then refreshes the Brief, Reasoning Map and Take." />
+      <PageHead title="Run the research" sub="Answer the lines of inquiry in layers — the P0 crux first, then broaden one layer at a time. Each layer only researches questions not yet run, then refreshes the Brief, Reasoning Map and Take." />
 
       {plan && plan.total > 0 ? (
         <div className="runplan">
           <div className="runplan-head">
-            <span className="runplan-count"><b>{plan.answered}</b> of {plan.total} questions answered</span>
-            {plan.remaining > 0 ? <span className="runplan-rem">{plan.remaining} remaining</span> : <span className="runplan-done">✓ all answered</span>}
+            <span className="runplan-count"><b>{plan.answered}</b> of {plan.total} questions researched</span>
+            {plan.remaining > 0 ? <span className="runplan-rem">{plan.remaining} not yet run</span> : <span className="runplan-done">✓ all researched</span>}
           </div>
           <div className="runplan-levels">
             {levels.map((l) => {
@@ -234,7 +234,7 @@ export function Run({ id, onDone }: { id: string; onDone: () => void }) {
         ) : phase.k === "gate" ? (
           <div className="gate">
             <div className="lbl">{phase.level === "all" ? "Run everything remaining" : `Run ${levels.find((l) => l.level === phase.level)?.label || "the next layer"}`}</div>
-            <p className="serif" style={{ fontSize: "1.05rem", margin: ".3rem 0 .1rem" }}>{phase.count} un-answered question{phase.count === 1 ? "" : "s"} · then the Brief, Reasoning Map &amp; Take refresh.</p>
+            <p className="serif" style={{ fontSize: "1.05rem", margin: ".3rem 0 .1rem" }}>{phase.count} question{phase.count === 1 ? "" : "s"} not yet run · then the Brief, Reasoning Map &amp; Take refresh.</p>
             <p className="muted" style={{ fontSize: ".8rem", margin: ".2rem 0 0" }}>Already-answered questions are skipped. <span className="runplan-cost">est. ~${(phase.usd).toFixed(2)} · corpus + web</span></p>
             <div className="row" style={{ marginTop: ".8rem" }}>
               <button className="btn" onClick={() => runLayer(phase.level, phase.usd)}>Run these {phase.count} →</button>
@@ -244,21 +244,21 @@ export function Run({ id, onDone }: { id: string; onDone: () => void }) {
         ) : phase.k === "error" ? (
           <div className="gate"><p style={{ color: "var(--p0)" }}>{phase.msg}</p><button className="btn sec" onClick={() => { setPhase({ k: "idle" }); loadPlan(); }}>Retry</button></div>
         ) : plan && plan.all_answered ? (
-          <div className="gate"><div className="lbl">✓ Research complete</div><p style={{ margin: ".4rem 0 0" }}>Every question is answered. The lines of inquiry are below; the synthesized read is in <b>Brief</b>. Re-run any single question below to refresh it.</p></div>
+          <div className="gate"><div className="lbl">✓ Research complete</div><p style={{ margin: ".4rem 0 0" }}>Every question has been researched (some may have found nothing in the record — that is a real result). The lines of inquiry are below; the synthesized read is in <b>Brief</b>. Re-run any single question below to refresh it.</p></div>
         ) : (
           <div className="gate">
             {nextLevel !== null ? (
               <>
                 <div className="lbl">{started ? "Deepen the research" : "Start with the crux"}</div>
                 <p className="serif" style={{ fontSize: "1.06rem", margin: ".3rem 0 .5rem" }}>
-                  {started ? <>Next layer: <b>{nextLabel}</b> — {plan?.next_run} un-answered question{plan?.next_run === 1 ? "" : "s"}.</>
+                  {started ? <>Next layer: <b>{nextLabel}</b> — {plan?.next_run} question{plan?.next_run === 1 ? "" : "s"} not yet run.</>
                     : <>Run the <b>P0 crux</b> first — the {plan?.next_run} question{plan?.next_run === 1 ? "" : "s"} whose answers most move the call.</>}
                 </p>
                 <div className="row">
                   <button className="btn" onClick={() => projectLayer(nextLevel)}>{started ? `Run ${nextLabel} →` : "Run the P0 crux →"}</button>
                   {plan && plan.remaining > (plan.next_run || 0) ? <button className="btn sec" onClick={() => projectLayer("all")}>Run all {plan.remaining} remaining</button> : null}
                 </div>
-                <p className="muted" style={{ fontSize: ".8rem", margin: ".6rem 0 0" }}>Each layer only researches un-answered questions, then refreshes the Brief, Reasoning Map &amp; Take — nothing already answered is re-run.</p>
+                <p className="muted" style={{ fontSize: ".8rem", margin: ".6rem 0 0" }}>Each layer only researches questions not yet run, then refreshes the Brief, Reasoning Map &amp; Take — nothing already researched is re-run.</p>
               </>
             ) : <p className="muted">Draft the lines of inquiry first, on the Plan step.</p>}
           </div>

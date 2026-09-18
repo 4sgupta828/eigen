@@ -54,3 +54,30 @@ async def test_zero_findings_keeps_good_deck(monkeypatch):
     monkeypatch.setattr(synth.tstore, "set_pitch_deck", fake_set)
     out = await synth.synthesize_deck(None, "t1", _Profile(), lambda *a, **k: None)
     assert calls["set"] == 0 and out["deck"] is GOOD_DECK
+
+
+@pytest.mark.asyncio
+async def test_take_falls_back_to_strong_seam_when_reasoning_blank(monkeypatch):
+    """If the reasoning seam returns a blank take, synthesize_all retries on the strong seam so the take
+    actually rebuilds (the "regenerate did nothing" bug)."""
+    calls = {"take_set": None}
+    from eigen_vertical_tech.decision import TECH_DECISION_PROFILE as prof
+    async def fake_get(pool, thesis_id, trusted=True):
+        return {"thesis": "T", "subject": {}, "collective_take": {}}
+    async def fake_list_questions(pool, tid):
+        return [{"id": "q1", "target_status": "target_supported", "answer": "Real fact. [[e:e1]]",
+                 "text": "?", "inquiry_name": "L", "aspect_key": "problem_exists"}]
+    async def fake_set_take(pool, tid, take):
+        calls["take_set"] = take
+    monkeypatch.setattr(synth.tstore, "get", fake_get)
+    monkeypatch.setattr(synth.tstore, "list_questions", fake_list_questions)
+    monkeypatch.setattr(synth.tstore, "set_collective_take", fake_set_take)
+
+    async def reasoning(_s, _u):    # the deep seam fails / returns nothing
+        raise RuntimeError("reasoning model timed out")
+    async def strong(_s, _u):       # the strong seam succeeds
+        return {"bottom_line": {"text": "The record leans fund.", "finding_ids": ["F1"]},
+                "sections": [{"key": "problem_exists", "grounded": [{"text": "Real fact.", "finding_ids": ["F1"]}], "analysis": []}]}
+    out = await synth.synthesize_all(None, "t1", prof, strong, take_llm_json=reasoning)
+    assert out["rebuilt"] is True
+    assert calls["take_set"] is not None and calls["take_set"]["bottom_line"]["text"].startswith("The record leans")

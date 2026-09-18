@@ -130,18 +130,26 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
         take_obj = _empty_take(take_secs)
         await tstore.set_collective_take(pool, thesis_id, take_obj)
         return {"take": take_obj, "findings": 0}
-    take = await compose_memo(take_llm, directive=take_dir, sections=list(take_secs),
-                              findings=findings, decision=thesis, answer_chars=2400)
-    now = int(time.time())
     n = len(findings)
-    take_obj = {"bottom_line": take.get("bottom_line") or {"text": "", "markers": ""},
-                "sections": take.get("sections") or [], "empty": False, "generated_at": now, "findings": n}
-    # A blank re-synthesis (LLM hiccup, or every unit dropped by the gate) must not clobber a good take —
-    # otherwise broadening from P0 to P1/P2 makes the brief + reasoning map "disappear" until a rebuild.
+
+    async def _compose(llm):
+        take = await compose_memo(llm, directive=take_dir, sections=list(take_secs),
+                                  findings=findings, decision=thesis, answer_chars=2400)
+        return {"bottom_line": take.get("bottom_line") or {"text": "", "markers": ""},
+                "sections": take.get("sections") or [], "empty": False,
+                "generated_at": int(time.time()), "findings": n}
+
+    take_obj = await _compose(take_llm)
+    # The deep-thinking reasoning seam can time out or return malformed JSON on a large finding set — when
+    # it yields nothing, retry on the faster/steadier strong seam so the take ACTUALLY rebuilds (this is
+    # why "regenerate" seemed to do nothing after broadening).
+    if not _take_substantive(take_obj) and llm_json is not None and llm_json is not take_llm:
+        take_obj = await _compose(llm_json)
+    # If BOTH seams produced nothing, keep the good existing take rather than blank it out.
     if not _take_substantive(take_obj) and _take_substantive(existing):
-        return {"take": existing, "findings": n}
+        return {"take": existing, "findings": n, "rebuilt": False}
     await tstore.set_collective_take(pool, thesis_id, take_obj)
-    return {"take": take_obj, "findings": n}
+    return {"take": take_obj, "findings": n, "rebuilt": _take_substantive(take_obj)}
 
 
 async def synthesize_deck(pool, thesis_id: str, profile, llm_json, reference: str = "",
