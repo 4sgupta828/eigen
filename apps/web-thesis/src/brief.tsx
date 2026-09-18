@@ -695,7 +695,7 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
   return (
     <div className="card">
       {comp?.space ? <div className="th-comp-cap">The market — {comp.space}</div> : null}
-      {empty ? <p className="muted" style={{ fontSize: ".9rem" }}>No competitive landscape yet.{owner ? " Research it from the open web below." : ""}</p> : (
+      {empty ? <p className="muted" style={{ fontSize: ".9rem" }}>{comp?.reason || "No competitive landscape yet."}{owner ? " Research it from the open web below." : ""}</p> : (
         <>
           <div className="th-comp-cards">{players.map((p, i) => <CompCard key={i} p={p} cols={cols} />)}</div>
           <details className="th-comp-tablewrap" open><summary>At-a-glance comparison</summary>

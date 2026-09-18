@@ -15,7 +15,7 @@ export type CompCell = { text?: string; markers?: string; source_url?: string; s
 export type CompPlayer = { name: string; is_subject?: boolean; cells?: Record<string, CompCell> };
 export type CompCandidate = { name: string; kind?: string; note?: string };
 export type CompRow = { entity: string; subject?: boolean; cells?: CompCell[] };
-export type Competitive = { empty?: boolean; space?: string; columns?: { key: string; label: string }[]; players?: CompPlayer[]; rows?: CompRow[] };
+export type Competitive = { empty?: boolean; space?: string; reason?: string; columns?: { key: string; label: string }[]; players?: CompPlayer[]; rows?: CompRow[] };
 
 export type Aspect = { key: string; prompt?: string; verdict?: string; critical?: boolean; settleable?: string };
 export type Question = {

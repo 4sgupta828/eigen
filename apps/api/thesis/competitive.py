@@ -15,7 +15,10 @@ so this stays testable and never raises; on any failure it returns an empty land
 from __future__ import annotations
 
 import json
+import logging
 from urllib.parse import urlparse
+
+log = logging.getLogger("eigen.thesis.competitive")
 
 MAX_PLAYERS = 6
 _PER_QUERY = 6
@@ -34,7 +37,8 @@ async def _search(web_client, query: str) -> list[dict]:
         return []
     try:
         res = await web_client.search(query, max_results=_PER_QUERY, open_web=True)
-    except Exception:      # noqa: BLE001 — a leg we cannot reach thins the landscape, never fails it
+    except Exception as exc:      # noqa: BLE001 — a leg we cannot reach thins the landscape, never fails it
+        log.warning("competitive web search failed (query=%r): %s: %s", query[:60], type(exc).__name__, exc)
         return []
     out = []
     for r in res or []:
@@ -269,9 +273,22 @@ async def research_landscape(llm_json, web_client, *, thesis: str, subject: str,
         if nm.lower() not in seen:
             seen.add(nm.lower()); names.append(nm)
     names = names[:max_players]
-    players = []
+    players, dropped = [], 0
     for nm in names:
         cells = await _profile_player(llm_json, web_client, name=nm, space=focus, columns=cols)
         if cells:                                   # drop a peer we could not ground on any dimension
             players.append({"name": nm, "is_subject": False, "cells": cells})
-    return {"space": focus, "columns": cols, "players": players, "empty": not players}
+        else:
+            dropped += 1
+    log.info("competitive landscape: web=%s focus=%r identified=%d profiled=%d dropped=%d",
+             web_client is not None, (focus or "")[:80], len(names), len(players), dropped)
+    # A helpful reason when the map came back empty — so the client can say WHY, not just "nothing yet".
+    reason = ""
+    if not players:
+        if web_client is None:
+            reason = "The open-web research leg is not configured, so competitors can't be profiled."
+        elif not names:
+            reason = "No competitors were identified for this market from the thesis and findings."
+        else:
+            reason = "Competitors were identified but couldn't be grounded on the open web (the web leg may be rate-limited or returning nothing) — try again in a minute."
+    return {"space": focus, "columns": cols, "players": players, "empty": not players, "reason": reason}
