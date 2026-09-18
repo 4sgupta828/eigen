@@ -54,4 +54,4 @@ The organizing idea: **the thesis is the unit of work and the shareable artifact
 
 - Backend contract & rebuild-vs-refactor rationale: the panel outputs (this session) + the endpoint map in `apps/api/thesis/routes.py`.
 - Question currency: [`landscape-grounded-questions.md`](./landscape-grounded-questions.md).
-- **Next:** a Phase 0 build spec (route, stack, API contract surface, the client-only contracts to preserve — the localStorage owner-token scheme, the `#thesis`/`#view/<id>/<token>`/`#board` hash shapes, run-gating, poll concurrency guards — and the component list to port).
+- **Phased implementation:** [`beachhead-build-plan.md`](./beachhead-build-plan.md) — the locked decisions, the client-only contracts to preserve (owner-token localStorage, the `#thesis`/`#view/<id>/<token>`/`#board` hash shapes, run-gating, poll concurrency guards), the reuse-as-spec port list, and Phases 0–6 with acceptance criteria.
