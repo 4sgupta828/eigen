@@ -110,11 +110,14 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
     return {"take": take_obj, "findings": n}
 
 
-async def synthesize_deck(pool, thesis_id: str, profile, llm_json) -> dict:
+async def synthesize_deck(pool, thesis_id: str, profile, llm_json, reference: str = "") -> dict:
     """Compose + persist the Startup Pitch Deck — a SEPARATE, on-demand artifact, generated after the
     Collective Take exists. A 10x-founder pitch: a throughline SPINE plus a headline-driven slide per
     section, built over the findings and informed (for narrative shape only) by the Collective Take.
-    -> {"deck": {...}, "findings": <n>}."""
+
+    `reference` (optional): excerpts of similar PUBLIC VC theses / founder memos, given as STRUCTURE +
+    NARRATIVE exemplars — how a strong pitch in this space reads. It is NOT a citation source and its
+    specifics are never borrowed; the deck still argues ONLY from the findings. -> {"deck": {...}, "findings": <n>}."""
     deck_dir, spine, deck_secs = profile.pitch_deck_spec()
     thesis, _subject, findings = await _load_findings(pool, thesis_id, profile)
     if not findings:
@@ -123,6 +126,11 @@ async def synthesize_deck(pool, thesis_id: str, profile, llm_json) -> dict:
         return {"deck": deck_obj, "findings": 0}
     d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
     context = _take_context((d or {}).get("collective_take") or {})
+    if reference.strip():
+        context = ((context + "\n\n") if context else "") + (
+            "HOW STRONG PUBLIC PITCHES / VC THESES IN THIS SPACE READ (structure + narrative EXEMPLARS only "
+            "— NEVER a source, never borrow their specifics or numbers; your deck argues ONLY from the "
+            "findings above and cites them by F-number):\n" + reference.strip())
     deck = await compose_deck(llm_json, directive=deck_dir, spine_intent=spine, sections=list(deck_secs),
                               findings=findings, decision=thesis, context=context)
     deck_obj = {"spine": deck.get("spine") or {}, "sections": deck.get("sections") or [],

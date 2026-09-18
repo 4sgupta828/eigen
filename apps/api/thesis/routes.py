@@ -1678,9 +1678,38 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         return {"status": "ok", "take": result.get("take"), "deck": _d.get("pitch_deck") or {},
                 "competitive": _d.get("competitive") or {}, "findings": result.get("findings", 0)}
 
+    async def _memo_scan(thesis: str, subject: str) -> str:
+        """Pull a few SIMILAR public VC theses / founder memos from the open web — structure + narrative
+        exemplars for the pitch deck (never a fact source; the deck still cites only findings). Best-effort,
+        time-bounded, never raises."""
+        wc = atk._web_client(manifest)
+        if wc is None:
+            return ""
+        focus = (subject or thesis[:90]).strip()
+        queries = [f"{focus} investment thesis", f"why we invested {focus} VC memo", f"{focus} founder thesis market"]
+
+        async def _one(q: str):
+            try:
+                return await wc.search(q, max_results=3, open_web=True)
+            except Exception:      # noqa: BLE001
+                return []
+        results = await asyncio.gather(*[_one(q) for q in queries])
+        hits, seen = [], set()
+        for res in results:
+            for x in res or []:
+                url = getattr(x, "url", "") or ""
+                if url in seen:
+                    continue
+                seen.add(url)
+                text = " ".join(filter(None, [*(getattr(x, "highlights", ()) or ()), getattr(x, "snippet", "") or "",
+                                              (getattr(x, "body", "") or "")[:600]])).strip()
+                if text:
+                    hits.append(f"- {(getattr(x, 'title', '') or url)[:120]}: {text[:500]}")
+        return "\n".join(hits[:6])
+
     async def _run_deck(thesis_id: str, run_id: str):
-        """Build the Startup Pitch Deck in the BACKGROUND (founder-voice synthesis over the findings) so the
-        Pitch Deck CTA never blocks or dangles. Stoppable like any run."""
+        """Build the Startup Pitch Deck in the BACKGROUND (founder-voice synthesis over the findings, shaped
+        by similar public VC/founder memos) so the Pitch Deck CTA never blocks or dangles. Stoppable."""
         pool = await pool_of()
         try:
             if _profile() is None:
@@ -1690,7 +1719,16 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
             if (rn or {}).get("state") == "cancelled":
                 return
-            await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json())
+            # Source similar public VC/founder memos as STYLE exemplars (best-effort, time-bounded).
+            d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
+            reference = ""
+            try:
+                thesis = (d or {}).get("thesis") or ""
+                subject = " ".join(str(v) for v in ((d or {}).get("subject") or {}).values()).strip()
+                reference = await asyncio.wait_for(_memo_scan(thesis, subject), timeout=15)
+            except Exception:      # noqa: BLE001 — the deck builds fine without exemplars
+                reference = ""
+            await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json(), reference=reference)
             rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
             if (rn or {}).get("state") == "cancelled":
                 return
