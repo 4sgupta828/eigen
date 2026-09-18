@@ -144,3 +144,26 @@ def test_matrix_no_model_is_empty_not_a_crash():
     out = asyncio.run(compose_matrix(None, directive="d", columns=[{"key": "x", "label": "X"}],
                                      findings=_FINDINGS, subject_label="Acme"))
     assert out["rows"] == []
+
+
+def test_deck_visual_bar_is_gated_to_findings():
+    async def llm(_s, _u):
+        return {"spine": {}, "sections": [
+            {"key": "problem", "headline": {"text": "Churn is high.", "finding_ids": ["F1"]},
+             "points": [{"text": "Churn runs 30%.", "finding_ids": ["F1"]}],
+             "visual": {"kind": "bar", "title": "Churn vs. peers", "unit": "%", "series": [
+                 {"label": "Acme churn", "value": 30, "finding_ids": ["F1"]},        # kept: cites a finding
+                 {"label": "Signed enterprises", "value": 2, "finding_ids": ["F2"]}, # kept
+                 {"label": "Made-up number", "value": 99, "finding_ids": ["F9"]},    # dropped: bad citation
+                 {"label": "no cite", "value": 5, "finding_ids": []}]}},             # dropped: uncited
+            {"key": "ask", "points": [{"text": "Believe it.", "finding_ids": ["F2"]}],
+             "visual": {"kind": "bar", "title": "one point", "series": [
+                 {"label": "solo", "value": 1, "finding_ids": ["F1"]}]}},            # <2 survivors -> no visual
+        ]}
+    out = asyncio.run(compose_deck(llm, directive="d", sections=_DECK_SECTIONS, findings=_FINDINGS, decision="Acme"))
+    by = {s["key"]: s for s in out["sections"]}
+    viz = by["problem"].get("visual")
+    assert viz and viz["kind"] == "bar" and viz["unit"] == "%"
+    assert [s["label"] for s in viz["series"]] == ["Acme churn", "Signed enterprises"]   # uncited/bad dropped
+    assert viz["series"][0]["value"] == 30
+    assert "visual" not in by["ask"]                                                     # single-series -> gated out

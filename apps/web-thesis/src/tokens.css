@@ -84,6 +84,31 @@ th { font-family: var(--mono); font-size: .55rem; text-transform: uppercase; let
 .slide ul { margin: .3rem 0 0; padding-left: 1.1rem; }
 .slide li { font-size: .88rem; line-height: 1.5; margin: .2rem 0; }
 
+/* pitch deck — colourful accented slides + grounded visuals */
+.deck-spine { border-radius: 14px; padding: 1rem 1.1rem; margin-bottom: 14px; color: #fff;
+  background: linear-gradient(120deg, var(--gold-strong), #9a5b2a 55%, #7a4b8a); box-shadow: 0 3px 18px rgba(34,29,18,.14); }
+.deck-spine-kick { font-family: var(--mono); font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .85; }
+.deck-one { font-family: var(--serif); font-size: 1.14rem; font-weight: 600; line-height: 1.4; margin: .35rem 0 0; }
+.deck-insight { margin-top: .6rem; border-top: 1px solid rgba(255,255,255,.25); padding-top: .5rem; }
+.deck-insight-lab { font-family: var(--mono); font-size: .58rem; text-transform: uppercase; letter-spacing: .06em; opacity: .8; }
+.deck-insight p { margin: .1rem 0 0; font-size: .92rem; line-height: 1.5; }
+.deck-spine sup.ref, .deck-headline sup.ref, .deck-points sup.ref { color: inherit; }
+.deck-slides { display: grid; gap: 12px; }
+.deck-slide { border: 1px solid var(--hair); border-left: 4px solid var(--dc, var(--gold)); border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dc, var(--gold)) 6%, var(--panel)), var(--panel) 46%); padding: .85rem 1rem; }
+.deck-slide-h { display: flex; align-items: center; gap: .55rem; margin-bottom: .35rem; }
+.deck-num { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--mono); font-size: .72rem; font-weight: 700; color: #fff; }
+.deck-slide-h h4 { font-size: .78rem; font-family: var(--mono); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--dc, var(--gold-strong)); }
+.deck-headline { font-family: var(--serif); font-weight: 600; font-size: 1.02rem; line-height: 1.4; margin: 0 0 .1rem; color: var(--ink); }
+.deck-points { margin: .4rem 0 0; padding-left: 1.15rem; }
+.deck-points li { font-size: .9rem; line-height: 1.55; margin: .25rem 0; }
+.deck-points li::marker { color: var(--dc, var(--gold)); }
+/* the deck's bar visual picks up the slide's accent colour */
+.deck-slide .bs-bar-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--dc) 65%, white), var(--dc)); }
+.deck-slide .bs-bar-val { color: var(--dc); }
+.deck-slide .bs-viz { background: color-mix(in srgb, var(--dc, var(--gold)) 5%, var(--panel)); border-color: color-mix(in srgb, var(--dc) 20%, var(--hair)); }
+
 /* similar theses to check out — sourced public VC theses / founder memos, as explorable cards */
 .sim-wrap { margin-top: 15px; }
 .sim-lede { color: var(--muted); font-size: .82rem; line-height: 1.5; margin: .3rem 0 .7rem; max-width: 66ch; }

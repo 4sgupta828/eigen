@@ -164,6 +164,59 @@ async def compose_over_findings(llm_json, *, directive: str, sections: list[dict
     return out
 
 
+def _num(v):
+    try:
+        f = float(v)
+        return round(f, 4) if f == f and abs(f) != float("inf") else None
+    except Exception:      # noqa: BLE001
+        return None
+
+
+def _deck_visual(v, resolve, reals: set) -> dict | None:
+    """A grounded chart for a deck section: a `bar` whose every series cites the finding its number comes
+    from (so a chart can never introduce a fabricated figure), or a `tree` (structure only, no numbers).
+    Returns the gated visual, or None. Mirrors the text gate — a series citing no finding is dropped."""
+    if not isinstance(v, dict):
+        return None
+    kind = str(v.get("kind") or "").strip()
+    title = str(v.get("title") or "").strip()[:120]
+    if kind == "bar":
+        series = []
+        for s in (v.get("series") or []):
+            if not isinstance(s, dict):
+                continue
+            g = _gate_units([{"text": str(s.get("label") or ""),
+                              "finding_ids": s.get("finding_ids") or s.get("evidence_ids")}], resolve, reals)
+            val = _num(s.get("value"))
+            if g and g[0]["text"] and val is not None:
+                series.append({"label": g[0]["text"][:60], "value": val, "markers": g[0]["markers"]})
+            if len(series) >= 8:
+                break
+        if len(series) >= 2:
+            return {"kind": "bar", "title": title, "unit": str(v.get("unit") or "").strip()[:20],
+                    "series": series}
+    elif kind == "tree":
+        nodes, ids = [], set()
+        for n in (v.get("nodes") or []):
+            if not isinstance(n, dict):
+                continue
+            nid, lab = str(n.get("id") or "").strip()[:40], str(n.get("label") or "").strip()[:90]
+            if nid and lab and nid not in ids:
+                ids.add(nid)
+                nodes.append({"id": nid, "label": lab, "note": str(n.get("note") or "").strip()[:140]})
+            if len(nodes) >= 12:
+                break
+        edges = []
+        for e in (v.get("edges") or []):
+            if isinstance(e, dict):
+                a, b = str(e.get("from") or "").strip()[:40], str(e.get("to") or "").strip()[:40]
+                if a in ids and b in ids and a != b:
+                    edges.append({"from": a, "to": b, "label": str(e.get("label") or "").strip()[:40]})
+        if len(nodes) >= 2:
+            return {"kind": "tree", "title": title, "nodes": nodes, "edges": edges}
+    return None
+
+
 async def compose_deck(llm_json, *, directive: str, sections: list[dict], findings: list[dict],
                        spine_intent: dict | None = None, context: str = "", decision: str = "",
                        answer_chars: int = 1600) -> dict:
@@ -211,9 +264,18 @@ async def compose_deck(llm_json, *, directive: str, sections: list[dict], findin
           "finding — a named gap is a real result, not an empty section.\n"
         + "- NEVER invent a number, market size, or party not in the findings; where a figure a section "
           "wants is absent, say what IS known and that the figure is unestablished — never fabricate.\n\n"
+        + "- VISUAL (optional, per section): when a section's findings hold COMPARABLE NUMBERS worth "
+          "seeing — market size, traction/growth, pricing, funding, adoption — add a `bar` chart; each "
+          "series MUST carry the finding_ids its number comes from (a charted number that cites no finding "
+          "is dropped, so never chart a figure you can't cite). For a mechanism or decision flow, a `tree` "
+          "(nodes + edges) is allowed. Add a visual only where it MEANINGFULLY clarifies; omit otherwise, "
+          "and never chart a single number.\n\n"
         + 'Return ONE JSON object: {"spine": {' + spine_json + '}, "sections": [{"key": "<section key>", '
           '"headline": {"text": "...", "finding_ids": ["F1", ...]}, "points": [{"text": "...", '
-          '"finding_ids": ["F1", ...]}]}]}. Every headline and point must ' + _CITE_HINT
+          '"finding_ids": ["F1", ...]}], '
+          '"visual": {"kind": "bar", "title": "...", "unit": "<e.g. $M, %>", '
+          '"series": [{"label": "...", "value": 12.3, "finding_ids": ["F1"]}]}}]}. '
+          "Every headline and point must " + _CITE_HINT
         + " A section with nothing behind it gets an empty `points` list and may omit its headline. "
           "Output ONLY the JSON object.")
     try:
@@ -241,7 +303,11 @@ async def compose_deck(llm_json, *, directive: str, sections: list[dict], findin
         headline = _one(raw_s.get("headline"))
         points = [{"text": g["text"], "markers": g["markers"]}
                   for g in _gate_units(raw_s.get("points") or raw_s.get("sentences") or [], resolve, reals)]
-        out_secs.append({"key": s["key"], "title": s["title"], "headline": headline, "points": points})
+        sec = {"key": s["key"], "title": s["title"], "headline": headline, "points": points}
+        visual = _deck_visual(raw_s.get("visual"), resolve, reals)
+        if visual:
+            sec["visual"] = visual
+        out_secs.append(sec)
     return {"spine": spine_out, "sections": out_secs}
 
 

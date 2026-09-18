@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { api } from "./api";
 import { Working } from "./ui";
+import { Visual } from "./viz";
 import type {
   Analysis, Cited, Competitive, CompCandidate, CompPlayer, Deck, Evidence, InquiriesView, Question, SimilarThesis, Take, ThesisDoc,
 } from "./api";
@@ -819,30 +820,38 @@ function SimilarTheses({ refs }: { refs?: SimilarThesis[] }) {
   );
 }
 
+// A colourful accent per slide — the same lens palette the Reasoning Map uses, cycled across sections.
+const DECK_COLORS = ["#c0563f", "#2e8b74", "#3a6ea5", "#8a6d3b", "#6b5bd0", "#b8860b"];
+
 function DeckTab({ deck }: { deck?: Deck }) {
   const spine = deck?.spine;
-  const secs = (deck?.sections || []);
   const refs = deck?.references || [];
-  if (!spine && !secs.length) return (<>{refs.length ? <SimilarTheses refs={refs} /> : <p className="muted">No pitch deck yet.</p>}</>);
+  const secs = (deck?.sections || []).filter((s) => (s.points || []).length || parse(s.headline).clean || s.prose || s.visual);
+  const hasSpine = !!(spine && (parse(spine.one_liner).clean || parse(spine.insight).clean));
+  if (!hasSpine && !secs.length) return (<>{refs.length ? <SimilarTheses refs={refs} /> : <p className="muted">No pitch deck yet.</p>}</>);
   return (
     <>
-      {spine && (parse(spine.one_liner).clean || parse(spine.insight).clean) ? (
-        <div className="spine">
-          <span className="kick">Founder pitch · the spine</span>
-          <p className="one" style={{ margin: ".3rem 0 0" }}><Cite value={spine.one_liner} kind="finding" /></p>
-          {parse(spine.insight).clean ? <><div className="lab">The insight</div><p style={{ margin: ".15rem 0 0", fontSize: ".92rem" }}><Cite value={spine.insight} kind="finding" /></p></> : null}
+      {hasSpine ? (
+        <div className="deck-spine">
+          <span className="deck-spine-kick">✦ Founder pitch · the throughline</span>
+          <p className="deck-one"><Cite value={spine!.one_liner} kind="finding" /></p>
+          {parse(spine!.insight).clean ? <div className="deck-insight"><span className="deck-insight-lab">The insight</span><p><Cite value={spine!.insight} kind="finding" /></p></div> : null}
         </div>
       ) : null}
-      <div className="card">
-        {secs.map((s) => {
+      <div className="deck-slides">
+        {secs.map((s, i) => {
           const points = (s.points || []);
           const head = parse(s.headline).clean;
-          if (!points.length && !head && !s.prose) return null;
+          const c = DECK_COLORS[i % DECK_COLORS.length];
           return (
-            <div key={s.key} className="slide">
-              <h4>{s.title}</h4>
-              {head ? <p style={{ fontWeight: 600, margin: 0 }}><Cite value={s.headline} kind="finding" /></p> : null}
-              {points.length ? <ul>{points.map((p, i) => <li key={i}><Cite value={p} kind="finding" /></li>)}</ul>
+            <div key={s.key} className="deck-slide" style={{ ["--dc" as string]: c }}>
+              <div className="deck-slide-h">
+                <span className="deck-num" style={{ background: c }}>{i + 1}</span>
+                <h4>{s.title}</h4>
+              </div>
+              {head ? <p className="deck-headline"><Cite value={s.headline} kind="finding" /></p> : null}
+              {s.visual ? <Visual v={s.visual} /> : null}
+              {points.length ? <ul className="deck-points">{points.map((p, j) => <li key={j}><Cite value={p} kind="finding" /></li>)}</ul>
                 : s.prose && !/^not established/i.test(s.prose) ? <p style={{ margin: ".25rem 0 0", fontSize: ".88rem" }}><Cite value={{ text: s.prose }} kind="finding" /></p> : null}
             </div>
           );

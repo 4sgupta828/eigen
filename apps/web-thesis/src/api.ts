@@ -8,7 +8,7 @@ export type TakeSection = { key: string; title: string; grounded?: Cited[]; anal
 export type Take = { empty?: boolean; bottom_line?: Cited; sections?: TakeSection[] };
 
 export type DeckSpine = { one_liner?: Cited; insight?: Cited; bottom_line?: Cited };
-export type DeckSection = { key: string; title: string; headline?: Cited; points?: Cited[]; prose?: string };
+export type DeckSection = { key: string; title: string; headline?: Cited; points?: Cited[]; prose?: string; visual?: BsVisual };
 export type SimilarThesis = { title: string; url: string; source?: string; snippet?: string };
 export type Deck = { empty?: boolean; spine?: DeckSpine; sections?: DeckSection[]; references?: SimilarThesis[] };
 
