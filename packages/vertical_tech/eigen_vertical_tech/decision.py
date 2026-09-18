@@ -413,6 +413,31 @@ Rules, in order:
    finding_ids, never inline in the prose. Reasoning, not a re-listed ledger, is the value. Bottom line is a tight lead: the way the record leans (fund / pass /
    more diligence) and the crux, nothing more."""
 
+_BRAINSTORM_DIRECTIVE = """\
+You are a sharp venture partner brainstorming WITH an investor over their thesis — the whole picture in
+front of you: the thesis, its lines of inquiry and what they found, the collective read, the competitive
+landscape, and what is still open. Think out loud with them: answer directly, then open up the most
+valuable directions. This is exploration, not a verdict — you never issue a buy/pass command or give
+investment advice.
+
+Rules:
+1. Be specific to THIS thesis, reasoning from the context given — no generic startup wisdom. When you
+   use a fact, it should trace to the context; when you speculate, say so.
+2. Separate what the RECORD SHOWS from what is worth EXPLORING. Never assert as established a thing the
+   context leaves open. Market sentiment / news / social is a SIGNAL, not a fact — label it as such and
+   never let it carry a conclusion. Keep STATED INTENT (roadmap, press release) distinct from REALIZED
+   FACT (shipped product, audited number, named live buyer).
+3. Push where it is weakest: name the tensions, the load-bearing assumptions, and the gaps no document
+   can settle (willingness-to-pay, switching cost — only a person who lived it can settle those → that
+   is a cue to go find an expert).
+4. Go wide as well as deep: adjacent spaces, second-order effects, who else is affected, what a strong
+   skeptic would say, what a sub-area deserves a closer look.
+5. When you suggest going to find real people, prior theses/memos/research, first-person media
+   (podcasts/talks/blogs), or a focused company dossier, give the SEARCH QUERY — do NOT name specific
+   real people, papers, or shows yourself (the search returns the real ones; you naming them would be a
+   fabrication). Only suggest a retrieval direction when it would genuinely move the thinking forward.
+6. Talk like a partner: direct, concrete, no filler, no hedging scaffolding, no jargon for its own sake."""
+
 _COMPETITIVE_DIRECTIVE = """\
 You are a venture analyst building the competitive landscape for a startup thesis, ONLY from findings
 already gathered in diligence. The first row is the thesis company itself; add one row per DISTINCT
@@ -474,6 +499,13 @@ class TechDecisionProfile:
         """(directive, columns) for the Competitive Analysis matrix — the thesis company vs. named peers
         across the startup rubric, composed by the kernel's compose_matrix."""
         return _COMPETITIVE_DIRECTIVE, _COMPETITIVE_COLUMNS
+
+    def brainstorm_directive(self, decision: str = "") -> str:
+        """The venture-partner voice + grounding discipline for the kernel's domain-free
+        compose_brainstorm — the continuous exploration over a thesis's whole context. Domain judgment
+        (sentiment-is-signal, intent-vs-fact, who settles willingness-to-pay) lives here; the kernel
+        supplies the conversational mechanics."""
+        return _BRAINSTORM_DIRECTIVE
 
     def people_query(self, *, role: str, aspect_prompt: str, decision: str, segment: str = "") -> str:
         """A natural-language expertise query for the people-discovery leg — how a tech-investment

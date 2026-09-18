@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from . import argue as arg
 from . import attack as atk
 from . import board as tboard
+from . import brainstorm as bstorm
 from . import competitive as compres
 from . import converse as conv
 from . import decompose as dec
@@ -100,6 +101,19 @@ class TurnIn(BaseModel):
     # The SET of claims the user selected as context for one follow-up agent. `rung` (single) is still
     # accepted and folded in for back-compat; `rungs` is the multi-claim scope.
     rungs: list[str] = []
+
+
+class BrainstormMsgIn(BaseModel):
+    text: str = ""                 # the user's message for this brainstorm turn
+
+
+class BrainstormExpandIn(BaseModel):
+    leg: str = ""                  # experts | references | media | deepdive
+    query: str = ""                # the focused query to run for this direction
+
+
+class BrainstormThreadIn(BaseModel):
+    title: str = ""
 
 
 class ResearchStartIn(BaseModel):
@@ -1286,8 +1300,173 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         if run:
             m = run.get("metadata") or {}
             kind = ("generate" if m.get("generate") else "regenerate" if m.get("regenerate")
-                    else "deck" if m.get("deck") else "competitive" if m.get("competitive") else "research")
-        return {"run": run, "kind": kind}
+                    else "deck" if m.get("deck") else "competitive" if m.get("competitive")
+                    else "brainstorm" if m.get("brainstorm") else "research")
+        return {"run": run, "kind": kind, "thread_id": (run.get("metadata") or {}).get("thread_id", "") if run else ""}
+
+    # ---- brainstorm: a continuous, memory-bearing agent over the thesis's whole context ------------
+    # Each turn (and each on-click enrichment leg) is an async, stoppable run so a long think never
+    # blocks the request or dangles when the user navigates away. The conversational mechanics are the
+    # kernel's (compose_brainstorm); real people / prior work / media come from the app's legs, never the
+    # model. Messages persist to ts_brainstorm_msg; the structured memory persists to the thread row so
+    # the agent stays continuous across sessions.
+
+    def _thread_history(thread: dict) -> list[dict]:
+        hist = []
+        for m in (thread.get("messages") or []):
+            c = m.get("content") or {}
+            text = c.get("text") if m.get("role") == "user" else c.get("reply")
+            if (text or "").strip():
+                hist.append({"role": m.get("role"), "text": text})
+        return hist
+
+    async def _run_brainstorm(thesis_id: str, run_id: str, thread_id: str, said: str):
+        pool = await pool_of()
+        try:
+            rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+            if (rn or {}).get("state") == "cancelled":
+                return
+            d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
+            thread = await tstore.get_brainstorm_thread(pool, thesis_id=thesis_id, thread_id=thread_id)
+            if not d or not thread:
+                await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                      error={"reason": "thesis or thread is missing"})
+                return
+            qs = await tstore.list_questions(pool, thesis_id)
+            turn = await bstorm.run_turn(_take_llm_json(), _profile(), doc=d, questions=qs, said=said,
+                                         memory=thread.get("memory") or {}, history=_thread_history(thread))
+            rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+            if (rn or {}).get("state") == "cancelled":
+                return
+            await tstore.add_brainstorm_msg(pool, thesis_id=thesis_id, thread_id=thread_id, role="agent",
+                                            content={"reply": turn.get("reply") or "",
+                                                     "sections": turn.get("sections") or [],
+                                                     "directions": turn.get("directions") or []})
+            await tstore.set_brainstorm_memory(pool, thread_id=thread_id, memory=turn.get("memory") or {})
+            # Name an untitled thread from its first exchange, so "past brainstorms" reads well.
+            if not (thread.get("title") or "").strip():
+                title = (said or "").strip()[:60] or "Brainstorm"
+                await tstore.rename_brainstorm_thread(pool, thesis_id=thesis_id, thread_id=thread_id, title=title)
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed", state="completed")
+        except Exception as exc:      # noqa: BLE001 — fail closed; a bad turn never corrupts the thread
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                  error={"reason": "brainstorm turn failed", "detail": str(exc)[:300]})
+
+    async def _run_expand(thesis_id: str, run_id: str, thread_id: str, leg: str, query: str):
+        pool = await pool_of()
+        try:
+            rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+            if (rn or {}).get("state") == "cancelled":
+                return
+            d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
+            card = await bstorm.run_leg(leg, manifest, _profile(), _llm_json(), doc=d or {}, query=query)
+            rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+            if (rn or {}).get("state") == "cancelled":
+                return
+            await tstore.add_brainstorm_msg(pool, thesis_id=thesis_id, thread_id=thread_id, role="agent",
+                                            content={"card": card})
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed", state="completed")
+        except Exception as exc:      # noqa: BLE001
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                  error={"reason": "enrichment failed", "detail": str(exc)[:300]})
+
+    @r.post("/thesis/{thesis_id}/brainstorm/thread")
+    async def tl_brainstorm_new(thesis_id: str, body: BrainstormThreadIn,
+                                authorization: str = Header(default=""),
+                                x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Open a fresh brainstorm thread on this thesis. -> the (empty) thread."""
+        oid = await _owner(authorization)
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        thread = await tstore.create_brainstorm_thread(pool, thesis_id=thesis_id, owner_id=oid,
+                                                       title=body.title or "")
+        thread["messages"] = []
+        return {"status": "ok", "thread": thread}
+
+    @r.get("/thesis/{thesis_id}/brainstorm/threads")
+    async def tl_brainstorm_threads(thesis_id: str, authorization: str = Header(default=""),
+                                    x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Past brainstorms on this thesis, most-recent first (title + message count for the list)."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        threads = await tstore.list_brainstorm_threads(pool, thesis_id=thesis_id)
+        return {"status": "ok", "threads": threads}
+
+    @r.get("/thesis/{thesis_id}/brainstorm/thread/{thread_id}")
+    async def tl_brainstorm_thread(thesis_id: str, thread_id: str, authorization: str = Header(default=""),
+                                   x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """One thread with its full transcript + running memory."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        thread = await tstore.get_brainstorm_thread(pool, thesis_id=thesis_id, thread_id=thread_id)
+        if not thread:
+            raise HTTPException(status_code=404, detail="no such thread")
+        return {"status": "ok", "thread": thread}
+
+    @r.patch("/thesis/{thesis_id}/brainstorm/thread/{thread_id}")
+    async def tl_brainstorm_rename(thesis_id: str, thread_id: str, body: BrainstormThreadIn,
+                                   authorization: str = Header(default=""),
+                                   x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        await tstore.rename_brainstorm_thread(pool, thesis_id=thesis_id, thread_id=thread_id, title=body.title or "")
+        return {"status": "ok"}
+
+    @r.delete("/thesis/{thesis_id}/brainstorm/thread/{thread_id}")
+    async def tl_brainstorm_delete(thesis_id: str, thread_id: str, authorization: str = Header(default=""),
+                                   x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        await tstore.delete_brainstorm_thread(pool, thesis_id=thesis_id, thread_id=thread_id)
+        return {"status": "ok"}
+
+    @r.post("/thesis/{thesis_id}/brainstorm/thread/{thread_id}/message")
+    async def tl_brainstorm_message(thesis_id: str, thread_id: str, body: BrainstormMsgIn,
+                                    authorization: str = Header(default=""),
+                                    x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Post one message; the agent answers in the BACKGROUND (async, stoppable). The user message is
+        persisted immediately so it renders at once; the client polls `/inquiry/status?run=` and reloads
+        the thread when the run completes."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        said = (body.text or "").strip()
+        if not said:
+            raise HTTPException(status_code=400, detail="say something to brainstorm about")
+        thread = await tstore.get_brainstorm_thread(pool, thesis_id=thesis_id, thread_id=thread_id)
+        if not thread:
+            raise HTTPException(status_code=404, detail="no such thread")
+        await tstore.add_brainstorm_msg(pool, thesis_id=thesis_id, thread_id=thread_id, role="user",
+                                        content={"text": said})
+        key = "bs-" + tstore.new_idempotency_key()
+        try:
+            run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
+                                          projected_usd=0.0, approved_usd=1.0,
+                                          metadata={"brainstorm": True, "thread_id": thread_id,
+                                                    "questions": [], "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="thinking", state="running")
+        asyncio.create_task(_run_brainstorm(thesis_id, run["id"], thread_id, said))
+        return {"status": "running", "run": run}
+
+    @r.post("/thesis/{thesis_id}/brainstorm/thread/{thread_id}/expand")
+    async def tl_brainstorm_expand(thesis_id: str, thread_id: str, body: BrainstormExpandIn,
+                                   authorization: str = Header(default=""),
+                                   x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Fire ONE enrichment leg the agent suggested (experts / references / media / deepdive) in the
+        BACKGROUND; on completion a sourced card is appended to the thread. Async + stoppable."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        leg = (body.leg or "").strip()
+        if leg not in bstorm.LEG_KINDS:
+            raise HTTPException(status_code=400, detail="unknown enrichment")
+        thread = await tstore.get_brainstorm_thread(pool, thesis_id=thesis_id, thread_id=thread_id)
+        if not thread:
+            raise HTTPException(status_code=404, detail="no such thread")
+        key = "bsx-" + tstore.new_idempotency_key()
+        try:
+            run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
+                                          projected_usd=0.0, approved_usd=1.0,
+                                          metadata={"brainstorm": True, "expand": leg, "thread_id": thread_id,
+                                                    "questions": [], "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage=leg, state="running")
+        asyncio.create_task(_run_expand(thesis_id, run["id"], thread_id, leg, (body.query or "").strip()))
+        return {"status": "running", "run": run}
 
     async def _landscape_scan(d: dict, *, light: bool = False) -> dict:
         """Orient-before-you-ask: scan the CURRENT landscape (corpus + live web + our Startup index) into

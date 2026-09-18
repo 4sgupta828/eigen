@@ -96,6 +96,17 @@ export type Projection = { claims?: number; projected_usd?: number; components?:
 export type Run = { id: string; state: string; stage?: string; projected_usd?: number; approved_usd?: number; actual_usd?: number; metadata?: Record<string, unknown> };
 export type RunResp = { status: string; projection?: Projection; run?: Run; findings?: number; selected?: number };
 export type RunStatus = { status: string; run_id?: string; state?: string; stage?: string; done?: number; total?: number; actual_usd?: number; error?: Record<string, unknown> };
+// ── brainstorm: a continuous, memory-bearing agent over the thesis's whole context ──
+export type BrainstormMemory = { summary?: string; assumptions?: string[]; explored?: string[]; open_threads?: string[] };
+export type BsSection = { kind: string; items: string[] };
+export type BsDirection = { kind: string; label: string; query: string };
+export type BsSourceCard = { title: string; url: string; source?: string; snippet?: string; tag?: string };
+export type BsPerson = { name: string; url: string; headline?: string; org?: string };
+export type BsCard = { kind: string; query?: string; cards?: BsSourceCard[]; people?: BsPerson[]; summary?: string[]; unavailable?: boolean };
+export type BsContent = { text?: string; reply?: string; sections?: BsSection[]; directions?: BsDirection[]; card?: BsCard };
+export type BrainstormMsg = { id: number; role: "user" | "agent"; content: BsContent; created_at?: string };
+export type BrainstormThread = { id: string; thesis_id?: string; title?: string; memory?: BrainstormMemory; messages?: BrainstormMsg[] | number; created_at?: string; updated_at?: string };
+
 export type Candidate = { name?: string; profile_url?: string; headline?: string; org?: string; role?: string; relevance?: number; provider?: string };
 export type ExpertAspect = { key: string; prompt?: string; verdict?: string; verdict_note?: string; roles?: { role: string; label: string }[]; questions?: string[]; candidates?: Candidate[]; calls?: { quote?: string; said_by?: string; said_role?: string; firm?: string; relation?: string }[]; guidance?: string };
 export type Insight = { quote?: string; insight?: string; stance?: "validates" | "invalidates" | "context"; refers_to?: string };
@@ -167,15 +178,20 @@ export const api = {
     req<RunResp>("POST", `/thesis/${enc(id)}/question/${enc(qid)}/run`, { max_usd, web: true, idempotency_key: max_usd > 0 ? `q-${qid}-${Date.now()}` : undefined }, id),
   inquiryStatus: (id: string, run: string) => getJSON<RunStatus>(`/thesis/${enc(id)}/inquiry/status?run=${enc(run)}`, id),
   cancelRun: (id: string, run?: string) => req<{ status: string; run_id?: string | null }>("POST", `/thesis/${enc(id)}/inquiry/cancel${run ? `?run=${enc(run)}` : ""}`, {}, id),
-  activeRun: (id: string) => getJSON<{ run: Run | null; kind: string }>(`/thesis/${enc(id)}/inquiry/active`, id),
+  activeRun: (id: string) => getJSON<{ run: Run | null; kind: string; thread_id?: string }>(`/thesis/${enc(id)}/inquiry/active`, id),
   synthesize: (id: string) => req<{ status: string; take?: Take; deck?: Deck; competitive?: Competitive; findings?: number }>("POST", `/thesis/${enc(id)}/synthesize`, undefined, id),
   buildDeck: (id: string) => req<RunResp>("POST", `/thesis/${enc(id)}/deck`, undefined, id),
   // rebuild the read (take) + deck as ONE async, stoppable background run
   regenerate: (id: string) => req<RunResp>("POST", `/thesis/${enc(id)}/regenerate`, undefined, id),
 
-  // ── brainstorm: one read-only follow-up exchange over the thesis's findings (never re-grades) ──
-  ask: (id: string, text: string) =>
-    req<{ status: string; move?: { text?: string; rungs?: string[] }; thesis?: ThesisDoc }>("POST", `/thesis/${enc(id)}/turn`, { text }, id),
+  // ── brainstorm: a continuous, memory-bearing agent over the thesis's whole context ──
+  bsThreads: (id: string) => getJSON<{ status: string; threads: BrainstormThread[] }>(`/thesis/${enc(id)}/brainstorm/threads`, id).then((d) => d.threads || []),
+  bsThread: (id: string, tid: string) => getJSON<{ status: string; thread: BrainstormThread }>(`/thesis/${enc(id)}/brainstorm/thread/${enc(tid)}`, id).then((d) => d.thread),
+  bsNewThread: (id: string, title = "") => req<{ status: string; thread: BrainstormThread }>("POST", `/thesis/${enc(id)}/brainstorm/thread`, { title }, id).then((d) => d.thread),
+  bsRenameThread: (id: string, tid: string, title: string) => req<{ status: string }>("PATCH", `/thesis/${enc(id)}/brainstorm/thread/${enc(tid)}`, { title }, id),
+  bsDeleteThread: (id: string, tid: string) => req<{ status: string }>("DELETE", `/thesis/${enc(id)}/brainstorm/thread/${enc(tid)}`, undefined, id),
+  bsMessage: (id: string, tid: string, text: string) => req<RunResp>("POST", `/thesis/${enc(id)}/brainstorm/thread/${enc(tid)}/message`, { text }, id),
+  bsExpand: (id: string, tid: string, leg: string, query: string) => req<RunResp>("POST", `/thesis/${enc(id)}/brainstorm/thread/${enc(tid)}/expand`, { leg, query }, id),
 
   // ── competitive research (projection via max_usd:0 → refused+projection; then run with the approved budget) ──
   competitiveResearch: (id: string, max_usd: number) =>

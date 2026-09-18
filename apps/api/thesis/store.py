@@ -267,6 +267,35 @@ CREATE TABLE IF NOT EXISTS ts_board (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_ts_board_thesis ON ts_board (thesis_id);
 CREATE INDEX IF NOT EXISTS ix_ts_board_recent ON ts_board (created_at DESC);
+
+-- Brainstorm THREADS — a continuous, memory-bearing exploration over a thesis's whole context. Each
+-- thread is a saveable conversation ("past brainstorms"); its `memory` is the STRUCTURED running state
+-- (summary + assumptions/explored/open_threads) re-injected into every turn so the agent stays
+-- continuous across sessions. Messages live in ts_brainstorm_msg (append-only) so the thread row stays
+-- small and listing past brainstorms is cheap.
+CREATE TABLE IF NOT EXISTS ts_brainstorm_thread (
+    id          text PRIMARY KEY,
+    thesis_id   text NOT NULL REFERENCES ts_thesis(id) ON DELETE CASCADE,
+    owner_id    text NOT NULL DEFAULT '',
+    title       text NOT NULL DEFAULT '',
+    memory      jsonb NOT NULL DEFAULT '{}',   -- {summary, assumptions[], explored[], open_threads[]}
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_ts_brainstorm_thread ON ts_brainstorm_thread (thesis_id, updated_at DESC);
+
+-- One message in a brainstorm thread. `role` = user | agent; `content` carries the structured turn
+-- (reply + typed sections + suggested directions) or an enrichment card (experts / theses / media /
+-- deepdive). Append-only; a growing jsonb array on the thread row would lock/serialize on every turn.
+CREATE TABLE IF NOT EXISTS ts_brainstorm_msg (
+    id          bigserial PRIMARY KEY,
+    thread_id   text NOT NULL REFERENCES ts_brainstorm_thread(id) ON DELETE CASCADE,
+    thesis_id   text NOT NULL,
+    role        text NOT NULL,                 -- user | agent
+    content     jsonb NOT NULL DEFAULT '{}',
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_ts_brainstorm_msg ON ts_brainstorm_msg (thread_id, id);
 """
 
 
@@ -794,6 +823,102 @@ async def cancel_run(pool, *, thesis_id: str, run_id: str | None = None) -> str 
                  RETURNING id""",
             thesis_id, run_id)
     return row["id"] if row else None
+
+
+# ---- brainstorm threads: continuous, memory-bearing exploration over a thesis ---------------------
+
+def _bthread_out(row) -> dict:
+    return {"id": row["id"], "thesis_id": row["thesis_id"], "title": row["title"],
+            "memory": _j(row["memory"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else "",
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else ""}
+
+
+def _bmsg_out(row) -> dict:
+    return {"id": int(row["id"]), "role": row["role"], "content": _j(row["content"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else ""}
+
+
+async def create_brainstorm_thread(pool, *, thesis_id: str, owner_id: str = "", title: str = "") -> dict:
+    """Open a new brainstorm thread on a thesis. Empty memory + no messages yet. -> the thread row."""
+    await ensure_schema(pool)
+    tid = "bs_" + uuid.uuid4().hex[:18]
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO ts_brainstorm_thread (id, thesis_id, owner_id, title)
+               VALUES ($1,$2,$3,$4) RETURNING *""",
+            tid, thesis_id, owner_id or "", (title or "").strip()[:160])
+    return _bthread_out(row)
+
+
+async def list_brainstorm_threads(pool, *, thesis_id: str) -> list[dict]:
+    """Past brainstorms for this thesis, most-recent first, each with a message count for the list card."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT th.*, count(m.id) AS msgs
+                 FROM ts_brainstorm_thread th
+                 LEFT JOIN ts_brainstorm_msg m ON m.thread_id = th.id
+                WHERE th.thesis_id = $1
+                GROUP BY th.id ORDER BY th.updated_at DESC""", thesis_id)
+    out = []
+    for r in rows:
+        d = _bthread_out(r)
+        d["messages"] = int(r["msgs"] or 0)
+        out.append(d)
+    return out
+
+
+async def get_brainstorm_thread(pool, *, thesis_id: str, thread_id: str) -> dict | None:
+    """One thread with its full message transcript (oldest first), or None if it isn't this thesis's."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        th = await conn.fetchrow(
+            "SELECT * FROM ts_brainstorm_thread WHERE id=$1 AND thesis_id=$2", thread_id, thesis_id)
+        if not th:
+            return None
+        msgs = await conn.fetch(
+            "SELECT * FROM ts_brainstorm_msg WHERE thread_id=$1 ORDER BY id ASC", thread_id)
+    out = _bthread_out(th)
+    out["messages"] = [_bmsg_out(m) for m in msgs]
+    return out
+
+
+async def add_brainstorm_msg(pool, *, thesis_id: str, thread_id: str, role: str, content: dict) -> int:
+    """Append one message (user text, agent turn, or an enrichment card) and touch the thread. -> msg id."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            """INSERT INTO ts_brainstorm_msg (thread_id, thesis_id, role, content)
+               VALUES ($1,$2,$3,$4::jsonb) RETURNING id""",
+            thread_id, thesis_id, role, json.dumps(content or {}))
+        await conn.execute(
+            "UPDATE ts_brainstorm_thread SET updated_at=now() WHERE id=$1", thread_id)
+    return int(row["id"])
+
+
+async def set_brainstorm_memory(pool, *, thread_id: str, memory: dict) -> None:
+    """Persist the thread's STRUCTURED running memory (re-injected into every turn to stay continuous)."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE ts_brainstorm_thread SET memory=$2::jsonb, updated_at=now() WHERE id=$1",
+            thread_id, json.dumps(memory or {}))
+
+
+async def rename_brainstorm_thread(pool, *, thesis_id: str, thread_id: str, title: str) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE ts_brainstorm_thread SET title=$3, updated_at=now() WHERE id=$1 AND thesis_id=$2",
+            thread_id, thesis_id, (title or "").strip()[:160])
+
+
+async def delete_brainstorm_thread(pool, *, thesis_id: str, thread_id: str) -> None:
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM ts_brainstorm_thread WHERE id=$1 AND thesis_id=$2", thread_id, thesis_id)
 
 
 async def set_decision(pool, thesis_id: str, decision: dict, *, research_status: str) -> None:

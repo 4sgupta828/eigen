@@ -804,3 +804,86 @@ def test_versions_and_revert_backtrack_the_thesis(monkeypatch):
     assert r.status_code == 200 and r.json()["proposed_thesis"] == "First wording."   # backtracked
     bad = c.post("/thesis/t1/revert", json={"version_id": "nope"}, headers={"Authorization": "Bearer owner"})
     assert bad.status_code == 404
+
+
+def test_brainstorm_thread_message_and_expand_kickoff(monkeypatch):
+    """The brainstorm surface: open a thread, post a message (user msg persisted + async turn kicked
+    off), list threads, and fire an enrichment leg. The turn/leg LOGIC is covered elsewhere; here we
+    assert the endpoints wire the run machinery correctly."""
+    from eigen_vertical_tech.decision import TECH_DECISION_PROFILE
+
+    async def pool_of():
+        return object()
+    async def user_of(token):
+        return {"id": "user-1"} if token == "Bearer owner" else {}
+    async def fake_get(_pool, *, thesis_id="", share_token="", owner_id="", owner_token="", trusted=False):
+        return _thesis(owner=True) if thesis_id == "t1" and (owner_id == "user-1" or trusted) else None
+
+    store = {"threads": {}, "msgs": []}
+    async def fake_create_thread(_pool, *, thesis_id, owner_id="", title=""):
+        tid = "bs_1"; store["threads"][tid] = {"id": tid, "thesis_id": thesis_id, "title": title, "memory": {}}
+        return dict(store["threads"][tid])
+    async def fake_get_thread(_pool, *, thesis_id, thread_id):
+        t = store["threads"].get(thread_id)
+        if not t:
+            return None
+        out = dict(t); out["messages"] = [m for m in store["msgs"] if m["thread_id"] == thread_id]; return out
+    async def fake_list_threads(_pool, *, thesis_id):
+        return [dict(t, messages=0) for t in store["threads"].values()]
+    async def fake_add_msg(_pool, *, thesis_id, thread_id, role, content):
+        store["msgs"].append({"thread_id": thread_id, "role": role, "content": content}); return len(store["msgs"])
+    async def fake_rename(_pool, *, thesis_id, thread_id, title):
+        store["threads"][thread_id]["title"] = title
+    async def noop(*a, **k):
+        return None
+
+    created = {}
+    async def fake_create_run(_pool, *, thesis_id, idempotency_key, projected_usd, approved_usd, metadata):
+        created.update(metadata=metadata); return {"id": "run-1", "state": "approved", "metadata": metadata}
+    async def fake_advance_run(_pool, *, thesis_id, run_id, stage, state="running", actual_delta=0.0):
+        return {"id": run_id, "state": state, "stage": stage}
+    async def fake_get_run(_pool, *, thesis_id, run_id):
+        return {"id": run_id, "state": "cancelled"}   # so the fire-and-forget task exits immediately
+    async def fake_list_questions(_pool, tid, inq=""):
+        return []
+
+    for name, fn in [("get", fake_get), ("create_brainstorm_thread", fake_create_thread),
+                     ("get_brainstorm_thread", fake_get_thread), ("list_brainstorm_threads", fake_list_threads),
+                     ("add_brainstorm_msg", fake_add_msg), ("rename_brainstorm_thread", fake_rename),
+                     ("set_brainstorm_memory", noop), ("delete_brainstorm_thread", noop),
+                     ("create_run", fake_create_run), ("advance_run", fake_advance_run),
+                     ("get_run", fake_get_run), ("fail_run", noop), ("list_questions", fake_list_questions)]:
+        monkeypatch.setattr(routes.tstore, name, fn, raising=False)
+
+    app = FastAPI()
+    app.include_router(routes.build_router(
+        pool_of, providers=None,
+        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=TECH_DECISION_PROFILE,
+                                 web_domains=(), people_domains=(), retrieval_sources={}),
+        user_of=user_of, tenant="t"))
+    c = TestClient(app)
+    H = {"Authorization": "Bearer owner"}
+
+    # open a thread
+    r = c.post("/thesis/t1/brainstorm/thread", json={}, headers=H)
+    assert r.status_code == 200
+    tid = r.json()["thread"]["id"]
+
+    # post a message → user msg persisted, async turn kicked off
+    r = c.post(f"/thesis/t1/brainstorm/thread/{tid}/message", json={"text": "Where is this weakest?"}, headers=H)
+    assert r.status_code == 200 and r.json()["status"] == "running"
+    assert created["metadata"].get("brainstorm") is True and created["metadata"]["thread_id"] == tid
+    assert any(m["role"] == "user" and m["content"]["text"] == "Where is this weakest?" for m in store["msgs"])
+
+    # empty message rejected
+    assert c.post(f"/thesis/t1/brainstorm/thread/{tid}/message", json={"text": "  "}, headers=H).status_code == 400
+
+    # list past brainstorms
+    r = c.get("/thesis/t1/brainstorm/threads", headers=H)
+    assert r.status_code == 200 and len(r.json()["threads"]) == 1
+
+    # expand: unknown leg rejected, known leg kicks off a run
+    assert c.post(f"/thesis/t1/brainstorm/thread/{tid}/expand", json={"leg": "bogus"}, headers=H).status_code == 400
+    r = c.post(f"/thesis/t1/brainstorm/thread/{tid}/expand", json={"leg": "experts", "query": "RevOps"}, headers=H)
+    assert r.status_code == 200 and r.json()["status"] == "running"
+    assert created["metadata"].get("expand") == "experts"
