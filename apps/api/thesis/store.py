@@ -771,6 +771,17 @@ async def fail_run(pool, *, thesis_id: str, run_id: str, stage: str, error: dict
             thesis_id, run_id, stage, json.dumps(error or {}))
 
 
+async def get_active_run(pool, *, thesis_id: str) -> dict | None:
+    """The thesis's one in-flight run (state approved|running), or None — so the client can RE-ATTACH its
+    progress indicator after a browser refresh instead of losing it while the run keeps going server-side."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM ts_run WHERE thesis_id = $1 AND state IN ('approved','running') "
+            "ORDER BY updated_at DESC LIMIT 1", thesis_id)
+    return _run_out(row) if row else None
+
+
 async def cancel_run(pool, *, thesis_id: str, run_id: str | None = None) -> str | None:
     """Cooperatively stop a run: mark it cancelled so its background loop halts before the next unit and
     the poller stops waiting. Cancels the given run, or the thesis's one active run when run_id is None.

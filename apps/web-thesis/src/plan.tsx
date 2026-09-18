@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type Inquiry, type Question, type RunResp } from "./api";
+import { api, type Inquiry, type Question } from "./api";
 import { PageHead, Working } from "./ui";
 
 const verdictClass = (q: Question) => (q.target_status?.includes("contradict") ? "v-con" : q.target_status ? "v-sup" : "v-open");
@@ -49,6 +49,17 @@ export function Plan({ id, inquiries, onReload, onRun }: {
     } catch (e) { setBusy(""); setStage(""); setErr((e as Error).message); }
   }
   async function stopGen() { setStage("stopping…"); try { await api.cancelRun(id, runId.current || undefined); } catch { /* poll settles it */ } }
+
+  // Re-attach an in-flight generate/redraft run after a page refresh so its spinner comes back.
+  useEffect(() => {
+    let alive = true;
+    api.activeRun(id).then((a) => {
+      if (!alive || !a.run?.id || a.kind !== "generate" || runId.current) return;
+      setBusy("gen"); setStage(STAGE_LABEL[a.run.stage || ""] || "generating…");
+      runId.current = a.run.id; pollGen(a.run.id);
+    }).catch(() => { /* nothing in flight */ });
+    return () => { alive = false; };
+  }, [id]);
 
   if (!has) {
     return (
@@ -122,12 +133,25 @@ export function Run({ id, onDone }: { id: string; onDone: () => void }) {
 
   useEffect(() => {
     let alive = true;
-    api.projectRun(id).then((r: RunResp) => {
-      if (!alive) return;
-      if (r.status === "synthesized" || r.status === "completed") setPhase({ k: "done_already" });
-      else if (r.projection) setPhase({ k: "gate", usd: r.projection.projected_usd || 0, claims: r.projection.claims || 0 });
-      else setPhase({ k: "gate", usd: 0, claims: 0 });
-    }).catch((e) => alive && setPhase({ k: "error", msg: (e as Error).message }));
+    (async () => {
+      // Re-attach a research run that's already in flight (e.g. after a page refresh) instead of losing
+      // its progress — the run keeps going server-side.
+      try {
+        const a = await api.activeRun(id);
+        if (!alive) return;
+        if (a.run?.id && a.kind === "research") {
+          setPhase({ k: "running", runId: a.run.id, done: 0, total: 0, stage: a.run.stage || "" });
+          poll(a.run.id); return;
+        }
+      } catch { /* fall through to projecting */ }
+      try {
+        const r = await api.projectRun(id);
+        if (!alive) return;
+        if (r.status === "synthesized" || r.status === "completed") setPhase({ k: "done_already" });
+        else if (r.projection) setPhase({ k: "gate", usd: r.projection.projected_usd || 0, claims: r.projection.claims || 0 });
+        else setPhase({ k: "gate", usd: 0, claims: 0 });
+      } catch (e) { if (alive) setPhase({ k: "error", msg: (e as Error).message }); }
+    })();
     return () => { alive = false; if (timer.current) window.clearTimeout(timer.current); };
   }, [id]);
 

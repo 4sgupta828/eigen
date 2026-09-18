@@ -1274,6 +1274,21 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         cancelled = await tstore.cancel_run(pool, thesis_id=thesis_id, run_id=(run or None))
         return {"status": "cancelled" if cancelled else "none", "run_id": cancelled}
 
+    @r.get("/thesis/{thesis_id}/inquiry/active")
+    async def tl_active_run(thesis_id: str, authorization: str = Header(default=""),
+                            x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """The thesis's one in-flight run (kind is in its metadata: generate / regenerate / competitive /
+        research), so the client can re-attach its progress indicator after a page refresh — the run keeps
+        going server-side regardless. `{run: null}` when nothing is active."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner)
+        run = await tstore.get_active_run(pool, thesis_id=thesis_id)
+        kind = ""
+        if run:
+            m = run.get("metadata") or {}
+            kind = ("generate" if m.get("generate") else "regenerate" if m.get("regenerate")
+                    else "competitive" if m.get("competitive") else "research")
+        return {"run": run, "kind": kind}
+
     async def _landscape_scan(d: dict, *, light: bool = False) -> dict:
         """Orient-before-you-ask: scan the CURRENT landscape (corpus + live web + our Startup index) into
         a dated brief, so the questions name what is real NOW, not the model's training memory. The kernel
@@ -1352,6 +1367,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             landscape = _dec.brief_context(brief)
             if await _cancelled():
                 return
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="framing", state="running")
             # Frame (deep-understanding) — grounded in the dated landscape too.
             aspects = profile.aspects()
             frame = {}

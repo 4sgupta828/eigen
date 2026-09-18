@@ -672,6 +672,15 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
   const timer = useRef<number | null>(null);
   const empty = !players.length;
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  // Re-attach an in-flight competitive run after a page refresh.
+  useEffect(() => {
+    let alive = true; if (!id) return;
+    api.activeRun(id).then((a) => {
+      if (!alive || !a.run?.id || a.kind !== "competitive" || busy) return;
+      setBusy(true); setNote("researching the market…"); poll(a.run.id);
+    }).catch(() => { /* nothing in flight */ });
+    return () => { alive = false; };
+  }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   function poll(runId: string) {
     if (!id) return;
@@ -813,6 +822,16 @@ function RegenBar({ id, hasComp, onDone }: { id?: string; hasComp?: boolean; onD
   const [busy, setBusy] = useState(false); const [note, setNote] = useState(""); const [err, setErr] = useState("");
   const timer = useRef<number | null>(null); const runId = useRef<string | null>(null);
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+  // Re-attach an in-flight regenerate (or its competitive step) after a page refresh.
+  useEffect(() => {
+    let alive = true; if (!id) return;
+    api.activeRun(id).then((a) => {
+      if (!alive || !a.run?.id || runId.current) return;
+      if (a.kind === "regenerate") { setBusy(true); setNote(REGEN_STAGE[a.run.stage || ""] || "regenerating…"); runId.current = a.run.id; pollRegen(a.run.id); }
+      else if (a.kind === "competitive") { setBusy(true); setNote("re-researching competitors…"); runId.current = a.run.id; pollComp(a.run.id); }
+    }).catch(() => { /* nothing in flight */ });
+    return () => { alive = false; };
+  }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   function pollRegen(rid: string) {
     if (!id) return;
