@@ -1675,6 +1675,55 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         result = await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json())
         return {"status": "ok", "deck": result.get("deck"), "findings": result.get("findings", 0)}
 
+    async def _run_regenerate(thesis_id: str, run_id: str):
+        """Rebuild the Collective Take + Pitch Deck from the current findings in the BACKGROUND — a
+        stoppable run so regenerating the read doesn't block or dangle when the user navigates away.
+        Competitive stays its own (gated, web-spending) run."""
+        pool = await pool_of()
+
+        async def _cancelled() -> bool:
+            rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
+            return (rn or {}).get("state") == "cancelled"
+
+        try:
+            if _profile() is None:
+                await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="setup",
+                                      error={"reason": "no decision profile is configured"})
+                return
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="take", state="running")
+            await _synthesize(thesis_id)                     # rebuild the collective take
+            if await _cancelled():
+                return
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="deck", state="running")
+            await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json())   # rebuild the deck
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed", state="completed")
+        except tstore.SpendCapError as exc:
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="cap",
+                                  error={"reason": "approved cost reached", "detail": str(exc)})
+        except Exception as exc:      # noqa: BLE001 — fail closed; a failed rebuild never corrupts state
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                  error={"reason": "regenerate failed", "detail": str(exc)[:300]})
+
+    @r.post("/thesis/{thesis_id}/regenerate")
+    async def tl_regenerate(thesis_id: str, authorization: str = Header(default=""),
+                            x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Rebuild the read (Collective Take) + Pitch Deck from the latest findings as ONE async, stoppable
+        background run; the client polls status and can stop it. Competitive is re-researched separately
+        (it spends on the open web and is gated)."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if _profile() is None:
+            raise HTTPException(status_code=409, detail="no decision profile is configured")
+        key = "regen-" + tstore.new_idempotency_key()
+        try:
+            run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
+                                          projected_usd=0.0, approved_usd=1.0,
+                                          metadata={"regenerate": True, "questions": [], "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="starting", state="running")
+        asyncio.create_task(_run_regenerate(thesis_id, run["id"]))
+        return {"status": "running", "run": run}
+
     # ── Public ThesisBoard: self-publish an anonymized, answered-only snapshot to a global gallery ──────
     @r.post("/thesis/{thesis_id}/publish")
     async def tl_publish(thesis_id: str, authorization: str = Header(default=""),

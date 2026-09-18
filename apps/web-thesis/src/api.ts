@@ -168,6 +168,8 @@ export const api = {
   cancelRun: (id: string, run?: string) => req<{ status: string; run_id?: string | null }>("POST", `/thesis/${enc(id)}/inquiry/cancel${run ? `?run=${enc(run)}` : ""}`, {}, id),
   synthesize: (id: string) => req<{ status: string; take?: Take; deck?: Deck; competitive?: Competitive; findings?: number }>("POST", `/thesis/${enc(id)}/synthesize`, undefined, id),
   buildDeck: (id: string) => req<{ status: string; deck?: Deck; findings?: number }>("POST", `/thesis/${enc(id)}/deck`, undefined, id),
+  // rebuild the read (take) + deck as ONE async, stoppable background run
+  regenerate: (id: string) => req<RunResp>("POST", `/thesis/${enc(id)}/regenerate`, undefined, id),
 
   // ── brainstorm: one read-only follow-up exchange over the thesis's findings (never re-grades) ──
   ask: (id: string, text: string) =>

@@ -806,44 +806,72 @@ function DeckTab({ deck }: { deck?: Deck }) {
 
 // Owner control: after running new questions, rebuild the read (Collective Take) and its derivatives —
 // the pitch deck (free) and, on confirm, the competitive landscape (gated web spend).
+const REGEN_STAGE: Record<string, string> = { starting: "starting…", take: "rebuilding the read…", deck: "rebuilding the pitch deck…" };
 function RegenBar({ id, hasComp, onDone }: { id?: string; hasComp?: boolean; onDone?: () => void }) {
   const [busy, setBusy] = useState(false); const [note, setNote] = useState(""); const [err, setErr] = useState("");
-  const timer = useRef<number | null>(null);
+  const timer = useRef<number | null>(null); const runId = useRef<string | null>(null);
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
-  function poll(runId: string) {
+
+  function pollRegen(rid: string) {
     if (!id) return;
-    api.inquiryStatus(id, runId).then((s) => {
-      if (s.state === "completed" || s.state === "cancelled") { setBusy(false); setNote(""); onDone?.(); return; }
-      if (s.state === "failed") { setBusy(false); setErr("competitive research failed"); onDone?.(); return; }
+    api.inquiryStatus(id, rid).then((s) => {
+      if (s.state === "completed") { onDone?.(); afterTake(); return; }        // take+deck done → maybe competitive
+      if (s.state === "cancelled") { runId.current = null; setBusy(false); setNote(""); onDone?.(); return; }
+      if (s.state === "failed") { runId.current = null; setBusy(false); setErr("regenerate failed — try again"); return; }
+      setNote(REGEN_STAGE[s.stage || ""] || "working…");
+      timer.current = window.setTimeout(() => pollRegen(rid), 2000);
+    }).catch(() => { timer.current = window.setTimeout(() => pollRegen(rid), 3000); });
+  }
+  function pollComp(rid: string) {
+    if (!id) return;
+    api.inquiryStatus(id, rid).then((s) => {
+      if (s.state === "completed" || s.state === "cancelled") { runId.current = null; setBusy(false); setNote(""); onDone?.(); return; }
+      if (s.state === "failed") { runId.current = null; setBusy(false); setErr("competitive research failed"); onDone?.(); return; }
       setNote("re-researching competitors…");
-      timer.current = window.setTimeout(() => poll(runId), 2500);
-    }).catch(() => { timer.current = window.setTimeout(() => poll(runId), 3000); });
+      timer.current = window.setTimeout(() => pollComp(rid), 2500);
+    }).catch(() => { timer.current = window.setTimeout(() => pollComp(rid), 3000); });
+  }
+  async function afterTake() {
+    runId.current = null;
+    if (hasComp && id) {
+      try {
+        const proj = await api.competitiveResearch(id, 0);
+        const max = Number(proj.projection?.projected_usd || 0);
+        if (window.confirm(`Also re-research the competitive landscape from the open web?\n\nProjected maximum: $${max.toFixed(3)}`)) {
+          setNote("re-researching competitors…");
+          const r = await api.competitiveResearch(id, Math.max(max, 0.01));
+          if (r.run?.id) { runId.current = r.run.id; pollComp(r.run.id); return; }
+        }
+      } catch (e) { setErr((e as Error).message); }
+    }
+    setBusy(false); setNote("");
   }
   async function regen() {
     if (!id || busy) return; setErr("");
     if (!window.confirm("Rebuild the read and pitch deck from the latest findings?")) return;
-    setBusy(true);
+    setBusy(true); setNote("starting…");
     try {
-      setNote("rebuilding the read…"); await api.synthesize(id);
-      setNote("rebuilding the deck…"); await api.buildDeck(id);
-      onDone?.();
-      if (hasComp) {
-        const proj = await api.competitiveResearch(id, 0);
-        const max = Number(proj.projection?.projected_usd || 0);
-        if (window.confirm(`Also re-research the competitive landscape from the open web?\n\nProjected maximum: $${max.toFixed(3)}`)) {
-          setNote("starting competitive…");
-          const r = await api.competitiveResearch(id, Math.max(max, 0.01));
-          if (r.run?.id) { poll(r.run.id); return; }
-        }
-      }
-      setBusy(false); setNote("");
-    } catch (e) { setBusy(false); setErr((e as Error).message); }
+      const r = await api.regenerate(id);
+      if (!r.run?.id) { onDone?.(); await afterTake(); return; }
+      runId.current = r.run.id; pollRegen(r.run.id);
+    } catch (e) { setBusy(false); setNote(""); setErr((e as Error).message); }
   }
+  async function stop() { setNote("stopping…"); try { await api.cancelRun(id!, runId.current || undefined); } catch { /* poll settles it */ } }
+
   if (!id) return null;
   return (
     <div className="th-regen">
-      <button className="th-regen-btn" disabled={busy} onClick={regen}>{busy ? (note || "regenerating…") : "↻ Regenerate from latest findings"}</button>
-      <span className="th-regen-note">rebuilds the read &amp; deck; competitive is re-researched on confirm</span>
+      {busy ? (
+        <>
+          <span className="th-regen-note">{note || "regenerating…"}</span>
+          <button className="th-regen-btn" onClick={stop}>■ Stop</button>
+        </>
+      ) : (
+        <>
+          <button className="th-regen-btn" onClick={regen}>↻ Regenerate from latest findings</button>
+          <span className="th-regen-note">rebuilds the read &amp; deck; competitive is re-researched on confirm</span>
+        </>
+      )}
       {err ? <span style={{ color: "var(--p0)", fontSize: ".78rem" }}>{err}</span> : null}
     </div>
   );
