@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { api } from "./api";
 import type {
   Analysis, Cited, Competitive, CompPlayer, Deck, Evidence, InquiriesView, Question, Take, ThesisDoc,
@@ -25,12 +25,14 @@ function parse(value?: Cited): { clean: string; ids: string[] } {
 
 // ── drawer state ───────────────────────────────────────────────────────────────
 type DrawerView = { kind: "overview" } | { kind: "finding"; id: string } | { kind: "evidence"; id: string };
+type Hover = { meta?: string; quote?: string; src?: string; rect: DOMRect } | null;
 type Ctx = {
   citer: Citer;
   evidenceById: Map<string, Evidence>;
   findingById: Map<string, Question>;
   show: (v: DrawerView) => void;
   active: string | null;
+  setHover: (h: Hover) => void;
 };
 const BriefCtx = createContext<Ctx | null>(null);
 const useBrief = () => {
@@ -41,13 +43,18 @@ const useBrief = () => {
 
 // ── a cited run of text: renders clean text + clickable [n] refs (hover to preview) ────────────────
 function Cite({ value, kind }: { value?: Cited; kind: "finding" | "evidence" }) {
-  const { citer, show, active, evidenceById, findingById } = useBrief();
+  const { citer, show, active, evidenceById, findingById, setHover } = useBrief();
   const { clean, ids } = parse(value);
   if (!clean && !ids.length) return null;
-  const hover = (id: string) => {
-    if (kind === "evidence") { const e = evidenceById.get(id); return e ? (cleanText(e.quote).slice(0, 240) || titleClean(e.title)) : ""; }
-    const q = findingById.get(id); return q?.text ? `Q: ${q.text}` : "";
+  const payload = (id: string, rect: DOMRect): Hover => {
+    if (kind === "evidence") {
+      const e = evidenceById.get(id); if (!e) return null; const t = tierOf(e);
+      return { meta: [t.label, domainOf(e.source_url)].filter(Boolean).join(" · "), quote: cleanText(e.quote).slice(0, 300), src: titleClean(e.title), rect };
+    }
+    const q = findingById.get(id); if (!q) return null;
+    return { meta: q.inquiry_name || "Finding", quote: q.text, rect };
   };
+  const enter = (id: string, el: HTMLElement) => setHover(payload(id, el.getBoundingClientRect()));
   return (
     <>
       {clean}{" "}
@@ -57,14 +64,37 @@ function Cite({ value, kind }: { value?: Cited; kind: "finding" | "evidence" }) 
           className={`ref${active === id ? " on" : ""}`}
           role="button"
           tabIndex={0}
-          title={hover(id)}
           onClick={() => show({ kind, id } as DrawerView)}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") show({ kind, id } as DrawerView); }}
+          onMouseEnter={(e) => enter(id, e.currentTarget)}
+          onMouseLeave={() => setHover(null)}
+          onFocus={(e) => enter(id, e.currentTarget)}
+          onBlur={() => setHover(null)}
         >
           {citer.num(id)}
         </span>
       ))}
     </>
+  );
+}
+
+// ── the floating citation preview card (styled hover, replaces the native title tooltip) ──
+function CiteHover({ hover }: { hover: Hover }) {
+  if (!hover) return null;
+  const { rect } = hover;
+  const below = rect.top < 180;
+  const style: CSSProperties = {
+    position: "fixed",
+    left: Math.min(Math.max(rect.left + rect.width / 2, 160), (typeof window !== "undefined" ? window.innerWidth : 1000) - 160),
+    top: below ? rect.bottom + 8 : rect.top - 8,
+    transform: below ? "translate(-50%, 0)" : "translate(-50%, -100%)",
+  };
+  return (
+    <div className="citehover" style={style} role="tooltip">
+      {hover.meta ? <div className="ch-meta">{hover.meta}</div> : null}
+      {hover.quote ? <blockquote className="ch-quote">“{hover.quote}”</blockquote> : null}
+      {hover.src ? <div className="ch-src">{hover.src}</div> : null}
+    </div>
   );
 }
 
@@ -367,21 +397,26 @@ function ReasonTab({ take, lean }: { take?: Take; lean?: { t: string; d: string;
     </div>
   );
 }
-// ── Lines of inquiry: cards → aspect groups → question sub-cards → grounded answer + sources ──
+// ── Lines of inquiry: an investigation AREA (purpose) → sub-dimensions → research questions ──
 const LENS: Record<string, { label: string; glyph: string }> = {
   seek_support: { label: "Seeks support", glyph: "＋" },
+  seek_contradiction: { label: "Seeks disconfirmation", glyph: "－" },
   seek_disconfirmation: { label: "Seeks disconfirmation", glyph: "－" },
   seek_disconfirm: { label: "Seeks disconfirmation", glyph: "－" },
+  challenge_assumption: { label: "Challenges assumption", glyph: "◇" },
   test_assumption: { label: "Tests assumption", glyph: "◇" },
   probe: { label: "Probe", glyph: "◦" },
 };
 const VERDICT: Record<string, { l: string; cls: string }> = {
   supported: { l: "Supported", cls: "v-sup" },
   contradicted: { l: "Contradicted", cls: "v-con" },
+  under_tested: { l: "Under-tested", cls: "v-mix" },
   mixed: { l: "Mixed", cls: "v-mix" },
   open: { l: "Open", cls: "v-open" },
 };
 const verdictOf = (v?: string) => VERDICT[v || "open"] || VERDICT.open;
+const capitalize = (s?: string) => { const t = (s || "").trim(); return t ? t.charAt(0).toUpperCase() + t.slice(1) : ""; };
+const humanize = (s?: string) => capitalize((s || "").replace(/_/g, " "));
 function rollup(aspects?: { verdict?: string }[]) {
   const vs = (aspects || []).map((a) => a.verdict);
   if (vs.includes("contradicted")) return "contradicted";
@@ -390,7 +425,8 @@ function rollup(aspects?: { verdict?: string }[]) {
   return "open";
 }
 const CITE_MARK = /\[\[e:([A-Za-z0-9_-]{1,80})\]\]|\*\*([^*]+)\*\*/g;
-function makeAnswerRun(numById: Record<string, number>, quoteById: Record<string, string>, onCite: (id: string) => void) {
+function makeAnswerRun(numById: Record<string, number>, onCite: (id: string) => void,
+                       onHover: (id: string, el: HTMLElement) => void, onLeave: () => void) {
   return (text: string) => {
     const out: ReactNode[] = []; let last = 0, k = 0, m: RegExpExecArray | null;
     CITE_MARK.lastIndex = 0;
@@ -398,8 +434,10 @@ function makeAnswerRun(numById: Record<string, number>, quoteById: Record<string
       if (m.index > last) out.push(text.slice(last, m.index));
       if (m[1] != null) {
         const id = m[1], n = numById[id];
-        if (n) out.push(<sup key={k++} className="th-ref2" role="button" tabIndex={0} title={quoteById[id] || "source"}
-          onClick={() => onCite(id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onCite(id); }}>{n}</sup>);
+        if (n) out.push(<sup key={k++} className="th-ref2" role="button" tabIndex={0}
+          onClick={() => onCite(id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onCite(id); }}
+          onMouseEnter={(e) => onHover(id, e.currentTarget)} onMouseLeave={onLeave}
+          onFocus={(e) => onHover(id, e.currentTarget)} onBlur={onLeave}>{n}</sup>);
       } else if (m[2] != null) { out.push(<strong key={k++}>{m[2]}</strong>); }
       last = CITE_MARK.lastIndex;
     }
@@ -408,14 +446,18 @@ function makeAnswerRun(numById: Record<string, number>, quoteById: Record<string
   };
 }
 function GroundedAnswer({ q }: { q: Question }) {
-  const { evidenceById, citer, show } = useBrief();
+  const { evidenceById, citer, show, setHover } = useBrief();
   const prose = (q.answer || "").trim().replace(/[([]\s*[)\]]/g, "").replace(/\s+([.,;])/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
   const ids: string[] = []; const seen = new Set<string>();
   prose.replace(/\[\[e:([A-Za-z0-9_-]{1,80})\]\]/g, (_m, id: string) => { if (!seen.has(id)) { seen.add(id); ids.push(id); } return _m; });
   ids.forEach((id) => citer.num(id));   // register cited evidence so the Evidence overview ranks it first
-  const numById: Record<string, number> = {}; const quoteById: Record<string, string> = {};
-  ids.forEach((id, i) => { numById[id] = i + 1; const e = evidenceById.get(id); quoteById[id] = e ? cleanText(e.quote).slice(0, 240) : ""; });
-  const run = makeAnswerRun(numById, quoteById, (id) => show({ kind: "evidence", id }));
+  const numById: Record<string, number> = {};
+  ids.forEach((id, i) => { numById[id] = i + 1; });
+  const onHover = (id: string, el: HTMLElement) => {
+    const e = evidenceById.get(id); if (!e) return; const t = tierOf(e);
+    setHover({ meta: [t.label, domainOf(e.source_url)].filter(Boolean).join(" · "), quote: cleanText(e.quote).slice(0, 300), src: titleClean(e.title), rect: el.getBoundingClientRect() });
+  };
+  const run = makeAnswerRun(numById, (id) => show({ kind: "evidence", id }), onHover, () => setHover(null));
   const hasMarkers = ids.length > 0;
   if (!prose) return <div className="th-answer-note">Not yet established in the record.</div>;
 
@@ -479,41 +521,55 @@ function LinesTab({ inquiries }: { inquiries?: InquiriesView["inquiries"] }) {
   const lines = (inquiries || []).filter((l) => (l.questions || []).length);
   if (!lines.length) return <p className="muted">No lines of inquiry yet.</p>;
   return (
-    <div className="th-inqs">
-      {lines.map((l) => {
-        const qs = l.questions || [];
-        const answered = qs.filter((q) => q.target_status).length;
-        const v = verdictOf(rollup(l.aspects));
-        // group questions by aspect, preserving the aspects' declared order (then any orphans)
-        const byAspect = new Map<string, Question[]>();
-        qs.forEach((q) => { const k = q.aspect_key || "_"; byAspect.set(k, [...(byAspect.get(k) || []), q]); });
-        const aspects = (l.aspects || []).filter((a) => byAspect.get(a.key)?.length);
-        const orphans = qs.filter((q) => !aspects.some((a) => a.key === q.aspect_key));
-        return (
-          <details key={l.key} className="th-inq2" open={answered > 0}>
-            <summary className="th-inq2-head">
-              <div className="th-inq2-titlewrap">
-                <h3 className="th-inq2-name">{l.name}</h3>
-                {l.framing ? <p className="th-inq2-framing">{l.framing}</p> : null}
-              </div>
-              <span className="th-inq2-side">
-                <span className={`v ${v.cls}`}>{v.l}</span>
-                <span className="th-inq2-count">{answered}/{qs.length}</span>
-              </span>
-            </summary>
-            <div className="th-inq2-body">
-              {aspects.map((a) => (
-                <div key={a.key} className="th-aspect2">
-                  <div className="th-aspect2-h"><b>{a.prompt || a.key}</b><span className={`v ${verdictOf(a.verdict).cls}`}>{verdictOf(a.verdict).l}</span></div>
-                  {(byAspect.get(a.key) || []).map((q) => <QuestionCard key={q.id} q={q} />)}
+    <>
+      <p className="th-inqs-intro"><b>{lines.length} investigation area{lines.length === 1 ? "" : "s"}</b> — each a purpose the thesis has to survive, opened into sub-dimensions and the questions that test them.</p>
+      <div className="th-inqs">
+        {lines.map((l, li) => {
+          const qs = l.questions || [];
+          const answered = qs.filter((q) => q.target_status).length;
+          const v = verdictOf(rollup(l.aspects));
+          // group questions by aspect (sub-dimension), preserving the declared order (then any orphans)
+          const byAspect = new Map<string, Question[]>();
+          qs.forEach((q) => { const k = q.aspect_key || "_"; byAspect.set(k, [...(byAspect.get(k) || []), q]); });
+          const aspects = (l.aspects || []).filter((a) => byAspect.get(a.key)?.length);
+          const orphans = qs.filter((q) => !aspects.some((a) => a.key === q.aspect_key));
+          // The AREA is a purpose, not a question: lead with the framing; the name is the guiding question.
+          const area = capitalize(l.framing) || l.name;
+          return (
+            <details key={l.key} className="th-inq2" open={answered > 0}>
+              <summary className="th-inq2-head">
+                <span className="th-inq2-num">{li + 1}</span>
+                <div className="th-inq2-titlewrap">
+                  <div className="th-inq2-kick">Investigation area</div>
+                  <h3 className="th-inq2-name">{area}</h3>
+                  {l.name && l.name !== area ? <p className="th-inq2-q">Guiding question — {l.name}</p> : null}
                 </div>
-              ))}
-              {orphans.length ? <div className="th-aspect2">{orphans.map((q) => <QuestionCard key={q.id} q={q} />)}</div> : null}
-            </div>
-          </details>
-        );
-      })}
-    </div>
+                <span className="th-inq2-side">
+                  <span className={`v ${v.cls}`}>{v.l}</span>
+                  <span className="th-inq2-count">{answered}/{qs.length} tested</span>
+                </span>
+              </summary>
+              <div className="th-inq2-body">
+                {aspects.map((a) => {
+                  const av = verdictOf(a.verdict);
+                  return (
+                    <div key={a.key} className="th-aspect2">
+                      <div className="th-aspect2-h">
+                        <span className="th-aspect2-label">{humanize(a.key)}</span>
+                        <span className={`v ${av.cls}`}>{av.l}</span>
+                      </div>
+                      {a.prompt ? <p className="th-aspect2-hint">{a.prompt}</p> : null}
+                      {(byAspect.get(a.key) || []).map((q) => <QuestionCard key={q.id} q={q} />)}
+                    </div>
+                  );
+                })}
+                {orphans.length ? <div className="th-aspect2">{orphans.map((q) => <QuestionCard key={q.id} q={q} />)}</div> : null}
+              </div>
+            </details>
+          );
+        })}
+      </div>
+    </>
   );
 }
 const truncate = (t?: string, max = 130) => { const s = (t || "").trim(); return s.length > max ? s.slice(0, max).replace(/\s+\S*$/, "") + "…" : s; };
@@ -665,10 +721,12 @@ export function Brief({ doc, inq, anonymous, id, owner, onRefetchInq }: {
     return { t: "CONTINUE diligence", d: "mixed / still under-tested", c: "#b5762a" };
   }, [inq]);
 
-  const ctx: Ctx = { citer, evidenceById, findingById, show: setView, active };
+  const [hover, setHover] = useState<Hover>(null);
+  const ctx: Ctx = { citer, evidenceById, findingById, show: setView, active, setHover };
 
   return (
     <BriefCtx.Provider value={ctx}>
+      <CiteHover hover={hover} />
       <div className="briefgrid">
         <div className="memo">
           <div className="mono muted" style={{ fontSize: ".7rem", marginBottom: ".3rem" }}>
