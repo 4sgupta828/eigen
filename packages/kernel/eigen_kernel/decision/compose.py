@@ -27,6 +27,9 @@ from .synthesis import sanitize_answer, NOT_ESTABLISHED
 _MARK = re.compile(r"\[\[e:[A-Za-z0-9_-]{1,80}\]\]")
 # An F-token not embedded in a larger alphanumeric run (so it never matches the "f2" inside a hex id).
 _FTOK = re.compile(r"(?<![A-Za-z0-9])[Ff]0*(\d+)")
+# A bracket cluster of only F-numbers (e.g. "[F1, F2, F3]") the model sometimes inlines in the prose —
+# citations belong in finding_ids and render as footnotes, so strip these stray tokens from shown text.
+_FINLINE = re.compile(r"\s*\[[\sFf0-9,;]*?[Ff]\d+[\sFf0-9,;]*?\]")
 
 _STATUS_WORD = {
     "target_supported": "the record SUPPORTS this",
@@ -252,7 +255,7 @@ def _gate_units(items, resolve, reals: set) -> list[dict]:
                                                 or (it or {}).get("evidence_ids"))) if i in reals]
         if not text or not ids:
             continue
-        text = _MARK.sub("", text).strip()
+        text = _FINLINE.sub("", _MARK.sub("", text)).strip()
         if not text:
             continue
         out.append({"text": text, "markers": "".join(f"[[e:{i}]]" for i in ids), "ids": ids})
@@ -289,16 +292,17 @@ async def compose_memo(llm_json, *, directive: str, sections: list[dict], findin
         + "- bottom_line: a TIGHT 1–3 sentence lead — the way the record leans (fund / pass / more "
           "diligence) and the crux. Not the whole memo.\n"
         + "- grounded: the cited FACTS a section rests on — each a DIRECT claim about the world (party, "
-          "number, date) with its F-number, e.g. 'The incumbent ships the same capability in-product "
-          "[F3]'. Do NOT narrate your own research ('the record found that…', 'the X record found…') — "
-          "state what is true, or what is UNSETTLED, in the world: e.g. 'No source establishes "
-          "willingness-to-pay; it remains open [F3, F7]'. Keep an 'open / under-tested / left open' status "
-          "AS a fact when that is what the record shows — never turn a gap into a definitive negative.\n"
+          "number, date), e.g. 'The incumbent ships the same capability in-product'. Do NOT narrate your "
+          "own research ('the record found that…', 'the X record found…') — state what is true, or what is "
+          "UNSETTLED, in the world: e.g. 'No source establishes willingness-to-pay; it remains open'. Keep "
+          "an 'open / under-tested / left open' status AS a fact when that is what the record shows — "
+          "never turn a gap into a definitive negative. Put the F-numbers in this unit's finding_ids, "
+          "NEVER inline in the text (no '[F1, F2]' in prose).\n"
         + "- SAY EACH FACT ONCE. Put each fact's grounded claim in the ONE section where it is most "
           "load-bearing. In a later section do NOT re-list the same claim and numbers — refer back briefly "
-          "through reasoning (e.g. 'given the incumbent traction above [F3, F7]…'). The memo as a WHOLE is "
-          "comprehensive; a later section that introduces no NEW fact is mostly reasoning with an empty "
-          "grounded array.\n"
+          "in prose (e.g. 'given the incumbent traction above…') and carry the finding_ids on that "
+          "reasoning block. The memo as a WHOLE is comprehensive; a later section that introduces no NEW "
+          "fact is mostly reasoning with an empty grounded array.\n"
         + "- analysis is the PRODUCT: what several findings together IMPLY, where they are in TENSION, "
           "what GAP remains, what ASSUMPTION the thesis rests on, and (kind=what_would_change_this) the "
           "evidence that would move the call. Each item cites the findings it builds on BY F-NUMBER — and "
@@ -343,7 +347,7 @@ def _cell(text: str, raw_ids, resolve, reals: set) -> dict:
     ids = [i for i in dict.fromkeys(resolve(raw_ids)) if i in reals]
     if not text or not ids:
         return {"text": "", "markers": ""}
-    text = _MARK.sub("", text).strip()
+    text = _FINLINE.sub("", _MARK.sub("", text)).strip()
     return {"text": text, "markers": "".join(f"[[e:{i}]]" for i in ids)}
 
 

@@ -391,8 +391,8 @@ Rules, in order:
 6. SAY EACH FACT ONCE, plainly. The memo as a whole covers every line of inquiry, but no section repeats
    a fact another already made — later sections refer back through reasoning, not by re-listing facts.
    Write like a partner talks: direct claims about the world, not narration about the research ("Enterprise
-   buys pull in up to 10 stakeholders [F7]", never "the buyer record found that…"). Reasoning, not a
-   re-listed ledger, is the value. Bottom line is a tight lead: the way the record leans (fund / pass /
+   buys pull in up to 10 stakeholders", never "the buyer record found that…"); put the F-numbers in
+   finding_ids, never inline in the prose. Reasoning, not a re-listed ledger, is the value. Bottom line is a tight lead: the way the record leans (fund / pass /
    more diligence) and the crux, nothing more."""
 
 _COMPETITIVE_DIRECTIVE = """\

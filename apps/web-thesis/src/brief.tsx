@@ -15,10 +15,14 @@ class Citer {
   peek(id: string): number | undefined { return this.seen.get(id); }  // number if already cited, else undefined
 }
 const MARK = /\[\[e:([A-Za-z0-9_-]{1,80})\]\]/g;
+// Stray finding-tokens the synthesis model sometimes inlines in prose (e.g. "[F1, F2, F3]"): a bracket
+// group of only F-numbers/commas/spaces. Citations render as footnotes, so these raw tokens are noise.
+const FTOK = /\s*\[[\sFf0-9,;]*?[Ff]\d+[\sFf0-9,;]*?\]/g;
+const stripFTokens = (s: string) => s.replace(FTOK, "");
 function parse(value?: Cited): { clean: string; ids: string[] } {
   const raw = `${value?.text || ""} ${value?.markers || ""}`;
   const ids: string[] = [];
-  const clean = raw.replace(MARK, (_m, id: string) => { ids.push(id); return ""; })
+  const clean = stripFTokens(raw.replace(MARK, (_m, id: string) => { ids.push(id); return ""; }))
     .replace(/\s+([.,;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
   return { clean, ids };
 }
@@ -447,7 +451,7 @@ function makeAnswerRun(numById: Record<string, number>, onCite: (id: string) => 
 }
 function GroundedAnswer({ q }: { q: Question }) {
   const { evidenceById, citer, show, setHover } = useBrief();
-  const prose = (q.answer || "").trim().replace(/[([]\s*[)\]]/g, "").replace(/\s+([.,;])/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
+  const prose = stripFTokens((q.answer || "").trim()).replace(/[([]\s*[)\]]/g, "").replace(/\s+([.,;])/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
   const ids: string[] = []; const seen = new Set<string>();
   prose.replace(/\[\[e:([A-Za-z0-9_-]{1,80})\]\]/g, (_m, id: string) => { if (!seen.has(id)) { seen.add(id); ids.push(id); } return _m; });
   ids.forEach((id) => citer.num(id));   // register cited evidence so the Evidence overview ranks it first
