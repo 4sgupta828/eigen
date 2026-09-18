@@ -1678,13 +1678,20 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         return {"status": "ok", "take": result.get("take"), "deck": _d.get("pitch_deck") or {},
                 "competitive": _d.get("competitive") or {}, "findings": result.get("findings", 0)}
 
-    async def _memo_scan(thesis: str, subject: str) -> str:
+    def _host(url: str) -> str:
+        try:
+            from urllib.parse import urlparse
+            return (urlparse(url).hostname or "").replace("www.", "")
+        except Exception:      # noqa: BLE001
+            return ""
+
+    async def _memo_scan(thesis: str, subject: str) -> list[dict]:
         """Pull a few SIMILAR public VC theses / founder memos from the open web — structure + narrative
-        exemplars for the pitch deck (never a fact source; the deck still cites only findings). Best-effort,
-        time-bounded, never raises."""
+        exemplars for the pitch deck (never a fact source; the deck still cites only findings). Returns
+        [{title, url, source, snippet}]. Best-effort, time-bounded, never raises."""
         wc = atk._web_client(manifest)
         if wc is None:
-            return ""
+            return []
         focus = (subject or thesis[:90]).strip()
         queries = [f"{focus} investment thesis", f"why we invested {focus} VC memo", f"{focus} founder thesis market"]
 
@@ -1694,18 +1701,19 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             except Exception:      # noqa: BLE001
                 return []
         results = await asyncio.gather(*[_one(q) for q in queries])
-        hits, seen = [], set()
+        memos, seen = [], set()
         for res in results:
             for x in res or []:
                 url = getattr(x, "url", "") or ""
-                if url in seen:
+                if not url or url in seen:
                     continue
                 seen.add(url)
                 text = " ".join(filter(None, [*(getattr(x, "highlights", ()) or ()), getattr(x, "snippet", "") or "",
                                               (getattr(x, "body", "") or "")[:600]])).strip()
                 if text:
-                    hits.append(f"- {(getattr(x, 'title', '') or url)[:120]}: {text[:500]}")
-        return "\n".join(hits[:6])
+                    memos.append({"title": (getattr(x, "title", "") or _host(url) or "memo")[:160],
+                                  "url": url, "source": _host(url), "snippet": text[:400]})
+        return memos[:6]
 
     async def _run_deck(thesis_id: str, run_id: str):
         """Build the Startup Pitch Deck in the BACKGROUND (founder-voice synthesis over the findings, shaped
@@ -1719,16 +1727,20 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
             if (rn or {}).get("state") == "cancelled":
                 return
-            # Source similar public VC/founder memos as STYLE exemplars (best-effort, time-bounded).
+            # Source a few SIMILAR public VC theses / founder memos (best-effort, time-bounded). They
+            # ride along the deck as "similar theses to check out" cards AND, as plain text, shape the
+            # deck's narrative — never a citation source.
             d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
-            reference = ""
+            memos: list[dict] = []
             try:
                 thesis = (d or {}).get("thesis") or ""
                 subject = " ".join(str(v) for v in ((d or {}).get("subject") or {}).values()).strip()
-                reference = await asyncio.wait_for(_memo_scan(thesis, subject), timeout=15)
+                memos = await asyncio.wait_for(_memo_scan(thesis, subject), timeout=15)
             except Exception:      # noqa: BLE001 — the deck builds fine without exemplars
-                reference = ""
-            await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json(), reference=reference)
+                memos = []
+            reference = "\n\n".join(f"{m['title']} ({m['source']}): {m['snippet']}" for m in memos).strip()
+            await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json(),
+                                      reference=reference, references=memos)
             rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
             if (rn or {}).get("state") == "cancelled":
                 return

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { api } from "./api";
 import { Working } from "./ui";
 import type {
-  Analysis, Cited, Competitive, CompCandidate, CompPlayer, Deck, Evidence, InquiriesView, Question, Take, ThesisDoc,
+  Analysis, Cited, Competitive, CompCandidate, CompPlayer, Deck, Evidence, InquiriesView, Question, SimilarThesis, Take, ThesisDoc,
 } from "./api";
 
 // ── citation numbering (first-seen, per Brief) ─────────────────────────────────
@@ -783,10 +783,47 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
     </div>
   );
 }
+// A sourced public VC thesis / founder memo, shown as a "similar thesis to check out" card — a link
+// out + an inline expansion of its key points. Never a citation source; purely for the reader to explore.
+function SimilarCard({ m }: { m: SimilarThesis }) {
+  const [open, setOpen] = useState(false);
+  const snip = cleanText(m.snippet || "");
+  const points = snip.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 24).slice(0, 4);
+  return (
+    <div className={"sim-card" + (open ? " sim-open" : "")}>
+      <button className="sim-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="sim-tw">{open ? "▾" : "▸"}</span>
+        <span className="sim-title">{titleClean(m.title) || m.source || "Similar thesis"}</span>
+        {m.source ? <span className="sim-src">{m.source}</span> : null}
+      </button>
+      {open ? (
+        <div className="sim-body">
+          {points.length ? <ul className="sim-points">{points.map((p, i) => <li key={i}>{p}</li>)}</ul>
+            : snip ? <p className="sim-snip">{snip}</p> : <p className="muted" style={{ margin: 0 }}>No preview available.</p>}
+          <a className="sim-link" href={m.url} target="_blank" rel="noreferrer noopener">Read the full thesis ↗</a>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SimilarTheses({ refs }: { refs?: SimilarThesis[] }) {
+  const list = (refs || []).filter((m) => m && m.url);
+  if (!list.length) return null;
+  return (
+    <div className="sim-wrap">
+      <span className="kick">Similar theses to check out</span>
+      <p className="sim-lede">Public VC theses &amp; founder memos in this space — for structure and inspiration, sourced from the open web. Not evidence; expand to skim the key points, or read the original.</p>
+      <div className="sim-grid">{list.map((m, i) => <SimilarCard key={i} m={m} />)}</div>
+    </div>
+  );
+}
+
 function DeckTab({ deck }: { deck?: Deck }) {
   const spine = deck?.spine;
   const secs = (deck?.sections || []);
-  if (!spine && !secs.length) return <p className="muted">No pitch deck yet.</p>;
+  const refs = deck?.references || [];
+  if (!spine && !secs.length) return (<>{refs.length ? <SimilarTheses refs={refs} /> : <p className="muted">No pitch deck yet.</p>}</>);
   return (
     <>
       {spine && (parse(spine.one_liner).clean || parse(spine.insight).clean) ? (
@@ -811,6 +848,7 @@ function DeckTab({ deck }: { deck?: Deck }) {
           );
         })}
       </div>
+      <SimilarTheses refs={refs} />
     </>
   );
 }

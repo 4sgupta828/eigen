@@ -110,18 +110,24 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
     return {"take": take_obj, "findings": n}
 
 
-async def synthesize_deck(pool, thesis_id: str, profile, llm_json, reference: str = "") -> dict:
+async def synthesize_deck(pool, thesis_id: str, profile, llm_json, reference: str = "",
+                          references: list[dict] | None = None) -> dict:
     """Compose + persist the Startup Pitch Deck — a SEPARATE, on-demand artifact, generated after the
     Collective Take exists. A 10x-founder pitch: a throughline SPINE plus a headline-driven slide per
     section, built over the findings and informed (for narrative shape only) by the Collective Take.
 
     `reference` (optional): excerpts of similar PUBLIC VC theses / founder memos, given as STRUCTURE +
     NARRATIVE exemplars — how a strong pitch in this space reads. It is NOT a citation source and its
-    specifics are never borrowed; the deck still argues ONLY from the findings. -> {"deck": {...}, "findings": <n>}."""
+    specifics are never borrowed; the deck still argues ONLY from the findings.
+    `references` (optional): the same memos as structured [{title,url,source,snippet}] cards, ridden
+    along with the deck as "similar theses to check out" for the reader (links out, not cited).
+    -> {"deck": {...}, "findings": <n>}."""
     deck_dir, spine, deck_secs = profile.pitch_deck_spec()
+    refs = [r for r in (references or []) if isinstance(r, dict) and r.get("url")]
     thesis, _subject, findings = await _load_findings(pool, thesis_id, profile)
     if not findings:
         deck_obj = _empty_deck(deck_secs)
+        deck_obj["references"] = refs
         await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
         return {"deck": deck_obj, "findings": 0}
     d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
@@ -134,6 +140,7 @@ async def synthesize_deck(pool, thesis_id: str, profile, llm_json, reference: st
     deck = await compose_deck(llm_json, directive=deck_dir, spine_intent=spine, sections=list(deck_secs),
                               findings=findings, decision=thesis, context=context)
     deck_obj = {"spine": deck.get("spine") or {}, "sections": deck.get("sections") or [],
-                "empty": False, "generated_at": int(time.time()), "findings": len(findings)}
+                "references": refs, "empty": False, "generated_at": int(time.time()),
+                "findings": len(findings)}
     await tstore.set_pitch_deck(pool, thesis_id, deck_obj)
     return {"deck": deck_obj, "findings": len(findings)}

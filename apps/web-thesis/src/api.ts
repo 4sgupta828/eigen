@@ -9,7 +9,8 @@ export type Take = { empty?: boolean; bottom_line?: Cited; sections?: TakeSectio
 
 export type DeckSpine = { one_liner?: Cited; insight?: Cited; bottom_line?: Cited };
 export type DeckSection = { key: string; title: string; headline?: Cited; points?: Cited[]; prose?: string };
-export type Deck = { empty?: boolean; spine?: DeckSpine; sections?: DeckSection[] };
+export type SimilarThesis = { title: string; url: string; source?: string; snippet?: string };
+export type Deck = { empty?: boolean; spine?: DeckSpine; sections?: DeckSection[]; references?: SimilarThesis[] };
 
 export type CompCell = { text?: string; markers?: string; source_url?: string; source_title?: string };
 export type CompPlayer = { name: string; is_subject?: boolean; cells?: Record<string, CompCell> };

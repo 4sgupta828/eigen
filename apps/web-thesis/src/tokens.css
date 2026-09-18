@@ -84,6 +84,25 @@ th { font-family: var(--mono); font-size: .55rem; text-transform: uppercase; let
 .slide ul { margin: .3rem 0 0; padding-left: 1.1rem; }
 .slide li { font-size: .88rem; line-height: 1.5; margin: .2rem 0; }
 
+/* similar theses to check out — sourced public VC theses / founder memos, as explorable cards */
+.sim-wrap { margin-top: 15px; }
+.sim-lede { color: var(--muted); font-size: .82rem; line-height: 1.5; margin: .3rem 0 .7rem; max-width: 66ch; }
+.sim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.sim-card { border: 1px solid var(--hair); border-radius: 12px; background: var(--panel); overflow: hidden; transition: border-color .12s, box-shadow .12s; }
+.sim-card:hover { border-color: color-mix(in srgb, var(--gold) 40%, var(--hair)); }
+.sim-card.sim-open { border-color: color-mix(in srgb, var(--gold) 50%, var(--hair)); box-shadow: 0 1px 10px rgba(34,29,18,.05); }
+.sim-head { display: flex; align-items: baseline; gap: .45rem; width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: .7rem .8rem; font: inherit; color: var(--ink); }
+.sim-tw { font-family: var(--mono); font-size: .7rem; color: var(--gold-strong); flex: none; }
+.sim-title { font-family: var(--serif); font-weight: 600; font-size: .92rem; line-height: 1.35; flex: 1 1 auto; }
+.sim-src { font-family: var(--mono); font-size: .58rem; color: var(--muted); flex: none; white-space: nowrap; max-width: 42%; overflow: hidden; text-overflow: ellipsis; }
+.sim-body { padding: 0 .8rem .75rem 1.55rem; border-top: 1px solid var(--hair-soft); }
+.sim-points { margin: .55rem 0 .5rem; padding-left: 1rem; }
+.sim-points li { font-size: .84rem; line-height: 1.5; margin: .25rem 0; color: var(--ink); }
+.sim-snip { font-size: .84rem; line-height: 1.55; margin: .55rem 0 .5rem; color: var(--ink); }
+.sim-link { font-family: var(--mono); font-size: .68rem; font-weight: 600; color: var(--gold-strong); text-decoration: none; }
+.sim-link:hover { text-decoration: underline; }
+@media (max-width: 560px) { .sim-grid { grid-template-columns: 1fr; } .sim-src { max-width: 38%; } }
+
 /* right rail drawer */
 .rail { position: sticky; top: 62px; border: 1px solid var(--hair); border-radius: 14px; background: var(--panel); overflow: hidden; }
 .rail-head { display: flex; align-items: center; gap: .5rem; padding: .6rem .8rem; border-bottom: 1px solid var(--hair); background: var(--panel2); }
