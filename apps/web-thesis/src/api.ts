@@ -178,6 +178,7 @@ export const api = {
   sample: () => req<{ thesis: string }>("POST", "/thesis/sample").then((d) => d.thesis),
   versions: (id: string) => getJSON<{ versions: Version[] }>(`/thesis/${enc(id)}/versions`, id).then((d) => d.versions || []),
   revert: (id: string, version_id: string) => req<GenesisResp>("POST", `/thesis/${enc(id)}/revert`, { version_id }, id),
+  editThesis: (id: string, text: string) => req<GenesisResp>("POST", `/thesis/${enc(id)}/edit`, { text }, id),
   improve: (id: string, body?: { action?: string; pillar?: string; proposed_thesis?: string }) =>
     req<ImproveResp>("POST", `/thesis/${enc(id)}/improve`, { action: "propose", ...(body || {}) }, id),
 

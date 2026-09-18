@@ -153,6 +153,10 @@ class QuestionEdit(BaseModel):
     target: str = ""
 
 
+class EditThesisIn(BaseModel):
+    text: str = ""                   # the author's directly-edited thesis wording
+
+
 class ImproveIn(BaseModel):
     instruction: str = ""            # optional: "narrow to X" — steers a directed pass (legacy/back-compat)
     action: str = "propose"          # propose | accept | reject — the deficiency-driven sharpening flow
@@ -433,6 +437,32 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 "versions": await tstore.list_thesis_versions(pool, thesis_id),
                 "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
                                            owner_token=x_thesis_owner)}
+
+    @r.post("/thesis/{thesis_id}/edit")
+    async def tl_edit_thesis(thesis_id: str, body: EditThesisIn, authorization: str = Header(default=""),
+                             x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Refine the draft thesis by hand — the author's own wording wins (correct, add precision,
+        generalize, add a claim). Records a backtrackable version and updates the working thesis.
+        Draft-only: refuses once decomposed (edit before you test)."""
+        oid = await _owner(authorization)
+        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if d.get("claims"):
+            raise HTTPException(status_code=409, detail="this thesis is already decomposed")
+        text = (body.text or "").strip()[:gen.THESIS_CAP]
+        if len(text) < 12:
+            raise HTTPException(status_code=400, detail="the thesis needs to be at least a sentence")
+        current = (d.get("proposed_thesis") or d.get("thesis") or "").strip()
+        if text != current:
+            await tstore.add_thesis_version(pool, thesis_id, text, source="user_edit",
+                                            rationale="Refined by the author")
+            await tstore.set_proposed_thesis(pool, thesis_id, text)
+            # An agent turn carrying the new working thesis, so the card (which reads the last such turn)
+            # shows the edit — the same channel the sharpen/accept turns use.
+            await tstore.add_turn(pool, thesis_id, role="agent", move="edited",
+                                  text="Refined the thesis directly.", payload={"proposed_thesis": text})
+        return {"status": "ok", "proposed_thesis": text,
+                "versions": await tstore.list_thesis_versions(pool, thesis_id),
+                "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid, owner_token=x_thesis_owner)}
 
     @r.post("/thesis/{thesis_id}/improve")
     async def tl_improve(thesis_id: str, body: ImproveIn, authorization: str = Header(default=""),

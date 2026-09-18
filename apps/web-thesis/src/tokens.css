@@ -641,6 +641,11 @@ a.th-cite-src:hover { text-decoration: underline; }
 /* intake / answer box that grows then scrolls */
 .gtext-area { display: block; width: 100%; box-sizing: border-box; flex: none; resize: vertical; overflow-y: auto; min-height: 3.2rem; max-height: 360px; font-family: var(--serif); font-size: 1.02rem; line-height: 1.55; }
 
+/* edit-to-refine (manual thesis edit) */
+.th-edit { margin: .4rem 0; }
+.th-edit .gtext-area { min-height: 6rem; }
+.th-edit-acts { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+
 /* intake attachments (ported from Q&A) */
 .th-attach { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
 .th-attach-btn { font-family: var(--mono); font-size: .7rem; font-weight: 600; color: var(--gold-strong); background: var(--panel); border: 1px solid color-mix(in srgb, var(--gold) 34%, var(--hair)); border-radius: 999px; padding: .34rem .7rem; cursor: pointer; }

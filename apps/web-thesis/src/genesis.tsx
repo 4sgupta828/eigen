@@ -95,6 +95,8 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
   const [sharpening, setSharpening] = useState(false);
   const [atts, setAtts] = useState<Attachment[]>([]);        // to send with the next create/genesis turn
   const fileRef = useRef<HTMLInputElement>(null);
+  const [editing, setEditing] = useState(false);             // manual "edit to refine" mode
+  const [editText, setEditText] = useState("");
 
   async function addFiles(files: File[]) {
     const next = [...atts];
@@ -186,6 +188,17 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
   const startSharpen = () => sharpen();
   const acceptProposal = () => proposal && sharpen({ action: "accept", pillar: proposal.pillar, proposed_thesis: proposal.proposed_thesis });
   const rejectProposal = () => proposal && sharpen({ action: "reject", pillar: proposal.pillar });
+  function startEdit() { setEditText(proposed); setEditing(true); setErr(""); }
+  async function saveEdit() {
+    const text = editText.trim();
+    if (!id || text.length < 12) { setErr("The thesis needs to be at least a sentence."); return; }
+    setBusy(true); setErr("");
+    try {
+      const g = await api.editThesis(id, text);
+      if (g.thesis) setDoc(g.thesis);
+      setEditing(false); setProposal(null);   // a hand-edit resets the sharpen proposal (re-grade next)
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
   async function revert(vid: string) {
     if (!id || !vid) return;
     setBusy(true); setErr(""); setShowRedline(false);
@@ -241,13 +254,25 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
             <div className={`th-landed${lastPay?.ready ? " ready" : ""}`}>
               <div className="th-landed-h">
                 <span>{lastPay?.ready ? "The thesis I’d test" : "Working thesis"}</span>
-                {prevThesis && prevThesis !== proposed ? (
+                {!editing && prevThesis && prevThesis !== proposed ? (
                   <button type="button" className="th-redline-toggle" onClick={() => setShowRedline((s) => !s)}>
                     ⇄ {showRedline ? "hide" : "show"} changes
                   </button>
                 ) : null}
+                {!editing ? (
+                  <button type="button" className="th-redline-toggle" onClick={startEdit} title="Correct it, add precision, generalize, or add a claim">✎ Edit to refine</button>
+                ) : null}
               </div>
-              {showRedline && prevThesis && prevThesis !== proposed ? (
+              {editing ? (
+                <div className="th-edit">
+                  <GrowText value={editText} onChange={setEditText} onSubmit={saveEdit} disabled={busy} minRows={5} maxPx={420} />
+                  <div className="th-edit-acts">
+                    <button type="button" className="th-prop-accept" disabled={busy} onClick={saveEdit}>Save refinement</button>
+                    <button type="button" className="th-prop-reject" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
+                    <span className="th-landed-hint">Your wording wins — it's saved as a backtrackable version.</span>
+                  </div>
+                </div>
+              ) : showRedline && prevThesis && prevThesis !== proposed ? (
                 <blockquote className="th-landed-q">
                   <span className="th-redline-key"><ins>added</ins> <del>removed</del> since last turn</span>
                   <Redline prev={prevThesis} curr={proposed} />
@@ -255,7 +280,7 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
               ) : (
                 <blockquote className="th-landed-q">{proposed}</blockquote>
               )}
-              <Mem mem={lastPay?.memory} />
+              {!editing ? <Mem mem={lastPay?.memory} /> : null}
               {storedAtts.length ? (
                 <div className="th-attach-stored">
                   <span className="th-attach-stored-h">Grounded in:</span>

@@ -237,8 +237,9 @@ PILLARS: list[dict] = [
      "what": "why this investor/fund is uniquely positioned to SEE, WIN, and SUPPORT it — deep domain "
              "expertise, a proprietary sourcing network, or a contrarian belief the consensus gets wrong"},
     {"key": "scope", "label": "Operational parameters & scope",
-     "what": "explicit boundaries: target geography, company stage (pre-seed vs seed PMF), preferred "
-             "business models (usage-based, marketplace…), and typical check size"},
+     "what": "the boundaries of the OPPORTUNITY the thesis covers: target geography, company stage "
+             "(pre-seed vs seed product-market fit), and preferred business models (usage-based, "
+             "marketplace…)"},
     {"key": "returns", "label": "Venture-scale return logic (100x)",
      "what": "how a winner compounds into a category-defining company — the TAM-expansion trajectory and "
              "the exit path (IPO or strategic acquisition); the 100x math"},
@@ -251,10 +252,14 @@ _PILLAR_LABEL = {p["key"]: p["label"] for p in PILLARS}
 
 _DEFICIENCY_SYSTEM = (
     "You are a sharp venture partner helping an investor turn a rough thesis into a SOLID investment "
-    "thesis — ONE improvement at a time. A great thesis is a concise, first-principles roadmap that "
-    "HYPOTHESISES X from observed facts, logic, and the state of the world; defines the fund's unique "
-    "edge; targets a specific market inefficiency; and acts as a filter for deal flow. It rests on FIVE "
-    "pillars:\n"
+    "thesis — ONE improvement at a time.\n\n"
+    "WHAT A THESIS IS: a concise, first-principles HYPOTHESIS about a market opportunity and how a fund is "
+    "positioned to win it — a bet on the world (X is true / X is about to happen) drawn from observed "
+    "facts, logic, and the state of the world, that also names the fund's edge and acts as a filter for "
+    "deal flow. It describes the OPPORTUNITY and the STRATEGY; it is INDEPENDENT of capital deployment. "
+    "How much to invest — check size, fund size, ownership target, reserves — is a separate decision that "
+    "is not part of the thesis (market-size and traction numbers ABOUT the opportunity do belong; the "
+    "amount the investor would deploy does not). A solid thesis rests on FIVE pillars:\n"
     + "\n".join(f"{i+1}. {p['label'].upper()} — {p['what']}" for i, p in enumerate(PILLARS)) + "\n\n"
     "You are given the CURRENT thesis and the pillars ALREADY addressed or explicitly skipped. Find the "
     "SINGLE most important REMAINING weakness — the pillar most missing or weakest that is NOT in the skip "
