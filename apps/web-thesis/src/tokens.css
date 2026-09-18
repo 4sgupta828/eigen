@@ -331,7 +331,20 @@ th { font-family: var(--mono); font-size: .55rem; text-transform: uppercase; let
 .th-cell-empty { color: var(--muted); font-style: italic; font-size: .8rem; }
 .th-comp-tablewrap { margin-top: .8rem; }
 .th-comp-tablewrap summary { font-family: var(--mono); font-size: .7rem; color: var(--gold-strong); cursor: pointer; }
-.th-comp-addbar { margin-top: .7rem; }
+.th-comp-addbar { margin-top: .7rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+.linklike { background: none; border: none; color: var(--gold-strong); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
+.th-comp-pick { margin-top: .7rem; border: 1px solid var(--hair); border-left: 3px solid var(--gold); border-radius: 12px; background: var(--panel2); padding: .75rem .85rem; }
+.th-comp-pick-h { font-family: var(--mono); font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--gold-strong); margin-bottom: .55rem; }
+.th-comp-cands { display: grid; gap: .4rem; }
+.th-comp-cand { display: grid; grid-template-columns: auto 1fr; gap: .1rem .55rem; align-items: baseline; border: 1px solid var(--hair); border-radius: 9px; background: var(--panel); padding: .5rem .6rem; cursor: pointer; }
+.th-comp-cand:hover { border-color: var(--gold); }
+.th-comp-cand input { grid-row: 1 / span 2; align-self: center; accent-color: var(--gold); width: 15px; height: 15px; }
+.th-comp-cand-n { font-size: .9rem; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; gap: .4rem; }
+.th-comp-kind { font-family: var(--mono); font-size: .54rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: .08rem .32rem; border-radius: 5px; }
+.th-comp-kind-direct { color: var(--gold-strong); border: 1px solid color-mix(in srgb, var(--gold) 40%, var(--hair)); }
+.th-comp-kind-adjacent { color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 40%, var(--hair)); }
+.th-comp-cand-note { grid-column: 2; font-size: .8rem; color: var(--muted); line-height: 1.4; }
+.th-comp-pick-acts { display: flex; gap: .5rem; margin-top: .6rem; }
 
 /* ── Genesis landed card + redline (ported) ── */
 .th-landed { border: 1px solid var(--hair); border-left: 3px solid var(--gold); border-radius: 12px; background: var(--panel); padding: .75rem .85rem; margin: .5rem 0 0 34px; }

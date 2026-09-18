@@ -13,6 +13,7 @@ export type Deck = { empty?: boolean; spine?: DeckSpine; sections?: DeckSection[
 
 export type CompCell = { text?: string; markers?: string; source_url?: string; source_title?: string };
 export type CompPlayer = { name: string; is_subject?: boolean; cells?: Record<string, CompCell> };
+export type CompCandidate = { name: string; kind?: string; note?: string };
 export type CompRow = { entity: string; subject?: boolean; cells?: CompCell[] };
 export type Competitive = { empty?: boolean; space?: string; columns?: { key: string; label: string }[]; players?: CompPlayer[]; rows?: CompRow[] };
 
@@ -173,6 +174,11 @@ export const api = {
   // ── competitive research (projection via max_usd:0 → refused+projection; then run with the approved budget) ──
   competitiveResearch: (id: string, max_usd: number) =>
     req<RunResp>("POST", `/thesis/${enc(id)}/competitive/research`, { max_usd, web: true, idempotency_key: max_usd > 0 ? "comp-" + Date.now() : undefined }, id),
+  // suggest MORE competitors to add (cheap, names only), then profile + append the chosen ones (gated)
+  competitiveCandidates: (id: string) =>
+    req<{ status: string; candidates?: CompCandidate[]; space?: string; unavailable?: boolean }>("POST", `/thesis/${enc(id)}/competitive/candidates`, {}, id),
+  competitiveAdd: (id: string, names: string[], max_usd: number) =>
+    req<RunResp & { selected?: number }>("POST", `/thesis/${enc(id)}/competitive/add`, { names, max_usd, idempotency_key: max_usd > 0 ? "compadd-" + Date.now() : undefined }, id),
 
   // ── experts + transcripts ──
   experts: (id: string) => getJSON<{ status: string; aspects: ExpertAspect[] }>(`/thesis/${enc(id)}/experts`, id).then((d) => d.aspects || []),

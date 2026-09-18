@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { api } from "./api";
 import type {
-  Analysis, Cited, Competitive, CompPlayer, Deck, Evidence, InquiriesView, Question, Take, ThesisDoc,
+  Analysis, Cited, Competitive, CompCandidate, CompPlayer, Deck, Evidence, InquiriesView, Question, Take, ThesisDoc,
 } from "./api";
 
 // ── citation numbering (first-seen, per Brief) ─────────────────────────────────
@@ -656,6 +656,32 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
     } catch (e) { setBusy(false); setErr((e as Error).message); }
   }
 
+  // ── expand the map: suggest new/adjacent players, pick, then profile + append (gated) ──
+  const [cands, setCands] = useState<CompCandidate[] | null>(null);
+  const [candBusy, setCandBusy] = useState(false);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  async function loadCandidates() {
+    if (!id) return; setErr(""); setCandBusy(true); setSel(new Set());
+    try {
+      const d = await api.competitiveCandidates(id);
+      setCands(d.candidates || []);
+    } catch (e) { setErr((e as Error).message); } finally { setCandBusy(false); }
+  }
+  function toggle(name: string) { setSel((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; }); }
+  async function analyzeSelected() {
+    if (!id) return; const names = [...sel]; if (!names.length) { setErr("Select at least one competitor."); return; }
+    setErr("");
+    try {
+      const proj = await api.competitiveAdd(id, names, 0);
+      const max = Number(proj.projection?.projected_usd || 0);
+      if (!window.confirm(`Profile ${names.length} competitor${names.length === 1 ? "" : "s"} and add ${names.length === 1 ? "it" : "them"} to the map?\n\nProjected maximum: $${max.toFixed(3)}`)) return;
+      setBusy(true); setNote("starting…"); setCands(null);
+      const r = await api.competitiveAdd(id, names, Math.max(max, 0.01));
+      if (!r.run?.id) throw new Error(r.status === "refused" ? "cost exceeded the budget" : "could not start");
+      poll(r.run.id);
+    } catch (e) { setBusy(false); setErr((e as Error).message); }
+  }
+
   return (
     <div className="card">
       {comp?.space ? <div className="th-comp-cap">The market — {comp.space}</div> : null}
@@ -673,7 +699,34 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
           <div className="muted" style={{ fontSize: ".74rem", marginTop: ".5rem", fontFamily: "var(--mono)" }}>Open-web market intelligence (stated/reported) — verify funding &amp; traction against a primary source.</div>
         </>
       )}
-      {owner && id ? <div className="th-comp-addbar"><button className="btn sec" disabled={busy} onClick={research}>{busy ? (note || "Researching…") : (empty ? "Research competitive landscape" : "Re-research landscape")}</button></div> : null}
+      {owner && id ? (
+        <div className="th-comp-addbar">
+          <button className="btn sec" disabled={busy} onClick={research}>{busy ? (note || "Researching…") : (empty ? "Research competitive landscape" : "Re-research landscape")}</button>
+          {!empty && !busy ? <button className="btn sec" disabled={candBusy || cands !== null} onClick={loadCandidates}>{candBusy ? "Finding players…" : "+ Add competitors"}</button> : null}
+        </div>
+      ) : null}
+      {cands !== null ? (
+        <div className="th-comp-pick">
+          {cands.length === 0 ? <div className="muted" style={{ fontSize: ".85rem" }}>No new candidates found. <button className="linklike" onClick={() => setCands(null)}>close</button></div> : (
+            <>
+              <div className="th-comp-pick-h">Pick competitors to profile &amp; add — direct or adjacent:</div>
+              <div className="th-comp-cands">
+                {cands.map((c) => (
+                  <label key={c.name} className="th-comp-cand">
+                    <input type="checkbox" checked={sel.has(c.name)} onChange={() => toggle(c.name)} />
+                    <span className="th-comp-cand-n">{c.name}<span className={`th-comp-kind th-comp-kind-${c.kind || "direct"}`}>{c.kind || "direct"}</span></span>
+                    {c.note ? <span className="th-comp-cand-note">{c.note}</span> : null}
+                  </label>
+                ))}
+              </div>
+              <div className="th-comp-pick-acts">
+                <button className="btn" disabled={!sel.size} onClick={analyzeSelected}>Analyze {sel.size || ""} selected</button>
+                <button className="btn sec" onClick={() => setCands(null)}>Cancel</button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
       {err ? <p style={{ color: "var(--p0)", fontSize: ".85rem", marginTop: ".5rem" }}>{err}</p> : null}
     </div>
   );
