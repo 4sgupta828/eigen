@@ -286,16 +286,28 @@ async def compose_memo(llm_json, *, directive: str, sections: list[dict], findin
           '   "analysis": [{"kind": "<one of ' + "|".join(kinds) + '>", "text": "<your interpretation>", '
           '"finding_ids": ["F1", ...]}]}]}\n\n'
         + "RULES:\n"
-        + "- bottom_line: a TIGHT 1–3 sentence lead — the investment call the record leans toward "
-          "(fund / pass / more diligence) and the crux. Not the whole memo.\n"
-        + "- grounded: the FACTS, each restating what the findings hold, each citing its F-number(s). Put "
-          "every NUMBER, named party, and date here — comprehensive across the relevant lines.\n"
-        + "- analysis: your REASONING — what several findings together IMPLY, where they are in TENSION, "
+        + "- bottom_line: a TIGHT 1–3 sentence lead — the way the record leans (fund / pass / more "
+          "diligence) and the crux. Not the whole memo.\n"
+        + "- grounded: the cited FACTS a section rests on — each a DIRECT claim about the world (party, "
+          "number, date) with its F-number, e.g. 'The incumbent ships the same capability in-product "
+          "[F3]'. Do NOT narrate your own research ('the record found that…', 'the X record found…') — "
+          "state what is true, or what is UNSETTLED, in the world: e.g. 'No source establishes "
+          "willingness-to-pay; it remains open [F3, F7]'. Keep an 'open / under-tested / left open' status "
+          "AS a fact when that is what the record shows — never turn a gap into a definitive negative.\n"
+        + "- SAY EACH FACT ONCE. Put each fact's grounded claim in the ONE section where it is most "
+          "load-bearing. In a later section do NOT re-list the same claim and numbers — refer back briefly "
+          "through reasoning (e.g. 'given the incumbent traction above [F3, F7]…'). The memo as a WHOLE is "
+          "comprehensive; a later section that introduces no NEW fact is mostly reasoning with an empty "
+          "grounded array.\n"
+        + "- analysis is the PRODUCT: what several findings together IMPLY, where they are in TENSION, "
           "what GAP remains, what ASSUMPTION the thesis rests on, and (kind=what_would_change_this) the "
-          "evidence that would move the call. Each item cites the findings it builds on. Do NOT put a "
-          "number in analysis that is not already in a grounded fact.\n"
-        + "- Every text " + _CITE_HINT + " Never invent a finding, number, or fact. A section with no "
-          "material gets empty arrays. Cover every line of inquiry the section calls for. Output ONLY the JSON.")
+          "evidence that would move the call. Each item cites the findings it builds on BY F-NUMBER — and "
+          "any number it uses must come from a finding it cites, never invented. Prefer one sharp reasoning "
+          "block over re-listing facts.\n"
+        + "- Write PLAINLY: short, direct sentences a partner would actually say; no filler, no hedging "
+          "scaffolding, no jargon for its own sake.\n"
+        + "- Every text " + _CITE_HINT + " Never invent a finding, number, or fact. A section with no NEW "
+          "material gets empty arrays. Output ONLY the JSON.")
     try:
         raw = await llm_json(directive, user)
         d = raw if isinstance(raw, dict) else json.loads(raw)

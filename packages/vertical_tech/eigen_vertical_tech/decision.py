@@ -284,9 +284,12 @@ _COLLECTIVE_TAKE_SECTIONS: tuple[dict, ...] = (
                "on — the load-bearing premises that, if false, break it. Surface each as an `assumption` "
                "block, and where two premises trade off, a `tension` block."},
     {"key": "by_line", "title": "What each line of inquiry established",
-     "intent": "Go LINE BY LINE across every line of inquiry — for each, the grounded facts it settled "
-               "(supported / contradicted / left open), comprehensively. This is the backbone; do not "
-               "drop a line. Add `implication` blocks for what each line means for the decision."},
+     "intent": "Go line by line: for EACH line of inquiry, the ONE pivotal fact (or at most two where the "
+               "line has two distinct crux claims) that settled it (supported / contradicted / left open) "
+               "— if it is still open, make that 'remains open' the pivotal fact — plus an `implication` "
+               "block on what it means for the decision. Don't drop a line, but keep each to its crux: this "
+               "is a read, not a re-listing of every fact (facts live once, in the section where they "
+               "matter most)."},
     {"key": "synthesis", "title": "Reading it together",
      "intent": "The second-order read: what the findings ACROSS lines imply when combined — the "
                "connect-the-dots judgment a partner pays for. Reason deeply. Lean on `implication` and "
@@ -385,8 +388,12 @@ Rules, in order:
 5. Be explicit that willingness-to-pay and switching cost are settled by no document — only a person who
    lived it can. A thesis whose only remaining risk is there is NOT the same as one contradicted on the
    record; keep them distinct.
-6. Be comprehensive — cover every line of inquiry. Bottom line is a tight lead: the way the record
-   leans (fund / pass / more diligence) and the crux, nothing more."""
+6. SAY EACH FACT ONCE, plainly. The memo as a whole covers every line of inquiry, but no section repeats
+   a fact another already made — later sections refer back through reasoning, not by re-listing facts.
+   Write like a partner talks: direct claims about the world, not narration about the research ("Enterprise
+   buys pull in up to 10 stakeholders [F7]", never "the buyer record found that…"). Reasoning, not a
+   re-listed ledger, is the value. Bottom line is a tight lead: the way the record leans (fund / pass /
+   more diligence) and the crux, nothing more."""
 
 _COMPETITIVE_DIRECTIVE = """\
 You are a venture analyst building the competitive landscape for a startup thesis, ONLY from findings
