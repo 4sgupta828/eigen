@@ -150,7 +150,7 @@ export const api = {
   improve: (id: string, instruction = "") => req<GenesisResp>("POST", `/thesis/${enc(id)}/improve`, { instruction }, id),
 
   // ── plan ──
-  generate: (id: string) => req<{ status: string } & InquiriesView>("POST", `/thesis/${enc(id)}/inquiries/generate`, undefined, id),
+  generate: (id: string) => req<RunResp>("POST", `/thesis/${enc(id)}/inquiries/generate`, undefined, id),
   prioritize: (id: string) => req<{ status: string } & InquiriesView>("POST", `/thesis/${enc(id)}/inquiries/prioritize`, undefined, id),
   addQuestion: (id: string, b: { inquiry_key: string; aspect_key: string; text: string; target: string; kind?: string; polarity?: number }) =>
     req<{ status: string; id: string }>("POST", `/thesis/${enc(id)}/question`, { kind: "seek_support", polarity: 1, ...b }, id),

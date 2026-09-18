@@ -18,6 +18,10 @@ export function Plan({ id, inquiries, onReload, onRun }: {
 }) {
   const [busy, setBusy] = useState<string>("");
   const [err, setErr] = useState("");
+  const [stage, setStage] = useState("");
+  const runId = useRef<string | null>(null);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
   const has = (inquiries || []).length > 0;
 
   async function act(label: string, fn: () => Promise<unknown>) {
@@ -25,25 +29,26 @@ export function Plan({ id, inquiries, onReload, onRun }: {
     try { await fn(); onReload(); } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
   }
 
-  // Generating a plan scans the current landscape + frames + writes questions — a long call that can
-  // outlast the gateway timeout even though the server finishes and stores the result. So FIRE it and
-  // poll the durably-stored questions until the set changes, rather than depending on the POST response.
-  const qsig = (inqs?: Inquiry[]) => (inqs || []).flatMap((l) => (l.questions || []).map((q) => q.id)).sort().join(",");
-  async function generate(label: string) {
-    setBusy(label); setErr("");
-    const before = qsig(inquiries);
-    api.generate(id).catch(() => { /* the work is stored regardless of the response */ });
-    for (let i = 0; i < 60; i++) {                     // poll ~3 min
-      await new Promise((r) => setTimeout(r, 3000));
-      try {
-        const v = await api.inquiries(id);
-        const now = qsig(v.inquiries);
-        if (now && now !== before) { onReload(); setBusy(""); return; }
-      } catch { /* keep polling */ }
-    }
-    setErr("Generation is taking longer than usual — reload to check, or try again.");
-    onReload(); setBusy("");
+  // Plan generation is a BACKGROUND run (scan → frame → draft → prioritize): kick it off, poll status,
+  // and let it be stopped — so it never blocks or dangles if the user navigates away mid-generation.
+  const STAGE_LABEL: Record<string, string> = { starting: "starting…", scanning: "scanning the current landscape…", drafting: "drafting the questions…", prioritizing: "setting priorities…" };
+  function pollGen(rid: string) {
+    api.inquiryStatus(id, rid).then((s) => {
+      if (s.state === "completed" || s.state === "cancelled") { runId.current = null; setBusy(""); setStage(""); onReload(); return; }
+      if (s.state === "failed") { runId.current = null; setBusy(""); setStage(""); setErr("generation failed — try again"); return; }
+      setStage(STAGE_LABEL[s.stage || ""] || "working…");
+      timer.current = window.setTimeout(() => pollGen(rid), 2500);
+    }).catch(() => { timer.current = window.setTimeout(() => pollGen(rid), 3000); });
   }
+  async function generate(label: string) {
+    setBusy(label); setErr(""); setStage("starting…");
+    try {
+      const r = await api.generate(id);
+      if (!r.run?.id) { onReload(); setBusy(""); setStage(""); return; }
+      runId.current = r.run.id; pollGen(r.run.id);
+    } catch (e) { setBusy(""); setStage(""); setErr((e as Error).message); }
+  }
+  async function stopGen() { setStage("stopping…"); try { await api.cancelRun(id, runId.current || undefined); } catch { /* poll settles it */ } }
 
   if (!has) {
     return (
@@ -51,9 +56,14 @@ export function Plan({ id, inquiries, onReload, onRun }: {
         <PageHead title="Plan the inquiry" sub="Draft thesis-native lines of inquiry — pointed questions the evidence can settle." />
         <div className="card">
           <p style={{ margin: "0 0 .7rem", fontSize: ".9rem" }} className="muted">No lines of inquiry yet.</p>
-          <button className="btn" disabled={!!busy} onClick={() => generate("gen")}>
-            {busy === "gen" ? "Generating…" : "Generate lines of inquiry"}
-          </button>
+          {busy === "gen" ? (
+            <div className="row" style={{ alignItems: "center", gap: ".6rem" }}>
+              <span className="mono muted" style={{ fontSize: ".85rem" }}>{stage || "generating…"}</span>
+              <button className="btn sec" onClick={stopGen}>■ Stop</button>
+            </div>
+          ) : (
+            <button className="btn" disabled={!!busy} onClick={() => generate("gen")}>Generate lines of inquiry</button>
+          )}
         </div>
         {err ? <p className="state" style={{ color: "var(--p0)" }}>{err}</p> : null}
       </>
@@ -71,8 +81,12 @@ export function Plan({ id, inquiries, onReload, onRun }: {
     <>
       <PageHead title="Plan the inquiry" sub="Edit the questions, set priorities, then run the ones you choose. P0 is the crux you'd run first." />
       <ScanStrip />
-      <div className="row" style={{ marginBottom: 14 }}>
-        <button className="btn sec" disabled={!!busy} onClick={() => generate("redraft")}>{busy === "redraft" ? "…" : "↻ Redraft questions"}</button>
+      <div className="row" style={{ marginBottom: 14, alignItems: "center" }}>
+        {busy === "redraft" ? (
+          <><span className="mono muted" style={{ fontSize: ".82rem" }}>{stage || "redrafting…"}</span><button className="btn sec" onClick={stopGen}>■ Stop</button></>
+        ) : (
+          <button className="btn sec" disabled={!!busy} onClick={() => generate("redraft")}>↻ Redraft questions</button>
+        )}
         <button className="btn sec" disabled={!!busy} onClick={() => act("prio", () => api.prioritize(id))}>{busy === "prio" ? "…" : "◈ Set P0/P1/P2 priorities"}</button>
       </div>
       {(inquiries || []).map((i) => {

@@ -318,9 +318,26 @@ def test_inquiries_and_generate_drive_the_decision_engine(monkeypatch):
     async def fake_list_questions(_pool, tid, inq=""):
         return [r for r in saved["rows"] if not inq or r["inquiry_key"] == inq]
 
+    # Generation is now a BACKGROUND run (kick off → poll → stop). Mock the run machinery so the kickoff
+    # is testable; the generation LOGIC itself is covered by the kernel generate tests.
+    created = {}
+    async def fake_create_run(_pool, *, thesis_id, idempotency_key, projected_usd, approved_usd, metadata):
+        created.update(id="run-1", metadata=metadata); return {"id": "run-1", "state": "approved", "metadata": metadata}
+    async def fake_advance_run(_pool, *, thesis_id, run_id, stage, state="running", actual_delta=0.0):
+        return {"id": run_id, "state": state, "stage": stage}
+    async def fake_get_run(_pool, *, thesis_id, run_id):
+        return {"id": run_id, "state": "running", "stage": "starting", "metadata": {"questions": []}}
+    async def noop(*a, **k):
+        return None
+
     monkeypatch.setattr(routes.tstore, "get", fake_get)
     monkeypatch.setattr(routes.tstore, "set_inquiries", fake_set_inquiries)
     monkeypatch.setattr(routes.tstore, "list_questions", fake_list_questions)
+    monkeypatch.setattr(routes.tstore, "create_run", fake_create_run)
+    monkeypatch.setattr(routes.tstore, "advance_run", fake_advance_run)
+    monkeypatch.setattr(routes.tstore, "get_run", fake_get_run)
+    monkeypatch.setattr(routes.tstore, "fail_run", noop)
+    monkeypatch.setattr(routes.tstore, "set_landscape_brief", noop)
     app = FastAPI()
     app.include_router(routes.build_router(
         pool_of, providers=None,
@@ -333,16 +350,12 @@ def test_inquiries_and_generate_drive_the_decision_engine(monkeypatch):
     r0 = c.get("/thesis/t1/inquiries", headers={"Authorization": "Bearer owner"})
     assert r0.status_code == 200 and r0.json()["inquiries"] == []
 
-    # generate → no LLM, so the decision-level generator falls open to a full-coverage set (one
-    # question per rubric dimension), stored as one line of inquiry and read back grouped
+    # generate → kicks off a background run and returns immediately (no gateway-timeout-length blocking)
     r1 = c.post("/thesis/t1/inquiries/generate", headers={"Authorization": "Bearer owner"})
     assert r1.status_code == 200
-    inqs = r1.json()["inquiries"]
-    assert len(inqs) >= 1 and inqs[0]["questions"]
-    covered = {a["key"] for i in inqs for a in i["aspects"]}
-    assert {a.key for a in TECH_DECISION_PROFILE.aspects()} <= covered   # every dimension is covered
-    q = inqs[0]["questions"][0]
-    assert q["kind"] and q["text"] and q["target"]
+    body = r1.json()
+    assert body["status"] == "running" and body["run"]["id"] == "run-1"
+    assert created["metadata"].get("generate") is True
 
 
 def test_generate_requires_owner_and_a_profile(monkeypatch):
@@ -414,18 +427,23 @@ def test_generate_frames_the_thesis_then_asks_questions_of_the_frame(monkeypatch
                                "text": f"Does the record settle {k} for hospital procurement?",
                                "target": f"The record settles {k}.", "polarity": 1} for k in keys]}
 
-    monkeypatch.setattr(routes.tstore, "get", fake_get)
-    monkeypatch.setattr(routes.tstore, "set_inquiries", fake_set_inquiries)
-    monkeypatch.setattr(routes.tstore, "list_questions", fake_list_questions)
-    app = FastAPI()
-    app.include_router(routes.build_router(
-        pool_of, providers=SimpleNamespace(llm_json=llm_json),
-        manifest=SimpleNamespace(ui=None, thesis_policy=None, decision_profile=TECH_DECISION_PROFILE,
-                                 web_domains=(), retrieval_sources={}),
-        user_of=user_of, tenant="t"))
-    c = TestClient(app)
-    r = c.post("/thesis/t1/inquiries/generate", headers={"Authorization": "Bearer owner"})
-    assert r.status_code == 200
+    # Generation is a background run now (untestable fire-and-forget under TestClient), so exercise the
+    # frame -> generation COUPLING that `_run_generate` performs directly against the decision module.
+    import asyncio as _asyncio
+    from eigen_kernel import decision as _dec2
+    profile = TECH_DECISION_PROFILE
+    decision = "We sell an AI product to hospital procurement."
+    async def _drive():
+        frame = await _dec2.frame_decision(
+            llm_json, decision=decision,
+            context="THE CONVERSATION:\nWe sell to hospital procurement, not to nurses.",
+            directive=profile.frame_directive(decision), aspects=profile.aspects())
+        inquiries = await _dec2.generate_by_inquiry(
+            llm_json, decision=decision, inquiries=profile.inquiries(), aspects=profile.aspects(),
+            directive=profile.inquiry_directive(decision),
+            frame=frame if _dec2.is_substantive(frame) else None)
+        return inquiries
+    inquiries = _asyncio.run(_drive())
     # the conversation reached the framing step
     assert "hospital procurement, not to nurses" in saw["frame_user"]
     # generation is PER LINE OF INQUIRY — several focused calls, not one
@@ -436,9 +454,8 @@ def test_generate_frames_the_thesis_then_asks_questions_of_the_frame(monkeypatch
     assert "Procurement cycles are 18 months" in allgen            # catalyst → the timing inquiry
     assert "LINE OF INQUIRY:" in allgen                            # focused per-inquiry prompt, not a rubric dump
     # coverage still enforced across the full rubric
-    inqs = r.json()["inquiries"]
-    covered = {a["key"] for i in inqs for a in i["aspects"]}
-    assert {a.key for a in TECH_DECISION_PROFILE.aspects()} <= covered
+    covered = {q["dimension"] for inq in inquiries for q in (inq.get("questions") or [])}
+    assert {a.key for a in profile.aspects()} <= covered
 
 
 def test_delete_line_and_clear_all_are_owner_gated_and_preserve_answered(monkeypatch):
