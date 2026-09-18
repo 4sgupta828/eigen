@@ -25,13 +25,33 @@ export function Plan({ id, inquiries, onReload, onRun }: {
     try { await fn(); onReload(); } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
   }
 
+  // Generating a plan scans the current landscape + frames + writes questions — a long call that can
+  // outlast the gateway timeout even though the server finishes and stores the result. So FIRE it and
+  // poll the durably-stored questions until the set changes, rather than depending on the POST response.
+  const qsig = (inqs?: Inquiry[]) => (inqs || []).flatMap((l) => (l.questions || []).map((q) => q.id)).sort().join(",");
+  async function generate(label: string) {
+    setBusy(label); setErr("");
+    const before = qsig(inquiries);
+    api.generate(id).catch(() => { /* the work is stored regardless of the response */ });
+    for (let i = 0; i < 60; i++) {                     // poll ~3 min
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const v = await api.inquiries(id);
+        const now = qsig(v.inquiries);
+        if (now && now !== before) { onReload(); setBusy(""); return; }
+      } catch { /* keep polling */ }
+    }
+    setErr("Generation is taking longer than usual — reload to check, or try again.");
+    onReload(); setBusy("");
+  }
+
   if (!has) {
     return (
       <>
         <PageHead title="Plan the inquiry" sub="Draft thesis-native lines of inquiry — pointed questions the evidence can settle." />
         <div className="card">
           <p style={{ margin: "0 0 .7rem", fontSize: ".9rem" }} className="muted">No lines of inquiry yet.</p>
-          <button className="btn" disabled={!!busy} onClick={() => act("gen", () => api.generate(id))}>
+          <button className="btn" disabled={!!busy} onClick={() => generate("gen")}>
             {busy === "gen" ? "Generating…" : "Generate lines of inquiry"}
           </button>
         </div>
@@ -52,7 +72,7 @@ export function Plan({ id, inquiries, onReload, onRun }: {
       <PageHead title="Plan the inquiry" sub="Edit the questions, set priorities, then run the ones you choose. P0 is the crux you'd run first." />
       <ScanStrip />
       <div className="row" style={{ marginBottom: 14 }}>
-        <button className="btn sec" disabled={!!busy} onClick={() => act("redraft", () => api.generate(id))}>{busy === "redraft" ? "…" : "↻ Redraft questions"}</button>
+        <button className="btn sec" disabled={!!busy} onClick={() => generate("redraft")}>{busy === "redraft" ? "…" : "↻ Redraft questions"}</button>
         <button className="btn sec" disabled={!!busy} onClick={() => act("prio", () => api.prioritize(id))}>{busy === "prio" ? "…" : "◈ Set P0/P1/P2 priorities"}</button>
       </div>
       {(inquiries || []).map((i) => {

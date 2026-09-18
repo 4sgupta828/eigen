@@ -1297,7 +1297,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         async def web(q: str):
             if wc is None:
                 return []
-            res = await wc.search(q, max_results=5, open_web=True)
+            res = await wc.search(q, max_results=4, open_web=True)
             out = []
             for x in res or []:
                 text = " ".join(filter(None, [*(getattr(x, "highlights", ()) or ()), getattr(x, "snippet", "") or "",
@@ -1310,9 +1310,17 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 return []
             return await startup_search(q, 4) or []
 
-        caps = dict(n_queries=4, per_query=2, web_cap=4) if light else dict(n_queries=8, per_query=3, web_cap=8)
-        return await _dec.orient_and_scan(_strong_llm_json(), retrieve=retrieve, web=web, peers=peers,
-                                          decision=decision, subject=subject, directive=directive, **caps)
+        caps = dict(n_queries=4, per_query=1, web_cap=3) if light else dict(n_queries=6, per_query=2, web_cap=6)
+        # Time-bound the scan so a slow web leg can NEVER be what tips /inquiries/generate over the gateway
+        # timeout — on overrun we proceed with an empty brief (generation stays current-clause-guarded).
+        try:
+            return await asyncio.wait_for(
+                _dec.orient_and_scan(_strong_llm_json(), retrieve=retrieve, web=web, peers=peers,
+                                     decision=decision, subject=subject, directive=directive, **caps),
+                timeout=(10 if light else 18))
+        except asyncio.TimeoutError:
+            log.info("landscape scan timed out (thesis budget) — proceeding without the brief")
+            return _dec.empty_brief(note="the landscape scan timed out")
 
     @r.post("/thesis/{thesis_id}/inquiries/generate")
     async def tl_generate(thesis_id: str, authorization: str = Header(default=""),
