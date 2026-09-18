@@ -14,7 +14,7 @@ export type Deck = { empty?: boolean; spine?: DeckSpine; sections?: DeckSection[
 export type CompCell = { text?: string; markers?: string; source_url?: string; source_title?: string };
 export type CompPlayer = { name: string; is_subject?: boolean; cells?: Record<string, CompCell> };
 export type CompRow = { entity: string; subject?: boolean; cells?: CompCell[] };
-export type Competitive = { empty?: boolean; columns?: { key: string; label: string }[]; players?: CompPlayer[]; rows?: CompRow[] };
+export type Competitive = { empty?: boolean; space?: string; columns?: { key: string; label: string }[]; players?: CompPlayer[]; rows?: CompRow[] };
 
 export type Aspect = { key: string; prompt?: string; verdict?: string; critical?: boolean; settleable?: string };
 export type Question = {
@@ -26,14 +26,24 @@ export type Inquiry = { key: string; name?: string; framing?: string; aspects?: 
 export type Evidence = {
   id: string; title?: string; quote?: string; source_url?: string; register?: string;
   evidence_kind?: string; source_subject?: string; as_of?: string; side?: string; relation?: string;
+  signal_only?: boolean; said_by?: string; said_role?: string; period?: string;
 };
-export type Claim = { rung?: string; evidence?: Evidence[] };
+export type Claim = { rung?: string; verdict?: string; research_status?: string; evidence?: Evidence[] };
+
+export type GenesisMemory = { open_threads?: string[]; assumptions?: string[]; shaping_prefs?: unknown };
+export type Person = { name?: string; why?: string };
+export type TurnPayload = {
+  ready?: boolean; proposed_thesis?: string; memory?: GenesisMemory; change_rationale?: string;
+  evidence?: Evidence[]; question?: string; people?: Person[]; guidance?: string; subject?: unknown;
+};
+export type Turn = { role: "user" | "agent"; move?: string; text?: string; payload?: TurnPayload };
 
 export type ThesisDoc = {
   id?: string; thesis?: string; title?: string;
   subject?: Record<string, unknown>;
   claims?: Claim[]; is_owner?: boolean; board_entry?: string;
   proposed_thesis?: string; research_status?: string;
+  turns?: Turn[]; versions?: Version[]; shaping_prefs?: unknown;
   pitch_deck?: Deck; collective_take?: Take; competitive?: Competitive;
 };
 
@@ -93,6 +103,29 @@ type CreateResp = { status: string; id: string; owner_token?: string | null; the
 export const api = {
   // ── reads ──
   theses: () => getJSON<{ theses: ThesisListItem[] }>("/theses").then((d) => d.theses || []),
+  // The user's theses = server list (if signed in) + every thesis this device created (owner tokens in
+  // localStorage), reconstructed by fetching each — so anonymously-created theses still show up.
+  async myTheses(): Promise<ThesisListItem[]> {
+    const ids = Object.keys(readOwners());
+    const results = await Promise.allSettled([
+      getJSON<{ theses: ThesisListItem[] }>("/theses").then((d) => d.theses || []),
+      ...ids.map((id) => getJSON<{ thesis: ThesisDoc }>(`/thesis/${enc(id)}`, id).then((d) => d.thesis)),
+    ]);
+    const list: ThesisListItem[] = [];
+    const seen = new Set<string>();
+    const add = (t: ThesisListItem) => { if (t.id && !seen.has(t.id)) { seen.add(t.id); list.push(t); } };
+    const first = results[0];
+    if (first.status === "fulfilled") (first.value as ThesisListItem[]).forEach(add);
+    results.slice(1).forEach((r) => {
+      if (r.status !== "fulfilled") return;
+      const d = (r as PromiseFulfilledResult<ThesisDoc>).value;
+      if (!d?.id) return;
+      const claims = d.claims || [];
+      const settled = claims.filter((c) => { const s = c.research_status || c.verdict; return s && s !== "open"; }).length;
+      add({ id: d.id, thesis: d.thesis, title: d.title, claims: claims.length, settled });
+    });
+    return list;
+  },
   board: (limit = 60) => getJSON<{ entries: BoardCard[] }>(`/board?limit=${limit}`).then((d) => d.entries || []),
   boardEntry: (entryId: string) => getJSON<{ entry: BoardEntry }>(`/board/${enc(entryId)}`).then((d) => d.entry),
   thesis: (id: string, share?: string) =>
@@ -112,6 +145,7 @@ export const api = {
   sample: () => req<{ thesis: string }>("POST", "/thesis/sample").then((d) => d.thesis),
   versions: (id: string) => getJSON<{ versions: Version[] }>(`/thesis/${enc(id)}/versions`, id).then((d) => d.versions || []),
   revert: (id: string, version_id: string) => req<GenesisResp>("POST", `/thesis/${enc(id)}/revert`, { version_id }, id),
+  improve: (id: string, instruction = "") => req<GenesisResp>("POST", `/thesis/${enc(id)}/improve`, { instruction }, id),
 
   // ── plan ──
   generate: (id: string) => req<{ status: string } & InquiriesView>("POST", `/thesis/${enc(id)}/inquiries/generate`, undefined, id),
@@ -129,6 +163,14 @@ export const api = {
   inquiryStatus: (id: string, run: string) => getJSON<RunStatus>(`/thesis/${enc(id)}/inquiry/status?run=${enc(run)}`, id),
   synthesize: (id: string) => req<{ status: string; take?: Take; deck?: Deck; competitive?: Competitive; findings?: number }>("POST", `/thesis/${enc(id)}/synthesize`, undefined, id),
   buildDeck: (id: string) => req<{ status: string; deck?: Deck; findings?: number }>("POST", `/thesis/${enc(id)}/deck`, undefined, id),
+
+  // ── brainstorm: one read-only follow-up exchange over the thesis's findings (never re-grades) ──
+  ask: (id: string, text: string) =>
+    req<{ status: string; move?: { text?: string; rungs?: string[] }; thesis?: ThesisDoc }>("POST", `/thesis/${enc(id)}/turn`, { text }, id),
+
+  // ── competitive research (projection via max_usd:0 → refused+projection; then run with the approved budget) ──
+  competitiveResearch: (id: string, max_usd: number) =>
+    req<RunResp>("POST", `/thesis/${enc(id)}/competitive/research`, { max_usd, web: true, idempotency_key: max_usd > 0 ? "comp-" + Date.now() : undefined }, id),
 
   // ── experts + transcripts ──
   experts: (id: string) => getJSON<{ status: string; aspects: ExpertAspect[] }>(`/thesis/${enc(id)}/experts`, id).then((d) => d.aspects || []),

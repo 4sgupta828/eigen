@@ -60,7 +60,7 @@ const Err = ({ e }: { e: unknown }) => <div className="state">{(e as Error)?.mes
 
 // ── screens ──────────────────────────────────────────────────────────────────
 function Home() {
-  const q = useQuery({ queryKey: ["theses"], queryFn: api.theses });
+  const q = useQuery({ queryKey: ["myTheses"], queryFn: api.myTheses });
   const theses = q.data || [];
   return (
     <Shell crumb={<>My theses</>}>
@@ -72,9 +72,9 @@ function Home() {
       {q.isLoading ? <Loading /> : theses.length ? theses.map((t) => (
         <button key={t.id} className="tcard" onClick={() => go(`#thesis/${encodeURIComponent(t.id)}`)}>
           <h3>{t.title || t.thesis}</h3>
-          <div className="meta"><span>{t.settled ?? 0}/{t.claims ?? 0} settled</span><span>·</span><span>{(t.updated_at || "").slice(0, 10)}</span></div>
+          <div className="meta"><span>{t.claims ? `${t.settled ?? 0}/${t.claims} settled` : "draft"}</span>{t.updated_at ? <><span>·</span><span>{t.updated_at.slice(0, 10)}</span></> : null}</div>
         </button>
-      )) : <p className="muted" style={{ fontSize: ".9rem" }}>No theses on this device. Browse the ThesisBoard, or sign in to see yours.</p>}
+      )) : <p className="muted" style={{ fontSize: ".9rem" }}>No theses on this device yet. Test a new thesis, or browse the ThesisBoard.</p>}
     </Shell>
   );
 }

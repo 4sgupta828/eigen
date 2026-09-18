@@ -40,7 +40,7 @@ export function Workspace({ id, token }: { id: string; token?: string }) {
   if (tq.isLoading) return (<><TopBar /><div className="wrap"><Loading /></div></>);
   if (tq.error || !doc) return (<><TopBar /><div className="wrap"><ErrState e={tq.error} /></div></>);
 
-  if (isDraft) return (<><TopBar crumb="New thesis · genesis" /><div className="wrap"><Genesis id={id} doc={doc} /></div></>);
+  if (isDraft) return (<><TopBar crumb="New thesis · genesis" /><div className="wrap"><Genesis id={id} doc={doc} onCommitted={reloadDoc} /></div></>);
 
   if (!doc.is_owner) {
     return (<><TopBar crumb="Shared · read-only" /><div className="wrap"><Brief doc={doc} inq={iq.data || {}} anonymous /></div></>);
@@ -55,8 +55,8 @@ export function Workspace({ id, token }: { id: string; token?: string }) {
       <div className="wrap">
         {active === "plan" ? <Plan id={id} inquiries={inqs} onReload={reloadInq} onRun={() => setStage("run")} />
           : active === "run" ? <Run id={id} onDone={() => { reloadDoc(); setStage("brief"); }} />
-            : active === "brief" ? <Brief doc={doc} inq={iq.data || {}} />
-              : active === "brainstorm" ? <Brainstorm take={take} onExperts={() => setStage("experts")} />
+            : active === "brief" ? <Brief doc={doc} inq={iq.data || {}} id={id} owner={doc.is_owner} onRefetchInq={reloadInq} />
+              : active === "brainstorm" ? <Brainstorm id={id} take={take} onExperts={() => setStage("experts")} />
                 : active === "experts" ? <Experts id={id} inquiries={inqs} />
                   : <Share id={id} doc={doc} onChanged={reloadDoc} />}
       </div>
