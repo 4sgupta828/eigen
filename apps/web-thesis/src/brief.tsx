@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
 import type {
   Analysis, Cited, Competitive, CompPlayer, Deck, Evidence, InquiriesView, Question, Take, ThesisDoc,
@@ -39,11 +39,15 @@ const useBrief = () => {
   return c;
 };
 
-// ── a cited run of text: renders clean text + clickable [n] refs ────────────────
+// ── a cited run of text: renders clean text + clickable [n] refs (hover to preview) ────────────────
 function Cite({ value, kind }: { value?: Cited; kind: "finding" | "evidence" }) {
-  const { citer, show, active } = useBrief();
+  const { citer, show, active, evidenceById, findingById } = useBrief();
   const { clean, ids } = parse(value);
   if (!clean && !ids.length) return null;
+  const hover = (id: string) => {
+    if (kind === "evidence") { const e = evidenceById.get(id); return e ? (cleanText(e.quote).slice(0, 240) || titleClean(e.title)) : ""; }
+    const q = findingById.get(id); return q?.text ? `Q: ${q.text}` : "";
+  };
   return (
     <>
       {clean}{" "}
@@ -53,6 +57,7 @@ function Cite({ value, kind }: { value?: Cited; kind: "finding" | "evidence" }) 
           className={`ref${active === id ? " on" : ""}`}
           role="button"
           tabIndex={0}
+          title={hover(id)}
           onClick={() => show({ kind, id } as DrawerView)}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") show({ kind, id } as DrawerView); }}
         >
@@ -64,7 +69,7 @@ function Cite({ value, kind }: { value?: Cited; kind: "finding" | "evidence" }) 
 }
 
 // ── evidence text hygiene: raw scraped quotes carry markdown, nav boilerplate, inline URLs ──
-function clean(s?: string): string {
+function cleanText(s?: string): string {
   return (s || "")
     .replace(/\r/g, "")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")            // images
@@ -82,9 +87,9 @@ function clean(s?: string): string {
     .replace(/^[\s—…·-]+/, "")
     .trim();
 }
-const excerpt = (s?: string, max = 190) => { const c = clean(s); return c.length > max ? c.slice(0, max).replace(/\s+\S*$/, "") + "…" : c; };
+const excerpt = (s?: string, max = 190) => { const c = cleanText(s); return c.length > max ? c.slice(0, max).replace(/\s+\S*$/, "") + "…" : c; };
 function titleClean(t?: string): string {
-  let s = clean(t);
+  let s = cleanText(t);
   if (s && s === s.toLowerCase()) s = s.replace(/\b([a-z])/g, (m) => m.toUpperCase());  // all-lowercase names → Title Case
   return s;
 }
@@ -111,7 +116,7 @@ const TIER_ORDER: { key: string; label: string }[] = [
 const BOILER = /(boost your|deep belief|learning resources|educational journey|trusted companion|sign ?up|subscribe|newsletter|cookie|privacy policy|all rights reserved|terms of (service|use)|log ?in|create an account|browse (jobs|courses|programs)|salary guide|find the (best|right)|©)/i;
 function weakSignal(rank: number, body: string): boolean {
   if (rank < 2) return false;                 // only signal-tier can be pruned; fact/intent always shown
-  if (clean(body).length < 45) return true;   // no substantive excerpt
+  if (cleanText(body).length < 45) return true;   // no substantive excerpt
   return BOILER.test(body);
 }
 
@@ -223,7 +228,7 @@ function Drawer({ view }: { view: DrawerView }) {
   // evidence
   const e = evidenceById.get(view.id);
   const t = e ? tierOf(e) : { rank: 3, label: "source", c: "var(--muted)" };
-  const body = clean(e?.quote);
+  const body = cleanText(e?.quote);
   return (
     <>
       <div className="rail-head">
@@ -362,30 +367,150 @@ function ReasonTab({ take, lean }: { take?: Take; lean?: { t: string; d: string;
     </div>
   );
 }
-function LinesTab({ inquiries }: { inquiries?: InquiriesView["inquiries"] }) {
-  const verdict = (asp?: { verdict?: string }[]) => {
-    const vs = (asp || []).map((a) => a.verdict);
-    if (vs.includes("contradicted")) return { l: "Contradicted", cls: "v-con" };
-    if (vs.length && vs.every((v) => v === "supported")) return { l: "Supported", cls: "v-sup" };
-    if (vs.includes("supported")) return { l: "Mixed", cls: "v-sup" };
-    return { l: "Open", cls: "v-open" };
+// ── Lines of inquiry: cards → aspect groups → question sub-cards → grounded answer + sources ──
+const LENS: Record<string, { label: string; glyph: string }> = {
+  seek_support: { label: "Seeks support", glyph: "＋" },
+  seek_disconfirmation: { label: "Seeks disconfirmation", glyph: "－" },
+  seek_disconfirm: { label: "Seeks disconfirmation", glyph: "－" },
+  test_assumption: { label: "Tests assumption", glyph: "◇" },
+  probe: { label: "Probe", glyph: "◦" },
+};
+const VERDICT: Record<string, { l: string; cls: string }> = {
+  supported: { l: "Supported", cls: "v-sup" },
+  contradicted: { l: "Contradicted", cls: "v-con" },
+  mixed: { l: "Mixed", cls: "v-mix" },
+  open: { l: "Open", cls: "v-open" },
+};
+const verdictOf = (v?: string) => VERDICT[v || "open"] || VERDICT.open;
+function rollup(aspects?: { verdict?: string }[]) {
+  const vs = (aspects || []).map((a) => a.verdict);
+  if (vs.includes("contradicted")) return "contradicted";
+  if (vs.length && vs.every((v) => v === "supported")) return "supported";
+  if (vs.includes("supported")) return "mixed";
+  return "open";
+}
+const CITE_MARK = /\[\[e:([A-Za-z0-9_-]{1,80})\]\]|\*\*([^*]+)\*\*/g;
+function makeAnswerRun(numById: Record<string, number>, quoteById: Record<string, string>, onCite: (id: string) => void) {
+  return (text: string) => {
+    const out: ReactNode[] = []; let last = 0, k = 0, m: RegExpExecArray | null;
+    CITE_MARK.lastIndex = 0;
+    while ((m = CITE_MARK.exec(text))) {
+      if (m.index > last) out.push(text.slice(last, m.index));
+      if (m[1] != null) {
+        const id = m[1], n = numById[id];
+        if (n) out.push(<sup key={k++} className="th-ref2" role="button" tabIndex={0} title={quoteById[id] || "source"}
+          onClick={() => onCite(id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onCite(id); }}>{n}</sup>);
+      } else if (m[2] != null) { out.push(<strong key={k++}>{m[2]}</strong>); }
+      last = CITE_MARK.lastIndex;
+    }
+    if (last < text.length) out.push(text.slice(last));
+    return out;
   };
-  const lines = (inquiries || []);
+}
+function GroundedAnswer({ q }: { q: Question }) {
+  const { evidenceById, citer, show } = useBrief();
+  const prose = (q.answer || "").trim().replace(/[([]\s*[)\]]/g, "").replace(/\s+([.,;])/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
+  const ids: string[] = []; const seen = new Set<string>();
+  prose.replace(/\[\[e:([A-Za-z0-9_-]{1,80})\]\]/g, (_m, id: string) => { if (!seen.has(id)) { seen.add(id); ids.push(id); } return _m; });
+  ids.forEach((id) => citer.num(id));   // register cited evidence so the Evidence overview ranks it first
+  const numById: Record<string, number> = {}; const quoteById: Record<string, string> = {};
+  ids.forEach((id, i) => { numById[id] = i + 1; const e = evidenceById.get(id); quoteById[id] = e ? cleanText(e.quote).slice(0, 240) : ""; });
+  const run = makeAnswerRun(numById, quoteById, (id) => show({ kind: "evidence", id }));
+  const hasMarkers = ids.length > 0;
+  if (!prose) return <div className="th-answer-note">Not yet established in the record.</div>;
+
+  const cellSplit = (r: string) => r.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+  const blocks = prose.split(/\n{2,}/).map((block, bi) => {
+    const ls = block.split(/\n/).filter((l) => l.trim());
+    if (ls.length >= 2 && /^\s*\|.*\|\s*$/.test(ls[0]) && /^\s*\|[\s:|-]+\|\s*$/.test(ls[1])) {
+      const head = cellSplit(ls[0]); const rows = ls.slice(2).filter((l) => /^\s*\|.*\|\s*$/.test(l)).map(cellSplit);
+      return (
+        <div key={bi} className="tablewrap"><table className="th-atable">
+          <thead><tr>{head.map((c, i) => <th key={i}>{run(c)}</th>)}</tr></thead>
+          <tbody>{rows.map((r, ri) => <tr key={ri}>{r.map((c, ci) => <td key={ci}>{run(c)}</td>)}</tr>)}</tbody>
+        </table></div>
+      );
+    }
+    if (ls.every((l) => /^\s*-\s+/.test(l))) return <ul key={bi} className="th-answer-list">{ls.map((l, i) => <li key={i}>{run(l.replace(/^\s*-\s+/, ""))}</li>)}</ul>;
+    return <p key={bi}>{run(ls.join(" "))}</p>;
+  });
+  const sources = ids.map((id) => evidenceById.get(id)).filter(Boolean) as Evidence[];
+  return (
+    <>
+      <div className={hasMarkers ? "th-answer-body" : "th-answer-note"}>{blocks}</div>
+      {sources.length ? (
+        <details className="th-cites-wrap">
+          <summary className="th-cites-sum"><span className="th-cites-badge">{sources.length}</span> {sources.length === 1 ? "source" : "sources"} for this answer</summary>
+          <ol className="th-cites">{sources.map((e, i) => {
+            const t = tierOf(e);
+            const meta = [t.label, e.source_subject, e.evidence_kind, (e.as_of || e.period || "").slice(0, 10)].filter(Boolean).join(" · ");
+            return (
+              <li key={e.id} className="th-cite" onClick={() => show({ kind: "evidence", id: e.id })}>
+                <span className="th-cite-n" style={{ color: t.c }}>{i + 1}</span>
+                <div className="th-cite-body">
+                  <div className="th-cite-meta"><span className="d" style={{ background: t.c }} /> {meta || "source"}</div>
+                  {cleanText(e.quote) ? <blockquote className="th-cite-q">“{excerpt(e.quote, 300)}”</blockquote> : null}
+                  {e.source_url ? <a className="th-cite-src" href={e.source_url} target="_blank" rel="noopener" onClick={(ev) => ev.stopPropagation()}>{domainOf(e.source_url)} ↗</a> : null}
+                </div>
+              </li>
+            );
+          })}</ol>
+        </details>
+      ) : null}
+    </>
+  );
+}
+function QuestionCard({ q }: { q: Question }) {
+  const lens = LENS[q.kind || ""] || { label: (q.kind || "").replace(/_/g, " "), glyph: "" };
+  const pr = Number(q.priority == null ? 1 : q.priority);
+  const prCls = pr <= 0 ? "p-0" : pr === 1 ? "p-1" : "p-2";
+  return (
+    <div className="th-qn2">
+      <div className="th-qn2-top">
+        <span className={`prio ${prCls}`} title={pr <= 0 ? "P0 — critical crux" : pr === 1 ? "P1 — important" : "P2 — completeness"}>P{pr <= 0 ? 0 : pr}</span>
+        <span className="th-lens2">{lens.glyph ? <span className="th-lens2-g">{lens.glyph}</span> : null}{lens.label}</span>
+      </div>
+      <div className="th-qn2-q">{q.text}</div>
+      {q.target_status ? <GroundedAnswer q={q} /> : <div className="th-answer-note">Not yet researched.</div>}
+    </div>
+  );
+}
+function LinesTab({ inquiries }: { inquiries?: InquiriesView["inquiries"] }) {
+  const lines = (inquiries || []).filter((l) => (l.questions || []).length);
   if (!lines.length) return <p className="muted">No lines of inquiry yet.</p>;
   return (
-    <div className="card">
+    <div className="th-inqs">
       {lines.map((l) => {
-        const answered = (l.questions || []).filter((q) => q.target_status && (q.answer || "").trim());
-        const v = verdict(l.aspects);
+        const qs = l.questions || [];
+        const answered = qs.filter((q) => q.target_status).length;
+        const v = verdictOf(rollup(l.aspects));
+        // group questions by aspect, preserving the aspects' declared order (then any orphans)
+        const byAspect = new Map<string, Question[]>();
+        qs.forEach((q) => { const k = q.aspect_key || "_"; byAspect.set(k, [...(byAspect.get(k) || []), q]); });
+        const aspects = (l.aspects || []).filter((a) => byAspect.get(a.key)?.length);
+        const orphans = qs.filter((q) => !aspects.some((a) => a.key === q.aspect_key));
         return (
-          <div key={l.key} className="loi">
-            <div className="loi-h"><span className={`v ${v.cls}`}>{v.l}</span>{l.name}</div>
-            {answered.map((q) => (
-              <div key={q.id} className="loi-a">
-                <span className="qq">Q: {q.text} — </span><Cite value={{ text: q.answer }} kind="evidence" />
+          <details key={l.key} className="th-inq2" open={answered > 0}>
+            <summary className="th-inq2-head">
+              <div className="th-inq2-titlewrap">
+                <h3 className="th-inq2-name">{l.name}</h3>
+                {l.framing ? <p className="th-inq2-framing">{l.framing}</p> : null}
               </div>
-            ))}
-          </div>
+              <span className="th-inq2-side">
+                <span className={`v ${v.cls}`}>{v.l}</span>
+                <span className="th-inq2-count">{answered}/{qs.length}</span>
+              </span>
+            </summary>
+            <div className="th-inq2-body">
+              {aspects.map((a) => (
+                <div key={a.key} className="th-aspect2">
+                  <div className="th-aspect2-h"><b>{a.prompt || a.key}</b><span className={`v ${verdictOf(a.verdict).cls}`}>{verdictOf(a.verdict).l}</span></div>
+                  {(byAspect.get(a.key) || []).map((q) => <QuestionCard key={q.id} q={q} />)}
+                </div>
+              ))}
+              {orphans.length ? <div className="th-aspect2">{orphans.map((q) => <QuestionCard key={q.id} q={q} />)}</div> : null}
+            </div>
+          </details>
         );
       })}
     </div>

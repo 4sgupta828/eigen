@@ -19,7 +19,7 @@ export type Competitive = { empty?: boolean; space?: string; columns?: { key: st
 export type Aspect = { key: string; prompt?: string; verdict?: string; critical?: boolean; settleable?: string };
 export type Question = {
   id: string; text?: string; answer?: string; target_status?: string;
-  aspect_key?: string; inquiry_name?: string;
+  aspect_key?: string; inquiry_name?: string; kind?: string; priority?: number;
 };
 export type Inquiry = { key: string; name?: string; framing?: string; aspects?: Aspect[]; questions?: Question[] };
 
