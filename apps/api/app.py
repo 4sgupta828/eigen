@@ -2230,6 +2230,15 @@ def create_app(service: ResearchService | None = None) -> FastAPI:
     def index(accept_encoding: str = Header(default="")):
         return _html_response("index.html", accept_encoding)
 
+    # The new thesis-first client (beachhead) — a Vite/React SPA built into apps/web/w and served
+    # here as a static bundle (index.html + hashed assets). Client-side hash routing, so no rewrites
+    # needed. Mounted only when the build exists, so the API runs fine without it. See
+    # docs/specs/beachhead-build-plan.md.
+    _w_dir = _WEB_DIR / "w"
+    if _w_dir.is_dir():
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/w", StaticFiles(directory=str(_w_dir), html=True), name="thesis-client")
+
     @app.get("/about", response_class=HTMLResponse)
     def about(accept_encoding: str = Header(default="")):
         """Who builds this and why. Kept off the landing page so the front door stays about the

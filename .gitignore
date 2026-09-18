@@ -52,3 +52,7 @@ claude_session.txt
 
 # Local isolated development worktrees
 .worktrees/
+
+# New thesis-first client (Vite build output + deps)
+apps/web/w/
+apps/web-thesis/node_modules/
