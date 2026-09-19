@@ -223,6 +223,7 @@ export const api = {
   adminAllTheses: (token: string) => adminReq<{ status: string; theses: ThesisListItem[] }>("GET", "/thesis/admin/theses", token).then((d) => d.theses || []),
   adminAdopt: (token: string, thesis_id: string, to_account = false) => adminReq<{ status: string; thesis_id: string; owner_token?: string; account?: boolean }>("POST", "/thesis/admin/adopt", token, { thesis_id, to_account }),
   adminDeleteThesis: (token: string, thesis_id: string) => adminReq<{ status: string }>("POST", "/thesis/admin/delete", token, { thesis_id }),
+  adminUnpublish: (token: string, thesis_id: string) => adminReq<{ status: string }>("POST", "/thesis/admin/unpublish", token, { thesis_id }),
   board: (limit = 60) => getJSON<{ entries: BoardCard[] }>(`/board?limit=${limit}`).then((d) => d.entries || []),
   boardEntry: (entryId: string) => getJSON<{ entry: BoardEntry }>(`/board/${enc(entryId)}`).then((d) => d.entry),
   thesis: (id: string, share?: string) =>

@@ -444,6 +444,15 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             raise HTTPException(status_code=404, detail="no such thesis")
         return {"status": "ok"}
 
+    @r.post("/thesis/admin/unpublish")
+    async def tl_admin_unpublish(body: ThesisIdIn, x_admin_token: str = Header(default="", alias="X-Admin-Token")):
+        """Remove a thesis's snapshot from the public ThesisBoard (moderation) — the thesis itself is
+        kept. Admin-token gated. Idempotent: unpublishing an already-private thesis is a no-op."""
+        if not _admin_ok(x_admin_token):
+            raise HTTPException(status_code=403, detail="admin token required")
+        await tstore.board_delete(await pool_of(), (body.thesis_id or "").strip())
+        return {"status": "ok"}
+
     @r.post("/thesis")
     async def tl_new(body: NewThesis, authorization: str = Header(default="")):
         t = (body.thesis or "").strip()

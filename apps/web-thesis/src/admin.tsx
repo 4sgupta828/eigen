@@ -52,6 +52,12 @@ export function Settings() {
     try { await api.adminDeleteThesis(token, t.id); setTheses((ts) => (ts || []).filter((x) => x.id !== t.id)); }
     catch (e) { setErr((e as Error).message); } finally { setRowBusy(""); }
   }
+  async function unpublish(t: ThesisListItem) {
+    if (!window.confirm(`Remove “${(t.title || t.thesis || "this thesis").slice(0, 80)}” from the public ThesisBoard? The thesis itself is kept — only the public snapshot is taken down.`)) return;
+    setRowBusy(t.id); setErr("");
+    try { await api.adminUnpublish(token, t.id); setTheses((ts) => (ts || []).map((x) => x.id === t.id ? { ...x, on_board: false } : x)); }
+    catch (e) { setErr((e as Error).message); } finally { setRowBusy(""); }
+  }
   function signOut() { saveToken(""); setToken(""); setSettings(null); setTheses(null); setEntry(""); }
 
   return (
@@ -111,6 +117,7 @@ export function Settings() {
                       </div>
                       <div className="adm-thesis-acts">
                         <button className="btn sec" disabled={!!rowBusy} onClick={() => adopt(t.id)}>{rowBusy === t.id ? "…" : (signedIn ? "Claim to my account" : "Add to this device")}</button>
+                        {t.on_board ? <button className="btn sec" disabled={!!rowBusy} onClick={() => unpublish(t)}>Remove from board</button> : null}
                         <button className="btn sec adm-del" disabled={!!rowBusy} onClick={() => removeThesis(t)}>Delete</button>
                       </div>
                     </div>
