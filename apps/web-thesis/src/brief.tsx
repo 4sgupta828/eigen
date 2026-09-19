@@ -781,24 +781,6 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
           </div>
         ) : null}
       </div>
-      {empty ? <p className="muted" style={{ fontSize: ".9rem" }}>{comp?.reason || "No competitive landscape yet."}{owner ? " Research it from the open web above." : ""}</p> : (
-        <>
-          {view === "cards" ? (
-            <div className="th-comp-cards">{players.map((p, i) => <CompCard key={i} p={p} cols={cols} />)}</div>
-          ) : (
-            <div className="tablewrap"><table className="th-comp-table">
-              <thead><tr><th className="th-comp-th-player">Player</th>{cols.map((c) => <th key={c.key} style={{ ["--dc" as string]: compColor(c.key) }}><span className="th-comp-th-dot" />{c.label}</th>)}</tr></thead>
-              <tbody>{players.map((p, i) => (
-                <tr key={i} className={p.is_subject ? "th-comp-tr-you" : ""}>
-                  <th scope="row">{p.name}{p.is_subject ? <span className="th-comp-tag you">you</span> : null}</th>
-                  {cols.map((c) => { const cc = p.cells?.[c.key]; const t = (cc?.text || "").trim(); return <td key={c.key}>{t ? <span>{t}{cc?.source_url ? <a className="th-comp-src" href={cc.source_url} target="_blank" rel="noopener"> ↗</a> : null}</span> : <span className="th-cell-empty">—</span>}</td>; })}
-                </tr>
-              ))}</tbody>
-            </table></div>
-          )}
-          <div className="muted" style={{ fontSize: ".74rem", marginTop: ".7rem", fontFamily: "var(--mono)" }}>Open-web market intelligence (stated/reported) — verify funding &amp; traction against a primary source.</div>
-        </>
-      )}
       {cands !== null ? (
         <div className="th-comp-pick">
           {cands.length === 0 ? <div className="muted" style={{ fontSize: ".85rem" }}>No new candidates found. <button className="linklike" onClick={() => setCands(null)}>close</button></div> : (
@@ -821,6 +803,24 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
           )}
         </div>
       ) : null}
+      {empty ? <p className="muted" style={{ fontSize: ".9rem" }}>{comp?.reason || "No competitive landscape yet."}{owner ? " Research it from the open web above." : ""}</p> : (
+        <>
+          {view === "cards" ? (
+            <div className="th-comp-cards">{players.map((p, i) => <CompCard key={i} p={p} cols={cols} />)}</div>
+          ) : (
+            <div className="tablewrap"><table className="th-comp-table">
+              <thead><tr><th className="th-comp-th-player">Player</th>{cols.map((c) => <th key={c.key} style={{ ["--dc" as string]: compColor(c.key) }}><span className="th-comp-th-dot" />{c.label}</th>)}</tr></thead>
+              <tbody>{players.map((p, i) => (
+                <tr key={i} className={p.is_subject ? "th-comp-tr-you" : ""}>
+                  <th scope="row">{p.name}{p.is_subject ? <span className="th-comp-tag you">you</span> : null}</th>
+                  {cols.map((c) => { const cc = p.cells?.[c.key]; const t = (cc?.text || "").trim(); return <td key={c.key}>{t ? <span>{t}{cc?.source_url ? <a className="th-comp-src" href={cc.source_url} target="_blank" rel="noopener"> ↗</a> : null}</span> : <span className="th-cell-empty">—</span>}</td>; })}
+                </tr>
+              ))}</tbody>
+            </table></div>
+          )}
+          <div className="muted" style={{ fontSize: ".74rem", marginTop: ".7rem", fontFamily: "var(--mono)" }}>Open-web market intelligence (stated/reported) — verify funding &amp; traction against a primary source.</div>
+        </>
+      )}
       {err ? <p style={{ color: "var(--p0)", fontSize: ".85rem", marginTop: ".5rem" }}>{err}</p> : null}
     </div>
   );
