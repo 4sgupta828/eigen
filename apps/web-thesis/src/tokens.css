@@ -440,8 +440,9 @@ a.th-cite-src:hover { text-decoration: underline; }
 .bs-bar-rows { display: grid; gap: .34rem; }
 .bs-bar-row { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; align-items: center; gap: .5rem; }
 .bs-bar-lab { font-size: .8rem; line-height: 1.3; overflow-wrap: anywhere; }
-.bs-bar-track { height: 12px; background: color-mix(in srgb, var(--gold) 8%, var(--hair)); border-radius: 6px; overflow: hidden; }
+.bs-bar-track { position: relative; height: 12px; background: color-mix(in srgb, var(--gold) 8%, var(--hair)); border-radius: 6px; overflow: hidden; }
 .bs-bar-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-strong)); border-radius: 6px; }
+.bs-bar-fill.rng { position: absolute; top: 0; min-width: 4px; }   /* a low–high range: a floating segment */
 .bs-bar-val { font-family: var(--mono); font-size: .74rem; font-weight: 600; color: var(--gold-strong); white-space: nowrap; }
 .bs-tree { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
 .bs-tree .bs-tree { margin-top: .4rem; margin-left: .55rem; padding-left: .7rem; border-left: 1.5px solid color-mix(in srgb, var(--gold) 26%, var(--hair)); }

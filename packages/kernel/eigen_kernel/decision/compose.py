@@ -270,9 +270,13 @@ async def compose_deck(llm_json, *, directive: str, sections: list[dict], findin
         + "- VISUAL (optional, per section): when a section's findings hold COMPARABLE NUMBERS worth "
           "seeing — market size, traction/growth, pricing, funding, adoption — add a `bar` chart; each "
           "series MUST carry the finding_ids its number comes from (a charted number that cites no finding "
-          "is dropped, so never chart a figure you can't cite). For a mechanism or decision flow, a `tree` "
-          "(nodes + edges) is allowed. Add a visual only where it MEANINGFULLY clarifies; omit otherwise, "
-          "and never chart a single number.\n\n"
+          "is dropped, so never chart a figure you can't cite). Keep it LEAN and INTUITIVE: put the shared "
+          "subject in the TITLE, keep each series label SHORT and mutually distinct (never repeat the same "
+          "words in every label), and cap it at ~5 bars that make ONE clear comparison. For a low–high or "
+          "min–max estimate, emit the pair as two series labelled '<thing> low' and '<thing> high' (they "
+          "render as a single range bar) rather than padding the chart. For a mechanism or decision flow, a "
+          "`tree` (nodes + edges) is allowed. Add a visual only where it MEANINGFULLY clarifies; omit "
+          "otherwise, and never chart a single number.\n\n"
         + 'Return ONE JSON object: {"spine": {' + spine_json + '}, "sections": [{"key": "<section key>", '
           '"headline": {"text": "...", "finding_ids": ["F1", ...]}, "points": [{"text": "...", '
           '"finding_ids": ["F1", ...]}], '
