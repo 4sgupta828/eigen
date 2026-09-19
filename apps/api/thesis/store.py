@@ -957,6 +957,23 @@ async def get_brainstorm_thread(pool, *, thesis_id: str, thread_id: str) -> dict
     return out
 
 
+async def get_brainstorm_threads_full(pool, *, thesis_id: str) -> list[dict]:
+    """Every brainstorm thread for this thesis WITH its full message transcript (oldest-first per thread),
+    most-recent thread first — for a self-contained public board snapshot."""
+    await ensure_schema(pool)
+    out: list[dict] = []
+    async with pool.acquire() as conn:
+        ths = await conn.fetch(
+            "SELECT * FROM ts_brainstorm_thread WHERE thesis_id=$1 ORDER BY updated_at DESC", thesis_id)
+        for th in ths:
+            msgs = await conn.fetch(
+                "SELECT * FROM ts_brainstorm_msg WHERE thread_id=$1 ORDER BY id ASC", th["id"])
+            d = _bthread_out(th)
+            d["messages"] = [_bmsg_out(m) for m in msgs]
+            out.append(d)
+    return out
+
+
 async def add_brainstorm_msg(pool, *, thesis_id: str, thread_id: str, role: str, content: dict) -> int:
     """Append one message (user text, agent turn, or an enrichment card) and touch the thread. -> msg id."""
     await ensure_schema(pool)

@@ -69,11 +69,19 @@ def _board_client(monkeypatch):
         return BOARD.get(thesis_id, {}).get("id", "")
     async def fake_delete(_p, thesis_id):
         BOARD.pop(thesis_id, None)
+    async def fake_voices(_p, thesis_id):
+        return {"buckets": [{"label": "Supports the thesis", "items": [{"id": "v1", "why": "backs pricing"}]}],
+                "moments": [{"id": "v1", "kind": "podcast", "title": "Freight ML", "speaker": "A Founder"}]}
+    async def fake_bs_full(_p, *, thesis_id):
+        return [{"id": "th1", "owner_id": OWNER, "thesis_id": thesis_id, "title": "Bear case",
+                 "messages": [{"role": "user", "content": {"text": "what breaks this?"}},
+                              {"role": "agent", "content": {"reply": "Distribution."}}]}]
 
     for name, fn in [("get", fake_get), ("list_questions", fake_list_questions),
                      ("publish_board", fake_publish_board), ("board_list", fake_board_list),
                      ("board_get", fake_board_get), ("board_entry_for_thesis", fake_entry_for),
-                     ("board_delete", fake_delete)]:
+                     ("board_delete", fake_delete), ("get_thesis_voices", fake_voices),
+                     ("get_brainstorm_threads_full", fake_bs_full)]:
         monkeypatch.setattr(routes.tstore, name, fn)
 
     app = FastAPI()
@@ -101,6 +109,13 @@ def test_publish_lists_and_serves_an_anonymized_answered_only_snapshot(monkeypat
     assert [e["id"] for e in doc["claims"][0]["evidence"]] == ["e2"]      # private 'call' evidence gone
     assert [q["id"] for i in stored["inq"]["inquiries"] for q in i["questions"]] == ["q1"]  # q2 stripped
     assert BOARD["t1"]["findings"] == 1
+    # the snapshot also carries the organized Voices and the Brainstorm threads, anonymized + self-contained
+    assert stored["inq"]["voices"]["buckets"][0]["label"] == "Supports the thesis"
+    assert stored["inq"]["voices"]["moments"][0]["id"] == "v1"
+    bs = stored["inq"]["brainstorm"]
+    assert len(bs) == 1 and bs[0]["title"] == "Bear case"
+    assert "owner_id" not in bs[0] and "thesis_id" not in bs[0]              # identity stripped
+    assert [m["role"] for m in bs[0]["messages"]] == ["user", "agent"]
     # public list + entry (no auth) never expose identity
     listed = c.get("/board").json()["entries"]
     assert len(listed) == 1 and listed[0]["id"] == entry_id and "owner_id" not in listed[0]

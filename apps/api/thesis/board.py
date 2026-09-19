@@ -59,3 +59,30 @@ def answered_inquiries(inquiries: list[dict]) -> list[dict]:
 
 def answered_count(inquiries: list[dict]) -> int:
     return sum(len(i.get("questions") or []) for i in (inquiries or []))
+
+
+def public_voices(voices: dict) -> dict:
+    """The organized-Voices snapshot, safe to serve publicly: the relevance buckets plus the moment
+    cards they reference (title, speaker, link…). Voices are public first-person founder/investor
+    content — nothing to strip; we keep exactly what the board needs to render with no live search.
+    Returns {} when nothing has been organized, so the board simply omits the section."""
+    v = dict(voices or {})
+    buckets = v.get("buckets") or []
+    if not buckets:
+        return {}
+    return {"buckets": buckets, "moments": v.get("moments") or []}
+
+
+def anonymize_brainstorm(threads: list[dict]) -> list[dict]:
+    """Brainstorm threads as a public snapshot — the author's exploration of the thesis with identity
+    and internal ids removed. Keeps each thread's title and its transcript (the questions asked and the
+    agent's structured answers). Threads with no messages are dropped; internal working memory is not
+    published."""
+    out: list[dict] = []
+    for t in (threads or []):
+        msgs = [{"role": m.get("role"), "content": m.get("content") or {}}
+                for m in (t.get("messages") or []) if isinstance(m, dict)]
+        if not msgs:
+            continue
+        out.append({"title": t.get("title") or "", "messages": msgs})
+    return out

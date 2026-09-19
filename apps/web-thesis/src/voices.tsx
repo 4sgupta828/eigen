@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type ThesisDoc, type Voice, type VoiceBucket, type VoiceSummary } from "./api";
+import { api, type ThesisDoc, type Voice, type VoiceBucket, type VoiceSummary, type VoicesSnapshot } from "./api";
 import { PageHead, Loading, Working } from "./ui";
 
 // Voices — first-person founders & investors on this thesis's space (podcasts, talks, blogs, essays)
@@ -27,7 +27,7 @@ function topicOf(doc: ThesisDoc): string {
   return q.split(/\s+/).filter(Boolean).slice(0, 8).join(" ").slice(0, 90);
 }
 
-const compact = (m: Voice) => ({ id: m.id, kind: m.kind, title: m.title, snippet: m.text, speaker: m.speaker, show: m.show });
+const compact = (m: Voice) => ({ id: m.id, kind: m.kind, title: m.title, snippet: m.text, speaker: m.speaker, show: m.show, role: m.role, url: m.url, site: m.site, media: m.media, image: m.image, year: m.year });
 
 // Two pulls, merged: a general topical search PLUS a podcast/video-only search — so talks and podcasts
 // are always represented even when keyword ranking would otherwise bury them under long essays.
@@ -194,5 +194,40 @@ function VoiceSummaryView({ loading, error, data }: { loading: boolean; error: b
       {!points.length && paras.length ? <p className="vc-sum-p">{paras[0].slice(0, 480)}</p> : null}
       {(data.quotes || []).length ? <blockquote className="vc-sum-q">“{(data.quotes || [])[0]}”</blockquote> : null}
     </div>
+  );
+}
+
+// A read-only render of the published Voices snapshot (board entry): the same relevance buckets + cards
+// as the live panel, but from the stored moments — no live search or re-organization.
+export function StaticVoices({ voices }: { voices?: VoicesSnapshot }) {
+  const buckets = voices?.buckets || [];
+  // moments were stored compact (snippet, not text) — normalize so the card renders the blurb + date
+  const moments: Voice[] = (voices?.moments || []).map((m) => ({
+    ...m, text: m.text ?? (m as unknown as { snippet?: string }).snippet,
+  }));
+  const byId = new Map(moments.map((m) => [m.id, m]));
+  const placed = new Set(buckets.flatMap((b) => b.items.map((it) => it.id)));
+  const leftover = moments.filter((m) => !placed.has(m.id));
+  if (!moments.length && !buckets.length) return <p className="muted">No voices were published with this thesis.</p>;
+  return (
+    <>
+      <PageHead title="Voices" sub="Founders & investors on this space — podcasts, talks, blogs and essays, grouped by how each bears on the thesis. A signal to explore, not graded evidence." />
+      {buckets.map((b, i) => {
+        const items = b.items.map((it) => ({ m: byId.get(it.id), why: it.why })).filter((x) => x.m);
+        if (!items.length) return null;
+        return (
+          <div key={i} className="vc-group">
+            <div className="vc-bucket-h"><span className="vc-bucket-dot" />{b.label}</div>
+            <div className="vc-grid">{items.map(({ m, why }) => <VoiceCard key={m!.id} m={m!} why={why} />)}</div>
+          </div>
+        );
+      })}
+      {leftover.length ? (
+        <div className="vc-group">
+          <div className="vc-bucket-h"><span className="vc-bucket-dot" />More voices in this space</div>
+          <div className="vc-grid">{leftover.map((m) => <VoiceCard key={m.id} m={m} />)}</div>
+        </div>
+      ) : null}
+    </>
   );
 }

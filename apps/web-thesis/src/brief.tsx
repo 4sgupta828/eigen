@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { api } from "./api";
 import { Working } from "./ui";
 import { Visual } from "./viz";
+import { StaticVoices } from "./voices";
+import { StaticBrainstorm } from "./brainstorm";
 import type {
   Analysis, Cited, Competitive, CompCandidate, CompPlayer, Deck, Evidence, InquiriesView, Question, SimilarThesis, Take, ThesisDoc,
 } from "./api";
@@ -1104,23 +1106,35 @@ export function LinesPanel({ doc, inq, anonymous, id, owner, onRefetchInq }: Pan
 }
 
 // The board still shows ONE standalone read-only page with every section tabbed (no stepper there).
-type Tab = "take" | "reason" | "lines" | "comp" | "deck";
+type Tab = "take" | "reason" | "lines" | "comp" | "deck" | "voices" | "brainstorm";
 const TABS: [Tab, string][] = [["take", "The read"], ["reason", "Reasoning map"], ["lines", "Lines of inquiry"], ["comp", "Competitive"], ["deck", "Pitch deck"]];
 export function Brief({ doc, inq, anonymous, id, owner, onRefetchInq }: PanelProps) {
   const [tab, setTab] = useState<Tab>("take");
   const take = takeOf(doc, inq); const deck = deckOf(doc, inq); const comp = compOf(doc, inq); const bl = take?.bottom_line;
+  // A published board snapshot also carries the organized Voices and the Brainstorm threads — show a tab
+  // for each only when present (i.e. on a board entry), rendered read-only.
+  const voices = inq.voices; const brainstorm = inq.brainstorm || [];
+  const hasVoices = !!(voices?.buckets?.length || voices?.moments?.length);
+  const hasBrainstorm = brainstorm.some((t) => (t.messages || []).length);
+  const tabs: [Tab, string][] = [
+    ...TABS,
+    ...(hasVoices ? [["voices", "Voices"] as [Tab, string]] : []),
+    ...(hasBrainstorm ? [["brainstorm", "Brainstorm"] as [Tab, string]] : []),
+  ];
   return (
     <BriefShell doc={doc} inq={inq} anonymous={anonymous}>
       {parse(bl).clean ? <div className="card read"><div className="kick">The read</div><p><Cite value={bl} kind="finding" /></p></div> : null}
       <div className="tabs">
-        {TABS.map(([t, label]) => <button key={t} className={`tab${t === tab ? " on" : ""}`} onClick={() => setTab(t)}>{label}</button>)}
+        {tabs.map(([t, label]) => <button key={t} className={`tab${t === tab ? " on" : ""}`} onClick={() => setTab(t)}>{label}</button>)}
       </div>
       {owner && id ? <RegenBar id={id} hasComp={!!(comp?.players || []).length} onDone={onRefetchInq} /> : null}
       {tab === "take" ? <TakeTab take={take} />
         : tab === "reason" ? <ReasonTab take={take} lean={leanOf(inq)} />
           : tab === "lines" ? <LinesTab inquiries={inq.inquiries} id={id} owner={owner} onDone={onRefetchInq} />
             : tab === "comp" ? <CompTab comp={comp} id={id} owner={owner} onDone={onRefetchInq} />
-              : <DeckTab deck={deck} />}
+              : tab === "voices" ? <StaticVoices voices={voices} />
+                : tab === "brainstorm" ? <StaticBrainstorm threads={brainstorm} />
+                  : <DeckTab deck={deck} />}
     </BriefShell>
   );
 }

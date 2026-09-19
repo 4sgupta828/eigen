@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type BrainstormThread, type BrainstormMsg, type BsDirection, type BsCard, type Analysis, type Take } from "./api";
+import { api, type BrainstormThread, type BrainstormMsg, type BsDirection, type BsCard, type Analysis, type Take, type BrainstormSnapshot } from "./api";
 import { PageHead, Working, plain } from "./ui";
 import { Visual } from "./viz";
 
@@ -253,7 +253,7 @@ export function Brainstorm({ id, take, onExperts }: { id?: string; take?: Take; 
   );
 }
 
-function MsgView({ m, onExpand, busy, onExperts }: { m: BrainstormMsg; onExpand: (d: BsDirection) => void; busy: boolean; onExperts: () => void }) {
+function MsgView({ m, onExpand, busy, onExperts, readOnly }: { m: BrainstormMsg; onExpand: (d: BsDirection) => void; busy: boolean; onExperts: () => void; readOnly?: boolean }) {
   const c = m.content || {};
   if (m.role === "user") {
     return <div className="bs-turn bs-you"><span className="bs-av you">YOU</span><div className="bs-bub">{c.text}</div></div>;
@@ -262,7 +262,7 @@ function MsgView({ m, onExpand, busy, onExperts }: { m: BrainstormMsg; onExpand:
     return <div className="bs-turn bs-agent"><span className="bs-av ai">E</span><div className="bs-bub"><EnrichCard card={c.card} /></div></div>;
   }
   const sections = c.sections || [];
-  const directions = c.directions || [];
+  const directions = readOnly ? [] : (c.directions || []);   // no on-click enrichments in a static snapshot
   return (
     <div className="bs-turn bs-agent">
       <span className="bs-av ai">E</span>
@@ -280,8 +280,8 @@ function MsgView({ m, onExpand, busy, onExperts }: { m: BrainstormMsg; onExpand:
                   <li key={j}>
                     <span className="bs-sec-row">
                       <span className="bs-sec-txt">{it}</span>
-                      {s.kind === "related_questions" ? <button className="bs-inline-ask" onClick={() => onExpand({ kind: "question", label: it, query: it })} disabled={busy}>ask →</button> : null}
-                      {s.kind === "gaps" ? <button className="bs-inline-ask" onClick={onExperts}>→ Experts</button> : null}
+                      {!readOnly && s.kind === "related_questions" ? <button className="bs-inline-ask" onClick={() => onExpand({ kind: "question", label: it, query: it })} disabled={busy}>ask →</button> : null}
+                      {!readOnly && s.kind === "gaps" ? <button className="bs-inline-ask" onClick={onExperts}>→ Experts</button> : null}
                     </span>
                   </li>
                 ))}
@@ -344,5 +344,27 @@ function EnrichCard({ card }: { card: BsCard }) {
         </div>
       )}
     </div>
+  );
+}
+
+// A read-only render of published Brainstorm threads (board snapshot): each thread's title + its
+// transcript, with every on-click enrichment suppressed. No live agent, no controls.
+export function StaticBrainstorm({ threads }: { threads: BrainstormSnapshot[] }) {
+  const real = (threads || []).filter((t) => (t.messages || []).length);
+  if (!real.length) return <p className="muted">No brainstorm was published with this thesis.</p>;
+  return (
+    <>
+      <PageHead title="Brainstorm" sub="How the author explored this thesis — questions asked and the agent's answers across adjacent areas, deep dives, gaps and experts. A record of the thinking, read-only." />
+      {real.map((t, i) => (
+        <div key={i} className="bs-thread-block card" style={{ marginBottom: "1rem" }}>
+          {t.title ? <div className="bs-thread-title">{t.title}</div> : null}
+          <div className="bs-transcript">
+            {(t.messages || []).map((m, j) => (
+              <MsgView key={j} m={m} onExpand={() => {}} busy={false} onExperts={() => {}} readOnly />
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
   );
 }

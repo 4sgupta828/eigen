@@ -54,7 +54,11 @@ export type ThesisDoc = {
 export type Attachment = { name: string; media_type: string; data: string };
 export type StoredAttachment = { name: string; media_type?: string; chars?: number; text?: string };
 
-export type InquiriesView = { inquiries?: Inquiry[]; deck?: Deck; take?: Take; competitive?: Competitive };
+// A published-board snapshot also carries the organized Voices and the Brainstorm threads, so a public
+// entry renders the whole read with no live search.
+export type VoicesSnapshot = { buckets?: VoiceBucket[]; moments?: Voice[] };
+export type BrainstormSnapshot = { title?: string; messages?: BrainstormMsg[] };
+export type InquiriesView = { inquiries?: Inquiry[]; deck?: Deck; take?: Take; competitive?: Competitive; voices?: VoicesSnapshot; brainstorm?: BrainstormSnapshot[] };
 
 export type BoardCard = { id: string; title?: string; summary?: string; findings?: number; published_at?: string; updated_at?: string };
 export type BoardEntry = {

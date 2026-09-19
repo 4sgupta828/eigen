@@ -1713,8 +1713,10 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         qs = await tstore.list_questions(pool, thesis_id)
         ctx = tvoices.thesis_context(d, qs)
         out = await tvoices.organize_voices(_llm_json(), directive=directive, context=ctx, candidates=cands)
+        # Store the moment cards alongside the buckets so the board snapshot (and any later reader) can
+        # render Voices with no live search — the buckets only carry item ids.
         payload = {"key": key, "v": _VOICES_CACHE_V, "buckets": out.get("buckets") or [],
-                   "generated_at": int(time.time())}
+                   "moments": cands, "generated_at": int(time.time())}
         await tstore.set_thesis_voices(pool, thesis_id, payload)
         return {"status": "ok", "buckets": payload["buckets"], "cached": False}
 
@@ -2302,9 +2304,15 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         if not answered:
             raise HTTPException(status_code=409,
                                 detail="answer at least one line of inquiry before publishing to the board")
+        # Also snapshot the Voices (organized founder/investor signal) and Brainstorm threads, so the
+        # public entry carries the whole read — self-contained, anonymized, no live search on view.
+        voices = tboard.public_voices(await tstore.get_thesis_voices(pool, thesis_id))
+        brainstorm = tboard.anonymize_brainstorm(
+            await tstore.get_brainstorm_threads_full(pool, thesis_id=thesis_id))
         payload = {"doc": tboard.anonymize_doc(d),
                    "inq": {"inquiries": answered, "deck": view.get("deck") or {},
-                           "take": view.get("take") or {}, "competitive": view.get("competitive") or {}}}
+                           "take": view.get("take") or {}, "competitive": view.get("competitive") or {},
+                           "voices": voices, "brainstorm": brainstorm}}
         entry_id = await tstore.publish_board(
             pool, thesis_id=thesis_id, owner_id=str(d.get("owner_id") or ""),
             title=str(d.get("title") or ""), summary=str(d.get("thesis") or ""),
