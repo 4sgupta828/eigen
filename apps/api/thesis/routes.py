@@ -1026,6 +1026,31 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         done = sum(1 for c in claims if c.get("tested_run_id") == run_id)
         return {"done": done, "total": len(claims)}
 
+    async def _run_with_heartbeat(thesis_id: str, run_id: str, coro, *, every: int = 60):
+        """Run a long background step while bumping the run's updated_at every `every`s, so a slow
+        (reasoning-model) build is NOT marked stalled mid-flight by the status poller — which would stop
+        the client refetching and make a finished artifact appear only after a manual browser reload."""
+        async def beat():
+            pool = await pool_of()
+            try:
+                while True:
+                    await asyncio.sleep(every)
+                    try:
+                        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="working", state="running")
+                    except Exception:      # noqa: BLE001 — a bump failure (cancelled/completed) just ends the heartbeat
+                        return
+            except asyncio.CancelledError:
+                return
+        hb = asyncio.create_task(beat())
+        try:
+            return await coro
+        finally:
+            hb.cancel()
+            try:
+                await hb
+            except Exception:      # noqa: BLE001
+                pass
+
     def _is_stale(run: dict) -> bool:
         if not run or run.get("state") != "running":
             return False
@@ -2361,8 +2386,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             except Exception:      # noqa: BLE001 — the deck builds fine without exemplars
                 memos = []
             reference = "\n\n".join(f"{m['title']} ({m['source']}): {m['snippet']}" for m in memos).strip()
-            res = await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json(),
-                                            reference=reference, references=memos)
+            res = await _run_with_heartbeat(thesis_id, run_id, syn.synthesize_deck(
+                pool, thesis_id, _profile(), _take_llm_json(), reference=reference, references=memos))
             rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
             if (rn or {}).get("state") == "cancelled":
                 return
@@ -2413,11 +2438,11 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                                       error={"reason": "no decision profile is configured"})
                 return
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="take", state="running")
-            await _synthesize(thesis_id)                     # rebuild the collective take
+            await _run_with_heartbeat(thesis_id, run_id, _synthesize(thesis_id))       # rebuild the collective take
             if await _cancelled():
                 return
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="deck", state="running")
-            await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json())   # rebuild the deck
+            await _run_with_heartbeat(thesis_id, run_id, syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json()))   # rebuild the deck
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed", state="completed")
         except tstore.SpendCapError as exc:
             await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="cap",
@@ -2509,10 +2534,10 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             subject = " ".join(str(v) for v in ((d or {}).get("subject") or {}).values()).strip()
             _thesis_txt, _subj, findings = await syn._load_findings(pool, thesis_id, profile)
             _cdir, cols = profile.competitive_spec()
-            land = await compres.research_landscape(
+            land = await _run_with_heartbeat(thesis_id, run_id, compres.research_landscape(
                 _strong_llm_json(), atk._web_client(manifest), thesis=thesis, subject=subject,
                 findings=findings, columns=[dict(c) for c in cols], startup_search=startup_search,
-                reason_llm=_take_llm_json())
+                reason_llm=_take_llm_json()))
             land["generated_at"] = int(datetime.now(timezone.utc).timestamp())
             existing = (d or {}).get("competitive") or {}
             # No players AND the model failed (not just a thin result) → surface the real cause instead of
@@ -2579,10 +2604,10 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             land = d.get("competitive") or {}
             existing = tuple(p.get("name", "") for p in (land.get("players") or []))
             subject = " ".join(str(v) for v in (d.get("subject") or {}).values()).strip()
-            cands = await compres.suggest_candidates(
+            cands = await _run_with_heartbeat(thesis_id, run_id, compres.suggest_candidates(
                 _llm_json(), atk._web_client(manifest), thesis=d.get("thesis") or "", subject=subject,
                 space=land.get("space") or "", existing=existing, startup_search=startup_search,
-                reason_llm=_rec(_take_llm_json()))
+                reason_llm=_rec(_take_llm_json())))
             if not cands and _llm_reason():
                 await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
                                       error={"reason": _llm_reason()})
@@ -2649,8 +2674,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             space = land.get("space") or subject or ((d or {}).get("thesis") or "")[:80]
             _cdir, cols = profile.competitive_spec()
             cols = [dict(c) for c in cols]
-            players = await compres.profile_players(_strong_llm_json(), atk._web_client(manifest),
-                                                    names=names, space=space, columns=cols)
+            players = await _run_with_heartbeat(thesis_id, run_id, compres.profile_players(
+                _strong_llm_json(), atk._web_client(manifest), names=names, space=space, columns=cols))
             await tstore.add_competitive_players(pool, thesis_id, players, space=space, columns=cols)
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
                                      state="completed", actual_delta=0.0)
