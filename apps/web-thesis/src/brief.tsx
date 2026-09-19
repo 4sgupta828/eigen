@@ -749,7 +749,7 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
           <div className="th-comp-addbar">
             {busy ? <Working text={note || "researching the market…"} />
               : <button className="btn sec" onClick={research}>{empty ? "Research competitive landscape" : "Re-research landscape"}</button>}
-            {!empty && !busy ? <button className="btn sec" disabled={candBusy || cands !== null} onClick={loadCandidates}>{candBusy ? <Working text="finding players…" /> : "+ Add competitors"}</button> : null}
+            {!empty && !busy ? <button className="btn sec" disabled={candBusy || cands !== null} onClick={loadCandidates}>{candBusy ? <Working text="reasoning over the market… (can take a minute)" /> : "+ Add competitors"}</button> : null}
           </div>
         ) : null}
       </div>

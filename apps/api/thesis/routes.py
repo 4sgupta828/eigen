@@ -288,6 +288,16 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         except Exception:      # noqa: BLE001
             pass
 
+    def _rec(seam):
+        """Wrap any LLM seam so a provider failure (out of credits, rate limit, timeout) is RECORDED into
+        LAST_LLM_ERROR even when the caller swallows the exception — so the endpoint can surface the real
+        cause instead of an empty result that reads as a silent failure."""
+        try:
+            from .llm import recording
+            return recording(seam)
+        except Exception:      # noqa: BLE001
+            return seam
+
     def _strong_llm_json():
         # The stronger (OpenAI) model for the quality-critical steps — synthesizing the answer and
         # reformulating search queries — where the eval showed us weak. Falls back to the default seam.
@@ -2563,10 +2573,23 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         land = d.get("competitive") or {}
         existing = tuple(p.get("name", "") for p in (land.get("players") or []))
         subject = " ".join(str(v) for v in (d.get("subject") or {}).values()).strip()
-        cands = await compres.suggest_candidates(
-            _strong_llm_json(), atk._web_client(manifest), thesis=d.get("thesis") or "", subject=subject,
-            space=land.get("space") or "", existing=existing, startup_search=startup_search,
-            reason_llm=_take_llm_json())
+        # Precision reasoning is INTENDED here — the naming runs on the reasoning (take) seam. That is
+        # slow, so time-bound it (never an endless spinner) and, critically, surface the ROOT CAUSE when it
+        # returns empty (out of credits / rate-limited / timeout) instead of failing silently as "no
+        # candidates". The reasoning seam is recording-wrapped so its error is captured even though
+        # suggest_candidates swallows it. Base seam stays the always-available default.
+        _reset_llm_error()
+        try:
+            cands = await asyncio.wait_for(compres.suggest_candidates(
+                _llm_json(), atk._web_client(manifest), thesis=d.get("thesis") or "", subject=subject,
+                space=land.get("space") or "", existing=existing, startup_search=startup_search,
+                reason_llm=_rec(_take_llm_json())), timeout=150)
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504,
+                                detail="The reasoning model took too long to suggest competitors — try again, "
+                                       "or switch the reasoning provider in ⚙ admin.")
+        if not cands and _llm_reason():
+            raise HTTPException(status_code=502, detail=f"Couldn't find competitors: {_llm_reason()}")
         return {"status": "ok", "candidates": cands, "space": land.get("space") or subject}
 
     async def _run_competitive_add(thesis_id: str, run_id: str, names: list[str]):
