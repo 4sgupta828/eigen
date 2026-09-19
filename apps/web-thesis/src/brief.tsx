@@ -1012,6 +1012,11 @@ export function ReadPanel({ doc, inq, anonymous, id, owner, onRefetchInq }: Pane
   const take = takeOf(doc, inq); const bl = take?.bottom_line; const comp = compOf(doc, inq);
   return (
     <BriefShell doc={doc} inq={inq} anonymous={anonymous}>
+      {take?.error === "synthesis_unavailable" ? (
+        <div className="th-synth-err">
+          <b>The read couldn't be synthesized.</b> The reasoning model returned an error — usually the model API is out of credits or rate-limited. Your {take?.findings || ""} findings are safe (they're in the Lines of Inquiry); {owner ? "regenerate below" : "the read"} will rebuild once the API is available again.
+        </div>
+      ) : null}
       {parse(bl).clean ? <div className="card read"><div className="kick">The read</div><p><Cite value={bl} kind="finding" /></p></div> : null}
       {take?.truncated && take?.synthesized_over ? (
         <p className="muted" style={{ fontSize: ".78rem", margin: ".1rem 0 .4rem" }}>

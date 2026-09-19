@@ -482,6 +482,10 @@ a.th-cite-src:hover { text-decoration: underline; }
 .progress { height: 8px; border-radius: 999px; background: var(--panel2); overflow: hidden; border: 1px solid var(--hair); }
 .progress i { display: block; height: 100%; background: var(--gold); transition: width .4s; }
 
+/* synthesis-unavailable banner (LLM API error) — make the failure visible, never a silent blank */
+.th-synth-err { border: 1px solid color-mix(in srgb, var(--p0, #c0563f) 40%, var(--hair)); border-left: 3px solid var(--p0, #c0563f); border-radius: 10px; background: color-mix(in srgb, var(--p0, #c0563f) 6%, var(--panel)); padding: .7rem .85rem; margin-bottom: 12px; font-size: .88rem; line-height: 1.5; color: var(--ink); }
+.th-synth-err b { color: var(--p0, #c0563f); }
+
 /* run-plan: layered progress (P0/P1/P2 …) — what's done, what's remaining, cost as a side detail */
 .runplan { border: 1px solid var(--hair); border-radius: 14px; background: var(--panel); padding: .85rem 1rem; margin-bottom: 14px; max-width: 620px; }
 .runplan-head { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; margin-bottom: .7rem; }

@@ -136,7 +136,8 @@ def _bound_findings(findings: list[dict], *, max_chars: int = _TAKE_FINDINGS_CHA
     return kept, len(kept) < len(ranked)
 
 
-async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=None) -> dict:
+async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=None,
+                         default_llm=None) -> dict:
     """Compose + persist the COLLECTIVE TAKE (the integrated diligence read). Returns
     {"take": {...}, "findings": <n>}. With no findings yet, persists an empty take.
 
@@ -170,20 +171,32 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
                 "generated_at": int(time.time()), "findings": n,
                 "synthesized_over": len(use_findings), "truncated": truncated}
 
-    take_obj = await _compose(take_llm)
-    reasoning_ok = _take_substantive(take_obj)
-    # The deep-thinking reasoning seam can time out or return malformed JSON on a large finding set — when
-    # it yields nothing, retry on the faster/steadier strong seam so the take ACTUALLY rebuilds (this is
-    # why "regenerate" seemed to do nothing after broadening).
-    if not reasoning_ok and llm_json is not None and llm_json is not take_llm:
-        take_obj = await _compose(llm_json)
-    _log.info("synthesize_all: findings=%d used=%d truncated=%s reasoning_ok=%s strong_ok=%s",
-              n, len(use_findings), truncated, reasoning_ok, _take_substantive(take_obj))
-    # If BOTH seams produced nothing, keep the good existing take rather than blank it out.
-    if not _take_substantive(take_obj) and _take_substantive(existing):
-        return {"take": existing, "findings": n, "rebuilt": False}
-    await tstore.set_collective_take(pool, thesis_id, take_obj)
-    return {"take": take_obj, "findings": n, "rebuilt": _take_substantive(take_obj)}
+    # Try the seams in order of quality, falling through on failure so ONE dead provider (e.g. OpenAI out
+    # of credits) can't blank the take when another seam is live: reasoning → strong → default.
+    seams: list = []
+    for s in (take_llm, llm_json, default_llm):
+        if s is not None and s not in seams:
+            seams.append(s)
+    take_obj, which = None, -1
+    for i, s in enumerate(seams):
+        take_obj = await _compose(s)
+        if _take_substantive(take_obj):
+            which = i
+            break
+    _log.info("synthesize_all: findings=%d used=%d truncated=%s seams=%d ok_via=%s",
+              n, len(use_findings), truncated, len(seams), which)
+    if which >= 0:
+        await tstore.set_collective_take(pool, thesis_id, take_obj)
+        return {"take": take_obj, "findings": n, "rebuilt": True}
+    # Every seam failed. Keep a good existing take if there is one; otherwise persist a VISIBLE error take
+    # (not a silent blank) so the Brief tells the author synthesis couldn't run, rather than "no take yet".
+    if _take_substantive(existing):
+        return {"take": existing, "findings": n, "rebuilt": False, "error": "synthesis_unavailable"}
+    err_take = _empty_take(take_secs)
+    err_take["error"] = "synthesis_unavailable"
+    err_take["findings"] = n
+    await tstore.set_collective_take(pool, thesis_id, err_take)
+    return {"take": err_take, "findings": n, "rebuilt": False, "error": "synthesis_unavailable"}
 
 
 async def synthesize_deck(pool, thesis_id: str, profile, llm_json, reference: str = "",

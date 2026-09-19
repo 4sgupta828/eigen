@@ -1867,7 +1867,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         answered question. The take runs on the reasoning seam; deck + matrix on the strong seam."""
         pool = await pool_of()
         return await syn.synthesize_all(pool, thesis_id, _profile(), _strong_llm_json(),
-                                        take_llm_json=_take_llm_json())
+                                        take_llm_json=_take_llm_json(), default_llm=_llm_json())
 
     async def _run_all(thesis_id: str, run_id: str, web: bool, todo_rows: list[dict] | None = None):
         """Run un-answered questions as ONE run, then synthesize the deck + take so both exist the moment

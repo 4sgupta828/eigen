@@ -5,7 +5,7 @@ export type Cited = { text?: string; markers?: string };
 export type Analysis = { kind: string; text?: string; markers?: string };
 
 export type TakeSection = { key: string; title: string; grounded?: Cited[]; analysis?: Analysis[] };
-export type Take = { empty?: boolean; bottom_line?: Cited; sections?: TakeSection[]; findings?: number; synthesized_over?: number; truncated?: boolean };
+export type Take = { empty?: boolean; bottom_line?: Cited; sections?: TakeSection[]; findings?: number; synthesized_over?: number; truncated?: boolean; error?: string };
 
 export type DeckSpine = { one_liner?: Cited; insight?: Cited; bottom_line?: Cited };
 export type DeckSection = { key: string; title: string; headline?: Cited; points?: Cited[]; prose?: string; visual?: BsVisual };
