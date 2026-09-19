@@ -1554,7 +1554,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         if run:
             m = run.get("metadata") or {}
             kind = ("generate" if m.get("generate") else "regenerate" if m.get("regenerate")
-                    else "deck" if m.get("deck") else "competitive" if m.get("competitive")
+                    else "deck" if m.get("deck") else "candidates" if m.get("candidates")
+                    else "competitive" if m.get("competitive")
                     else "brainstorm" if m.get("brainstorm") else "research")
         return {"run": run, "kind": kind, "thread_id": (run.get("metadata") or {}).get("thread_id", "") if run else ""}
 
@@ -2561,36 +2562,80 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         asyncio.create_task(_run_competitive(thesis_id, run["id"]))
         return {"status": "running", "run": run}
 
+    async def _run_candidates(thesis_id: str, run_id: str):
+        """Suggest competitors on the reasoning (take) seam in the BACKGROUND — the naming is slow
+        (precision is intended), so it runs as a polled run that can't be killed by a request timeout.
+        Stores the result in the run's metadata; the client fetches it once the run completes, and a
+        failure (out of credits / rate-limited) surfaces via the run's error — never a silent empty."""
+        pool = await pool_of()
+        _reset_llm_error()
+        try:
+            d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
+            profile = _profile()
+            if not d or profile is None:
+                await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="setup",
+                                      error={"reason": "thesis or decision profile unavailable"})
+                return
+            land = d.get("competitive") or {}
+            existing = tuple(p.get("name", "") for p in (land.get("players") or []))
+            subject = " ".join(str(v) for v in (d.get("subject") or {}).values()).strip()
+            cands = await compres.suggest_candidates(
+                _llm_json(), atk._web_client(manifest), thesis=d.get("thesis") or "", subject=subject,
+                space=land.get("space") or "", existing=existing, startup_search=startup_search,
+                reason_llm=_rec(_take_llm_json()))
+            if not cands and _llm_reason():
+                await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                      error={"reason": _llm_reason()})
+                return
+            await tstore.set_run_metadata(pool, thesis_id=thesis_id, run_id=run_id,
+                                          patch={"result": {"candidates": cands, "space": land.get("space") or subject}})
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
+                                     state="completed", actual_delta=0.0)
+        except Exception as exc:      # noqa: BLE001 — never leave the run hanging
+            import traceback as _tb
+            await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                  error={"reason": _llm_reason() or "finding competitors failed",
+                                         "detail": str(exc)[:300], "tb": _tb.format_exc()[-600:]})
+
     @r.post("/thesis/{thesis_id}/competitive/candidates")
     async def tl_competitive_candidates(thesis_id: str, authorization: str = Header(default=""),
                                         x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
-        """Suggest MORE competitors to add — direct + adjacent — that are not already on the map. Cheap
-        (names only, no profiling), so the user picks which to spend on. Backs the '+' expand control."""
-        pool, d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
-        profile = _profile()
-        if profile is None:
+        """Start a BACKGROUND run that suggests MORE competitors to add — direct + adjacent — not already
+        on the map. Naming runs on the reasoning seam (precision), which is slow, so the client polls
+        `/inquiry/status?run=` and fetches the result from GET `…/competitive/candidates?run=` when done.
+        Names only (no profiling) — the user then picks which to spend on."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        if _profile() is None:
             raise HTTPException(status_code=409, detail="no decision profile is configured")
-        land = d.get("competitive") or {}
-        existing = tuple(p.get("name", "") for p in (land.get("players") or []))
-        subject = " ".join(str(v) for v in (d.get("subject") or {}).values()).strip()
-        # Precision reasoning is INTENDED here — the naming runs on the reasoning (take) seam. That is
-        # slow, so time-bound it (never an endless spinner) and, critically, surface the ROOT CAUSE when it
-        # returns empty (out of credits / rate-limited / timeout) instead of failing silently as "no
-        # candidates". The reasoning seam is recording-wrapped so its error is captured even though
-        # suggest_candidates swallows it. Base seam stays the always-available default.
-        _reset_llm_error()
+        key = "cand-" + tstore.new_idempotency_key()
         try:
-            cands = await asyncio.wait_for(compres.suggest_candidates(
-                _llm_json(), atk._web_client(manifest), thesis=d.get("thesis") or "", subject=subject,
-                space=land.get("space") or "", existing=existing, startup_search=startup_search,
-                reason_llm=_rec(_take_llm_json())), timeout=150)
-        except asyncio.TimeoutError:
-            raise HTTPException(status_code=504,
-                                detail="The reasoning model took too long to suggest competitors — try again, "
-                                       "or switch the reasoning provider in ⚙ admin.")
-        if not cands and _llm_reason():
-            raise HTTPException(status_code=502, detail=f"Couldn't find competitors: {_llm_reason()}")
-        return {"status": "ok", "candidates": cands, "space": land.get("space") or subject}
+            run = await tstore.create_run(pool, thesis_id=thesis_id, idempotency_key=key,
+                                          projected_usd=0.0, approved_usd=1.0,
+                                          metadata={"candidates": True, "questions": [], "tenant": tenant})
+        except (ValueError, tstore.ActiveRunError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run["id"], stage="running", state="running")
+        asyncio.create_task(_run_candidates(thesis_id, run["id"]))
+        return {"status": "running", "run": run}
+
+    @r.get("/thesis/{thesis_id}/competitive/candidates")
+    async def tl_competitive_candidates_result(thesis_id: str, run: str = "",
+                                               authorization: str = Header(default=""),
+                                               x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """The result of a completed candidates run (its stored suggestion list). 409 while still running,
+        the run's error if it failed."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        record = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run) if run else None
+        if not record:
+            raise HTTPException(status_code=404, detail="no such run")
+        state = record.get("state")
+        if state == "failed":
+            reason = (record.get("error") or {}).get("reason") or "finding competitors failed"
+            raise HTTPException(status_code=502, detail=f"Couldn't find competitors: {reason}")
+        if state != "completed":
+            raise HTTPException(status_code=409, detail="still finding competitors")
+        result = (record.get("metadata") or {}).get("result") or {}
+        return {"status": "ok", "candidates": result.get("candidates") or [], "space": result.get("space") or ""}
 
     async def _run_competitive_add(thesis_id: str, run_id: str, names: list[str]):
         """Profile the chosen candidates and APPEND them to the landscape — a background run, like the

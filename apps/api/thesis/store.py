@@ -876,6 +876,16 @@ async def advance_run(pool, *, thesis_id: str, run_id: str, stage: str,
     return _run_out(row)
 
 
+async def set_run_metadata(pool, *, thesis_id: str, run_id: str, patch: dict) -> None:
+    """Merge extra keys into a run's metadata (jsonb ||) — e.g. a background run stashing its RESULT so
+    the client can fetch it after polling to completion. Never overwrites existing keys wholesale."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE ts_run SET metadata = metadata || $3::jsonb, updated_at=now() WHERE thesis_id=$1 AND id=$2",
+            thesis_id, run_id, json.dumps(patch or {}))
+
+
 async def fail_run(pool, *, thesis_id: str, run_id: str, stage: str, error: dict) -> None:
     await ensure_schema(pool)
     async with pool.acquire() as conn:

@@ -33,7 +33,7 @@ function parse(value?: Cited): { clean: string; ids: string[] } {
 
 // ── drawer state ───────────────────────────────────────────────────────────────
 type DrawerView = { kind: "overview" } | { kind: "finding"; id: string } | { kind: "evidence"; id: string };
-type Hover = { meta?: string; quote?: string; src?: string; rect: DOMRect } | null;
+type Hover = { meta?: string; quote?: string; src?: string; url?: string; rect: DOMRect } | null;
 type Ctx = {
   citer: Citer;
   evidenceById: Map<string, Evidence>;
@@ -57,7 +57,7 @@ function Cite({ value, kind }: { value?: Cited; kind: "finding" | "evidence" }) 
   const payload = (id: string, rect: DOMRect): Hover => {
     if (kind === "evidence") {
       const e = evidenceById.get(id); if (!e) return null; const t = tierOf(e);
-      return { meta: [t.label, domainOf(e.source_url)].filter(Boolean).join(" · "), quote: cleanText(e.quote).slice(0, 300), src: titleClean(e.title), rect };
+      return { meta: [t.label, domainOf(e.source_url)].filter(Boolean).join(" · "), quote: cleanText(e.quote).slice(0, 300), src: titleClean(e.title), url: e.source_url, rect };
     }
     const q = findingById.get(id); if (!q) return null;
     return { meta: q.inquiry_name || "Finding", quote: q.text, rect };
@@ -86,8 +86,9 @@ function Cite({ value, kind }: { value?: Cited; kind: "finding" | "evidence" }) 
   );
 }
 
-// ── the floating citation preview card (styled hover, replaces the native title tooltip) ──
-function CiteHover({ hover }: { hover: Hover }) {
+// ── the floating citation preview card (styled hover, replaces the native title tooltip). Interactive:
+//    it stays while the pointer is over it, so its "read the source" LINK is clickable. ──
+function CiteHover({ hover, onEnter, onLeave }: { hover: Hover; onEnter?: () => void; onLeave?: () => void }) {
   if (!hover) return null;
   const { rect } = hover;
   const below = rect.top < 180;
@@ -98,10 +99,11 @@ function CiteHover({ hover }: { hover: Hover }) {
     transform: below ? "translate(-50%, 0)" : "translate(-50%, -100%)",
   };
   return (
-    <div className="citehover" style={style} role="tooltip">
+    <div className="citehover" style={style} role="tooltip" onMouseEnter={onEnter} onMouseLeave={onLeave}>
       {hover.meta ? <div className="ch-meta">{hover.meta}</div> : null}
       {hover.quote ? <blockquote className="ch-quote">“{hover.quote}”</blockquote> : null}
       {hover.src ? <div className="ch-src">{hover.src}</div> : null}
+      {hover.url ? <a className="ch-link" href={hover.url} target="_blank" rel="noopener noreferrer">{domainOf(hover.url) || "source"} · read the source ↗</a> : null}
     </div>
   );
 }
@@ -471,7 +473,7 @@ function GroundedAnswer({ q }: { q: Question }) {
   ids.forEach((id, i) => { numById[id] = i + 1; });
   const onHover = (id: string, el: HTMLElement) => {
     const e = evidenceById.get(id); if (!e) return; const t = tierOf(e);
-    setHover({ meta: [t.label, domainOf(e.source_url)].filter(Boolean).join(" · "), quote: cleanText(e.quote).slice(0, 300), src: titleClean(e.title), rect: el.getBoundingClientRect() });
+    setHover({ meta: [t.label, domainOf(e.source_url)].filter(Boolean).join(" · "), quote: cleanText(e.quote).slice(0, 300), src: titleClean(e.title), url: e.source_url, rect: el.getBoundingClientRect() });
   };
   const run = makeAnswerRun(numById, (id) => show({ kind: "evidence", id }), onHover, () => setHover(null));
   const hasMarkers = ids.length > 0;
@@ -673,14 +675,16 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [note, setNote] = useState("");
   const [view, setView] = useState<"cards" | "table">("cards");
   const timer = useRef<number | null>(null);
+  const candTimer = useRef<number | null>(null); const candRun = useRef<string | null>(null);
   const empty = !players.length;
-  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
-  // Re-attach an in-flight competitive run after a page refresh.
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); if (candTimer.current) window.clearTimeout(candTimer.current); }, []);
+  // Re-attach an in-flight competitive/candidates run after a page refresh (they keep running server-side).
   useEffect(() => {
     let alive = true; if (!id) return;
     api.activeRun(id).then((a) => {
-      if (!alive || !a.run?.id || a.kind !== "competitive" || busy) return;
-      setBusy(true); setNote("researching the market…"); poll(a.run.id);
+      if (!alive || !a.run?.id || busy || candBusy) return;
+      if (a.kind === "competitive") { setBusy(true); setNote("researching the market…"); poll(a.run.id); }
+      else if (a.kind === "candidates") { setCandBusy(true); candRun.current = a.run.id; pollCands(a.run.id); }
     }).catch(() => { /* nothing in flight */ });
     return () => { alive = false; };
   }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -707,16 +711,36 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
     } catch (e) { setBusy(false); setErr((e as Error).message); }
   }
 
-  // ── expand the map: suggest new/adjacent players, pick, then profile + append (gated) ──
+  // ── expand the map: suggest new/adjacent players (a slow, stoppable background run), pick, then
+  //    profile + append the chosen ones (gated) ──
   const [cands, setCands] = useState<CompCandidate[] | null>(null);
   const [candBusy, setCandBusy] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
+  function pollCands(runId: string) {
+    if (!id) return;
+    api.inquiryStatus(id, runId).then(async (s) => {
+      if (s.state === "completed") {
+        try { const r = await api.competitiveCandidatesResult(id, runId); setCands(r.candidates || []); }
+        catch (e) { setErr((e as Error).message); }
+        setCandBusy(false); candRun.current = null; return;
+      }
+      if (s.state === "failed") { setCandBusy(false); candRun.current = null; setErr((s.error?.reason as string) || "finding competitors failed"); return; }
+      if (s.state === "cancelled" || s.state === "none") { setCandBusy(false); candRun.current = null; return; }
+      candTimer.current = window.setTimeout(() => pollCands(runId), 2500);
+    }).catch(() => { candTimer.current = window.setTimeout(() => pollCands(runId), 3000); });
+  }
   async function loadCandidates() {
-    if (!id) return; setErr(""); setCandBusy(true); setSel(new Set());
+    if (!id) return; setErr(""); setCandBusy(true); setSel(new Set()); setCands(null);
     try {
-      const d = await api.competitiveCandidates(id);
-      setCands(d.candidates || []);
-    } catch (e) { setErr((e as Error).message); } finally { setCandBusy(false); }
+      const r = await api.competitiveCandidates(id);
+      if (!r.run?.id) throw new Error(r.status === "refused" ? "cost exceeded the budget" : "could not start");
+      candRun.current = r.run.id; pollCands(r.run.id);
+    } catch (e) { setCandBusy(false); setErr((e as Error).message); }
+  }
+  async function stopCands() {
+    if (candTimer.current) window.clearTimeout(candTimer.current);
+    if (id && candRun.current) { try { await api.cancelRun(id, candRun.current); } catch { /* poll settles it */ } }
+    setCandBusy(false); candRun.current = null;
   }
   function toggle(name: string) { setSel((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; }); }
   async function analyzeSelected() {
@@ -749,7 +773,11 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
           <div className="th-comp-addbar">
             {busy ? <Working text={note || "researching the market…"} />
               : <button className="btn sec" onClick={research}>{empty ? "Research competitive landscape" : "Re-research landscape"}</button>}
-            {!empty && !busy ? <button className="btn sec" disabled={candBusy || cands !== null} onClick={loadCandidates}>{candBusy ? <Working text="reasoning over the market… (can take a minute)" /> : "+ Add competitors"}</button> : null}
+            {!empty && !busy ? (
+              candBusy
+                ? <span className="th-cand-run"><Working text="reasoning over the market… (can take a minute)" /><button className="btn sec th-cand-stop" onClick={stopCands}>✕ Stop</button></span>
+                : <button className="btn sec" disabled={cands !== null} onClick={loadCandidates}>+ Add competitors</button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -981,7 +1009,13 @@ function leanOf(inq: InquiriesView) {
 // Every brief panel (The read, Reasoning map, Competitive, Pitch deck, Lines of inquiry) renders inside it.
 function BriefShell({ doc, inq, anonymous, children }: { doc: ThesisDoc; inq: InquiriesView; anonymous?: boolean; children: ReactNode }) {
   const [view, setView] = useState<DrawerView>({ kind: "overview" });
-  const [hover, setHover] = useState<Hover>(null);
+  const [hover, setHoverState] = useState<Hover>(null);
+  const hideTimer = useRef<number | null>(null);
+  const cancelHide = () => { if (hideTimer.current) { window.clearTimeout(hideTimer.current); hideTimer.current = null; } };
+  // Setting a hover cancels any pending hide; clearing schedules a short delayed hide, so the pointer can
+  // travel from the [n] ref onto the (interactive) hover card to click its source link without it vanishing.
+  const setHover = (h: Hover) => { cancelHide(); if (h) setHoverState(h); else hideTimer.current = window.setTimeout(() => setHoverState(null), 180); };
+  useEffect(() => () => cancelHide(), []);
   const citer = useMemo(() => new Citer(), [doc, inq]);
   const evidenceById = useMemo(() => {
     const m = new Map<string, Evidence>();
@@ -997,7 +1031,7 @@ function BriefShell({ doc, inq, anonymous, children }: { doc: ThesisDoc; inq: In
   const ctx: Ctx = { citer, evidenceById, findingById, show: setView, active, setHover };
   return (
     <BriefCtx.Provider value={ctx}>
-      <CiteHover hover={hover} />
+      <CiteHover hover={hover} onEnter={cancelHide} onLeave={() => setHover(null)} />
       <div className="briefgrid">
         <div className="memo">
           {/* The owner sees the thesis in the persistent bar on every step; only the shared/anonymous

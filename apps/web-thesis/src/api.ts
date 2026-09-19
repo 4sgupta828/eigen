@@ -292,9 +292,12 @@ export const api = {
   // ── competitive research (projection via max_usd:0 → refused+projection; then run with the approved budget) ──
   competitiveResearch: (id: string, max_usd: number) =>
     req<RunResp>("POST", `/thesis/${enc(id)}/competitive/research`, { max_usd, web: true, idempotency_key: max_usd > 0 ? "comp-" + Date.now() : undefined }, id),
-  // suggest MORE competitors to add (cheap, names only), then profile + append the chosen ones (gated)
+  // suggest MORE competitors to add — a BACKGROUND run (reasoning seam is slow) the client polls, then
+  // fetches the result; then profile + append the chosen ones (gated)
   competitiveCandidates: (id: string) =>
-    req<{ status: string; candidates?: CompCandidate[]; space?: string; unavailable?: boolean }>("POST", `/thesis/${enc(id)}/competitive/candidates`, {}, id),
+    req<RunResp>("POST", `/thesis/${enc(id)}/competitive/candidates`, {}, id),
+  competitiveCandidatesResult: (id: string, run: string) =>
+    getJSON<{ status: string; candidates?: CompCandidate[]; space?: string }>(`/thesis/${enc(id)}/competitive/candidates?run=${enc(run)}`, id),
   competitiveAdd: (id: string, names: string[], max_usd: number) =>
     req<RunResp & { selected?: number }>("POST", `/thesis/${enc(id)}/competitive/add`, { names, max_usd, idempotency_key: max_usd > 0 ? "compadd-" + Date.now() : undefined }, id),
 
