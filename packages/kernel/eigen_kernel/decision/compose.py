@@ -20,9 +20,12 @@ NOT_ESTABLISHED.
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from .synthesis import sanitize_answer, NOT_ESTABLISHED
+
+_log = logging.getLogger("eigen.decision.compose")
 
 _MARK = re.compile(r"\[\[e:[A-Za-z0-9_-]{1,80}\]\]")
 # An F-token not embedded in a larger alphanumeric run (so it never matches the "f2" inside a hex id).
@@ -381,7 +384,9 @@ async def compose_memo(llm_json, *, directive: str, sections: list[dict], findin
     try:
         raw = await llm_json(directive, user)
         d = raw if isinstance(raw, dict) else json.loads(raw)
-    except Exception:      # noqa: BLE001
+    except Exception as exc:      # noqa: BLE001
+        _log.warning("compose_memo: LLM/parse FAILED (%s: %s) over %d findings",
+                     type(exc).__name__, str(exc)[:180], len(reals))
         return empty
     bl = _gate_units([{"text": (d.get("bottom_line") or {}).get("text"),
                        "finding_ids": (d.get("bottom_line") or {}).get("finding_ids")}], resolve, reals)
@@ -403,6 +408,15 @@ async def compose_memo(llm_json, *, directive: str, sections: list[dict], findin
                          "grounded": [{"text": g["text"], "markers": g["markers"]} for g in grounded],
                          "analysis": analysis})
     bottom_line = {"text": bl[0]["text"], "markers": bl[0]["markers"]} if bl else {"text": "", "markers": ""}
+    if not bottom_line["text"] and not any((s["grounded"] or s["analysis"]) for s in out_secs):
+        # The model answered but EVERY unit was gated out (no valid F-number citations) — log what it
+        # actually returned so we can see whether it cited nothing vs cited out-of-range tokens.
+        raw_bl = str((d.get("bottom_line") or {}).get("text") or "")[:120]
+        raw_fids = (d.get("bottom_line") or {}).get("finding_ids")
+        _log.warning("compose_memo: EMPTY after gate — reals=%d resp_keys=%s resp_sections=%d "
+                     "bl_len=%d bl_fids=%s tokens=%s", len(reals), list(d.keys())[:6],
+                     len(d.get("sections") or []), len(raw_bl), str(raw_fids)[:80],
+                     sorted(set(token_of.values()))[:6])
     return {"bottom_line": bottom_line, "sections": out_secs}
 
 

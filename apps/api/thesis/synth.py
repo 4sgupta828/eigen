@@ -14,9 +14,12 @@ findings; never raises.
 """
 from __future__ import annotations
 
+import logging
 import time
 
 from eigen_kernel.decision import compose_deck, compose_memo
+
+_log = logging.getLogger("eigen.thesis.synth")
 
 from . import store as tstore
 
@@ -168,11 +171,14 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
                 "synthesized_over": len(use_findings), "truncated": truncated}
 
     take_obj = await _compose(take_llm)
+    reasoning_ok = _take_substantive(take_obj)
     # The deep-thinking reasoning seam can time out or return malformed JSON on a large finding set — when
     # it yields nothing, retry on the faster/steadier strong seam so the take ACTUALLY rebuilds (this is
     # why "regenerate" seemed to do nothing after broadening).
-    if not _take_substantive(take_obj) and llm_json is not None and llm_json is not take_llm:
+    if not reasoning_ok and llm_json is not None and llm_json is not take_llm:
         take_obj = await _compose(llm_json)
+    _log.info("synthesize_all: findings=%d used=%d truncated=%s reasoning_ok=%s strong_ok=%s",
+              n, len(use_findings), truncated, reasoning_ok, _take_substantive(take_obj))
     # If BOTH seams produced nothing, keep the good existing take rather than blank it out.
     if not _take_substantive(take_obj) and _take_substantive(existing):
         return {"take": existing, "findings": n, "rebuilt": False}
