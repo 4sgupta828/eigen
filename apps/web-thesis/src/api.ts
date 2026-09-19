@@ -93,6 +93,17 @@ async function req<T>(method: string, path: string, body?: unknown, id?: string)
 const getJSON = <T,>(p: string, id?: string) => req<T>("GET", p, undefined, id);
 const enc = encodeURIComponent;
 
+// Admin-gated requests carry the admin token (never the owner cap).
+async function adminReq<T>(method: string, path: string, token: string, body?: unknown): Promise<T> {
+  const r = await fetch(path, { method, headers: { "content-type": "application/json", "X-Admin-Token": token },
+    body: body === undefined ? undefined : JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((d && (d as { detail?: string }).detail) || `request failed (${r.status})`);
+  return d as T;
+}
+export type SettingSpec = { value: string; default: string; override: string; options: string[]; label: string; help: string; source: string };
+export type SettingsResp = { status: string; settings: Record<string, SettingSpec> };
+
 // response shapes for the do-side
 export type Version = { id: string; text?: string; parent_id?: string; source?: string; rationale?: string; at?: string; active?: boolean };
 export type GenesisResp = { status: string; reply?: string; ready?: boolean; proposed_thesis?: string; versions?: Version[]; change_rationale?: string; thesis?: ThesisDoc };
@@ -238,6 +249,10 @@ export const api = {
   uploadTranscript: (id: string, inquiry_key: string, b: { expert_name?: string; expert_url?: string; firm?: string; role?: string; transcript: string; save_to_roster?: boolean }) =>
     req<TranscriptResp>("POST", `/thesis/${enc(id)}/inquiry/${enc(inquiry_key)}/transcript`, { save_to_roster: true, ...b }, id),
   transcripts: (id: string) => getJSON<{ status: string; by_line: Record<string, unknown[]> }>(`/thesis/${enc(id)}/transcripts`, id).then((d) => d.by_line || {}),
+
+  // ── admin settings (runtime toggles, admin-token gated) ──
+  adminSettings: (token: string) => adminReq<SettingsResp>("GET", "/thesis/admin/settings", token),
+  adminSetSetting: (token: string, key: string, value: string) => adminReq<SettingsResp>("POST", "/thesis/admin/settings", token, { key, value }),
 
   // ── share / board ──
   share: (id: string) => req<{ status: string; share_token: string }>("POST", `/thesis/${enc(id)}/share`, {}, id).then((d) => d.share_token),

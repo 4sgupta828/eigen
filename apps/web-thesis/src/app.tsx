@@ -4,11 +4,13 @@ import { api } from "./api";
 import { Brief } from "./brief";
 import { Workspace } from "./workspace";
 import { Genesis } from "./genesis";
+import { Settings } from "./admin";
 
 // ── hash router (hash-compatible with the classic client: #thesis/#view/#board) ──
 type Route =
   | { name: "home" }
   | { name: "new" }
+  | { name: "settings" }
   | { name: "board" }
   | { name: "boardEntry"; id: string }
   | { name: "view"; id: string; token: string }
@@ -17,6 +19,7 @@ type Route =
 function parseHash(hash: string): Route {
   const h = hash.replace(/^#/, "");
   if (h === "new") return { name: "new" };
+  if (h === "settings") return { name: "settings" };
   if (h === "board") return { name: "board" };
   if (h.indexOf("board/") === 0) return { name: "boardEntry", id: decodeURIComponent(h.slice(6)) };
   if (h.indexOf("view/") === 0) {
@@ -51,7 +54,7 @@ function Shell({ crumb, children }: { crumb?: ReactNode; children: ReactNode }) 
         <span className="grow" />
       </div></div>
       <div className="wrap">{children}</div>
-      <div className="foot">Eigen · new thesis-first client (beachhead) · full thesis lifecycle</div>
+      <div className="foot">Eigen · new thesis-first client (beachhead) · full thesis lifecycle · <span style={{ cursor: "pointer" }} onClick={() => go("settings")}>⚙ admin</span></div>
     </>
   );
 }
@@ -111,10 +114,15 @@ function NewThesis() {
   return <Shell crumb={<>New thesis</>}><Genesis /></Shell>;
 }
 
+function SettingsPage() {
+  return <Shell crumb={<>Admin settings</>}><Settings /></Shell>;
+}
+
 export function App() {
   const r = useRoute();
   switch (r.name) {
     case "new": return <NewThesis />;
+    case "settings": return <SettingsPage />;
     case "board": return <BoardGallery />;
     case "boardEntry": return r.id ? <BoardEntryView id={r.id} /> : <BoardGallery />;
     case "view": return <Workspace id={r.id} token={r.token} />;

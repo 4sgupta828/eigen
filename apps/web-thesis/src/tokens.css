@@ -482,6 +482,16 @@ a.th-cite-src:hover { text-decoration: underline; }
 .progress { height: 8px; border-radius: 999px; background: var(--panel2); overflow: hidden; border: 1px solid var(--hair); }
 .progress i { display: block; height: 100%; background: var(--gold); transition: width .4s; }
 
+/* admin settings */
+.setting-h { font-family: var(--serif); font-weight: 600; font-size: 1.02rem; }
+.setting-opts { display: flex; flex-wrap: wrap; gap: .5rem; }
+.setting-opt { display: inline-flex; align-items: center; gap: .4rem; font-family: var(--mono); font-size: .78rem; font-weight: 600; color: var(--ink); background: var(--panel); border: 1px solid var(--hair); border-radius: 10px; padding: .5rem .85rem; cursor: pointer; }
+.setting-opt:hover:not(:disabled) { border-color: color-mix(in srgb, var(--gold) 40%, var(--hair)); }
+.setting-opt.on { color: var(--on-accent); background: var(--gold); border-color: var(--gold); }
+.setting-opt:disabled { opacity: .55; cursor: default; }
+.setting-def { font-size: .58rem; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+.setting-reset { background: none; border: none; color: var(--gold-strong); cursor: pointer; font: inherit; font-size: .76rem; text-decoration: underline; margin-left: .4rem; }
+
 /* synthesis-unavailable banner (LLM API error) — make the failure visible, never a silent blank */
 .th-synth-err { border: 1px solid color-mix(in srgb, var(--p0, #c0563f) 40%, var(--hair)); border-left: 3px solid var(--p0, #c0563f); border-radius: 10px; background: color-mix(in srgb, var(--p0, #c0563f) 6%, var(--panel)); padding: .7rem .85rem; margin-bottom: 12px; font-size: .88rem; line-height: 1.5; color: var(--ink); }
 .th-synth-err b { color: var(--p0, #c0563f); }

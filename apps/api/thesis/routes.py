@@ -35,6 +35,7 @@ from . import decompose as dec
 from . import genesis as gen
 from . import people as ppl
 from . import prioritize as prio
+from . import settings as tsettings
 from . import store as tstore
 from . import synth as syn
 from . import transcript as tx
@@ -151,6 +152,11 @@ class ClaimPatch(BaseModel):
 class QuestionEdit(BaseModel):
     text: str = ""
     target: str = ""
+
+
+class SettingIn(BaseModel):
+    key: str = ""
+    value: str = ""                  # "" clears the override → falls back to the env/default
 
 
 class EditThesisIn(BaseModel):
@@ -336,6 +342,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     async def _read(thesis_id: str, authorization: str, owner_token: str = "",
                     share_token: str = "", *, owner_only: bool = False) -> tuple[object, dict]:
         pool = await pool_of()
+        await tsettings.ensure_fresh(pool)   # keep the runtime settings cache warm for any run this kicks off
         d = await tstore.get(pool, thesis_id=thesis_id, owner_id=await _owner(authorization),
                              owner_token=owner_token, share_token=share_token)
         if not d:
@@ -363,6 +370,33 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             claim["critical"] = bool(policy and policy.is_critical(claim["rung"]))
             claim["research_status"] = OPEN
         return out
+
+    # ---- admin settings: runtime toggles (e.g. the reasoning provider), gated by the admin token ----
+    def _admin_ok(token: str) -> bool:
+        want = os.environ.get("EIGEN_ADMIN_TOKEN", "")
+        return bool(want) and token == want
+
+    @r.get("/thesis/admin/settings")
+    async def tl_admin_settings(x_admin_token: str = Header(default="", alias="X-Admin-Token")):
+        """The runtime settings + their allowed values, for the admin Settings UI. Admin-token gated."""
+        if not _admin_ok(x_admin_token):
+            raise HTTPException(status_code=403, detail="admin token required")
+        pool = await pool_of()
+        return {"status": "ok", "settings": await tsettings.effective(pool)}
+
+    @r.post("/thesis/admin/settings")
+    async def tl_admin_set_setting(body: SettingIn, x_admin_token: str = Header(default="", alias="X-Admin-Token")):
+        """Set (or clear, with an empty value) one runtime setting. Takes effect within seconds across
+        workers — no redeploy. Admin-token gated."""
+        if not _admin_ok(x_admin_token):
+            raise HTTPException(status_code=403, detail="admin token required")
+        pool = await pool_of()
+        try:
+            value = await tsettings.set_value(pool, body.key, body.value)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "ok", "key": body.key, "value": value,
+                "settings": await tsettings.effective(pool)}
 
     @r.post("/thesis")
     async def tl_new(body: NewThesis, authorization: str = Header(default="")):

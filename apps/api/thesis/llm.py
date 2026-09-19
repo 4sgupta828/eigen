@@ -84,11 +84,15 @@ def _openai_json_seam(*, model: str, api_key: str, base_url: str | None = None):
 
 def reasoning_provider() -> str:
     """Which provider powers the STRONG + REASONING seams (the take, answer synthesis, query
-    reformulation, deck, competitive, prioritize, sample, brainstorm). Toggle without code via the
-    `EIGEN_THESIS_REASONING_PROVIDER` env setting: 'deepseek' (default — cheap, for development) or
-    'openai' (the strongest models). 'deepseek' makes strong_json()/take_json() return None so callers
-    fall through to the default DeepSeek seam."""
-    return (os.environ.get("EIGEN_THESIS_REASONING_PROVIDER") or "deepseek").strip().lower()
+    reformulation, deck, competitive, prioritize, sample, brainstorm): 'deepseek' (default — cheap, for
+    development) or 'openai' (the strongest models). Set at runtime from the admin Settings UI (a
+    short-TTL cache; falls back to the EIGEN_THESIS_REASONING_PROVIDER env, then 'deepseek'). 'deepseek'
+    makes strong_json()/take_json() return None so callers fall through to the default DeepSeek seam."""
+    try:
+        from . import settings
+        return settings.get_cached("reasoning_provider", "deepseek")
+    except Exception:      # noqa: BLE001 — never let a settings read break seam selection
+        return (os.environ.get("EIGEN_THESIS_REASONING_PROVIDER") or "deepseek").strip().lower()
 
 
 def strong_json():

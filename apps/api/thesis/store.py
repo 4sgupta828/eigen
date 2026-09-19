@@ -274,6 +274,14 @@ CREATE TABLE IF NOT EXISTS ts_board (
 CREATE UNIQUE INDEX IF NOT EXISTS ux_ts_board_thesis ON ts_board (thesis_id);
 CREATE INDEX IF NOT EXISTS ix_ts_board_recent ON ts_board (created_at DESC);
 
+-- Runtime, admin-editable settings (e.g. the reasoning provider) — changeable from the app without a
+-- redeploy. Read through a short-TTL in-process cache so it stays cheap.
+CREATE TABLE IF NOT EXISTS ts_setting (
+    key        text PRIMARY KEY,
+    value      text NOT NULL DEFAULT '',
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- Brainstorm THREADS — a continuous, memory-bearing exploration over a thesis's whole context. Each
 -- thread is a saveable conversation ("past brainstorms"); its `memory` is the STRUCTURED running state
 -- (summary + assumptions/explored/open_threads) re-injected into every turn so the agent stays
@@ -926,6 +934,24 @@ async def delete_brainstorm_thread(pool, *, thesis_id: str, thread_id: str) -> N
     async with pool.acquire() as conn:
         await conn.execute(
             "DELETE FROM ts_brainstorm_thread WHERE id=$1 AND thesis_id=$2", thread_id, thesis_id)
+
+
+async def get_all_settings(pool) -> dict:
+    """All runtime settings as a {key: value} dict."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT key, value FROM ts_setting")
+    return {r["key"]: r["value"] for r in rows}
+
+
+async def set_setting(pool, key: str, value: str) -> None:
+    """Upsert one runtime setting."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO ts_setting (key, value) VALUES ($1, $2)
+               ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()""",
+            key, str(value or ""))
 
 
 async def set_thesis_attachments(pool, thesis_id: str, attachments: list[dict]) -> None:
