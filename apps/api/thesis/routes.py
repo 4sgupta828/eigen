@@ -516,36 +516,54 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         ctx = "\n\n".join(p for p in (attach_ctx, ground_ctx) if p)
         turns = d.get("turns") or []
         used = sum(1 for t in turns if t.get("role") == "agent" and t.get("move") == "genesis")
-        # A ReAct agent with GOAL + MEMORY (strong model). Memory (thesis + assumptions + open threads +
-        # resolved) is carried on the last agent turn's payload — read it in, pass it through, store the
-        # updated memory back. The agent reasons (thought), engages the input, holds or updates the thesis.
         prior_mem = next((t.get("payload", {}).get("memory") for t in reversed(turns)
                           if t.get("role") == "agent" and t.get("payload", {}).get("memory")), None)
-        got = await gen.turn(_strong_llm_json(), said=said, history=turns,
-                             budget_left=max(0, gen.GENESIS_BUDGET - used), memory=prior_mem,
-                             context=ctx)
+        prior_text = (d.get("proposed_thesis") or d.get("thesis") or "").strip()
+        # OPENING: the very first genesis call after a paste (no message, no prior agent turn, but a
+        # pasted thesis). The paste IS the author's opening — record it as THEIR turn and as the original
+        # version, so the conversation starts with them and stays backtrackable; then automatically
+        # FACT-CHECK it against the live-web grounding as the first basic improvement (a correction that
+        # keeps their intent, not a reset).
+        opening = (not said) and (not used) and bool(prior_text)
+        corrections: list[dict] = []
+        if opening:
+            await tstore.add_turn(pool, thesis_id, role="user", text=prior_text)
+            if not (d.get("versions") or []):
+                await tstore.add_thesis_version(pool, thesis_id, prior_text, source="user_paste",
+                                                rationale="Your thesis, as you stated it")
+            turns = turns + [{"role": "user", "text": prior_text}]
+            got = await gen.fact_check_open(_strong_llm_json(), thesis=prior_text, context=ctx, memory=prior_mem)
+            corrections = got.get("corrections") or []
+        else:
+            # A ReAct agent with GOAL + MEMORY (strong model): reasons (thought), engages the input, holds
+            # or updates the thesis, returns updated memory carried on the agent turn's payload.
+            got = await gen.turn(_strong_llm_json(), said=said, history=turns,
+                                 budget_left=max(0, gen.GENESIS_BUDGET - used), memory=prior_mem,
+                                 context=ctx)
         ready = bool(got.get("ready"))
-        reply = got.get("reply") or ("Ready when you are." if ready else "Tell me a little more.")
+        reply = got.get("reply") or ("Checked it against the current facts." if opening
+                                     else "Ready when you are." if ready else "Tell me a little more.")
         # The agent's current thesis this turn; keep the last good one if the model returned none.
         proposed = got.get("proposed_thesis") or d.get("proposed_thesis") or d.get("thesis") or ""
         memory = got.get("memory") or {}
-        # Versioning: if the agent CHANGED the thesis this turn, record a new version (backtrackable);
-        # otherwise just keep the draft text. A change prompted by the author's message is `directed`,
-        # an autonomous sharpen is `genesis`. Shaping memory is persisted so it survives across sessions.
-        prior_text = (d.get("proposed_thesis") or d.get("thesis") or "").strip()
+        # Versioning: if the thesis CHANGED this turn, record a backtrackable version. The opening
+        # fact-check is `grounded`; an author-prompted change is `directed`; an autonomous sharpen `genesis`.
         if proposed and proposed.strip() != prior_text:
             await tstore.add_thesis_version(
-                pool, thesis_id, proposed, source=("directed" if said else "genesis"),
+                pool, thesis_id, proposed,
+                source=("grounded" if opening else "directed" if said else "genesis"),
                 rationale=got.get("change_rationale") or "")
         elif proposed:
             await tstore.set_proposed_thesis(pool, thesis_id, proposed)
         if memory.get("shaping_prefs"):
             await tstore.set_shaping_prefs(pool, thesis_id, memory["shaping_prefs"])
-        await tstore.add_turn(pool, thesis_id, role="agent", move="genesis", text=reply,
+        await tstore.add_turn(pool, thesis_id, role="agent", move=("factcheck" if opening else "genesis"),
+                              text=reply,
                               payload={"ready": ready, "proposed_thesis": proposed, "memory": memory,
-                                       "change_rationale": got.get("change_rationale") or ""})
+                                       "change_rationale": got.get("change_rationale") or "",
+                                       "corrections": corrections})
         return {"status": "ok", "reply": reply, "ready": ready, "proposed_thesis": proposed,
-                "memory": memory, "change_rationale": got.get("change_rationale") or "",
+                "memory": memory, "change_rationale": got.get("change_rationale") or "", "corrections": corrections,
                 "versions": await tstore.list_thesis_versions(pool, thesis_id),
                 "thesis": await tstore.get(pool, thesis_id=thesis_id, owner_id=oid,
                                            owner_token=x_thesis_owner)}
@@ -623,8 +641,9 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             prior_mem = {**(prior_mem or {}), "shaping_prefs": d.get("shaping_prefs")}
 
         # Ground the improvement in current facts about the subject too — a sharpen must not fold in stale
-        # or wrong specifics. Reuses the cached subject facts (refreshes only if missing/stale).
-        ground_ctx = await _ground_context(d2 or d, thesis_id)
+        # or wrong specifics. REUSE-ONLY (no fresh scan) so the sharpen loop stays fast; the opening
+        # fact-check already grounded the thesis.
+        ground_ctx = await _ground_context(d2 or d, thesis_id, allow_scan=False)
         imp_ctx = "\n\n".join(p for p in (_attach_context((d2 or {}).get("attachments") or []), ground_ctx) if p)
         proposal = await gen.next_improvement(_strong_llm_json(), thesis=current, skip=skip, memory=prior_mem,
                                               context=imp_ctx)
@@ -1872,13 +1891,15 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             lines.append(f"- {t}{(' — ' + snip) if snip else ''}{(' [' + u + ']') if u else ''}")
         return "\n".join(lines)[:cap]
 
-    async def _ground_context(d: dict, thesis_id: str, *, said: str = "", force: bool = False) -> str:
+    async def _ground_context(d: dict, thesis_id: str, *, said: str = "", force: bool = False,
+                              allow_scan: bool = True) -> str:
         """Grounding block for genesis/refine: dated live-web facts about the subject (refreshed when
         missing, stale, or the author asks to check facts) plus the market brief if one is already cached.
-        Best-effort — never raises, never blocks the author for long."""
+        `allow_scan=False` reuses whatever is cached WITHOUT a fresh scan (keeps the sharpen loop fast —
+        the opening already grounded). Best-effort — never raises."""
         from eigen_kernel import decision as _dec
         facts = d.get("subject_facts") or {}
-        if force or _FACTCHECK_RE.search(said or "") or not (facts.get("hits")) or _facts_stale(facts):
+        if allow_scan and (force or _FACTCHECK_RE.search(said or "") or not (facts.get("hits")) or _facts_stale(facts)):
             try:
                 fresh = await asyncio.wait_for(_scan_subject(d), timeout=16)
                 if fresh.get("hits"):

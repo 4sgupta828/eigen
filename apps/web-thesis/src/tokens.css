@@ -715,6 +715,13 @@ a.th-cite-src:hover { text-decoration: underline; }
 .th-landed-q { font-family: var(--serif); font-size: 1.02rem; line-height: 1.5; margin: .4rem 0; color: var(--ink); border: none; padding: 0; }
 .th-landed-q ins { background: color-mix(in srgb, var(--fact) 20%, transparent); text-decoration: none; border-radius: 3px; padding: 0 .1em; }
 .th-landed-q del { color: var(--p0); opacity: .7; }
+/* fact-check corrections panel (the grounded opening) */
+.th-corrections { margin: .55rem 0 .2rem; border: 1px solid var(--hair); border-left: 3px solid var(--fact); border-radius: 8px; background: color-mix(in srgb, var(--fact) 5%, var(--panel2)); padding: .5rem .65rem; }
+.th-corr-h { font-family: var(--mono); font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--fact); margin-bottom: .35rem; }
+.th-corr { font-size: .84rem; line-height: 1.45; margin: .2rem 0; }
+.th-corr-was { color: var(--muted); margin-right: .3rem; }
+.th-corr-was del { color: var(--p0); opacity: .75; }
+.th-corr-now { color: var(--ink); }
 .th-redline-toggle { margin-left: auto; font-family: var(--mono); font-size: .6rem; color: var(--muted); background: transparent; border: 1px solid var(--hair); border-radius: 999px; padding: .1rem .45rem; cursor: pointer; }
 .th-redline-key { display: block; font-family: var(--mono); font-size: .6rem; color: var(--muted); margin-bottom: .3rem; }
 .th-landed-row { display: flex; align-items: center; gap: .6rem; margin-top: .6rem; flex-wrap: wrap; }

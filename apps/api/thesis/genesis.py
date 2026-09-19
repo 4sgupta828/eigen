@@ -174,6 +174,78 @@ async def turn(llm_json, *, said: str, history: list[dict], budget_left: int,
             "thought": str(d.get("thought") or "").strip()[:600]}
 
 
+_FACTCHECK_OPEN_SYSTEM = """\
+You are a venture partner OPENING the refinement of a thesis the author just pasted. Your FIRST job is to
+ground it in reality — a factual reality check before any sharpening.
+
+You are given the author's THESIS and CURRENT GROUNDING: dated facts pulled from the live web about the
+thesis's subject just now. Your own training memory is stale and is often WRONG about what a specific
+company actually does — so for anything factual about the subject, the GROUNDING is the source of truth.
+
+Do this, in order:
+1. FACT-CHECK the thesis against the grounding. Find every claim about the subject — what the company/
+   product IS and DOES, who it serves, its stage/traction/funding, its real competitors, dates — that the
+   grounding CONTRADICTS or does not support. Capture each as {claim, correction}.
+2. REWRITE the thesis to be FACTUALLY CORRECT and one notch sharper: fix the wrong specifics using the
+   grounded facts, KEEP the author's product, intent and their bet. Where the grounding is silent, keep it
+   general or mark it to-verify — never invent. This is a correction + ONE basic improvement, not a new thesis.
+3. Write a short REPLY (2-4 sentences) telling the author plainly what was off versus the current facts and
+   what you corrected, citing the grounded facts. If nothing was factually wrong, say it checks out and note
+   the single improvement you made.
+
+Return ONE JSON object exactly:
+{"thesis": "<the corrected, slightly sharpened thesis — flowing prose>",
+ "corrections": [{"claim": "<what the thesis asserted>", "correction": "<what the current facts show>"}],
+ "reply": "<2-4 sentences: what was off vs the current facts, and what you corrected>",
+ "change_rationale": "<one line: the correction + improvement you made>",
+ "assumptions": ["<load-bearing assumptions the corrected thesis rests on>"],
+ "open_threads": ["<what still needs verifying or resolving>"]}
+Output ONLY the JSON object."""
+
+
+async def fact_check_open(llm_json, *, thesis: str, context: str = "", memory: dict | None = None) -> dict:
+    """The automatic FIRST step after a thesis is pasted: fact-check it against the current live-web
+    grounding and make one grounded correction/improvement. -> {reply, proposed_thesis, corrections,
+    change_rationale, memory, ready}. Never raises; returns the thesis unchanged (no correction) when there
+    is no model or the output is unusable, so the author is never blocked."""
+    mem = _mem(memory)
+    thesis = (thesis or "").strip()
+    empty = {"reply": "", "proposed_thesis": "", "corrections": [], "change_rationale": "", "memory": mem, "ready": False}
+    if llm_json is None or not thesis:
+        return empty
+    prompt = ((f"CURRENT GROUNDING (dated live-web facts about the subject — the source of truth; prefer over "
+               f"your memory; name specifics only where supported here, else keep general or mark "
+               f"to-verify):\n{context.strip()[:9000]}\n\n"
+               if (context or '').strip() else
+               "CURRENT GROUNDING: none could be retrieved — do NOT invent facts; only tighten wording and "
+               "flag what needs verifying.\n\n")
+              + f"THE AUTHOR'S PASTED THESIS:\n{thesis}\n\nFact-check and open. Return the JSON.")
+    try:
+        raw = await llm_json(_FACTCHECK_OPEN_SYSTEM, prompt)
+        d = raw if isinstance(raw, dict) else json.loads(raw)
+    except Exception:      # noqa: BLE001 — the opening never blocks the author
+        return empty
+    if not isinstance(d, dict):
+        return empty
+    corrections = []
+    for c in (d.get("corrections") or [])[:6]:
+        claim = str((c or {}).get("claim") or "").strip()[:300]
+        corr = str((c or {}).get("correction") or "").strip()[:300]
+        if claim or corr:
+            corrections.append({"claim": claim, "correction": corr})
+    new_thesis = str(d.get("thesis") or "").strip()[:THESIS_CAP]
+    new_mem = _mem(d)
+    for k in ("assumptions", "open_threads"):
+        if not new_mem[k]:
+            new_mem[k] = mem[k]
+    new_mem["resolved"] = mem["resolved"]
+    new_mem["shaping_prefs"] = mem["shaping_prefs"]
+    reply = str(d.get("reply") or "").strip()[:1400]
+    return {"reply": reply, "proposed_thesis": new_thesis, "corrections": corrections,
+            "change_rationale": str(d.get("change_rationale") or "").strip()[:300],
+            "memory": new_mem, "ready": False}
+
+
 _IMPROVE_SYSTEM = """\
 You are a venture partner IMPROVING a startup thesis on the author's behalf — not interrogating them. You
 PROPOSE the few highest-leverage questions whose answers would most sharpen THIS thesis, ANSWER each from

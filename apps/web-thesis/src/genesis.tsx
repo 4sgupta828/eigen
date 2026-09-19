@@ -80,13 +80,14 @@ function Ev({ e }: { e: Evidence }) {
   );
 }
 
-const VER_SRC: Record<string, string> = { genesis: "drafted", directed: "your edit", self_improve: "self-improved", user_edit: "edited" };
+const VER_SRC: Record<string, string> = { genesis: "drafted", directed: "your edit", self_improve: "self-improved", user_edit: "edited", user_paste: "your thesis", grounded: "fact-checked" };
 
 export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: string; doc?: ThesisDoc; onCommitted?: () => void }) {
   const [id, setId] = useState(initialId || "");
   const [doc, setDoc] = useState<ThesisDoc | undefined>(initialDoc);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);   // the opening runs a live-web fact-check (slower)
   const [err, setErr] = useState("");
   const [showRedline, setShowRedline] = useState(false);
   // Deficiency-driven sharpening: one identified gap + one proposal at a time.
@@ -145,8 +146,14 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
 
   const turns: Turn[] = doc?.turns || [];
   const agentTurns = turns.filter((t) => t.role === "agent" && t.payload?.proposed_thesis);
-  const lastPay = agentTurns.length ? agentTurns[agentTurns.length - 1].payload : undefined;
-  const prevThesis = agentTurns.length >= 2 ? (agentTurns[agentTurns.length - 2].payload?.proposed_thesis || "") : "";
+  const lastAgent = agentTurns.length ? agentTurns[agentTurns.length - 1] : undefined;
+  const lastPay = lastAgent?.payload;
+  const pasteText = turns.find((t) => t.role === "user")?.text || "";
+  // The redline diffs against the previous thesis — for the opening fact-check, that's the author's
+  // pasted thesis (so "show changes" reads as a correction, not a from-scratch rewrite).
+  const prevThesis = lastAgent?.move === "factcheck" ? pasteText
+    : agentTurns.length >= 2 ? (agentTurns[agentTurns.length - 2].payload?.proposed_thesis || "") : "";
+  const corrections = lastPay?.corrections || [];
   const proposed = lastPay?.proposed_thesis || doc?.proposed_thesis || doc?.thesis || "";
   const versions: Version[] = doc?.versions || [];
   const started = !!id || turns.length > 0;
@@ -158,9 +165,10 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
     try {
       const c = await api.create(text.trim() || "See the attached document.", true, sending);   // draft; stores attachments
       setId(c.id); setAtts([]);
-      const g = await api.genesis(c.id, "");         // agent opens / sharpens (reads the stored attachments)
+      setChecking(true);
+      const g = await api.genesis(c.id, "");         // opening: fact-check the paste against current facts
       setDoc(g.thesis || c.thesis);
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); setChecking(false); }
   }
   async function turn(text: string) {
     if (!text.trim() && !atts.length) return;
@@ -246,7 +254,7 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
                 </div>
               </div>
             ))}
-            {busy && !sharpening ? <div className="turn"><span className="av ai">E</span><div className="bub muted"><Working text="thinking…" /></div></div> : null}
+            {busy && !sharpening ? <div className="turn"><span className="av ai">E</span><div className="bub muted"><Working text={checking ? "checking the thesis against current facts…" : "thinking…"} /></div></div> : null}
           </div>
 
           {/* Working-thesis card — the agent restates the updated thesis every turn; redline shows what changed. */}
@@ -280,6 +288,17 @@ export function Genesis({ id: initialId, doc: initialDoc, onCommitted }: { id?: 
               ) : (
                 <blockquote className="th-landed-q">{proposed}</blockquote>
               )}
+              {corrections.length && !editing ? (
+                <div className="th-corrections">
+                  <div className="th-corr-h">✓ Fact-checked against current sources — corrected:</div>
+                  {corrections.map((c, i) => (
+                    <div key={i} className="th-corr">
+                      {c.claim ? <span className="th-corr-was"><del>{c.claim}</del></span> : null}
+                      {c.correction ? <span className="th-corr-now">→ {c.correction}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {!editing ? <Mem mem={lastPay?.memory} /> : null}
               {storedAtts.length ? (
                 <div className="th-attach-stored">

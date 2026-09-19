@@ -35,9 +35,11 @@ export type Claim = { rung?: string; verdict?: string; research_status?: string;
 
 export type GenesisMemory = { open_threads?: string[]; assumptions?: string[]; shaping_prefs?: unknown };
 export type Person = { name?: string; why?: string };
+export type Correction = { claim?: string; correction?: string };
 export type TurnPayload = {
   ready?: boolean; proposed_thesis?: string; memory?: GenesisMemory; change_rationale?: string;
   evidence?: Evidence[]; question?: string; people?: Person[]; guidance?: string; subject?: unknown;
+  corrections?: Correction[];
 };
 export type Turn = { role: "user" | "agent"; move?: string; text?: string; payload?: TurnPayload };
 
