@@ -81,3 +81,16 @@ async def test_take_falls_back_to_strong_seam_when_reasoning_blank(monkeypatch):
     out = await synth.synthesize_all(None, "t1", prof, strong, take_llm_json=reasoning)
     assert out["rebuilt"] is True
     assert calls["take_set"] is not None and calls["take_set"]["bottom_line"]["text"].startswith("The record leans")
+
+
+def test_bound_findings_ranks_by_priority_and_caps():
+    # 40 findings, each ~1000-char answer → far over budget; keeps the crux (P0) first, within the cap.
+    fs = ([{"id": f"c{i}", "priority": 0, "line": "crux", "question": "q", "answer": "x" * 1000} for i in range(10)]
+          + [{"id": f"a{i}", "priority": 2, "line": "cov", "question": "q", "answer": "y" * 1000} for i in range(30)])
+    kept, truncated = synth._bound_findings(fs, max_chars=8000, per_answer=1000)
+    assert truncated is True
+    assert all(f["priority"] == 0 for f in kept)        # P0 crux kept first
+    assert 1 <= len(kept) <= 10
+    # a small set is never truncated
+    kept2, trunc2 = synth._bound_findings(fs[:3], max_chars=8000, per_answer=1000)
+    assert trunc2 is False and len(kept2) == 3

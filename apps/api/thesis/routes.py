@@ -2337,6 +2337,13 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
             if (rn or {}).get("state") == "cancelled":      # user stopped it — don't flip to completed
                 return
+            # A new answer changes the read: rebuild the Collective Take (and its reasoning map) so the
+            # Brief always reflects the latest findings — bounded + fallback-guarded, so it stays reliable.
+            await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="synthesizing")
+            try:
+                await _synthesize(thesis_id)
+            except Exception:      # noqa: BLE001 — synthesis is best-effort; the answer is safe regardless
+                pass
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
                                      state="completed")
         except tstore.SpendCapError as exc:

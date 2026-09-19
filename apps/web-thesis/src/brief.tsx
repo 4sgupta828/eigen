@@ -1013,6 +1013,11 @@ export function ReadPanel({ doc, inq, anonymous, id, owner, onRefetchInq }: Pane
   return (
     <BriefShell doc={doc} inq={inq} anonymous={anonymous}>
       {parse(bl).clean ? <div className="card read"><div className="kick">The read</div><p><Cite value={bl} kind="finding" /></p></div> : null}
+      {take?.truncated && take?.synthesized_over ? (
+        <p className="muted" style={{ fontSize: ".78rem", margin: ".1rem 0 .4rem" }}>
+          Synthesized over the {take.synthesized_over} most decision-relevant of {take.findings} findings (P0 crux first) to stay reliable — every finding is still in the Lines of Inquiry.
+        </p>
+      ) : null}
       {owner && id ? <RegenBar id={id} hasComp={!!(comp?.players || []).length} onDone={onRefetchInq} /> : null}
       <TakeTab take={take} />
     </BriefShell>

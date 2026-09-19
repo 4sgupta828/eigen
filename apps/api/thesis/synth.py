@@ -105,8 +105,32 @@ async def _load_findings(pool, thesis_id: str, profile) -> tuple[str, str, list[
         findings.append({"id": str(q.get("id")), "line": q.get("inquiry_name") or "Findings",
                          "aspect": _aspect_prompt(profile, q.get("aspect_key") or ""),
                          "question": q.get("text") or "", "answer": q.get("answer") or "",
-                         "status": q.get("target_status") or ""})
+                         "status": q.get("target_status") or "",
+                         "priority": int(q.get("priority") or 1)})
     return thesis, subject, findings
+
+
+# The synthesis prompt must stay within a size the model reliably composes over — an unbounded finding
+# set was what made the take time out / blank on deeper runs. We keep the MOST decision-relevant findings
+# (crux P0 first, then P1, P2 …) up to a character budget with headroom for the instructions + the memo
+# itself, rather than feeding everything. Comfortably fits every normal thesis; only the largest are cut.
+_TAKE_FINDINGS_CHARS = 26000     # ~6.5K tokens of findings — leaves ample room in the model's context
+_TAKE_ANSWER_CHARS = 2000        # per-finding answer cap fed to synthesis (matches compose's answer_chars)
+
+
+def _bound_findings(findings: list[dict], *, max_chars: int = _TAKE_FINDINGS_CHARS,
+                    per_answer: int = _TAKE_ANSWER_CHARS) -> tuple[list[dict], bool]:
+    """Rank findings by decision-relevance (priority level, crux first) and keep those that fit the budget,
+    so synthesis never overflows. Returns (kept, truncated). At least one finding is always kept."""
+    ranked = sorted(findings or [], key=lambda f: (int(f.get("priority", 1)), str(f.get("line", ""))))
+    kept, used = [], 0
+    for f in ranked:
+        cost = min(len(f.get("answer", "")), per_answer) + len(f.get("question", "")) + 48
+        if kept and used + cost > max_chars:
+            break
+        kept.append(f)
+        used += cost
+    return kept, len(kept) < len(ranked)
 
 
 async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=None) -> dict:
@@ -131,13 +155,17 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
         await tstore.set_collective_take(pool, thesis_id, take_obj)
         return {"take": take_obj, "findings": 0}
     n = len(findings)
+    # Bound the input so synthesis stays reliable on deep runs — keep the most decision-relevant findings
+    # within a size the model composes over cleanly, rather than feeding an unbounded set that times out.
+    use_findings, truncated = _bound_findings(findings)
 
     async def _compose(llm):
         take = await compose_memo(llm, directive=take_dir, sections=list(take_secs),
-                                  findings=findings, decision=thesis, answer_chars=2400)
+                                  findings=use_findings, decision=thesis, answer_chars=_TAKE_ANSWER_CHARS)
         return {"bottom_line": take.get("bottom_line") or {"text": "", "markers": ""},
                 "sections": take.get("sections") or [], "empty": False,
-                "generated_at": int(time.time()), "findings": n}
+                "generated_at": int(time.time()), "findings": n,
+                "synthesized_over": len(use_findings), "truncated": truncated}
 
     take_obj = await _compose(take_llm)
     # The deep-thinking reasoning seam can time out or return malformed JSON on a large finding set — when
