@@ -45,7 +45,7 @@ export type ThesisDoc = {
   id?: string; thesis?: string; title?: string;
   subject?: Record<string, unknown>;
   claims?: Claim[]; is_owner?: boolean; board_entry?: string;
-  proposed_thesis?: string; research_status?: string;
+  proposed_thesis?: string; research_status?: string; updated_at?: string;
   turns?: Turn[]; versions?: Version[]; shaping_prefs?: unknown;
   pitch_deck?: Deck; collective_take?: Take; competitive?: Competitive;
   attachments?: StoredAttachment[];
@@ -176,8 +176,7 @@ export const api = {
   // The user's theses = server list (if signed in) + every thesis this device created (owner tokens in
   // localStorage), reconstructed by fetching each — so anonymously-created theses still show up.
   async myTheses(): Promise<ThesisListItem[]> {
-    const ids = Object.keys(readOwners());
-    // Hydrate each owned thesis into a rich dashboard card: doc gives claims + which artifacts exist
+    // Hydrate each thesis into a rich dashboard card: doc gives claims + which artifacts exist
     // (brief/reasoning/competitive/deck); the run plan gives drafted-vs-answered question counts.
     const has = (v: unknown) => !!v && typeof v === "object" && Object.keys(v as object).length > 0;
     const hydrate = async (id: string): Promise<ThesisListItem | null> => {
@@ -189,6 +188,7 @@ export const api = {
         const draft = !claims.length;
         const item: ThesisListItem = {
           id: d.id, thesis: d.thesis, title: d.title, claims: claims.length, settled, draft,
+          updated_at: d.updated_at,
           has_brief: has(d.collective_take), has_reasoning: has(d.collective_take),
           has_competitive: !!(d.competitive?.players || []).length, has_deck: has(d.pitch_deck),
           on_board: !!d.board_entry,
@@ -203,16 +203,18 @@ export const api = {
         return item;
       } catch { return null; }
     };
-    const [server, owned] = await Promise.all([
-      getJSON<{ theses: ThesisListItem[] }>("/theses").then((d) => d.theses || []).catch(() => [] as ThesisListItem[]),
-      Promise.all(ids.map(hydrate)),
-    ]);
-    const list: ThesisListItem[] = [];
+    // Two ways a thesis is "mine": ACCOUNT-owned (the server list, keyed by owner_id) and DEVICE-owned
+    // (a capability token in localStorage). Hydrate the UNION so EVERY card is rich — the server list
+    // alone is sparse (no artifacts/question counts), which showed account-owned theses as blank.
+    const server = await getJSON<{ theses: ThesisListItem[] }>("/theses").then((d) => d.theses || []).catch(() => [] as ThesisListItem[]);
+    const serverById = new Map(server.map((t) => [t.id, t]));
+    const ids: string[] = [];
     const seen = new Set<string>();
-    const add = (t: ThesisListItem) => { if (t.id && !seen.has(t.id)) { seen.add(t.id); list.push(t); } };
-    owned.forEach((t) => { if (t) add(t); });
-    server.forEach(add);
-    return list;
+    server.forEach((t) => { if (t.id && !seen.has(t.id)) { seen.add(t.id); ids.push(t.id); } });   // newest-first
+    Object.keys(readOwners()).forEach((id) => { if (!seen.has(id)) { seen.add(id); ids.push(id); } });
+    const hydrated = await Promise.all(ids.map(hydrate));
+    // Rich card when the fetch succeeded; otherwise fall back to the sparse server row (never drop it).
+    return ids.map((id, i) => hydrated[i] || serverById.get(id) || { id });
   },
   deleteThesis: (id: string) => req<{ status: string }>("DELETE", `/thesis/${enc(id)}`, undefined, id),
   // ── identity gate (shared /auth + /config contract with the classic shell) ──
