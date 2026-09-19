@@ -626,6 +626,7 @@ a.th-cite-src:hover { text-decoration: underline; }
 .th-comp-cand-n { font-size: .9rem; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; gap: .4rem; }
 .th-comp-kind { font-family: var(--mono); font-size: .54rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: .08rem .32rem; border-radius: 5px; }
 .th-comp-kind-direct { color: var(--gold-strong); border: 1px solid color-mix(in srgb, var(--gold) 40%, var(--hair)); }
+.th-comp-kind-incumbent { color: #2e6d5b; border: 1px solid color-mix(in srgb, #2e6d5b 40%, var(--hair)); }
 .th-comp-kind-adjacent { color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 40%, var(--hair)); }
 .th-comp-cand-note { grid-column: 2; font-size: .8rem; color: var(--muted); line-height: 1.4; }
 .th-comp-pick-acts { display: flex; gap: .5rem; margin-top: .6rem; }

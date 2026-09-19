@@ -56,30 +56,36 @@ async def _focus_queries(llm_json, *, thesis: str, subject: str) -> tuple[str, l
     targeted search queries to find its DIRECT competitors, mixing keyword and natural-language angles so
     we search by meaning AND by term. Falls back to simple queries with no model."""
     base = (subject or thesis[:80]).strip()
-    fallback = (base, [f"{base} competitors", f"{base} alternatives", f"companies like {base}"])
+    fallback = (base, [f"{base} competitors", f"{base} startups", f"{base} alternatives",
+                       f"companies like {base}", f"{base} market leaders incumbents"])
     if llm_json is None:
         return fallback
-    system = ("You are a venture analyst. From this thesis define the ONE focused market it competes in — "
-              "the exact JOB the product does, for the exact BUYER (NOT the broad category) — and write "
-              "SEARCH QUERIES to find its DIRECT competitors (companies doing that same job for that same "
-              "buyer). Mix short keyword queries with one natural-language 'companies that do X for Y' "
-              'query. Return ONLY {"focus": "<exact job + buyer, one line>", "queries": ["...", ...]} '
-              "(3-5, most precise first).")
+    system = (
+        "You are a venture analyst finding the PRECISE competitive set for a thesis. First pin the ONE "
+        "focused market: the exact JOB the product does, for the exact BUYER — a tight wedge, never the "
+        "broad category ('embedded payroll for cross-border contractors', not 'fintech'). Then write "
+        "SEARCH QUERIES that will surface the REAL players — spanning FOUR angles so nothing is missed:\n"
+        "  1) direct-competitor keyword searches (the specific product + buyer terms),\n"
+        "  2) STARTUP / recently-funded-entrant searches (e.g. '<job> startup seed Series A 2024 2025'),\n"
+        "  3) INCUMBENT / market-leader searches (who owns this today, the substitute being displaced),\n"
+        "  4) one natural-language 'companies that do <job> for <buyer>' / 'alternatives to <leader>' query.\n"
+        'Return ONLY {"focus": "<exact job + buyer, one line>", "queries": ["...", ...]} — 5-7 queries, '
+        "the most precise first, using the real nouns of the market (segments, standards, incumbents).")
     try:
         raw = await llm_json(system, f"THESIS:\n{thesis}\n\nSUBJECT: {subject}\n\nReturn the JSON.")
         d = raw if isinstance(raw, dict) else json.loads(raw)
         focus = str(d.get("focus") or base).strip()[:200]
-        qs = [str(q).strip()[:160] for q in (d.get("queries") or []) if str(q).strip()][:5]
+        qs = [str(q).strip()[:160] for q in (d.get("queries") or []) if str(q).strip()][:7]
         return focus, (qs or fallback[1])
     except Exception:      # noqa: BLE001
         return fallback
 
 
-async def _gather_seed(web_client, queries: list[str], *, cap: int = 10) -> list[dict]:
-    """Search several targeted queries (meaning + keyword angles) and merge, deduped by url — better
-    recall of DIRECT players than one generic query."""
+async def _gather_seed(web_client, queries: list[str], *, cap: int = 16) -> list[dict]:
+    """Search several targeted queries (direct / startup / incumbent / meaning angles) and merge, deduped
+    by url — higher recall of the real players than one generic query."""
     out, seen = [], set()
-    for q in (queries or [])[:5]:
+    for q in (queries or [])[:7]:
         for s in await _search(web_client, q):
             u = s.get("url") or s.get("title")
             if u and u not in seen:
@@ -95,26 +101,33 @@ async def _identify_players(llm_json, web_client, *, thesis: str, subject: str, 
     competitors first. Seeded by focused, multi-angle web search; the model names the players (never
     invents), stays tightly on the focus, and adjacents are capped so the map isn't drowned in tangents."""
     focus, queries = await _focus_queries(llm_json, thesis=thesis, subject=subject)
-    seed = await _gather_seed(web_client, queries, cap=10)
-    seed_txt = "\n".join(f"- {s['title']}: {s['text'][:400]}" for s in seed[:8])
+    seed = await _gather_seed(web_client, queries, cap=16)
+    seed_txt = "\n".join(f"- {s['title']}: {s['text'][:400]}" for s in seed[:12])
     found = "\n".join(f"- {f.get('answer','')[:300]}" for f in (findings or [])[:12]
                       if "competit" in (f.get("aspect", "") + f.get("question", "")).lower()
                       or f.get("aspect", "").lower().startswith("who else"))
     if llm_json is None:
         return focus, []
-    system = ("You are a venture analyst mapping ONE focused market for a FUNDING decision. The FOCUS (the "
-              "exact job + buyer this thesis competes on) is given — stay tightly on it. Return the real "
-              "companies competing FOR THAT SAME JOB AND BUYER, DIRECT competitors FIRST. Include an "
-              "ADJACENT player (a substitute or a platform that could clearly enter) ONLY if it is a "
-              "specific, real threat to THIS exact job — at most one or two, and last. EXCLUDE anything "
-              "that merely shares the broad category but not the job/buyer, and anything you are unsure "
-              "competes. Prefer new/recently-funded entrants and the incumbents that actually matter. "
-              'Actual company names only. Return ONLY {"players": [{"name": "...", "kind": '
-              '"direct|adjacent"}, ...]} — direct first.')
+    system = (
+        "You are a venture analyst mapping ONE focused market for a FUNDING decision. The FOCUS (the exact "
+        "job + buyer this thesis competes on) is given — stay tightly on it. Name the REAL companies that "
+        "compete for THAT SAME JOB AND BUYER, most precise first. Reason before you list:\n"
+        "- DIRECT: startups/companies doing the same job for the same buyer — these come FIRST and are most "
+        "of the list. Prefer the specific, recently-funded ENTRANTS and the clear category leaders.\n"
+        "- INCUMBENT: the established player(s) / substitute this thesis displaces — include the ones that "
+        "actually matter for this job (mark kind='incumbent').\n"
+        "- ADJACENT: a platform or substitute that could credibly ENTER this exact job — at most one or two, "
+        "LAST (kind='adjacent').\n"
+        "Rules: real, verifiable company names only — NEVER invent one; if you are not confident a company "
+        "exists and competes on THIS job, leave it out. Ground each in the open-web context or your own "
+        "solid knowledge of the space. EXCLUDE anything that only shares the broad category but not the "
+        "job/buyer. A precise short list beats a padded one.\n"
+        'Return ONLY {"players": [{"name": "...", "kind": "direct|incumbent|adjacent", "why": "<=8 words, '
+        'how it competes on this job>"}, ...]} — direct first, then incumbents, adjacents last.')
     user = (f"FOCUS (stay on this): {focus}\n\nTHESIS:\n{thesis}\n\n"
             + (f"WHAT DILIGENCE FOUND ABOUT THE FIELD:\n{found}\n\n" if found else "")
-            + (f"OPEN-WEB CONTEXT:\n{seed_txt}\n\n" if seed_txt else "")
-            + f"Name up to {max_players} players, DIRECT first, adjacents capped at 2. Return the JSON.")
+            + (f"OPEN-WEB CONTEXT (candidate names appear here):\n{seed_txt}\n\n" if seed_txt else "")
+            + f"Name up to {max_players} players, DIRECT first, incumbents next, adjacents (≤2) last. Return the JSON.")
     try:
         raw = await llm_json(system, user)
         d = raw if isinstance(raw, dict) else json.loads(raw)
@@ -172,28 +185,33 @@ async def _profile_player(llm_json, web_client, *, name: str, space: str, column
 
 
 async def suggest_candidates(llm_json, web_client, *, thesis: str, subject: str, space: str = "",
-                             existing: tuple = (), max_candidates: int = 12, startup_search=None) -> list[dict]:
-    """Propose MORE competitors to analyze — direct and adjacent — that are NOT already in the landscape.
-    Cheap: one open-web pull + one LLM call, and it only NAMES candidates (no profiling yet), so the user
-    can pick which to spend on. -> [{name, kind: 'direct'|'adjacent', note}]. Never raises."""
+                             existing: tuple = (), max_candidates: int = 12, startup_search=None,
+                             reason_llm=None) -> list[dict]:
+    """Propose MORE competitors to analyze — direct, incumbent and adjacent — NOT already in the landscape.
+    Cheap: an open-web pull + one LLM call, and it only NAMES candidates (no profiling yet), so the user
+    can pick which to spend on. `reason_llm` (when given) powers the precision reasoning.
+    -> [{name, kind: 'direct'|'incumbent'|'adjacent', note}]. Never raises."""
     have = {str(n).strip().lower() for n in (existing or ()) if str(n).strip()}
-    if llm_json is None:
+    reason = reason_llm or llm_json
+    if reason is None:
         return []
-    # Focus tightly on the exact job + buyer, and search multiple targeted angles (meaning + keyword) —
-    # so candidates are DIRECT rivals in one focused area, not a scatter of adjacents.
-    focus, queries = await _focus_queries(llm_json, thesis=thesis, subject=(space or subject))
-    seed = await _gather_seed(web_client, queries + [focus + " competitors"], cap=10)
-    seed_txt = "\n".join(f"- {s['title']}: {s['text'][:300]}" for s in seed[:8])
+    # Focus tightly on the exact job + buyer, and search multiple targeted angles (direct / startup /
+    # incumbent / meaning) — so candidates are the REAL rivals in one focused area, not a scatter.
+    focus, queries = await _focus_queries(reason, thesis=thesis, subject=(space or subject))
+    seed = await _gather_seed(web_client, queries + [focus + " competitors", focus + " startup funding"], cap=16)
+    seed_txt = "\n".join(f"- {s['title']}: {s['text'][:300]}" for s in seed[:12])
     system = ("You are a venture analyst expanding a competitive map for a FUNDING decision, staying on ONE "
               "focused market. The FOCUS (the exact job + buyer) is given. Propose companies to ADD that "
-              "compete FOR THAT SAME JOB AND BUYER — DIRECT competitors FIRST. Include an ADJACENT one "
-              "(a clear substitute or a platform that could specifically enter) only if it is a real threat "
-              "to THIS exact job — at most a couple, and mark them adjacent. EXCLUDE anything that only "
-              "shares the broad category but not the job/buyer, and anything you are unsure competes — a "
-              "shorter, precise list beats a long, loose one. Prefer new/recently-funded entrants and the "
-              "incumbents that actually matter. Real company names only, never categories or inventions. "
-              "Return ONLY {\"candidates\": [{\"name\": \"...\", \"kind\": \"direct|adjacent\", \"note\": "
-              "\"who they are + why they compete on THIS job (recency/funding/traction)\"}]} — direct first.")
+              "compete FOR THAT SAME JOB AND BUYER — DIRECT startups/companies FIRST, then the INCUMBENT(s) "
+              "or substitute this thesis displaces (kind='incumbent'), then at most one or two ADJACENT "
+              "players that could credibly ENTER this exact job (kind='adjacent', last). Prefer the "
+              "specific, recently-funded ENTRANTS and the leaders that actually matter. EXCLUDE anything "
+              "that only shares the broad category but not the job/buyer, and anything you are unsure "
+              "competes — a shorter, precise list beats a long, loose one. Real, verifiable company names "
+              "only, NEVER a category or an invention. Ground each in the web context or solid knowledge. "
+              "Return ONLY {\"candidates\": [{\"name\": \"...\", \"kind\": \"direct|incumbent|adjacent\", "
+              "\"note\": \"who they are + why they compete on THIS job (recency/funding/traction)\"}]} — "
+              "direct first, incumbents next, adjacents last.")
     exist_txt = ", ".join(sorted(have)) or "(none yet)"
     user = (f"FOCUS (stay on this): {focus}\n\nTHESIS:\n{thesis}\n\n"
             + f"ALREADY IN THE MAP (do NOT repeat): {exist_txt}\n\n"
@@ -201,7 +219,7 @@ async def suggest_candidates(llm_json, web_client, *, thesis: str, subject: str,
             + f"Propose up to {max_candidates} NEW candidates, DIRECT first, adjacents last & capped. "
             + "Return the JSON.")
     try:
-        raw = await llm_json(system, user)
+        raw = await reason(system, user)
         d = raw if isinstance(raw, dict) else json.loads(raw)
         items = d.get("candidates") or []
     except Exception:      # noqa: BLE001
@@ -212,9 +230,10 @@ async def suggest_candidates(llm_json, web_client, *, thesis: str, subject: str,
         if not name or name.lower() in seen:
             continue
         seen.add(name.lower())
-        kind = "adjacent" if str((it or {}).get("kind") or "").strip().lower() == "adjacent" else "direct"
+        k = str((it or {}).get("kind") or "").strip().lower()
+        kind = "adjacent" if k == "adjacent" else "incumbent" if k == "incumbent" else "direct"
         row = {"name": name, "kind": kind, "note": str((it or {}).get("note") or "").strip()[:200]}
-        (adj if kind == "adjacent" else direct).append(row)
+        (adj if kind == "adjacent" else direct).append(row)   # incumbents ride with direct (kept, not capped)
     # OUR internal Startup Search: any indexed company matching the focus is a real, direct candidate —
     # prepend it (deduped) so corpus-grounded competitors lead over web guesses.
     picked = {r["name"].lower() for r in direct + adj} | set(have)
@@ -259,13 +278,16 @@ async def _startup_names(startup_search, text: str, limit: int) -> list[str]:
 
 
 async def research_landscape(llm_json, web_client, *, thesis: str, subject: str, findings: list[dict],
-                             columns: list[dict], max_players: int = MAX_PLAYERS, startup_search=None) -> dict:
+                             columns: list[dict], max_players: int = MAX_PLAYERS, startup_search=None,
+                             reason_llm=None) -> dict:
     """-> {space, columns, players:[{name, is_subject, cells:{key:{text,source_url,source_title}}}],
-    empty}. Players are the direct competitors in the focused market — sourced from OUR internal Startup
-    Search (precise, corpus-grounded) FIRST, then the open web — each profiled and cited. Never raises."""
+    empty}. Players are the competitors in the focused market — sourced from OUR internal Startup Search
+    (precise, corpus-grounded) FIRST, then the open web — each profiled and cited. `reason_llm` (when
+    given) powers the precision-critical focus + player IDENTIFICATION (the strongest reasoner); profiling
+    stays on `llm_json` (cheaper/faster). Never raises."""
     cols = [{"key": str(c["key"]), "label": str(c.get("label") or c["key"])} for c in (columns or [])]
-    focus, web_names = await _identify_players(llm_json, web_client, thesis=thesis, subject=subject,
-                                               findings=findings, max_players=max_players)
+    focus, web_names = await _identify_players(reason_llm or llm_json, web_client, thesis=thesis,
+                                               subject=subject, findings=findings, max_players=max_players)
     # OUR index first (a company that's in our startup corpus IS a real, indexed player), then web recall.
     su_names = await _startup_names(startup_search, focus, max_players)
     names, seen = [], set()

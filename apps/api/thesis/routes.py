@@ -2284,7 +2284,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             _cdir, cols = profile.competitive_spec()
             land = await compres.research_landscape(
                 _strong_llm_json(), atk._web_client(manifest), thesis=thesis, subject=subject,
-                findings=findings, columns=[dict(c) for c in cols], startup_search=startup_search)
+                findings=findings, columns=[dict(c) for c in cols], startup_search=startup_search,
+                reason_llm=_take_llm_json())
             land["generated_at"] = int(datetime.now(timezone.utc).timestamp())
             existing = (d or {}).get("competitive") or {}
             # No players AND the model failed (not just a thin result) → surface the real cause instead of
@@ -2348,7 +2349,8 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         subject = " ".join(str(v) for v in (d.get("subject") or {}).values()).strip()
         cands = await compres.suggest_candidates(
             _strong_llm_json(), atk._web_client(manifest), thesis=d.get("thesis") or "", subject=subject,
-            space=land.get("space") or "", existing=existing, startup_search=startup_search)
+            space=land.get("space") or "", existing=existing, startup_search=startup_search,
+            reason_llm=_take_llm_json())
         return {"status": "ok", "candidates": cands, "space": land.get("space") or subject}
 
     async def _run_competitive_add(thesis_id: str, run_id: str, names: list[str]):
