@@ -246,10 +246,10 @@ const SITE = {
     name: "Eigen Research",
     appHref: "/w",
     appLabel: "Open Eigen",
-    askLabel: "Ask this in Eigen",
+    askLabel: "Test a thesis",
     contact: "founders@askeigen.com",
     nav: [
-      { label: "The ledger", href: "#ledger" },
+      { label: "The read", href: "#ledger" },
       { label: "Sources", href: "#sources" },
       { label: "About", href: "/about" },
     ],
@@ -265,84 +265,84 @@ const SITE = {
   },
 
   hero: {
-    title: "Every company has\ntwo stories.",
-    lede: "One is what they announced. The other is what they can prove. Eigen reads the filings, patents and papers and shows you both — plus the part nobody has established yet.",
+    title: "Start with the thesis,\nnot the research.",
+    lede: "Information isn't scarce — a differentiated view is. Eigen takes a thesis, reads broad across memos, filings, founder blogs, earnings calls, podcasts and forums, and shows you where the sources agree, where they don't, and what still has to be true. Then it tells you who to call.",
     secondary: { label: "See where it reads", href: "#sources" },
   },
 
   ledger: {
-    gapLabel: "Not established:",
+    gapLabel: "What has to be true:",
     cases: [
       {
         tab: "Solid-state batteries",
-        q: "Who is actually shipping solid-state cells, and who is still talking about it?",
-        claimed: { head: "Announced", sub: "press, decks, applications", rows: [
-          { t: "Mass production “by 2027”", c: "Press release" },
-          { t: "“Breakthrough” anode chemistry", c: "Patent application" },
-          { t: "Automotive partnership “in principle”", c: "Earnings call" },
-        ]},
-        proven: { head: "Proven", sub: "granted, audited, shipped", rows: [
+        q: "Can this startup reach automotive-scale solid-state cells before the incumbents close the gap?",
+        proven: { head: "The case for", sub: "where the record backs it", rows: [
           { t: "Three granted cell-architecture patents", c: "USPTO grant" },
           { t: "Two OEM supply agreements, signed", c: "10-K Item 1" },
-          { t: "Pilot line output disclosed in filings", c: "10-Q" },
+          { t: "Founders describe a running pilot line", c: "Podcast" },
         ]},
-        gap: "cycle life at automotive scale — no disclosure from any party.",
+        claimed: { head: "The bear case", sub: "where it pushes back", rows: [
+          { t: "Mass production “by 2027” — slips each update", c: "Earnings call" },
+          { t: "Cycle-life numbers never independently reproduced", c: "Company blog" },
+          { t: "Ex-employees flag yield problems", c: "Forum" },
+        ]},
+        gap: "cycle life at automotive scale — no party has disclosed it. Ask an engineer who has run the cells.",
       },
       {
         tab: "Inference chips",
-        q: "Is this accelerator startup's performance claim backed by anything reproducible?",
-        claimed: { head: "Announced", sub: "press, decks, applications", rows: [
-          { t: "“10× faster than the incumbent”", c: "Company blog" },
-          { t: "Design win with a hyperscaler", c: "Press release" },
-          { t: "Next-gen node “on track”", c: "Conference talk" },
-        ]},
-        proven: { head: "Proven", sub: "granted, audited, shipped", rows: [
+        q: "Does this accelerator's 10× claim hold at production batch sizes, or only in one benchmark?",
+        proven: { head: "The case for", sub: "where the record backs it", rows: [
           { t: "Published benchmark submission, one category", c: "Peer-reviewed" },
           { t: "Compiler stack public and runnable", c: "GitHub" },
-          { t: "Two granted interconnect patents", c: "USPTO grant" },
+          { t: "Hyperscaler design win, corroborated", c: "Earnings call" },
         ]},
-        gap: "performance at production batch sizes — benchmarked once, never independently.",
+        claimed: { head: "The bear case", sub: "where it pushes back", rows: [
+          { t: "“10× faster” — measured once, never independently", c: "Company blog" },
+          { t: "Next-gen node “on track” — same slide two years running", c: "Conference talk" },
+          { t: "Buyers cite real integration pain", c: "Reddit" },
+        ]},
+        gap: "performance at production batch sizes. Only a buyer running it in prod can settle it.",
       },
       {
-        tab: "Drug discovery AI",
-        q: "Has this platform produced anything beyond retrospective validation?",
-        claimed: { head: "Announced", sub: "press, decks, applications", rows: [
-          { t: "“AI-discovered” molecule in the clinic", c: "Press release" },
-          { t: "Pharma collaboration, undisclosed terms", c: "Press release" },
-          { t: "Platform “validated” across targets", c: "Company blog" },
-        ]},
-        proven: { head: "Proven", sub: "granted, audited, shipped", rows: [
+        tab: "Clinical AI",
+        q: "Has this platform actually discovered a molecule, or confirmed ones already known?",
+        proven: { head: "The case for", sub: "where the record backs it", rows: [
           { t: "Trial registered and recruiting", c: "Registry" },
-          { t: "Federal grant awarded for the method", c: "NIH RePORTER" },
           { t: "Method published with held-out results", c: "Peer-reviewed" },
+          { t: "Federal grant awarded for the method", c: "NIH RePORTER" },
         ]},
-        gap: "whether the model chose the molecule, or confirmed one already known.",
+        claimed: { head: "The bear case", sub: "where it pushes back", rows: [
+          { t: "“AI-discovered” molecule — provenance unclear", c: "Press release" },
+          { t: "Pharma collaboration, terms undisclosed", c: "Press release" },
+          { t: "Researchers question the novelty", c: "Forum" },
+        ]},
+        gap: "whether the model chose the molecule or rationalized a known one. Ask the med-chemists.",
       },
     ],
   },
 
   abilities: {
-    title: "One question, then the reading is done.",
+    title: "Everything the read needs, in one workspace.",
     items: [
-      { b: "Size up a company", s: "Funding, filings, patents, shipped product." },
-      { b: "Map a market", s: "Who competes, who is genuinely ahead." },
-      { b: "Check a claim", s: "Traction, or a press release?" },
-      { b: "Track a space", s: "What teams file and publish, as it happens." },
+      { b: "Lines of inquiry", s: "Turn a thesis into the questions that decide it." },
+      { b: "The right experts", s: "Founders, operators, buyers — the people living the problem." },
+      { b: "Bull and bear, side by side", s: "Where the evidence agrees, and where it breaks." },
+      { b: "A write-up that holds", s: "The differentiated view, every claim sourced." },
     ],
   },
 
   flow: {
-    title: "From question to evidence.",
+    title: "How a thesis becomes a view.",
     steps: [
-      { h: "Describe what you're trying to underwrite", p: "In your own words. No syntax, no filters." },
-      { h: "Eigen reads the record", p: "Filings, patents, papers, code and grant awards — held and indexed, not scraped at answer time." },
-      { h: "You get claims you can open", p: "Each one carries the document behind it, and the unknowns stay marked unknown." },
+      { h: "State the thesis", p: "Start with the question, not a search box. Eigen frames what would have to be true for it to work." },
+      { h: "Read broad, find the tension", p: "Memos, filings, blogs, earnings, podcasts, reviews and forums — surfaced by where they agree and disagree, not one source at a time." },
+      { h: "Pressure-test, then write it up", p: "The bear case, the experts to call, and a sourced write-up — because writing surfaces bad assumptions faster than another ten reports." },
     ],
   },
 
   sources: {
-    title: "Your corpus of record.",
-    note: "Anything downloadable is held and indexed here. The live web is used only for what genuinely changes by the hour.",
+    title: "Read broadly. Weigh by tier.",
+    note: "Anything downloadable is held and indexed. The live web — news, communities, forums — is read as sentiment, never as fact. The highest-signal input is still a person; Eigen tells you which ones to find.",
     rows: [
       { name: "Regulatory filings", sub: "annual, quarterly, registration", feeds: ["SEC EDGAR", "UK Companies House"] },
       { name: "Patents", sub: "applications and grants, kept apart", feeds: ["USPTO", "PatentsView"] },
@@ -350,37 +350,37 @@ const SITE = {
       { name: "Code and models", sub: "what actually ships", feeds: ["GitHub", "Hugging Face"] },
       { name: "Public funding", sub: "who got paid to work on it", feeds: ["NSF awards", "NIH RePORTER"] },
       { name: "Company reference", sub: "entities, people, structure", feeds: ["Wikidata", "Wikipedia", "Y Combinator"] },
-      { name: "Practitioner voices", sub: "first-person, from the builders", feeds: ["Engineering blogs", "Founder essays", "Podcasts", "Talks"] },
-      { name: "Market signal", sub: "read as sentiment, never as fact", signal: true, feeds: ["News wires", "Hacker News", "Reddit", "Stack Exchange"] },
+      { name: "Practitioner voices", sub: "first-person, from the builders", feeds: ["Founder essays", "Engineering blogs", "Podcasts", "Earnings calls", "Talks"] },
+      { name: "Market signal", sub: "read as sentiment, never as fact", signal: true, feeds: ["News wires", "Hacker News", "Reddit", "Stack Exchange", "Customer reviews"] },
     ],
   },
 
   compare: {
-    title: "Built to be checked.",
+    title: "Built for a view you can defend.",
     us: "Eigen", them: "General AI chat",
     rows: [
-      { q: "Links every claim to a source document", us: true, them: false },
+      { q: "Shows where sources agree and disagree", us: true, them: false },
       { q: "Separates announced from proven", us: true, them: false },
-      { q: "Labels sentiment as sentiment", us: true, them: false },
-      { q: "Says so when the evidence isn't there", us: true, them: false },
+      { q: "Points you to the people to talk to", us: true, them: false },
+      { q: "Surfaces the bear case and marks what's unknown", us: true, them: false },
       { q: "Answers anything you ask, instantly", us: true, them: true },
     ],
   },
 
   about: {
     title: "Why we built this.",
-    pull: "The work of diligence is separating what's proven from what's merely announced. Most of that work is reading.",
+    pull: "Information isn't scarce. The real work is finding the right experts, asking the right questions, and turning the noise into a view you can defend.",
     facts: [
-      "<b>Deep tech and frontier deals.</b> Where the evidence is filings, patents and papers rather than dashboards.",
-      "<b>Primary sources only.</b> No answer is assembled from a summary of a summary.",
-      "<b>Explicit about the unknown.</b> A gap is a finding, not a failure.",
+      "<b>Start from the thesis.</b> Diligence begins with a question, not a search box.",
+      "<b>Signal is agreement and disagreement.</b> No single source decides — the tension between them does.",
+      "<b>Writing beats reading.</b> A sourced write-up surfaces bad assumptions faster than another report.",
     ],
     more: { label: "About us and who builds it", href: "/about" },
   },
 
   close: {
-    title: "Bring a question you can't answer in an afternoon.",
-    lede: "Then follow the citations back to the filings yourself.",
+    title: "Bring the thesis you can't settle in an afternoon.",
+    lede: "Eigen reads broad, finds the tension, and tells you who to call.",
   },
 };
 
@@ -403,7 +403,7 @@ const SITE = {
 
   const ledgerCols = (c) => `
     <div class="cols">
-      ${["claimed","proven"].map(k => `
+      ${["proven","claimed"].map(k => `
         <div class="col ${k}">
           <div class="colHead">${h(c[k].head)} <em>${h(c[k].sub)}</em></div>
           ${c[k].rows.map(r => `<div class="row">${h(r.t)}<br><span class="cite">${h(r.c)}</span></div>`).join("")}
