@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, rememberOwner, type SettingSpec, type ThesisListItem } from "./api";
+import { api, rememberOwner, readUser, type SettingSpec, type ThesisListItem } from "./api";
 import { PageHead } from "./ui";
 
 const TOKEN_KEY = "eigen.admin.token";
@@ -36,11 +36,14 @@ export function Settings() {
     try { const r = await api.adminSetSetting(token, key, value); setSettings(r.settings); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
+  const signedIn = !!readUser()?.token;
   async function adopt(id: string) {
     setRowBusy(id); setErr("");
     try {
-      const r = await api.adminAdopt(token, id);
-      rememberOwner(id, r.owner_token);   // this device now holds the capability → shows in "My theses"
+      // Signed in → claim to the account (shows in My theses on any device). Otherwise mint a
+      // device-only capability token for this browser.
+      const r = await api.adminAdopt(token, id, signedIn);
+      if (r.owner_token) rememberOwner(id, r.owner_token);
     } catch (e) { setErr((e as Error).message); } finally { setRowBusy(""); }
   }
   async function removeThesis(t: ThesisListItem) {
@@ -88,9 +91,9 @@ export function Settings() {
           <div className="card" style={{ maxWidth: 620 }}>
             <div className="setting-h">All theses · recover or delete</div>
             <p className="muted" style={{ fontSize: ".84rem", margin: ".25rem 0 .7rem", lineHeight: 1.5 }}>
-              Every thesis in the deployment. Ownership is held by a capability token in the browser, so a
-              thesis created on another device won’t show in <b>My theses</b> here — “Add to my dashboard”
-              mints a fresh token for this device so it appears.
+              Every thesis in the deployment. {signedIn
+                ? <>You’re signed in — <b>Claim to my account</b> binds a thesis to your account so it shows in <b>My theses</b> on any device.</>
+                : <>Not signed in — <b>Add to this device</b> mints a browser-only token. Sign in first to claim to your account instead.</>}
             </p>
             {theses === null ? <p className="muted" style={{ fontSize: ".85rem" }}>Loading…</p>
               : theses.length === 0 ? <p className="muted" style={{ fontSize: ".85rem" }}>No theses.</p> : (
@@ -107,7 +110,7 @@ export function Settings() {
                         </div>
                       </div>
                       <div className="adm-thesis-acts">
-                        <button className="btn sec" disabled={!!rowBusy} onClick={() => adopt(t.id)}>{rowBusy === t.id ? "…" : "Add to my dashboard"}</button>
+                        <button className="btn sec" disabled={!!rowBusy} onClick={() => adopt(t.id)}>{rowBusy === t.id ? "…" : (signedIn ? "Claim to my account" : "Add to this device")}</button>
                         <button className="btn sec adm-del" disabled={!!rowBusy} onClick={() => removeThesis(t)}>Delete</button>
                       </div>
                     </div>

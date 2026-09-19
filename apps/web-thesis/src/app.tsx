@@ -53,17 +53,35 @@ function Shell({ crumb, children }: { crumb?: ReactNode; children: ReactNode }) 
         <span className="mark" onClick={() => go("")}>EIG<b>E</b>N</span>
         {crumb ? <span className="crumb">{crumb}</span> : null}
         <span className="grow" />
+        <AccountButton />
       </div></div>
       <div className="wrap">{children}</div>
-      <div className="foot">Eigen · new thesis-first client (beachhead) · full thesis lifecycle · <span style={{ cursor: "pointer" }} onClick={() => go("settings")}>⚙ admin</span><AccountLine /></div>
+      <div className="foot">Eigen · new thesis-first client (beachhead) · full thesis lifecycle · <span style={{ cursor: "pointer" }} onClick={() => go("settings")}>⚙ admin</span></div>
     </>
   );
 }
-function AccountLine() {
+// Signed-in account chip + a popover with details and sign-out. Absent for anonymous (public) views.
+function AccountButton() {
   const u = readUser();
+  const [open, setOpen] = useState(false);
   if (!u?.email) return null;
+  const first = (u.name || u.email).split(" ")[0];
   const signOut = () => { saveUser(null); location.reload(); };
-  return <> · <span title={u.email}>◈ {(u.name || u.email).split(" ")[0]}</span> · <span style={{ cursor: "pointer" }} onClick={signOut}>sign out</span></>;
+  return (
+    <div className="acctbtn-wrap">
+      <button className="acctbtn" onClick={() => setOpen((o) => !o)} aria-expanded={open} title={u.email}>◈ {first}</button>
+      {open ? (
+        <>
+          <div className="acctpop-veil" onClick={() => setOpen(false)} />
+          <div className="acctpop" role="menu">
+            <div className="acctpop-name">{u.name || "—"}{u.verified ? <span className="acctpop-badge">verified</span> : null}</div>
+            <div className="acctpop-email">{u.email}</div>
+            <button className="acctpop-out" onClick={signOut}>Sign out</button>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
 }
 const Loading = () => <div className="state">loading…</div>;
 const Err = ({ e }: { e: unknown }) => <div className="state">{(e as Error)?.message || "something went wrong"}</div>;

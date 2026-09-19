@@ -161,6 +161,7 @@ class SettingIn(BaseModel):
 
 class ThesisIdIn(BaseModel):
     thesis_id: str = ""
+    to_account: bool = False         # claim to the signed-in account (owner_id) vs mint a device token
 
 
 class EditThesisIn(BaseModel):
@@ -413,15 +414,26 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         return {"status": "ok", "theses": await tstore.all_theses(await pool_of(), limit=min(500, max(1, limit)))}
 
     @r.post("/thesis/admin/adopt")
-    async def tl_admin_adopt(body: ThesisIdIn, x_admin_token: str = Header(default="", alias="X-Admin-Token")):
-        """Mint a fresh owner token for a thesis so the operator can pull it onto this device. Returns
-        the token once (never stored server-side in the clear) → the client saves it as its capability."""
+    async def tl_admin_adopt(body: ThesisIdIn, authorization: str = Header(default=""),
+                             x_admin_token: str = Header(default="", alias="X-Admin-Token")):
+        """Recover a thesis for the operator. `to_account`: bind it to the signed-in account (owner_id)
+        so it shows in that account's "My theses" on any device. Otherwise mint a fresh device
+        capability token (returned once, never stored in the clear) for this browser only."""
         if not _admin_ok(x_admin_token):
             raise HTTPException(status_code=403, detail="admin token required")
-        token = await tstore.adopt_thesis(await pool_of(), (body.thesis_id or "").strip())
+        tid = (body.thesis_id or "").strip()
+        pool = await pool_of()
+        if body.to_account:
+            account = await _owner(authorization)
+            if not account:
+                raise HTTPException(status_code=400, detail="sign in first — no account to claim to")
+            if not await tstore.claim_thesis_to_account(pool, tid, account):
+                raise HTTPException(status_code=404, detail="no such thesis")
+            return {"status": "ok", "thesis_id": tid, "account": True}
+        token = await tstore.adopt_thesis(pool, tid)
         if not token:
             raise HTTPException(status_code=404, detail="no such thesis")
-        return {"status": "ok", "thesis_id": body.thesis_id, "owner_token": token}
+        return {"status": "ok", "thesis_id": tid, "owner_token": token}
 
     @r.post("/thesis/admin/delete")
     async def tl_admin_delete(body: ThesisIdIn, x_admin_token: str = Header(default="", alias="X-Admin-Token")):

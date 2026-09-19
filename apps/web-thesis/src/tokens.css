@@ -29,6 +29,17 @@ button { font-family: inherit; }
 .crumb { font-family: var(--mono); font-size: .7rem; color: var(--muted); padding-left: .55rem; border-left: 1px solid var(--hair); }
 .crumb b { color: var(--ink); }
 .grow { flex: 1; }
+/* account chip + popover */
+.acctbtn-wrap { position: relative; }
+.acctbtn { font-family: var(--mono); font-size: .72rem; font-weight: 600; color: var(--ink); background: var(--panel2); border: 1px solid var(--hair); border-radius: 999px; padding: .3rem .7rem; cursor: pointer; white-space: nowrap; min-height: 32px; }
+.acctbtn:hover { border-color: var(--gold); }
+.acctpop-veil { position: fixed; inset: 0; z-index: 40; }
+.acctpop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 41; min-width: 200px; background: var(--panel); border: 1px solid var(--hair); border-radius: 12px; box-shadow: 0 12px 32px -12px color-mix(in srgb, var(--ink) 45%, transparent); padding: .7rem .8rem; }
+.acctpop-name { font-family: var(--serif); font-weight: 600; font-size: .95rem; display: flex; align-items: center; gap: .4rem; }
+.acctpop-badge { font-family: var(--mono); font-size: .54rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--on-accent); background: var(--gold); border-radius: 999px; padding: .1rem .4rem; }
+.acctpop-email { font-family: var(--mono); font-size: .72rem; color: var(--muted); margin: .15rem 0 .6rem; overflow-wrap: anywhere; }
+.acctpop-out { width: 100%; font: inherit; font-size: .8rem; font-weight: 600; color: var(--ink); background: var(--panel2); border: 1px solid var(--hair); border-radius: 9px; padding: .45rem; cursor: pointer; }
+.acctpop-out:hover { color: var(--p0); border-color: var(--p0); }
 .chip { font-family: var(--mono); font-size: .66rem; font-weight: 600; padding: .24rem .52rem; border-radius: 999px; white-space: nowrap; }
 .c-verdict { border: 1.5px solid var(--intent); color: var(--intent); }
 

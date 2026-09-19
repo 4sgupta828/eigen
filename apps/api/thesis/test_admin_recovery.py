@@ -87,6 +87,23 @@ async def test_adopt_missing_thesis_returns_none(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_claim_binds_owner_id_and_clears_capability(monkeypatch) -> None:
+    monkeypatch.setattr(store, "ensure_schema", _noop)
+    conn = RecConn(thesis_exists=True)
+    ok = await store.claim_thesis_to_account(RecPool(conn), "t1", "acct-42")
+    assert ok is True
+    upd = next((q, a) for q, a in conn.queries if "UPDATE ts_thesis SET owner_id" in q)
+    assert "owner_token_hash = ''" in upd[0]          # capability token dropped — account owns it now
+    assert upd[1] == ("t1", "acct-42")
+
+
+@pytest.mark.asyncio
+async def test_claim_requires_an_account(monkeypatch) -> None:
+    monkeypatch.setattr(store, "ensure_schema", _noop)
+    assert await store.claim_thesis_to_account(RecPool(RecConn(thesis_exists=True)), "t1", "") is False
+
+
+@pytest.mark.asyncio
 async def test_all_theses_maps_rows_with_board_flag(monkeypatch) -> None:
     monkeypatch.setattr(store, "ensure_schema", _noop)
     now = datetime(2026, 9, 18, tzinfo=timezone.utc)

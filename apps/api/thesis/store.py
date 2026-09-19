@@ -772,6 +772,20 @@ async def all_theses(pool, *, limit: int = 200) -> list[dict]:
              "claims": int(r["claims"] or 0), "updated_at": r["updated_at"].isoformat()} for r in rows]
 
 
+async def claim_thesis_to_account(pool, thesis_id: str, account_id: str) -> bool:
+    """Bind a thesis to a signed-in account (owner_id), so it shows in that account's "My theses" on
+    ANY device — the account-owned model. Clears the device capability token (ownership is now the
+    account). Used to recover legacy/anonymous theses onto an account. Returns False if no such thesis."""
+    await ensure_schema(pool)
+    if not account_id:
+        return False
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "UPDATE ts_thesis SET owner_id = $2, owner_token_hash = '' WHERE id = $1 RETURNING id",
+            thesis_id, account_id)
+    return bool(row)
+
+
 async def adopt_thesis(pool, thesis_id: str) -> str | None:
     """Mint a fresh owner capability token for a thesis and make it the sole owner key (the previous
     token, if any, stops working). Admin-only: lets the operator reclaim a thesis onto the current

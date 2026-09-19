@@ -85,7 +85,7 @@ function ownerHeaders(id?: string): Record<string, string> {
   const cap = id ? readOwners()[id] : undefined;
   if (cap) h["X-Thesis-Owner"] = cap;
   const tok = readUser()?.token;             // signed-in bearer token (shared with the classic app)
-  if (tok) h["x-eigen-token"] = tok;
+  if (tok) { h["x-eigen-token"] = tok; h["Authorization"] = tok; }   // thesis routes resolve the account from Authorization
   return h;
 }
 
@@ -115,8 +115,10 @@ const enc = encodeURIComponent;
 
 // Admin-gated requests carry the admin token (never the owner cap).
 async function adminReq<T>(method: string, path: string, token: string, body?: unknown): Promise<T> {
-  const r = await fetch(path, { method, headers: { "content-type": "application/json", "X-Admin-Token": token },
-    body: body === undefined ? undefined : JSON.stringify(body) });
+  const acct = readUser()?.token;             // so admin "claim to account" can resolve the operator's account
+  const headers: Record<string, string> = { "content-type": "application/json", "X-Admin-Token": token };
+  if (acct) headers["Authorization"] = acct;
+  const r = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((d && (d as { detail?: string }).detail) || `request failed (${r.status})`);
   return d as T;
@@ -219,7 +221,7 @@ export const api = {
     req<AuthResp>("POST", "/auth/register", { ...b, disclaimer_ack: true }),
   authLogin: (b: { email: string; password: string }) => req<AuthResp>("POST", "/auth/login", b),
   adminAllTheses: (token: string) => adminReq<{ status: string; theses: ThesisListItem[] }>("GET", "/thesis/admin/theses", token).then((d) => d.theses || []),
-  adminAdopt: (token: string, thesis_id: string) => adminReq<{ status: string; thesis_id: string; owner_token: string }>("POST", "/thesis/admin/adopt", token, { thesis_id }),
+  adminAdopt: (token: string, thesis_id: string, to_account = false) => adminReq<{ status: string; thesis_id: string; owner_token?: string; account?: boolean }>("POST", "/thesis/admin/adopt", token, { thesis_id, to_account }),
   adminDeleteThesis: (token: string, thesis_id: string) => adminReq<{ status: string }>("POST", "/thesis/admin/delete", token, { thesis_id }),
   board: (limit = 60) => getJSON<{ entries: BoardCard[] }>(`/board?limit=${limit}`).then((d) => d.entries || []),
   boardEntry: (entryId: string) => getJSON<{ entry: BoardEntry }>(`/board/${enc(entryId)}`).then((d) => d.entry),
