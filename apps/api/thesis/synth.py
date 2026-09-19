@@ -188,15 +188,21 @@ async def synthesize_all(pool, thesis_id: str, profile, llm_json, take_llm_json=
     if which >= 0:
         await tstore.set_collective_take(pool, thesis_id, take_obj)
         return {"take": take_obj, "findings": n, "rebuilt": True}
-    # Every seam failed. Keep a good existing take if there is one; otherwise persist a VISIBLE error take
-    # (not a silent blank) so the Brief tells the author synthesis couldn't run, rather than "no take yet".
+    # Every seam failed. Attribute it to the real cause (out of credits, rate-limited, …) so the Brief can
+    # SHOW why, never a silent blank. Keep a good existing take if there is one; else persist an error take.
+    try:
+        from .llm import LAST_LLM_ERROR
+        reason = LAST_LLM_ERROR.get() or "The synthesis model was unavailable."
+    except Exception:      # noqa: BLE001
+        reason = "The synthesis model was unavailable."
     if _take_substantive(existing):
-        return {"take": existing, "findings": n, "rebuilt": False, "error": "synthesis_unavailable"}
+        return {"take": existing, "findings": n, "rebuilt": False,
+                "error": "synthesis_unavailable", "error_detail": reason}
     err_take = _empty_take(take_secs)
-    err_take["error"] = "synthesis_unavailable"
-    err_take["findings"] = n
+    err_take.update({"error": "synthesis_unavailable", "error_detail": reason, "findings": n})
     await tstore.set_collective_take(pool, thesis_id, err_take)
-    return {"take": err_take, "findings": n, "rebuilt": False, "error": "synthesis_unavailable"}
+    return {"take": err_take, "findings": n, "rebuilt": False,
+            "error": "synthesis_unavailable", "error_detail": reason}
 
 
 async def synthesize_deck(pool, thesis_id: str, profile, llm_json, reference: str = "",

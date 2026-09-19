@@ -885,7 +885,7 @@ function RegenBar({ id, hasComp, onDone }: { id?: string; hasComp?: boolean; onD
     api.inquiryStatus(id, rid).then((s) => {
       if (s.state === "completed") { onDone?.(); afterTake(); return; }        // take+deck done → maybe competitive
       if (s.state === "cancelled") { runId.current = null; setBusy(false); setNote(""); onDone?.(); return; }
-      if (s.state === "failed") { runId.current = null; setBusy(false); setErr("regenerate failed — try again"); return; }
+      if (s.state === "failed") { runId.current = null; setBusy(false); setErr((s.error?.reason as string) || "regenerate failed — try again"); return; }
       setNote(REGEN_STAGE[s.stage || ""] || "working…");
       timer.current = window.setTimeout(() => pollRegen(rid), 2000);
     }).catch(() => { timer.current = window.setTimeout(() => pollRegen(rid), 3000); });
@@ -894,7 +894,7 @@ function RegenBar({ id, hasComp, onDone }: { id?: string; hasComp?: boolean; onD
     if (!id) return;
     api.inquiryStatus(id, rid).then((s) => {
       if (s.state === "completed" || s.state === "cancelled") { runId.current = null; setBusy(false); setNote(""); onDone?.(); return; }
-      if (s.state === "failed") { runId.current = null; setBusy(false); setErr("competitive research failed"); onDone?.(); return; }
+      if (s.state === "failed") { runId.current = null; setBusy(false); setErr((s.error?.reason as string) || "competitive research failed"); onDone?.(); return; }
       setNote("re-researching competitors…");
       timer.current = window.setTimeout(() => pollComp(rid), 2500);
     }).catch(() => { timer.current = window.setTimeout(() => pollComp(rid), 3000); });
@@ -1014,7 +1014,7 @@ export function ReadPanel({ doc, inq, anonymous, id, owner, onRefetchInq }: Pane
     <BriefShell doc={doc} inq={inq} anonymous={anonymous}>
       {take?.error === "synthesis_unavailable" ? (
         <div className="th-synth-err">
-          <b>The read couldn't be synthesized.</b> The reasoning model returned an error — usually the model API is out of credits or rate-limited. Your {take?.findings || ""} findings are safe (they're in the Lines of Inquiry); {owner ? "regenerate below" : "the read"} will rebuild once the API is available again.
+          <b>The read couldn't be synthesized.</b> {take?.error_detail || "The model API returned an error."} Your {take?.findings || ""} findings are safe — they're in the Lines of Inquiry; {owner ? "regenerate below" : "the read"} will rebuild once the model API is available.
         </div>
       ) : null}
       {parse(bl).clean ? <div className="card read"><div className="kick">The read</div><p><Cite value={bl} kind="finding" /></p></div> : null}
@@ -1051,7 +1051,7 @@ function DeckBar({ id, hasDeck, onDone }: { id?: string; hasDeck?: boolean; onDo
     if (!id) return;
     api.inquiryStatus(id, rid).then((s) => {
       if (s.state === "completed" || s.state === "cancelled") { runId.current = null; setBusy(false); setNote(""); onDone?.(); return; }
-      if (s.state === "failed") { runId.current = null; setBusy(false); setErr("deck build failed — try again"); return; }
+      if (s.state === "failed") { runId.current = null; setBusy(false); setErr((s.error?.reason as string) || "deck build failed — try again"); return; }
       setNote("building the pitch deck…");
       timer.current = window.setTimeout(() => poll(rid), 2500);
     }).catch(() => { timer.current = window.setTimeout(() => poll(rid), 3000); });

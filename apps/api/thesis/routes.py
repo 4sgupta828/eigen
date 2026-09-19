@@ -257,7 +257,25 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         return (u or {}).get("id") or ""
 
     def _llm_json():
-        return getattr(providers, "llm_json", None)
+        # Wrapped so a failure of the default (DeepSeek) seam records its cause too — the OpenAI seams
+        # record natively — so any run whose artifact comes back empty can surface WHY, not fail silent.
+        from .llm import recording
+        return recording(getattr(providers, "llm_json", None))
+
+    def _llm_reason() -> str:
+        """The last LLM/provider error in this run's task (out of credits, rate-limited, …), or ''."""
+        try:
+            from .llm import LAST_LLM_ERROR
+            return LAST_LLM_ERROR.get() or ""
+        except Exception:      # noqa: BLE001
+            return ""
+
+    def _reset_llm_error():
+        try:
+            from .llm import LAST_LLM_ERROR
+            LAST_LLM_ERROR.set("")
+        except Exception:      # noqa: BLE001
+            pass
 
     def _strong_llm_json():
         # The stronger (OpenAI) model for the quality-critical steps — synthesizing the answer and
@@ -1423,6 +1441,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
 
     async def _run_brainstorm(thesis_id: str, run_id: str, thread_id: str, said: str):
         pool = await pool_of()
+        _reset_llm_error()
         try:
             rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
             if (rn or {}).get("state") == "cancelled":
@@ -1439,8 +1458,13 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
             if (rn or {}).get("state") == "cancelled":
                 return
+            # No reply and the model failed → surface the real reason as the agent's message, so the chat
+            # tells the user why instead of showing an empty bubble.
+            reply = turn.get("reply") or ""
+            if not reply and _llm_reason():
+                reply = f"⚠ Couldn't respond: {_llm_reason()}"
             await tstore.add_brainstorm_msg(pool, thesis_id=thesis_id, thread_id=thread_id, role="agent",
-                                            content={"reply": turn.get("reply") or "",
+                                            content={"reply": reply,
                                                      "sections": turn.get("sections") or [],
                                                      "directions": turn.get("directions") or [],
                                                      "visuals": turn.get("visuals") or []})
@@ -1650,6 +1674,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         landscape-grounded generation never blocks the request or dies when the user navigates away.
         Cancel-checked between phases; the client polls status and stops it like any other run."""
         pool = await pool_of()
+        _reset_llm_error()
 
         async def _cancelled() -> bool:
             rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
@@ -1720,7 +1745,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         except Exception as exc:      # noqa: BLE001 — fail closed; a failed generation never corrupts state
             import traceback as _tb
             await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
-                                  error={"reason": "plan generation failed", "detail": str(exc)[:300],
+                                  error={"reason": _llm_reason() or "plan generation failed", "detail": str(exc)[:300],
                                          "tb": _tb.format_exc()[-800:]})
 
     @r.post("/thesis/{thesis_id}/inquiries/generate")
@@ -2060,6 +2085,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         """Build the Startup Pitch Deck in the BACKGROUND (founder-voice synthesis over the findings, shaped
         by similar public VC/founder memos) so the Pitch Deck CTA never blocks or dangles. Stoppable."""
         pool = await pool_of()
+        _reset_llm_error()
         try:
             if _profile() is None:
                 await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="setup",
@@ -2080,15 +2106,22 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             except Exception:      # noqa: BLE001 — the deck builds fine without exemplars
                 memos = []
             reference = "\n\n".join(f"{m['title']} ({m['source']}): {m['snippet']}" for m in memos).strip()
-            await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json(),
-                                      reference=reference, references=memos)
+            res = await syn.synthesize_deck(pool, thesis_id, _profile(), _take_llm_json(),
+                                            reference=reference, references=memos)
             rn = await tstore.get_run(pool, thesis_id=thesis_id, run_id=run_id)
             if (rn or {}).get("state") == "cancelled":
+                return
+            # The deck came back empty though findings exist → an LLM/provider failure was swallowed;
+            # fail the run with the REAL reason so the CTA shows it instead of a silent "no deck".
+            deck = (res or {}).get("deck") or {}
+            if res and res.get("findings") and not syn._deck_substantive(deck) and _llm_reason():
+                await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                      error={"reason": _llm_reason(), "detail": "deck synthesis produced nothing"})
                 return
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed", state="completed")
         except Exception as exc:      # noqa: BLE001 — fail closed; never corrupt state
             await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
-                                  error={"reason": "deck build failed", "detail": str(exc)[:300]})
+                                  error={"reason": _llm_reason() or "deck build failed", "detail": str(exc)[:300]})
 
     @r.post("/thesis/{thesis_id}/deck")
     async def tl_deck(thesis_id: str, authorization: str = Header(default=""),
@@ -2207,6 +2240,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         """Research the competitive landscape (open web) and store it — a background run so the request
         returns immediately and the client polls, like an inquiry run."""
         pool = await pool_of()
+        _reset_llm_error()
         try:
             profile = _profile()
             d = await tstore.get(pool, thesis_id=thesis_id, trusted=True)
@@ -2218,9 +2252,15 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                 _strong_llm_json(), atk._web_client(manifest), thesis=thesis, subject=subject,
                 findings=findings, columns=[dict(c) for c in cols], startup_search=startup_search)
             land["generated_at"] = int(datetime.now(timezone.utc).timestamp())
+            existing = (d or {}).get("competitive") or {}
+            # No players AND the model failed (not just a thin result) → surface the real cause instead of
+            # a silent empty landscape.
+            if not (land.get("players") or []) and not (existing.get("players") or []) and _llm_reason():
+                await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
+                                      error={"reason": _llm_reason(), "detail": "competitive research produced nothing"})
+                return
             # A thin re-research that finds no players must not wipe a good landscape — only overwrite when
             # the new run actually produced players, or when there is nothing worth keeping.
-            existing = (d or {}).get("competitive") or {}
             if (land.get("players") or []) or not (existing.get("players") or []):
                 await tstore.set_competitive(pool, thesis_id, land)
             await tstore.advance_run(pool, thesis_id=thesis_id, run_id=run_id, stage="completed",
@@ -2231,7 +2271,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         except Exception as exc:      # noqa: BLE001 — fail closed; the prior landscape is untouched
             import traceback as _tb
             await tstore.fail_run(pool, thesis_id=thesis_id, run_id=run_id, stage="error",
-                                  error={"reason": "competitive research failed", "detail": str(exc)[:300],
+                                  error={"reason": _llm_reason() or "competitive research failed", "detail": str(exc)[:300],
                                          "tb": _tb.format_exc()[-800:]})
 
     @r.post("/thesis/{thesis_id}/competitive/research")

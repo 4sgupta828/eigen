@@ -35,7 +35,7 @@ export function Plan({ id, inquiries, onReload, onRun }: {
   function pollGen(rid: string) {
     api.inquiryStatus(id, rid).then((s) => {
       if (s.state === "completed" || s.state === "cancelled") { runId.current = null; setBusy(""); setStage(""); onReload(); return; }
-      if (s.state === "failed") { runId.current = null; setBusy(""); setStage(""); setErr("generation failed — try again"); return; }
+      if (s.state === "failed") { runId.current = null; setBusy(""); setStage(""); setErr((s.error?.reason as string) || "generation failed — try again"); return; }
       setStage(STAGE_LABEL[s.stage || ""] || "working…");
       timer.current = window.setTimeout(() => pollGen(rid), 2500);
     }).catch(() => { timer.current = window.setTimeout(() => pollGen(rid), 3000); });
@@ -154,7 +154,7 @@ export function Run({ id, onDone }: { id: string; onDone: () => void }) {
       if (!a.run?.id) return finish();   // run cleared → done
       api.inquiryStatus(id, a.run!.id).then((s) => {
         if (s.state === "completed" || s.state === "cancelled") return finish();
-        if (s.state === "failed") { setPhase({ k: "error", msg: "the run failed — you can retry" }); return; }
+        if (s.state === "failed") { setPhase({ k: "error", msg: (s.error?.reason as string) || "the run failed — you can retry" }); return; }
         setPhase({ k: "running", done: s.done || 0, total: s.total || 0, stage: s.stage || "" });
         timer.current = window.setTimeout(poll, 2500);
       }).catch(() => { timer.current = window.setTimeout(poll, 3000); });
