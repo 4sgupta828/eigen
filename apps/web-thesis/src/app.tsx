@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, forgetOwner, type ThesisListItem } from "./api";
+import { api, forgetOwner, readUser, saveUser, type ThesisListItem } from "./api";
 import { Brief } from "./brief";
 import { Workspace } from "./workspace";
 import { Genesis } from "./genesis";
 import { Settings } from "./admin";
+import { IdentityGate } from "./identity";
 
 // ── hash router (hash-compatible with the classic client: #thesis/#view/#board) ──
 type Route =
@@ -54,9 +55,15 @@ function Shell({ crumb, children }: { crumb?: ReactNode; children: ReactNode }) 
         <span className="grow" />
       </div></div>
       <div className="wrap">{children}</div>
-      <div className="foot">Eigen · new thesis-first client (beachhead) · full thesis lifecycle · <span style={{ cursor: "pointer" }} onClick={() => go("settings")}>⚙ admin</span></div>
+      <div className="foot">Eigen · new thesis-first client (beachhead) · full thesis lifecycle · <span style={{ cursor: "pointer" }} onClick={() => go("settings")}>⚙ admin</span><AccountLine /></div>
     </>
   );
+}
+function AccountLine() {
+  const u = readUser();
+  if (!u?.email) return null;
+  const signOut = () => { saveUser(null); location.reload(); };
+  return <> · <span title={u.email}>◈ {(u.name || u.email).split(" ")[0]}</span> · <span style={{ cursor: "pointer" }} onClick={signOut}>sign out</span></>;
 }
 const Loading = () => <div className="state">loading…</div>;
 const Err = ({ e }: { e: unknown }) => <div className="state">{(e as Error)?.message || "something went wrong"}</div>;
@@ -179,8 +186,7 @@ function SettingsPage() {
   return <Shell crumb={<>Admin settings</>}><Settings /></Shell>;
 }
 
-export function App() {
-  const r = useRoute();
+function screenFor(r: Route) {
   switch (r.name) {
     case "new": return <NewThesis />;
     case "settings": return <SettingsPage />;
@@ -190,4 +196,18 @@ export function App() {
     case "thesis": return <Workspace id={r.id} token={r.token} step={r.step} />;
     default: return <Home />;
   }
+}
+
+export function App() {
+  const r = useRoute();
+  // Public, shareable read-only routes stay open (a shared link must work without an account); every
+  // other surface is gated behind identifying yourself, consistent with the classic /app shell.
+  const isPublic = r.name === "view" || (r.name === "thesis" && !!r.token);
+  const [, bump] = useState(0);
+  return (
+    <>
+      {isPublic ? null : <IdentityGate onReady={() => bump((n) => n + 1)} />}
+      {screenFor(r)}
+    </>
+  );
 }

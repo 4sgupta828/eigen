@@ -36,13 +36,9 @@ class TechUI:
             "heading": "What does the evidence say?",
             "placeholder": "Ask a tech / startup / market diligence question…",
             "disclaimer": {
-                "gate": ("Eigen is a research tool for investors and analysts. It finds and summarizes "
-                         "published evidence — filings, patents, papers, code, and news — for "
-                         "informational purposes only. It is NOT investment advice, not a recommendation "
-                         "to buy or sell, and not a substitute for independent professional judgment or "
-                         "your own diligence. Answers are AI-generated and may be incomplete, out of date, "
-                         "or wrong; always verify against the cited primary sources. By continuing you "
-                         "accept sole responsibility for how you use the information."),
+                # Gate attestation intentionally blank — the Welcome modal shows no disclaimer paragraph
+                # (applyDisclaimers() hides #iddisc when this is empty). Footer/answer notes stay.
+                "gate": "",
                 "footer": ("For informational purposes only — not investment advice. Verify every answer "
                            "against the cited primary sources before any decision."),
                 "answer": ("AI-generated summary of published evidence — informational only, not investment "

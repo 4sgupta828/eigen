@@ -268,6 +268,29 @@ a.th-cite-src:hover { text-decoration: underline; }
 .st { font-family: var(--mono); font-size: .58rem; font-weight: 700; text-transform: uppercase; padding: .16rem .42rem; border-radius: 5px; }
 .st-tested { color: var(--intent); background: color-mix(in srgb, var(--intent) 13%, transparent); }
 
+/* ── identity gate (Welcome to Eigen) — blocking overlay, scrolls on short screens ── */
+.idgate { position: fixed; inset: 0; z-index: 1000; display: flex; overflow-y: auto; padding: 24px 16px;
+  background: color-mix(in srgb, var(--ink) 55%, transparent); backdrop-filter: blur(3px); }
+.idgate-card { margin: auto; width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--hair);
+  border-radius: 16px; padding: 1.6rem 1.4rem; box-shadow: 0 24px 60px -20px color-mix(in srgb, var(--ink) 55%, transparent);
+  display: flex; flex-direction: column; gap: .55rem; text-align: center; }
+.idgate-mark { font-family: var(--serif); font-weight: 700; font-size: 1.4rem; letter-spacing: .04em; color: var(--ink); }
+.idgate-mark b { color: var(--gold-strong); font-weight: 700; }
+.idgate-card h2 { font-family: var(--serif); font-size: 1.3rem; margin: .3rem 0 0; }
+.idgate-card > p { color: var(--muted); font-size: .88rem; line-height: 1.5; margin: 0 0 .35rem; }
+.idgate-tabs { display: flex; gap: .3rem; background: var(--panel2); border: 1px solid var(--hair); border-radius: 10px; padding: .25rem; }
+.idgate-tab { flex: 1; font-family: var(--mono); font-size: .74rem; font-weight: 600; color: var(--muted); background: none; border: none; border-radius: 7px; padding: .4rem; cursor: pointer; }
+.idgate-tab.on { color: var(--on-accent); background: var(--gold); }
+.idgate-in { width: 100%; background: var(--panel2); border: 1px solid var(--hair); border-radius: 10px; padding: .65rem .75rem; font: inherit; color: var(--ink); }
+.idgate-in:focus { outline: none; border-color: var(--gold); }
+.idgate-switch { font-size: .8rem; }
+.idgate-switch a { color: var(--gold-strong); text-decoration: none; }
+.idgate-switch a:hover { text-decoration: underline; }
+.idgate-err { color: var(--p0); font-size: .78rem; min-height: 1rem; }
+.idgate-go { width: 100%; background: var(--gold); color: var(--on-accent); border: none; border-radius: 11px; font: inherit; font-weight: 600; padding: .7rem; cursor: pointer; margin-top: .2rem; }
+.idgate-go:hover:not(:disabled) { background: var(--gold-strong); }
+.idgate-go:disabled { opacity: .65; cursor: default; }
+
 /* ── dashboard: rich thesis cards (progress + artifact state) ── */
 .dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
 .dgrid-busy { opacity: .6; pointer-events: none; }

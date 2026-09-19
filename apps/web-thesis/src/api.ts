@@ -84,8 +84,20 @@ function ownerHeaders(id?: string): Record<string, string> {
   const h: Record<string, string> = { "content-type": "application/json" };
   const cap = id ? readOwners()[id] : undefined;
   if (cap) h["X-Thesis-Owner"] = cap;
-  // (a signed-in bearer token would be attached here too, once the account model is ported)
+  const tok = readUser()?.token;             // signed-in bearer token (shared with the classic app)
+  if (tok) h["x-eigen-token"] = tok;
   return h;
+}
+
+// ── identity (shared with the classic /app shell via the same localStorage key) ────────────────
+export type EigenUser = { name?: string; email?: string; token?: string; verified?: boolean; disclaimer_ack?: boolean };
+const USER_KEY = "eigen_user";
+export function readUser(): EigenUser | null {
+  try { const v = JSON.parse(localStorage.getItem(USER_KEY) || "null"); return v && typeof v === "object" ? v : null; }
+  catch { return null; }
+}
+export function saveUser(u: EigenUser | null) {
+  try { u ? localStorage.setItem(USER_KEY, JSON.stringify(u)) : localStorage.removeItem(USER_KEY); } catch { /* ignore */ }
 }
 
 async function req<T>(method: string, path: string, body?: unknown, id?: string): Promise<T> {
@@ -109,6 +121,9 @@ async function adminReq<T>(method: string, path: string, token: string, body?: u
   if (!r.ok) throw new Error((d && (d as { detail?: string }).detail) || `request failed (${r.status})`);
   return d as T;
 }
+export type Disclaimer = { gate?: string; footer?: string; answer?: string };
+export type AppConfig = { accounts_enabled?: boolean; console?: { heading?: string; disclaimer?: Disclaimer } };
+export type AuthResp = { user?: { name?: string; email?: string; verified?: boolean; profession?: string }; token?: string };
 export type SettingSpec = { value: string; default: string; override: string; options: string[]; label: string; help: string; source: string };
 export type SettingsResp = { status: string; settings: Record<string, SettingSpec> };
 
@@ -198,6 +213,11 @@ export const api = {
     return list;
   },
   deleteThesis: (id: string) => req<{ status: string }>("DELETE", `/thesis/${enc(id)}`, undefined, id),
+  // ── identity gate (shared /auth + /config contract with the classic shell) ──
+  config: () => getJSON<AppConfig>("/config"),
+  authRegister: (b: { email: string; password: string; name: string; country?: string }) =>
+    req<AuthResp>("POST", "/auth/register", { ...b, disclaimer_ack: true }),
+  authLogin: (b: { email: string; password: string }) => req<AuthResp>("POST", "/auth/login", b),
   adminAllTheses: (token: string) => adminReq<{ status: string; theses: ThesisListItem[] }>("GET", "/thesis/admin/theses", token).then((d) => d.theses || []),
   adminAdopt: (token: string, thesis_id: string) => adminReq<{ status: string; thesis_id: string; owner_token: string }>("POST", "/thesis/admin/adopt", token, { thesis_id }),
   adminDeleteThesis: (token: string, thesis_id: string) => adminReq<{ status: string }>("POST", "/thesis/admin/delete", token, { thesis_id }),
