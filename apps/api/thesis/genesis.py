@@ -45,9 +45,14 @@ EACH TURN, reason then act:
 1. THINK (in `thought`): what did the author just say, where does it leave the thesis versus the goal,
    and what is the single most useful move now? Keep it short.
 2. ENGAGE the author's actual input — a comment, question, objection, correction, or refinement — as a
-   thread to PULL. Go DEEP on the subarea with concrete, real-world specifics from your knowledge (name
-   the actual regulations, standards, segments, incumbents, cost structures, adoption barriers,
-   mechanisms). Answer questions directly. Add SPECIFICITY, never shallow rewording.
+   thread to PULL. Go DEEP on the subarea with concrete specifics (regulations, standards, segments,
+   incumbents, cost structures, adoption barriers, mechanisms) — but draw them from the CURRENT GROUNDING
+   you are given (a dated live-web scan of the subject + any attached material), NOT your training memory,
+   which is stale and sometimes plainly WRONG about what a specific company does. Name a specific (a
+   company's product, focus, customers, funding, partners) ONLY where the grounding or the author supports
+   it; where the grounding is silent, reason from first principles and MARK the point to-verify rather
+   than inventing a fact. If the grounding contradicts what you would have assumed, CORRECT the record and
+   say so plainly. Answer questions directly. Add SPECIFICITY, never shallow rewording — but never fabricated.
 3. ASK a sharp clarifying follow-up when it helps close an open thread, paired with YOUR best answer.
 4. HOLD THE GROUND on the thesis: change it ONLY when the discussion warrants (new constraint, accepted
    refinement, resolved ambiguity, valid objection); otherwise return it UNCHANGED, word for word, and
@@ -137,8 +142,10 @@ async def turn(llm_json, *, said: str, history: list[dict], budget_left: int,
         return {"reply": "", "proposed_thesis": "", "ready": True, "memory": mem, "thought": ""}
     if not said and not history:
         return {"reply": "", "proposed_thesis": "", "ready": False, "memory": mem, "thought": ""}
-    prompt = ((f"REFERENCE MATERIAL THE AUTHOR ATTACHED (ground the thesis in it; it is context, not the "
-               f"thesis to restate verbatim):\n{context.strip()[:8000]}\n\n" if (context or '').strip() else "")
+    prompt = ((f"GROUNDING — attached reference material and/or a dated live-web scan of the subject. PREFER "
+               f"these current facts over your training memory; name specifics only where supported here, else "
+               f"mark them to-verify. It is context, not the thesis to restate verbatim:\n{context.strip()[:9000]}\n\n"
+               if (context or '').strip() else "")
               + f"CONVERSATION SO FAR:\n{_convo(history)}\n\n{_mem_block(mem)}\n\n"
               f"THE AUTHOR JUST SAID:\n{said}\n\nReason then act. Return your next turn as JSON now.")
     try:
@@ -169,9 +176,11 @@ async def turn(llm_json, *, said: str, history: list[dict], budget_left: int,
 
 _IMPROVE_SYSTEM = """\
 You are a venture partner IMPROVING a startup thesis on the author's behalf — not interrogating them. You
-PROPOSE the few highest-leverage questions whose answers would most sharpen THIS thesis, ANSWER each one
-yourself from your own domain knowledge (name the real segments, mechanisms, numbers, incumbents,
-regulations — be concrete, never "it depends"), and then REWRITE the thesis to fold those answers in.
+PROPOSE the few highest-leverage questions whose answers would most sharpen THIS thesis, ANSWER each from
+the CURRENT GROUNDING you are given (a dated live-web scan of the subject + any attached material) — be
+concrete with real segments, mechanisms, numbers, incumbents, regulations, but ONLY where the grounding
+supports them; your training memory is stale, so defer to the grounding and MARK anything it does not
+cover as to-verify rather than asserting it. Then REWRITE the thesis to fold those answers in.
 
 Rules:
 - 2 to 4 questions. Each `q` is the improvement question; each `a` is your own substantive answer to it.
@@ -265,8 +274,12 @@ _DEFICIENCY_SYSTEM = (
     "SINGLE most important REMAINING weakness — the pillar most missing or weakest that is NOT in the skip "
     "list. Name it, say in one line why closing it matters for THIS thesis, and propose ONE concrete "
     "improvement: rewrite the WHOLE thesis to strengthen exactly that one pillar. Keep the author's own "
-    "product and intent — sharpen, don't hijack. Stay grounded: real segments, mechanisms, numbers, "
-    "incumbents; the proposal must make the thesis MORE falsifiable and specific, not merely longer. If "
+    "product and intent — sharpen, don't hijack. Stay grounded in the CURRENT GROUNDING provided (a dated "
+    "live-web scan of the subject + any attached material), NOT your training memory, which is stale and "
+    "sometimes wrong about a specific company: name real segments, mechanisms, numbers, incumbents ONLY "
+    "where the grounding or author supports them, and MARK any unverified specific to-verify rather than "
+    "asserting it; if the grounding corrects a stale assumption, fix it. The proposal must make the thesis "
+    "MORE falsifiable and specific, not merely longer. If "
     "every pillar is already adequately covered, set done=true.\n\n"
     "Return ONE JSON object exactly:\n"
     '{"done": <true only if the thesis already covers all five pillars solidly>,\n'
@@ -291,8 +304,9 @@ async def next_improvement(llm_json, *, thesis: str, skip: list[str] | None = No
         return empty
     skip_set = [s for s in (skip or []) if s in _PILLAR_KEYS]
     prompt = (f"CURRENT THESIS:\n{thesis}\n\n"
-              + (f"REFERENCE MATERIAL THE AUTHOR ATTACHED (use it to ground the improvement):\n"
-                 f"{context.strip()[:8000]}\n\n" if (context or '').strip() else "")
+              + (f"CURRENT GROUNDING — a dated live-web scan of the subject and/or attached material. PREFER "
+                 f"these current facts over training memory; name specifics only where supported, else mark "
+                 f"to-verify:\n{context.strip()[:9000]}\n\n" if (context or '').strip() else "")
               + (f"PILLARS ALREADY ADDRESSED OR SKIPPED (do NOT propose these): "
                  f"{', '.join(skip_set)}\n\n" if skip_set else "")
               + f"{_mem_block(mem)}\n\nIdentify the next deficiency and propose one improvement. Return the JSON.")

@@ -509,6 +509,11 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             stored = (stored + new_att)[:6]
             await tstore.set_thesis_attachments(pool, thesis_id, stored)
         attach_ctx = _attach_context(stored)
+        # Ground the shaping in CURRENT facts about the subject (live web), so the agent corrects stale
+        # training memory instead of asserting outdated/wrong specifics. Refreshed on a "check the facts"
+        # message; otherwise reused from cache. Combined with any attached reference material.
+        ground_ctx = await _ground_context({**d, "attachments": stored}, thesis_id, said=said)
+        ctx = "\n\n".join(p for p in (attach_ctx, ground_ctx) if p)
         turns = d.get("turns") or []
         used = sum(1 for t in turns if t.get("role") == "agent" and t.get("move") == "genesis")
         # A ReAct agent with GOAL + MEMORY (strong model). Memory (thesis + assumptions + open threads +
@@ -518,7 +523,7 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
                           if t.get("role") == "agent" and t.get("payload", {}).get("memory")), None)
         got = await gen.turn(_strong_llm_json(), said=said, history=turns,
                              budget_left=max(0, gen.GENESIS_BUDGET - used), memory=prior_mem,
-                             context=attach_ctx)
+                             context=ctx)
         ready = bool(got.get("ready"))
         reply = got.get("reply") or ("Ready when you are." if ready else "Tell me a little more.")
         # The agent's current thesis this turn; keep the last good one if the model returned none.
@@ -617,8 +622,12 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         if not (prior_mem or {}).get("shaping_prefs") and d.get("shaping_prefs"):
             prior_mem = {**(prior_mem or {}), "shaping_prefs": d.get("shaping_prefs")}
 
+        # Ground the improvement in current facts about the subject too — a sharpen must not fold in stale
+        # or wrong specifics. Reuses the cached subject facts (refreshes only if missing/stale).
+        ground_ctx = await _ground_context(d2 or d, thesis_id)
+        imp_ctx = "\n\n".join(p for p in (_attach_context((d2 or {}).get("attachments") or []), ground_ctx) if p)
         proposal = await gen.next_improvement(_strong_llm_json(), thesis=current, skip=skip, memory=prior_mem,
-                                              context=_attach_context((d2 or {}).get("attachments") or []))
+                                              context=imp_ctx)
         pillars = [{"key": p["key"], "label": p["label"],
                     "addressed": p["key"] in accepted, "skipped": p["key"] in rejected} for p in gen.PILLARS]
         return {"status": "ok", "proposal": proposal, "skip": skip, "pillars": pillars,
@@ -1767,6 +1776,121 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
         except asyncio.TimeoutError:
             log.info("landscape scan timed out (thesis budget) — proceeding without the brief")
             return _dec.empty_brief(note="the landscape scan timed out")
+
+    # ── grounding the SHAPING of a thesis in CURRENT facts (not the model's stale training memory) ──────
+    # The genesis/refine prompts used to answer "from your own domain knowledge", which is outdated and
+    # sometimes plainly wrong about a specific company (e.g. what OpenEvidence actually does). The fix is
+    # to pull dated facts about the thesis's named SUBJECT from the LIVE WEB and make the model DEFER to
+    # them. Cached on the thesis (subject_facts) and reused across refine steps; refreshed when missing,
+    # stale, or the author asks to check facts.
+    import re as _re_ground
+    _FACTCHECK_RE = _re_ground.compile(
+        r"\b(check|verif\w*|actual\w*|current\w*|real(?:ly)?|today|latest|recent|up[\s-]?to[\s-]?date|"
+        r"accurate|fact[\s-]?check|facts?|as of|is this (?:true|right|correct))\b", _re_ground.I)
+
+    def _facts_stale(facts: dict, *, max_age_days: int = 14) -> bool:
+        try:
+            from datetime import date as _date
+            y, m, dd = (int(x) for x in str((facts or {}).get("as_of") or "")[:10].split("-"))
+            return (_date.today() - _date(y, m, dd)).days > max_age_days
+        except Exception:      # noqa: BLE001 — unparseable/absent → treat as stale
+            return True
+
+    async def _extract_entities(thesis: str, subject: str) -> dict:
+        """Name the companies/products this thesis is ABOUT + its market, so the web queries target the
+        real subject. Cheap seam; falls back to the stored subject on any failure."""
+        base = {"entities": [str(v).strip() for v in ([subject] if subject else []) if str(v).strip()],
+                "market": ""}
+        llm = _llm_json()
+        if llm is None:
+            return base
+        try:
+            raw = await llm(
+                "Extract the named companies/products/organizations this investment thesis is ABOUT, and "
+                "the market it targets. Proper nouns naming a SPECIFIC company/product only (e.g. "
+                "'OpenEvidence'); never invent one. Return ONLY JSON: "
+                '{"entities": ["..."], "market": "..."}',
+                f"THESIS:\n{thesis[:1200]}")
+            d = raw if isinstance(raw, dict) else json.loads(raw)
+            ents = [str(x).strip()[:80] for x in (d.get("entities") or []) if str(x).strip()][:3]
+            return {"entities": ents or base["entities"], "market": str(d.get("market") or "").strip()[:120]}
+        except Exception:      # noqa: BLE001
+            return base
+
+    async def _scan_subject(d: dict) -> dict:
+        """Pull dated facts about the thesis's SUBJECT from the live web. -> {as_of, entities, hits:
+        [{title,url,text}]}. Best-effort, time-bounded; {} when the web leg is unavailable."""
+        from datetime import date as _date
+        wc = atk._web_client(manifest)
+        if wc is None:
+            return {}
+        thesis = (d.get("proposed_thesis") or d.get("thesis") or "").strip()
+        subject = " ".join(str(v) for v in (d.get("subject") or {}).values()).strip()
+        if not thesis and not subject:
+            return {}
+        year = _date.today().year
+        ent = await _extract_entities(thesis, subject)
+        queries: list[str] = []
+        for e in ent["entities"][:2]:
+            queries.append(f"{e} what it does product customers funding {year}")
+        if ent["market"]:
+            queries.append(f"{ent['market']} startups current landscape {year}")
+        if not queries:
+            queries.append(f"{(subject or thesis)[:80]} {year}")
+        seen, hits = set(), []
+        for q in queries[:4]:
+            try:
+                res = await wc.search(q, max_results=4, open_web=True)
+            except Exception:      # noqa: BLE001 — one bad query never sinks the pull
+                continue
+            for x in res or []:
+                url = getattr(x, "url", "") or ""
+                if url and url in seen:
+                    continue
+                seen.add(url)
+                text = " ".join(filter(None, [*(getattr(x, "highlights", ()) or ()),
+                                              getattr(x, "snippet", "") or "", (getattr(x, "body", "") or "")[:600]]))
+                title = getattr(x, "title", "") or ""
+                if title or text:
+                    hits.append({"title": title[:200], "url": url, "text": text[:700]})
+        return {"as_of": _date.today().isoformat(), "entities": ent["entities"], "hits": hits[:10]}
+
+    def _subject_facts_context(facts: dict, *, cap: int = 2600) -> str:
+        hits = (facts or {}).get("hits") or []
+        if not hits:
+            return ""
+        head = (f"CURRENT FACTS ABOUT THE SUBJECT (live web, as of {facts.get('as_of')}) — PREFER these "
+                "over your training memory; where they conflict with what you would assume, DEFER to these "
+                "and CORRECT the record. Name a specific (a company's product, focus, customers, funding, "
+                "partners, traction) ONLY if it appears here or the author stated it — otherwise say it is "
+                "unverified and mark it to-verify. Do not invent:")
+        lines = [head]
+        for h in hits:
+            t = (h.get("title") or "").strip()
+            snip = (h.get("text") or "").strip()
+            u = (h.get("url") or "").strip()
+            lines.append(f"- {t}{(' — ' + snip) if snip else ''}{(' [' + u + ']') if u else ''}")
+        return "\n".join(lines)[:cap]
+
+    async def _ground_context(d: dict, thesis_id: str, *, said: str = "", force: bool = False) -> str:
+        """Grounding block for genesis/refine: dated live-web facts about the subject (refreshed when
+        missing, stale, or the author asks to check facts) plus the market brief if one is already cached.
+        Best-effort — never raises, never blocks the author for long."""
+        from eigen_kernel import decision as _dec
+        facts = d.get("subject_facts") or {}
+        if force or _FACTCHECK_RE.search(said or "") or not (facts.get("hits")) or _facts_stale(facts):
+            try:
+                fresh = await asyncio.wait_for(_scan_subject(d), timeout=16)
+                if fresh.get("hits"):
+                    facts = fresh
+                    await tstore.set_subject_facts(await pool_of(), thesis_id, fresh)
+            except Exception:      # noqa: BLE001 — grounding is best-effort; keep what we had
+                pass
+        parts = [_subject_facts_context(facts)]
+        market = _dec.brief_context(d.get("landscape_brief") or {})   # reuse a cached market brief if present
+        if market:
+            parts.append(market)
+        return "\n\n".join(p for p in parts if p)
 
     async def _run_generate(thesis_id: str, run_id: str):
         """Design the plan in the BACKGROUND (scan → frame → generate → prioritize → store) so a long,

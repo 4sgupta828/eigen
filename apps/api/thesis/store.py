@@ -65,6 +65,9 @@ ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS competitive jsonb NOT NULL DEFAUL
 -- The dated, typed LandscapeBrief from the orient-and-scan (keeps the QUESTIONS current, not just the
 -- answers): {as_of, incumbents, entrants, funding, regulation, benchmarks, why_now, unknowns}.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS landscape_brief jsonb NOT NULL DEFAULT '{}';
+-- Current facts about the thesis SUBJECT (named entities), pulled from the live web so genesis/refine
+-- ground on what is real NOW instead of the model's stale training memory. {as_of, hits:[{title,url,text}]}.
+ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS subject_facts jsonb NOT NULL DEFAULT '{}';
 -- Voices organized into relevance-to-the-investigation buckets (LLM-clustered, signal not evidence),
 -- cached by the candidate set they were built from so a revisit doesn't re-spend on the same corpus hits.
 ALTER TABLE ts_thesis ADD COLUMN IF NOT EXISTS voices jsonb NOT NULL DEFAULT '{}';
@@ -421,6 +424,7 @@ async def get(pool, *, thesis_id: str = "", share_token: str = "", owner_id: str
     out["collective_take"] = _j(out.get("collective_take") or {}) or {}
     out["competitive"] = _j(out.get("competitive") or {}) or {}
     out["landscape_brief"] = _j(out.get("landscape_brief") or {}) or {}
+    out["subject_facts"] = _j(out.get("subject_facts") or {}) or {}   # current live-web facts about the subject
     out["attachments"] = _j(out.get("attachments") or []) or []      # intake reference material (extracted text)
     out["versions"] = _j(out.get("versions") or []) or []           # thesis version timeline (backtrack)
     out["shaping_prefs"] = _j(out.get("shaping_prefs") or []) or []  # how the author wants it shaped
@@ -639,6 +643,14 @@ async def set_landscape_brief(pool, thesis_id: str, brief: dict) -> None:
     async with pool.acquire() as conn:
         await conn.execute("UPDATE ts_thesis SET landscape_brief = $2::jsonb, updated_at = now() WHERE id = $1",
                            thesis_id, json.dumps(brief or {}))
+
+
+async def set_subject_facts(pool, thesis_id: str, facts: dict) -> None:
+    """Persist the dated live-web facts about the thesis subject (reused across refine steps within TTL)."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE ts_thesis SET subject_facts = $2::jsonb WHERE id = $1",
+                           thesis_id, json.dumps(facts or {}))
 
 
 async def add_competitive_players(pool, thesis_id: str, new_players: list[dict], *,
