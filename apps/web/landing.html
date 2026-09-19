@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Eigen Research — the gap between announced and proven</title>
-<meta name="description" content="Deep-tech research that separates what a company has announced from what it has proven, and links every claim to the filing, patent or paper behind it." />
+<title>Eigen Research — start with the thesis, not the research</title>
+<meta name="description" content="Eigen refines your investment thesis, interrogates it from both sides, maps the field, finds the experts and hears the founders — bringing it all into a view you can defend." />
 <meta property="og:title" content="Eigen Research" />
-<meta property="og:description" content="See the gap between what was announced and what has been proven — with the documents behind both." />
+<meta property="og:description" content="Refine your thesis, question it from both sides, map the field, find the experts — and get to a differentiated view." />
 <meta property="og:type" content="website" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..600&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400..600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
 <!-- ═══════════════════════════════════════════════════════════════════════════════════════════
      REUSABLE PRODUCT LANDING TEMPLATE
@@ -32,44 +32,24 @@
    values and the SAME default (editorial for a first-time visitor). Applied here in <head> so the
    page paints in the right theme instead of flashing light first. Keep this in sync with the
    equivalent block in index.html — a reader moving between / and /app must not see it change. */
-(function(){
-  try{
-    var saved = localStorage.getItem("eigen-theme");
-    if(saved === "dark" || saved === "editorial") document.documentElement.setAttribute("data-theme", saved);
-    else if(saved !== "light") document.documentElement.setAttribute("data-theme", "editorial");
-  }catch(e){ document.documentElement.setAttribute("data-theme", "editorial"); }
-})();
+/* The homepage always uses the EDITORIAL (warm parchment) theme so it matches the /w product shell,
+   which is editorial-only. No light/dark switching here. */
+document.documentElement.setAttribute("data-theme", "editorial");
 </script>
 
 <style>
-  :root{
-    color-scheme:light;
-    --bg:#EEF3F8; --paper:#FFFFFF; --sunk:#F4F8FC; --ink:#132430; --muted:#5A6B7B;
-    --accent:#1568B5; --accent-deep:#0E4F8F; --accent-rgb:21,104,181;
-    --proven:#0F6B4A; --proven-bg:#E6F2EC;
-    --claimed:#9A5B12; --claimed-bg:#FAEEDC;
-    --rule:#D2DEEA; --rule-soft:rgba(19,36,48,.06);
-    --display:"Source Serif 4",Charter,Georgia,serif;
-    --ui:"Archivo",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  }
-  /* EDITORIAL — the platform shell's third theme, mapped onto this page's token names so a
-     reader who chose it in /app keeps it here. Warm parchment stock, umber ink, ink-gold accent. */
-  :root[data-theme="editorial"]{
+  /* EDITORIAL (warm parchment) — the SAME palette + fonts as the /w product shell, so the homepage
+     and the product look like one product. This is the base and the only theme the homepage uses. */
+  :root, :root[data-theme="editorial"]{
     color-scheme:light;
     --bg:#F6F3EA; --paper:#FDFBF5; --sunk:#F0ECE0; --ink:#221D12; --muted:#6E6550;
     --accent:#8A6A1F; --accent-deep:#6E5314; --accent-rgb:138,106,31;
     --proven:#2E6B4F; --proven-bg:#E4EDE4;
     --claimed:#A05C24; --claimed-bg:#F3E7D6;
     --rule:#DCD4C0; --rule-soft:rgba(34,29,18,.06);
-  }
-  :root[data-theme="dark"]{
-    color-scheme:dark;
-    --bg:#060E1B; --paper:#0F1A2C; --sunk:#0C1524; --ink:#ECEBE3; --muted:#8B96A9;
-    --accent:#D3B37C; --accent-deep:#E7CB93; --accent-rgb:211,179,124;
-    --proven:#63C49D; --proven-bg:#0E2A20;
-    --claimed:#DBA05A; --claimed-bg:#2C1F10;
-    --rule:#22304A; --rule-soft:rgba(255,255,255,.06);
+    --display:"Source Serif 4",Charter,Georgia,serif;
+    --ui:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   }
 
   *{box-sizing:border-box}
@@ -111,9 +91,6 @@
   .btn:hover{background:var(--accent-deep);}
   .btn.quiet{background:transparent;color:var(--ink);border-color:var(--rule);}
   .btn.quiet:hover{background:var(--sunk);border-color:var(--accent);}
-  .themebtn{min-height:40px;padding:.3rem .6rem;border-radius:6px;cursor:pointer;
-    background:transparent;border:1px solid var(--rule);color:var(--muted);font-size:.78rem;
-    font-family:var(--ui);}
 
   .hero{padding-block:clamp(2.6rem,6vw,4.4rem) clamp(2.4rem,5vw,3.6rem);}
   .heroGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);
@@ -149,7 +126,7 @@
     font-size:.85rem;color:var(--muted);}
   .ledgerGap b{color:var(--ink);font-weight:600;}
 
-  .strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1.1rem 1.6rem;}
+  .strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.4rem 1.6rem;}
   .strip div{font-size:.95rem;}
   .strip b{display:block;font-weight:600;}
   .strip span{color:var(--muted);font-size:.88rem;}
@@ -266,7 +243,7 @@ const SITE = {
 
   hero: {
     title: "Start with the thesis,\nnot the research.",
-    lede: "Information isn't scarce — a differentiated view is. Eigen takes a thesis, reads broad across memos, filings, founder blogs, earnings calls, podcasts and forums, and shows you where the sources agree, where they don't, and what still has to be true. Then it tells you who to call.",
+    lede: "Information isn't scarce — a differentiated view is. Refine your thesis, interrogate it from both sides, map the field, find the experts and hear the founders — then bring it all into a view you can defend.",
     secondary: { label: "See where it reads", href: "#sources" },
   },
 
@@ -322,21 +299,23 @@ const SITE = {
   },
 
   abilities: {
-    title: "Everything the read needs, in one workspace.",
+    title: "One thesis. Every angle.",
     items: [
-      { b: "Lines of inquiry", s: "Turn a thesis into the questions that decide it." },
-      { b: "The right experts", s: "Founders, operators, buyers — the people living the problem." },
-      { b: "Bull and bear, side by side", s: "Where the evidence agrees, and where it breaks." },
-      { b: "A write-up that holds", s: "The differentiated view, every claim sourced." },
+      { b: "Refine the thesis", s: "A sharper, testable claim — one gap at a time." },
+      { b: "Question both sides", s: "Supporting and adversarial lines of inquiry." },
+      { b: "Map the field", s: "The real competitors and incumbents." },
+      { b: "Brainstorm the gaps", s: "Pressure-test what has to be true." },
+      { b: "Find the experts", s: "The people living the problem — worth a call." },
+      { b: "Hear the voices", s: "What founders and investors have said and written." },
     ],
   },
 
   flow: {
     title: "How a thesis becomes a view.",
     steps: [
-      { h: "State the thesis", p: "Start with the question, not a search box. Eigen frames what would have to be true for it to work." },
-      { h: "Read broad, find the tension", p: "Memos, filings, blogs, earnings, podcasts, reviews and forums — surfaced by where they agree and disagree, not one source at a time." },
-      { h: "Pressure-test, then write it up", p: "The bear case, the experts to call, and a sourced write-up — because writing surfaces bad assumptions faster than another ten reports." },
+      { h: "Refine the thesis", p: "Start with a raw idea. Eigen sharpens it into a claim worth testing — the shift, the edge, what would have to be true." },
+      { h: "Interrogate every side", p: "Supporting and adversarial questions, competitors, domain and brainstormed gaps — each researched and sourced." },
+      { h: "Bring it into a view", p: "The experts to call and what founders and investors have said, synthesized into one differentiated, defensible take." },
     ],
   },
 
@@ -359,10 +338,10 @@ const SITE = {
     title: "Built for a view you can defend.",
     us: "Eigen", them: "General AI chat",
     rows: [
-      { q: "Shows where sources agree and disagree", us: true, them: false },
-      { q: "Separates announced from proven", us: true, them: false },
-      { q: "Points you to the people to talk to", us: true, them: false },
-      { q: "Surfaces the bear case and marks what's unknown", us: true, them: false },
+      { q: "Refines a raw thesis into a testable one", us: true, them: false },
+      { q: "Asks the adversarial questions, not just the bull case", us: true, them: false },
+      { q: "Maps the real competitors and incumbents", us: true, them: false },
+      { q: "Points you to the experts and voices to hear", us: true, them: false },
       { q: "Answers anything you ask, instantly", us: true, them: true },
     ],
   },
@@ -371,9 +350,9 @@ const SITE = {
     title: "Why we built this.",
     pull: "Information isn't scarce. The real work is finding the right experts, asking the right questions, and turning the noise into a view you can defend.",
     facts: [
-      "<b>Start from the thesis.</b> Diligence begins with a question, not a search box.",
-      "<b>Signal is agreement and disagreement.</b> No single source decides — the tension between them does.",
-      "<b>Writing beats reading.</b> A sourced write-up surfaces bad assumptions faster than another report.",
+      "<b>Start from the thesis.</b> Refine a raw idea into a claim worth testing.",
+      "<b>Both sides, on purpose.</b> The bull case and the bear case, researched with equal rigor.",
+      "<b>The people, not just the papers.</b> The experts to call and the founders worth reading.",
     ],
     more: { label: "About us and who builds it", href: "/about" },
   },
@@ -398,8 +377,7 @@ const SITE = {
     <a href="/" aria-label="${h(B.name)} home" style="display:flex;text-decoration:none">
       <svg class="logo" viewBox="${h(B.markViewBox)}" role="img" aria-label="${h(B.name)}"><use href="#brand-mark"/></svg></a>
     <nav class="nav">${(B.nav||[]).map(n=>`<a href="${h(n.href)}">${h(n.label)}</a>`).join("")}</nav>
-    <span class="topcta" id="topcta"><a class="btn" href="${h(B.appHref)}">${h(B.appLabel)}</a></span>
-    <button type="button" class="themebtn" id="themebtn" aria-label="Switch colour theme">Light</button>`;
+    <span class="topcta" id="topcta"><a class="btn" href="${h(B.appHref)}">${h(B.appLabel)}</a></span>`;
 
   const ledgerCols = (c) => `
     <div class="cols">
@@ -513,21 +491,6 @@ const SITE = {
     new IntersectionObserver(([e]) => topcta.classList.toggle("on", !e.isIntersecting),
       {rootMargin: "-70px 0px 0px 0px"}).observe(sentinel);
   } else { topcta.classList.add("on"); }
-
-  /* Same cycle, order and labels as the platform shell: light -> dark -> editorial. */
-  const ORDER = ["light","dark","editorial"];
-  const NAMES = {light:"\u2600 Light", dark:"\u{1F319} Dark", editorial:"\u2761 Editorial"};
-  const btn = el("themebtn");
-  const current = () => document.documentElement.getAttribute("data-theme") || "light";
-  const apply = (t) => {
-    if(t === "light") document.documentElement.removeAttribute("data-theme");
-    else document.documentElement.setAttribute("data-theme", t);
-    try{ localStorage.setItem("eigen-theme", t); }catch(e){}
-    btn.textContent = NAMES[t] || NAMES.light;
-    btn.title = "Theme: " + (NAMES[t] || NAMES.light).slice(2) + " \u2014 click to switch";
-  };
-  apply(current());
-  btn.addEventListener("click", () => apply(ORDER[(ORDER.indexOf(current()) + 1) % ORDER.length]));
 })();
 </script>
 </body>
