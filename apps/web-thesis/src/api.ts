@@ -61,7 +61,14 @@ export type BoardEntry = {
   board_id: string; title?: string; summary?: string; findings?: number; published_at?: string; anonymous?: boolean;
   doc: ThesisDoc; inq: InquiriesView;
 };
-export type ThesisListItem = { id: string; title?: string; thesis?: string; settled?: number; claims?: number; updated_at?: string };
+export type ThesisListItem = {
+  id: string; title?: string; thesis?: string; settled?: number; claims?: number; updated_at?: string;
+  // richer status for the dashboard cards (present for owned theses we could hydrate)
+  draft?: boolean;
+  questions?: { total: number; answered: number };
+  has_brief?: boolean; has_reasoning?: boolean; has_competitive?: boolean; has_deck?: boolean;
+  on_board?: boolean;
+};
 
 // ── owner-token capability store (localStorage) ────────────────────────────────
 const OWNER_KEY = "eigen.thesis.owners.v1";
@@ -71,6 +78,7 @@ export function readOwners(): Record<string, string> {
 }
 export function saveOwners(v: Record<string, string>) { try { localStorage.setItem(OWNER_KEY, JSON.stringify(v || {})); } catch { /* ignore */ } }
 export function rememberOwner(id: string, token: string) { const o = readOwners(); o[id] = token; saveOwners(o); }
+export function forgetOwner(id: string) { const o = readOwners(); if (o[id]) { delete o[id]; saveOwners(o); } }
 
 function ownerHeaders(id?: string): Record<string, string> {
   const h: Record<string, string> = { "content-type": "application/json" };
@@ -152,25 +160,47 @@ export const api = {
   // localStorage), reconstructed by fetching each — so anonymously-created theses still show up.
   async myTheses(): Promise<ThesisListItem[]> {
     const ids = Object.keys(readOwners());
-    const results = await Promise.allSettled([
-      getJSON<{ theses: ThesisListItem[] }>("/theses").then((d) => d.theses || []),
-      ...ids.map((id) => getJSON<{ thesis: ThesisDoc }>(`/thesis/${enc(id)}`, id).then((d) => d.thesis)),
+    // Hydrate each owned thesis into a rich dashboard card: doc gives claims + which artifacts exist
+    // (brief/reasoning/competitive/deck); the run plan gives drafted-vs-answered question counts.
+    const has = (v: unknown) => !!v && typeof v === "object" && Object.keys(v as object).length > 0;
+    const hydrate = async (id: string): Promise<ThesisListItem | null> => {
+      try {
+        const d = (await getJSON<{ thesis: ThesisDoc }>(`/thesis/${enc(id)}`, id)).thesis;
+        if (!d?.id) return null;
+        const claims = d.claims || [];
+        const settled = claims.filter((c) => { const s = c.research_status || c.verdict; return s && s !== "open"; }).length;
+        const draft = !claims.length;
+        const item: ThesisListItem = {
+          id: d.id, thesis: d.thesis, title: d.title, claims: claims.length, settled, draft,
+          has_brief: has(d.collective_take), has_reasoning: has(d.collective_take),
+          has_competitive: !!(d.competitive?.players || []).length, has_deck: has(d.pitch_deck),
+          on_board: !!d.board_entry,
+        };
+        if (!draft) {
+          const plan = await api.runPlan(id).catch(() => null);
+          if (plan) {
+            item.questions = { total: plan.total || 0, answered: plan.answered || 0 };
+            if (plan.has_take) { item.has_brief = true; item.has_reasoning = true; }
+          }
+        }
+        return item;
+      } catch { return null; }
+    };
+    const [server, owned] = await Promise.all([
+      getJSON<{ theses: ThesisListItem[] }>("/theses").then((d) => d.theses || []).catch(() => [] as ThesisListItem[]),
+      Promise.all(ids.map(hydrate)),
     ]);
     const list: ThesisListItem[] = [];
     const seen = new Set<string>();
     const add = (t: ThesisListItem) => { if (t.id && !seen.has(t.id)) { seen.add(t.id); list.push(t); } };
-    const first = results[0];
-    if (first.status === "fulfilled") (first.value as ThesisListItem[]).forEach(add);
-    results.slice(1).forEach((r) => {
-      if (r.status !== "fulfilled") return;
-      const d = (r as PromiseFulfilledResult<ThesisDoc>).value;
-      if (!d?.id) return;
-      const claims = d.claims || [];
-      const settled = claims.filter((c) => { const s = c.research_status || c.verdict; return s && s !== "open"; }).length;
-      add({ id: d.id, thesis: d.thesis, title: d.title, claims: claims.length, settled });
-    });
+    owned.forEach((t) => { if (t) add(t); });
+    server.forEach(add);
     return list;
   },
+  deleteThesis: (id: string) => req<{ status: string }>("DELETE", `/thesis/${enc(id)}`, undefined, id),
+  adminAllTheses: (token: string) => adminReq<{ status: string; theses: ThesisListItem[] }>("GET", "/thesis/admin/theses", token).then((d) => d.theses || []),
+  adminAdopt: (token: string, thesis_id: string) => adminReq<{ status: string; thesis_id: string; owner_token: string }>("POST", "/thesis/admin/adopt", token, { thesis_id }),
+  adminDeleteThesis: (token: string, thesis_id: string) => adminReq<{ status: string }>("POST", "/thesis/admin/delete", token, { thesis_id }),
   board: (limit = 60) => getJSON<{ entries: BoardCard[] }>(`/board?limit=${limit}`).then((d) => d.entries || []),
   boardEntry: (entryId: string) => getJSON<{ entry: BoardEntry }>(`/board/${enc(entryId)}`).then((d) => d.entry),
   thesis: (id: string, share?: string) =>

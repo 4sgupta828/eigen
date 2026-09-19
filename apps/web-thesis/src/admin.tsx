@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type SettingSpec } from "./api";
+import { api, rememberOwner, type SettingSpec, type ThesisListItem } from "./api";
 import { PageHead } from "./ui";
 
 const TOKEN_KEY = "eigen.admin.token";
@@ -10,14 +10,20 @@ export function Settings() {
   const [token, setToken] = useState(readToken());
   const [entry, setEntry] = useState("");
   const [settings, setSettings] = useState<Record<string, SettingSpec> | null>(null);
+  const [theses, setTheses] = useState<ThesisListItem[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rowBusy, setRowBusy] = useState("");
   const [err, setErr] = useState("");
 
+  async function loadTheses(t: string) {
+    try { setTheses(await api.adminAllTheses(t)); } catch { /* leave as-is; settings still usable */ }
+  }
   async function load(t: string) {
     setBusy(true); setErr("");
     try {
       const r = await api.adminSettings(t);
       setSettings(r.settings); setToken(t); saveToken(t);
+      loadTheses(t);
     } catch (e) {
       setErr((e as Error).message.includes("403") || (e as Error).message.includes("admin token") ? "That admin token isn't valid." : (e as Error).message);
       setSettings(null);
@@ -30,7 +36,20 @@ export function Settings() {
     try { const r = await api.adminSetSetting(token, key, value); setSettings(r.settings); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
-  function signOut() { saveToken(""); setToken(""); setSettings(null); setEntry(""); }
+  async function adopt(id: string) {
+    setRowBusy(id); setErr("");
+    try {
+      const r = await api.adminAdopt(token, id);
+      rememberOwner(id, r.owner_token);   // this device now holds the capability → shows in "My theses"
+    } catch (e) { setErr((e as Error).message); } finally { setRowBusy(""); }
+  }
+  async function removeThesis(t: ThesisListItem) {
+    if (!window.confirm(`Delete “${(t.title || t.thesis || "this thesis").slice(0, 80)}”? This permanently removes the thesis and all its research. This cannot be undone.`)) return;
+    setRowBusy(t.id); setErr("");
+    try { await api.adminDeleteThesis(token, t.id); setTheses((ts) => (ts || []).filter((x) => x.id !== t.id)); }
+    catch (e) { setErr((e as Error).message); } finally { setRowBusy(""); }
+  }
+  function signOut() { saveToken(""); setToken(""); setSettings(null); setTheses(null); setEntry(""); }
 
   return (
     <>
@@ -66,6 +85,36 @@ export function Settings() {
               </p>
             </div>
           ))}
+          <div className="card" style={{ maxWidth: 620 }}>
+            <div className="setting-h">All theses · recover or delete</div>
+            <p className="muted" style={{ fontSize: ".84rem", margin: ".25rem 0 .7rem", lineHeight: 1.5 }}>
+              Every thesis in the deployment. Ownership is held by a capability token in the browser, so a
+              thesis created on another device won’t show in <b>My theses</b> here — “Add to my dashboard”
+              mints a fresh token for this device so it appears.
+            </p>
+            {theses === null ? <p className="muted" style={{ fontSize: ".85rem" }}>Loading…</p>
+              : theses.length === 0 ? <p className="muted" style={{ fontSize: ".85rem" }}>No theses.</p> : (
+                <div className="adm-theses">
+                  {theses.map((t) => (
+                    <div key={t.id} className="adm-thesis">
+                      <div className="adm-thesis-main">
+                        <div className="adm-thesis-title">{t.title || t.thesis || "Untitled"}</div>
+                        <div className="adm-thesis-meta">
+                          <span className="mono">{t.id}</span>
+                          {t.claims ? <span>· {t.settled ?? 0}/{t.claims} settled</span> : <span>· draft</span>}
+                          {t.on_board ? <span className="adm-onboard">· ▤ published</span> : null}
+                          {t.updated_at ? <span>· {t.updated_at.slice(0, 10)}</span> : null}
+                        </div>
+                      </div>
+                      <div className="adm-thesis-acts">
+                        <button className="btn sec" disabled={!!rowBusy} onClick={() => adopt(t.id)}>{rowBusy === t.id ? "…" : "Add to my dashboard"}</button>
+                        <button className="btn sec adm-del" disabled={!!rowBusy} onClick={() => removeThesis(t)}>Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+          </div>
           {err ? <p className="state" style={{ color: "var(--p0)" }}>{err}</p> : null}
           <button className="btn sec" onClick={signOut} style={{ marginTop: 6 }}>Lock settings</button>
         </>

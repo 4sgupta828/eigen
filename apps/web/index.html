@@ -1612,10 +1612,6 @@
     font-weight:600;padding:.7rem;cursor:pointer;margin-top:.35rem;}
   .idcard .idgo:hover{background:var(--gold-strong);}
   .idcard .iderr{color:var(--gap);font-size:.75rem;min-height:1rem;margin-top:.35rem;text-align:center;}
-  .idcard .idskip{display:block;width:100%;margin-top:.55rem;background:none;border:none;font:inherit;
-    font-size:.82rem;color:var(--muted);cursor:pointer;padding:.55rem;min-height:40px;border-radius:9px;}
-  .idcard .idskip:hover{color:var(--ink);background:var(--panel2);}
-  .idcard .idskip[hidden]{display:none;}
   .idcard select{width:100%;background:var(--panel2);border:1px solid var(--hair);border-radius:10px;
     font:inherit;color:var(--ink);padding:.6rem .7rem;margin-bottom:.6rem;}
   /* product-settings modal (reuses the idcard shell) */
@@ -3320,7 +3316,6 @@
     <div class="iderr" id="iderr"></div>
     <div class="iddisc" id="iddisc" hidden></div>
     <button type="button" class="idgo" id="idgo">I understand — continue</button>
-    <button type="button" class="idskip" id="idskip">Not now — let me look around</button>
   </div>
 </div>
 
@@ -7420,17 +7415,6 @@ q.addEventListener("input", autoGrow);
 window.addEventListener("resize", syncComposerPad);
 window.addEventListener("load", autoGrow);
 $("#newbtn").addEventListener("click", newConversation);   // masthead: start a fresh chat
-// "Not now" — look around first. Remembered, so it does not ask again on every load; it returns as
-// a requirement once the free runs are spent.
-(function(){
-  const b = $("#idskip"); if(!b) return;
-  b.addEventListener("click", () => {
-    if(gateRequired()) return;                 // no waiver left to give
-    waiveGate();
-    const m = $("#idmodal"); if(m) m.hidden = true;
-    const qq = $("#q"); if(qq) qq.focus();
-  });
-})();
 
 // ---- Past Sessions: full-page master/detail ----
 const sessionsEl = $("#sessions"), slist = $("#slist"), sdetail = $("#sdetail");
@@ -7774,14 +7758,11 @@ function isSharedLink(){ return /^#share\//.test(location.hash || ""); }
 
 // ---- SOFT GATE ----------------------------------------------------------------------------
 // Asking a stranger to create an account before they have seen the product answer anything is a
-// door with no window: they cannot tell whether it is worth the signup. So the gate can be waived
-// once ("Not now"), and returns as a REQUIREMENT after a few real runs — at which point the reader
-// has seen what they would be signing up for, which is the only moment the ask is fair.
-const FREE_RUNS = 3;                         // runs allowed before an account is required
+// door with no window. Everyone identifies before using the product (there is no dismiss/skip); the
+// run count only governs when a returning, still-unattested reader is re-prompted.
+const FREE_RUNS = 3;                         // runs allowed before the gate is re-required for an unattested reader
 function runsUsed(){ try{ return parseInt(localStorage.getItem("eigen_runs") || "0", 10) || 0; }catch(e){ return 0; } }
 function noteRun(){ try{ localStorage.setItem("eigen_runs", String(runsUsed() + 1)); }catch(e){} }
-function gateWaived(){ try{ return localStorage.getItem("eigen_gate_skipped") === "1"; }catch(e){ return false; } }
-function waiveGate(){ try{ localStorage.setItem("eigen_gate_skipped", "1"); }catch(e){} }
 // Accounts off, already signed in, or a shared link → never gate. Otherwise it is required only
 // once the free runs are spent.
 function gateRequired(){
@@ -7790,8 +7771,7 @@ function gateRequired(){
 }
 function showGate(required){
   const m = $("#idmodal"); if(!m) return;
-  const skip = $("#idskip"), sub = m.querySelector("p");
-  if(skip) skip.hidden = !!required;          // out of free runs → the way out closes
+  const sub = m.querySelector("p");
   if(sub) sub.textContent = required
     ? "You have had a few runs on us. Create an account to keep going — it also saves your questions and answers."
     : "Tell us who you are, so your questions are saved to your name.";
@@ -7809,9 +7789,8 @@ function initIdentity(opts){
   // Show the gate for new users AND for returning users who predate the disclaimer (never attested).
   if(!USER || !USER.email || !USER.disclaimer_ack){
     if(USER){ if(USER.name) $("#idname").value = USER.name; if(USER.email) $("#idemail").value = USER.email; }
-    // A waiver holds until the free runs are spent; then the gate comes back and cannot be waived.
-    const required = gateRequired();
-    if(required || !gateWaived()) showGate(required);
+    // No waiver: an unattested reader always sees the gate (required once the free runs are spent).
+    showGate(gateRequired());
   }
 }
 // ---- accounts (roster's model): password sign-in / create account; per-device bearer token ----

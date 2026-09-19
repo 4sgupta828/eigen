@@ -268,6 +268,42 @@ a.th-cite-src:hover { text-decoration: underline; }
 .st { font-family: var(--mono); font-size: .58rem; font-weight: 700; text-transform: uppercase; padding: .16rem .42rem; border-radius: 5px; }
 .st-tested { color: var(--intent); background: color-mix(in srgb, var(--intent) 13%, transparent); }
 
+/* ── dashboard: rich thesis cards (progress + artifact state) ── */
+.dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.dgrid-busy { opacity: .6; pointer-events: none; }
+.dcard { position: relative; border: 1px solid var(--hair); border-radius: 14px; background: var(--panel); padding: .9rem 1rem 0.8rem; cursor: pointer; display: flex; flex-direction: column; gap: .6rem; box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 5%, transparent); transition: border-color .12s, box-shadow .12s; }
+.dcard:hover { border-color: var(--gold); box-shadow: 0 4px 16px -8px color-mix(in srgb, var(--gold) 45%, transparent); }
+.dcard:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.dcard-top { display: flex; align-items: flex-start; gap: .5rem; }
+.dcard-title { font-size: 1.02rem; line-height: 1.3; margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.dcard-del { flex: none; border: none; background: none; cursor: pointer; font-size: .95rem; line-height: 1; padding: .15rem .25rem; border-radius: 7px; opacity: .35; filter: grayscale(1); }
+.dcard-del:hover { opacity: 1; filter: none; background: color-mix(in srgb, var(--p0) 12%, transparent); }
+.dcard-sub { font-size: .8rem; line-height: 1.45; color: var(--muted); margin: -.2rem 0 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dcard-tags { display: flex; gap: .4rem; flex-wrap: wrap; }
+.dcard-status { font-family: var(--mono); font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: .18rem .45rem; border-radius: 6px; }
+.dcard-status.draft { color: var(--muted); background: var(--panel2); border: 1px solid var(--hair); }
+.dcard-prog-h { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--mono); font-size: .64rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: .3rem; }
+.dcard-prog-n { color: var(--ink); font-weight: 700; }
+.dcard-prog-d { color: var(--muted); font-weight: 400; }
+.dcard-bar { height: 7px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--hair); overflow: hidden; }
+.dcard-bar-f { height: 100%; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 70%, #2e8b6f), var(--gold)); transition: width .3s; }
+.dcard-arts { display: flex; flex-wrap: wrap; gap: .35rem; }
+.dcard-art { font-family: var(--mono); font-size: .64rem; font-weight: 600; padding: .2rem .5rem; border-radius: 999px; border: 1px solid var(--hair); color: var(--muted); background: var(--panel2); white-space: nowrap; }
+.dcard-art.on { color: var(--on-accent); background: var(--gold); border-color: var(--gold); }
+.dcard-meta { font-family: var(--mono); font-size: .66rem; color: var(--muted); margin-top: auto; padding-top: .5rem; border-top: 1px solid var(--hair); display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.dcard-board { color: var(--gold-strong); }
+
+/* admin · all-theses recovery list */
+.adm-theses { display: grid; gap: .5rem; }
+.adm-thesis { display: flex; gap: .6rem; align-items: center; justify-content: space-between; flex-wrap: wrap; border: 1px solid var(--hair); border-radius: 10px; padding: .55rem .7rem; background: var(--panel2); }
+.adm-thesis-main { min-width: 0; flex: 1; }
+.adm-thesis-title { font-size: .9rem; font-weight: 600; overflow-wrap: anywhere; }
+.adm-thesis-meta { font-family: var(--mono); font-size: .62rem; color: var(--muted); margin-top: .2rem; display: flex; gap: .35rem; flex-wrap: wrap; }
+.adm-onboard { color: var(--gold-strong); }
+.adm-thesis-acts { display: flex; gap: .4rem; flex-wrap: wrap; }
+.adm-thesis-acts .btn { font-size: .72rem; padding: .35rem .6rem; }
+.adm-del:hover { color: var(--p0); border-color: var(--p0); }
+
 .state { padding: 3rem 1rem; text-align: center; color: var(--muted); font-family: var(--mono); font-size: .85rem; }
 .foot { max-width: 1180px; margin: 0 auto; padding: 6px 16px 30px; font-family: var(--mono); font-size: .65rem; color: var(--muted); }
 

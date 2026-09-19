@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "./api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, forgetOwner, type ThesisListItem } from "./api";
 import { Brief } from "./brief";
 import { Workspace } from "./workspace";
 import { Genesis } from "./genesis";
@@ -62,9 +62,71 @@ const Loading = () => <div className="state">loading…</div>;
 const Err = ({ e }: { e: unknown }) => <div className="state">{(e as Error)?.message || "something went wrong"}</div>;
 
 // ── screens ──────────────────────────────────────────────────────────────────
+// The artifacts a thesis can accumulate, shown as on/off chips so progress reads at a glance.
+const ARTIFACTS: { key: keyof ThesisListItem; label: string }[] = [
+  { key: "has_brief", label: "Brief" },
+  { key: "has_reasoning", label: "Reasoning map" },
+  { key: "has_competitive", label: "Competitive" },
+  { key: "has_deck", label: "Pitch deck" },
+];
+
+function ThesisCard({ t, onDelete }: { t: ThesisListItem; onDelete: (t: ThesisListItem) => void }) {
+  const total = t.questions?.total ?? 0;
+  const answered = t.questions?.answered ?? 0;
+  const pct = total ? Math.round((100 * answered) / total) : 0;
+  const open = () => go(`#thesis/${encodeURIComponent(t.id)}`);
+  return (
+    <div className="dcard" role="button" tabIndex={0} onClick={open}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}>
+      <div className="dcard-top">
+        <h3 className="dcard-title">{t.title || t.thesis}</h3>
+        <button className="dcard-del" title="Delete this thesis" aria-label="Delete this thesis"
+          onClick={(e) => { e.stopPropagation(); onDelete(t); }}>🗑</button>
+      </div>
+      {t.thesis && t.title && t.thesis.trim() !== (t.title || "").trim() ? <p className="dcard-sub">{t.thesis}</p> : null}
+      {t.draft ? (
+        <div className="dcard-tags"><span className="dcard-status draft">Draft — not yet committed</span></div>
+      ) : (
+        <>
+          <div className="dcard-prog">
+            <div className="dcard-prog-h">
+              <span>Questions researched</span>
+              <span className="dcard-prog-n">{answered}<span className="dcard-prog-d"> / {total}</span> · {pct}%</span>
+            </div>
+            <div className="dcard-bar"><div className="dcard-bar-f" style={{ width: `${pct}%` }} /></div>
+          </div>
+          <div className="dcard-arts">
+            {ARTIFACTS.map((a) => {
+              const on = !!t[a.key];
+              return <span key={a.label} className={"dcard-art" + (on ? " on" : "")}>{on ? "✓" : "○"} {a.label}</span>;
+            })}
+          </div>
+        </>
+      )}
+      <div className="dcard-meta">
+        {t.claims ? <span>{t.settled ?? 0}/{t.claims} claims settled</span> : null}
+        {t.on_board ? <span className="dcard-board">▤ published</span> : null}
+        {t.updated_at ? <span>{t.updated_at.slice(0, 10)}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function Home() {
+  const qc = useQueryClient();
   const q = useQuery({ queryKey: ["myTheses"], queryFn: api.myTheses });
   const theses = q.data || [];
+  const [busy, setBusy] = useState("");
+  async function del(t: ThesisListItem) {
+    if (!window.confirm(`Delete “${(t.title || t.thesis || "this thesis").slice(0, 80)}”?\n\nThis permanently removes the thesis and all its research${t.on_board ? ", and unpublishes it from the ThesisBoard" : ""}. This cannot be undone.`)) return;
+    setBusy(t.id);
+    try {
+      await api.deleteThesis(t.id);
+      forgetOwner(t.id);
+      await qc.invalidateQueries({ queryKey: ["myTheses"] });
+    } catch (e) { alert((e as Error).message || "could not delete"); }
+    finally { setBusy(""); }
+  }
   return (
     <Shell crumb={<>My theses</>}>
       <div className="pagehead"><h1>My theses</h1><p>Each thesis is a workspace and a shareable, sourced brief.</p></div>
@@ -72,12 +134,11 @@ function Home() {
         <button className="btn" onClick={() => go("#new")}>+ Test a new thesis</button>
         <button className="btn sec" onClick={() => go("#board")}>▤ Browse the ThesisBoard</button>
       </div>
-      {q.isLoading ? <Loading /> : theses.length ? theses.map((t) => (
-        <button key={t.id} className="tcard" onClick={() => go(`#thesis/${encodeURIComponent(t.id)}`)}>
-          <h3>{t.title || t.thesis}</h3>
-          <div className="meta"><span>{t.claims ? `${t.settled ?? 0}/${t.claims} settled` : "draft"}</span>{t.updated_at ? <><span>·</span><span>{t.updated_at.slice(0, 10)}</span></> : null}</div>
-        </button>
-      )) : <p className="muted" style={{ fontSize: ".9rem" }}>No theses on this device yet. Test a new thesis, or browse the ThesisBoard.</p>}
+      {q.isLoading ? <Loading /> : theses.length ? (
+        <div className={"dgrid" + (busy ? " dgrid-busy" : "")}>
+          {theses.map((t) => <ThesisCard key={t.id} t={t} onDelete={del} />)}
+        </div>
+      ) : <p className="muted" style={{ fontSize: ".9rem" }}>No theses on this device yet. Test a new thesis, or browse the ThesisBoard.</p>}
     </Shell>
   );
 }

@@ -742,6 +742,50 @@ async def recent(pool, *, owner_id: str = "", limit: int = 40) -> list[dict]:
              "updated_at": r["updated_at"].isoformat()} for r in rows]
 
 
+async def delete_thesis(pool, thesis_id: str) -> bool:
+    """Permanently remove a thesis and everything under it. Child rows (claims, evidence, turns,
+    questions, runs, transcripts, brainstorm threads) fall away via ON DELETE CASCADE; the board
+    entry carries no FK, so it's unpublished explicitly first."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute("DELETE FROM ts_board WHERE thesis_id = $1", thesis_id)
+        row = await conn.fetchrow("DELETE FROM ts_thesis WHERE id = $1 RETURNING id", thesis_id)
+    return bool(row)
+
+
+async def all_theses(pool, *, limit: int = 200) -> list[dict]:
+    """Every thesis in the deployment (admin-only) — so the operator can find a thesis whose owner
+    capability token isn't on this device and re-adopt or delete it. Never served to non-admins."""
+    await ensure_schema(pool)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT t.id, t.title, t.thesis, t.updated_at,
+                      (b.id IS NOT NULL) AS on_board,
+                      count(*) FILTER (WHERE c.verdict <> 'open') AS settled,
+                      count(c.rung) AS claims
+                 FROM ts_thesis t
+                 LEFT JOIN ts_claim c ON c.thesis_id = t.id
+                 LEFT JOIN ts_board b ON b.thesis_id = t.id
+                GROUP BY t.id, b.id ORDER BY t.updated_at DESC LIMIT $1""", limit)
+    return [{"id": r["id"], "title": r["title"], "thesis": r["thesis"],
+             "on_board": bool(r["on_board"]), "settled": int(r["settled"] or 0),
+             "claims": int(r["claims"] or 0), "updated_at": r["updated_at"].isoformat()} for r in rows]
+
+
+async def adopt_thesis(pool, thesis_id: str) -> str | None:
+    """Mint a fresh owner capability token for a thesis and make it the sole owner key (the previous
+    token, if any, stops working). Admin-only: lets the operator reclaim a thesis onto the current
+    device when the original localStorage token is gone. Returns the new token, or None if no such
+    thesis. Only valid while there is no account owner_id bound (the capability model)."""
+    await ensure_schema(pool)
+    token = secrets.token_urlsafe(32)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "UPDATE ts_thesis SET owner_token_hash = $2, updated_at = updated_at WHERE id = $1 RETURNING id",
+            thesis_id, hash_owner_token(token))
+    return token if row else None
+
+
 def _run_out(row) -> dict | None:
     if not row:
         return None

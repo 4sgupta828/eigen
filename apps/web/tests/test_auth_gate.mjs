@@ -1,17 +1,19 @@
 // Run: node --test apps/web/tests/test_auth_gate.mjs
 //
-// The gate used to be a wall: create an account before you have seen the product answer anything.
-// That is a door with no window — a stranger cannot tell whether the signup is worth it. It is now
-// waivable once and required only after a few real runs, which is the first moment the ask is fair.
+// The gate captures name + email at landing so every reader is identified. The old "Not now" waiver
+// (look around first) was removed on purpose: everyone creates an account / identifies before using
+// the product. The remaining runs-based logic still governs WHEN a returning, unattested reader is
+// re-prompted; there is simply no way to dismiss the gate without continuing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const SRC = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
-test("the gate offers a way out", () => {
-  assert.match(SRC, /id="idskip"/, "no skip control");
-  assert.match(SRC, /Not now/, "the skip should say what it does in the reader's words");
+test("the gate has no waiver — the reader must identify to continue", () => {
+  assert.ok(!/id="idskip"/.test(SRC), "the skip control must be gone (no 'Not now')");
+  assert.ok(!/Not now/.test(SRC), "no 'Not now' escape hatch");
+  assert.match(SRC, /id="idgo"/, "the continue control must remain");
 });
 
 test("the allowance is a named constant, not a magic number", () => {
@@ -26,13 +28,6 @@ test("the gate becomes required once the free runs are spent", () => {
   assert.match(body, /loggedIn\(\)/, "a signed-in reader is never gated");
   assert.match(body, /isSharedLink\(\)/, "a shared link must stay readable without an account");
   assert.match(body, /ACCOUNTS_ENABLED/, "accounts off → no gate at all");
-});
-
-test("the skip cannot be used once the gate is required", () => {
-  const i = SRC.indexOf('const b = $("#idskip")');
-  assert.ok(i > 0, "the skip is not wired");
-  assert.match(SRC.slice(i, i + 320), /if\(gateRequired\(\)\) return/,
-    "no waiver left to give once the runs are spent");
 });
 
 test("runs are counted at the one place every mode's search passes through", () => {

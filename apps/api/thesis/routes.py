@@ -159,6 +159,10 @@ class SettingIn(BaseModel):
     value: str = ""                  # "" clears the override → falls back to the env/default
 
 
+class ThesisIdIn(BaseModel):
+    thesis_id: str = ""
+
+
 class EditThesisIn(BaseModel):
     text: str = ""                   # the author's directly-edited thesis wording
 
@@ -397,6 +401,36 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "ok", "key": body.key, "value": value,
                 "settings": await tsettings.effective(pool)}
+
+    # ---- admin recovery: list EVERY thesis, re-adopt one onto this device, or delete it. There is no
+    # account model yet — a thesis is owned by whoever holds its capability token (in localStorage). If
+    # that token is lost (another browser/device, cleared storage), the thesis vanishes from "My theses"
+    # even though it still exists (and may be on the board). These admin-gated tools recover it.
+    @r.get("/thesis/admin/theses")
+    async def tl_admin_all(limit: int = 200, x_admin_token: str = Header(default="", alias="X-Admin-Token")):
+        if not _admin_ok(x_admin_token):
+            raise HTTPException(status_code=403, detail="admin token required")
+        return {"status": "ok", "theses": await tstore.all_theses(await pool_of(), limit=min(500, max(1, limit)))}
+
+    @r.post("/thesis/admin/adopt")
+    async def tl_admin_adopt(body: ThesisIdIn, x_admin_token: str = Header(default="", alias="X-Admin-Token")):
+        """Mint a fresh owner token for a thesis so the operator can pull it onto this device. Returns
+        the token once (never stored server-side in the clear) → the client saves it as its capability."""
+        if not _admin_ok(x_admin_token):
+            raise HTTPException(status_code=403, detail="admin token required")
+        token = await tstore.adopt_thesis(await pool_of(), (body.thesis_id or "").strip())
+        if not token:
+            raise HTTPException(status_code=404, detail="no such thesis")
+        return {"status": "ok", "thesis_id": body.thesis_id, "owner_token": token}
+
+    @r.post("/thesis/admin/delete")
+    async def tl_admin_delete(body: ThesisIdIn, x_admin_token: str = Header(default="", alias="X-Admin-Token")):
+        if not _admin_ok(x_admin_token):
+            raise HTTPException(status_code=403, detail="admin token required")
+        ok = await tstore.delete_thesis(await pool_of(), (body.thesis_id or "").strip())
+        if not ok:
+            raise HTTPException(status_code=404, detail="no such thesis")
+        return {"status": "ok"}
 
     @r.post("/thesis")
     async def tl_new(body: NewThesis, authorization: str = Header(default="")):
@@ -656,6 +690,14 @@ def build_router(pool_of, *, dsn: str = "", providers=None, manifest=None, judge
     async def tl_recent(limit: int = 40, authorization: str = Header(default="")):
         return {"theses": await tstore.recent(await pool_of(), owner_id=await _owner(authorization),
                                               limit=min(100, max(1, limit)))}
+
+    @r.delete("/thesis/{thesis_id}")
+    async def tl_delete_thesis(thesis_id: str, authorization: str = Header(default=""),
+                               x_thesis_owner: str = Header(default="", alias="X-Thesis-Owner")):
+        """Permanently delete a thesis the caller owns (and its board entry, if published)."""
+        pool, _d = await _read(thesis_id, authorization, x_thesis_owner, owner_only=True)
+        await tstore.delete_thesis(pool, thesis_id)
+        return {"status": "ok"}
 
     @r.post("/thesis/{thesis_id}/share")
     async def tl_share(thesis_id: str, authorization: str = Header(default=""),
