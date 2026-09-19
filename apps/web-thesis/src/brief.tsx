@@ -623,7 +623,6 @@ function LinesTab({ inquiries, id, owner, onDone }: { inquiries?: InquiriesView[
     </>
   );
 }
-const truncate = (t?: string, max = 130) => { const s = (t || "").trim(); return s.length > max ? s.slice(0, max).replace(/\s+\S*$/, "") + "…" : s; };
 // Distinct accent per competitive dimension — money greens, market blue, moat brown, risk red, etc.
 const COMP_COLOR: Record<string, string> = {
   funding: "#2e7d5b", customers: "#3f5e86", investors: "#6b5bd0", traction: "#2e8b6f",
@@ -636,7 +635,7 @@ function CompCard({ p, cols }: { p: CompPlayer; cols: { key: string; label: stri
   const has = (k: string) => { const c = cell(k); return !!(c && (c.text || "").trim()); };
   const labelOf = (k: string) => cols.find((c) => c.key === k)?.label || k;
   const src = (k: string) => { const c = cell(k); return c?.source_url ? <a className="th-comp-src" href={c.source_url} target="_blank" rel="noopener" title={c.source_title || "source"}>↗</a> : null; };
-  const val = (k: string, max: number) => <>{truncate(cell(k)?.text, max)} {src(k)}</>;
+  const val = (k: string) => <>{(cell(k)?.text || "").trim()} {src(k)}</>;
   const statKeys = ["funding", "customers", "investors", "traction"].filter(has);
   const narr = cols.map((c) => c.key).filter((k) => k !== "central_idea" && !statKeys.includes(k) && has(k));
   const empty = !has("central_idea") && !statKeys.length && !narr.length;
@@ -648,17 +647,17 @@ function CompCard({ p, cols }: { p: CompPlayer; cols: { key: string; label: stri
       </div>
       {empty ? <div className="th-cell-empty">Not found in the open record.</div> : (
         <>
-          {has("central_idea") ? <div className="th-comp-lead" title={(cell("central_idea")?.text || "").trim()}>{val("central_idea", 170)}</div> : null}
+          {has("central_idea") ? <div className="th-comp-lead">{val("central_idea")}</div> : null}
           {statKeys.length ? <div className="th-comp-stats">{statKeys.map((k) => (
             <div key={k} className="th-comp-stat" style={{ ["--dc" as string]: compColor(k) }}>
               <span className="th-comp-stat-k">{labelOf(k)}</span>
-              <span className="th-comp-stat-v" title={(cell(k)?.text || "").trim()}>{val(k, 48)}</span>
+              <span className="th-comp-stat-v">{val(k)}</span>
             </div>
           ))}</div> : null}
           {narr.length ? <div className="th-comp-dims">{narr.map((k) => (
             <div key={k} className="th-comp-dim" style={{ ["--dc" as string]: compColor(k) }}>
               <span className="th-comp-dk">{labelOf(k)}</span>
-              <span className="th-comp-dv" title={(cell(k)?.text || "").trim()}>{val(k, 150)}</span>
+              <span className="th-comp-dv">{val(k)}</span>
             </div>
           ))}</div> : null}
         </>
@@ -670,6 +669,7 @@ function CompCard({ p, cols }: { p: CompPlayer; cols: { key: string; label: stri
 function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string; owner?: boolean; onDone?: () => void }) {
   const cols = comp?.columns || []; const players = comp?.players || [];
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [note, setNote] = useState("");
+  const [view, setView] = useState<"cards" | "table">("cards");
   const timer = useRef<number | null>(null);
   const empty = !players.length;
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
@@ -733,31 +733,42 @@ function CompTab({ comp, id, owner, onDone }: { comp?: Competitive; id?: string;
 
   return (
     <div className="card">
-      {comp?.space ? <div className="th-comp-cap">The market — {comp.space}</div> : null}
-      {empty ? <p className="muted" style={{ fontSize: ".9rem" }}>{comp?.reason || "No competitive landscape yet."}{owner ? " Research it from the open web below." : ""}</p> : (
+      <div className="th-comp-bar">
+        <div className="th-comp-bar-l">
+          {comp?.space ? <div className="th-comp-cap">The market — {comp.space}</div> : null}
+          {!empty ? (
+            <div className="th-comp-tabs" role="tablist">
+              <button role="tab" aria-selected={view === "cards"} className={"th-comp-tab" + (view === "cards" ? " on" : "")} onClick={() => setView("cards")}>Detailed Cards</button>
+              <button role="tab" aria-selected={view === "table"} className={"th-comp-tab" + (view === "table" ? " on" : "")} onClick={() => setView("table")}>Tabular View</button>
+            </div>
+          ) : null}
+        </div>
+        {owner && id ? (
+          <div className="th-comp-addbar">
+            {busy ? <Working text={note || "researching the market…"} />
+              : <button className="btn sec" onClick={research}>{empty ? "Research competitive landscape" : "Re-research landscape"}</button>}
+            {!empty && !busy ? <button className="btn sec" disabled={candBusy || cands !== null} onClick={loadCandidates}>{candBusy ? <Working text="finding players…" /> : "+ Add competitors"}</button> : null}
+          </div>
+        ) : null}
+      </div>
+      {empty ? <p className="muted" style={{ fontSize: ".9rem" }}>{comp?.reason || "No competitive landscape yet."}{owner ? " Research it from the open web above." : ""}</p> : (
         <>
-          <div className="th-comp-cards">{players.map((p, i) => <CompCard key={i} p={p} cols={cols} />)}</div>
-          <details className="th-comp-tablewrap" open><summary>At-a-glance comparison</summary>
+          {view === "cards" ? (
+            <div className="th-comp-cards">{players.map((p, i) => <CompCard key={i} p={p} cols={cols} />)}</div>
+          ) : (
             <div className="tablewrap"><table className="th-comp-table">
               <thead><tr><th className="th-comp-th-player">Player</th>{cols.map((c) => <th key={c.key} style={{ ["--dc" as string]: compColor(c.key) }}><span className="th-comp-th-dot" />{c.label}</th>)}</tr></thead>
               <tbody>{players.map((p, i) => (
                 <tr key={i} className={p.is_subject ? "th-comp-tr-you" : ""}>
                   <th scope="row">{p.name}{p.is_subject ? <span className="th-comp-tag you">you</span> : null}</th>
-                  {cols.map((c) => { const cc = p.cells?.[c.key]; const t = (cc?.text || "").trim(); return <td key={c.key}>{t ? <span title={t}>{truncate(t, 140)}{cc?.source_url ? <a className="th-comp-src" href={cc.source_url} target="_blank" rel="noopener"> ↗</a> : null}</span> : <span className="th-cell-empty">—</span>}</td>; })}
+                  {cols.map((c) => { const cc = p.cells?.[c.key]; const t = (cc?.text || "").trim(); return <td key={c.key}>{t ? <span>{t}{cc?.source_url ? <a className="th-comp-src" href={cc.source_url} target="_blank" rel="noopener"> ↗</a> : null}</span> : <span className="th-cell-empty">—</span>}</td>; })}
                 </tr>
               ))}</tbody>
             </table></div>
-          </details>
-          <div className="muted" style={{ fontSize: ".74rem", marginTop: ".5rem", fontFamily: "var(--mono)" }}>Open-web market intelligence (stated/reported) — verify funding &amp; traction against a primary source.</div>
+          )}
+          <div className="muted" style={{ fontSize: ".74rem", marginTop: ".7rem", fontFamily: "var(--mono)" }}>Open-web market intelligence (stated/reported) — verify funding &amp; traction against a primary source.</div>
         </>
       )}
-      {owner && id ? (
-        <div className="th-comp-addbar">
-          {busy ? <Working text={note || "researching the market…"} />
-            : <button className="btn sec" onClick={research}>{empty ? "Research competitive landscape" : "Re-research landscape"}</button>}
-          {!empty && !busy ? <button className="btn sec" disabled={candBusy || cands !== null} onClick={loadCandidates}>{candBusy ? <Working text="finding players…" /> : "+ Add competitors"}</button> : null}
-        </div>
-      ) : null}
       {cands !== null ? (
         <div className="th-comp-pick">
           {cands.length === 0 ? <div className="muted" style={{ fontSize: ".85rem" }}>No new candidates found. <button className="linklike" onClick={() => setCands(null)}>close</button></div> : (
